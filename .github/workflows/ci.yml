@@ -44,6 +44,11 @@ jobs:
   build-docs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+
+    # 🔽 Add this block
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: true
     
     permissions:
       pages: write
