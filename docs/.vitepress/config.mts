@@ -1,0 +1,85 @@
+import { defineConfig } from 'vitepress'
+
+export default defineConfig({
+  title: 'Logly-Zig',
+  description: 'High-Performance Logging Library for Zig',
+  base: '/logly.zig/',
+  
+  themeConfig: {
+    logo: '/logo.svg',
+    
+    nav: [
+      { text: 'Home', link: '/' },
+      { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'API', link: '/api/logger' },
+      { text: 'GitHub', link: 'https://github.com/muhammad-fiaz/logly.zig' }
+    ],
+
+    sidebar: [
+      {
+        text: 'Introduction',
+        items: [
+          { text: 'What is Logly?', link: '/guide/introduction' },
+          { text: 'Getting Started', link: '/guide/getting-started' },
+          { text: 'Quick Start', link: '/guide/quick-start' }
+        ]
+      },
+      {
+        text: 'Core Concepts',
+        items: [
+          { text: 'Log Levels', link: '/guide/log-levels' },
+          { text: 'Configuration', link: '/guide/configuration' },
+          { text: 'Sinks', link: '/guide/sinks' },
+          { text: 'Formatting', link: '/guide/formatting' }
+        ]
+      },
+      {
+        text: 'Features',
+        items: [
+          { text: 'File Rotation', link: '/guide/rotation' },
+          { text: 'JSON Logging', link: '/guide/json' },
+          { text: 'Context Binding', link: '/guide/context' },
+          { text: 'Callbacks', link: '/guide/callbacks' },
+          { text: 'Custom Levels', link: '/guide/custom-levels' },
+          { text: 'Async Logging', link: '/guide/async' }
+        ]
+      },
+      {
+        text: 'API Reference',
+        items: [
+          { text: 'Logger', link: '/api/logger' },
+          { text: 'Config', link: '/api/config' },
+          { text: 'Level', link: '/api/level' },
+          { text: 'Sink', link: '/api/sink' },
+          { text: 'Record', link: '/api/record' }
+        ]
+      },
+      {
+        text: 'Examples',
+        items: [
+          { text: 'Basic Usage', link: '/examples/basic' },
+          { text: 'File Logging', link: '/examples/file-logging' },
+          { text: 'Rotation', link: '/examples/rotation' },
+          { text: 'JSON Logging', link: '/examples/json' },
+          { text: 'Callbacks', link: '/examples/callbacks' },
+          { text: 'Context', link: '/examples/context' },
+          { text: 'Custom Colors', link: '/examples/custom-colors' },
+          { text: 'Async Logging', link: '/examples/async-logging' }
+        ]
+      },
+    ],
+
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/muhammad-fiaz/logly.zig' }
+    ],
+
+    footer: {
+      message: 'Released under the MIT License.',
+      copyright: 'Copyright © 2025 Muhammad Fiaz'
+    },
+
+    search: {
+      provider: 'local'
+    }
+  }
+})

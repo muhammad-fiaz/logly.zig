@@ -1,0 +1,98 @@
+---
+layout: home
+
+hero:
+  name: Logly-Zig
+  text: High-Performance Logging for Zig
+  tagline: Production-ready structured logging with a clean, simple API
+  image:
+    src: /logo.svg
+    alt: Logly-Zig
+  actions:
+    - theme: brand
+      text: Get Started
+      link: /guide/getting-started
+    - theme: alt
+      text: View on GitHub
+      link: https://github.com/muhammad-fiaz/logly.zig
+
+features:
+  - icon: ⚡
+    title: Blazing Fast
+    details: Native Zig performance with async I/O and zero-copy operations
+
+  - icon: 🎯
+    title: Simple API
+    details: Python-like logging interface - logger.info(), logger.error(), etc.
+
+  - icon: 🔄
+    title: File Rotation
+    details: Time-based and size-based rotation with automatic cleanup
+
+  - icon: 📊
+    title: JSON Logging
+    details: Structured JSON output for log aggregation and analysis
+
+  - icon: 🎨
+    title: Colored Output
+    details: ANSI colors with customizable callbacks
+
+  - icon: 🔗
+    title: Context Binding
+    details: Attach persistent key-value pairs to all logs
+
+  - icon: 🔒
+    title: Thread-Safe
+    details: Safe concurrent logging with mutex protection
+
+  - icon: 📁
+    title: Multiple Sinks
+    details: Log to console, files, or custom destinations simultaneously
+
+  - icon: 🎭
+    title: Custom Levels
+    details: Define your own log levels with custom priorities
+---
+
+## Quick Example
+
+```zig
+const std = @import("std");
+const logly = @import("logly");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const logger = try logly.Logger.init(gpa.allocator());
+    defer logger.deinit();
+
+    try logger.info("Application started");
+    try logger.success("Operation completed!");
+    try logger.warning("Low memory");
+    try logger.err("Connection failed");
+}
+```
+
+## Why Logly-Zig?
+
+- **Production Ready**: Battle-tested features from Rust Logly, reimplemented in Zig
+- **Zero Dependencies**: Pure Zig implementation with no external dependencies
+- **Memory Safe**: Compile-time safety guarantees from Zig
+- **Cross-Platform**: Works on Linux, Windows, macOS, and more
+- **Well Documented**: Comprehensive guides and API documentation
+
+## Installation
+
+Add to your `build.zig.zon`:
+
+```zig
+.dependencies = .{
+    .logly = .{
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.1.0.tar.gz",
+        .hash = "...",
+    },
+},
+```
+
+[Get Started →](/guide/getting-started)

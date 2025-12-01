@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        zig-version: ['0.15.1', 'master']
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: ${{ matrix.zig-version }}
+    
+    - name: Run tests
+      run: zig build test --summary all
+    
+    - name: Build examples
+      run: |
+        zig build example-basic
+        zig build example-file_logging
+        zig build example-rotation
+        zig build example-json_logging
+        zig build example-callbacks
+        zig build example-context
+    
+    - name: Check formatting
+      run: zig fmt --check src/ examples/
+      if: matrix.os == 'ubuntu-latest' && matrix.zig-version == '0.15.1'
+
+  build-docs:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      working-directory: ./docs
+      run: npm ci
+    
+    - name: Build docs
+      working-directory: ./docs
+      run: npm run docs:build
+    
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GH_TOKEN }}
+        publish_dir: ./docs/.vitepress/dist
+        cname: muhammad-fiaz.github.io
