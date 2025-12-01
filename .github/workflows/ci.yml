@@ -1,44 +1,41 @@
-name: CI
+name: Deploy VitePress site to Pages
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
 
-# Needed for GitHub Pages deploy
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Avoid "in progress deployment" errors
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        zig-version: ['0.15.1']
-
-    runs-on: ${{ matrix.os }}
+  build:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: ${{ matrix.zig-version }}
+          version: "0.15.1"
 
-      - name: Run tests
+      - name: Run Zig tests
         run: zig build test --summary all
 
-      - name: Build examples
+      - name: Build Zig examples
         run: |
           zig build example-basic
           zig build example-file_logging
@@ -49,49 +46,47 @@ jobs:
           zig build example-custom_colors
           zig build example-async_logging
 
-      - name: Check formatting
-        if: matrix.os == 'ubuntu-latest' && matrix.zig-version == '0.15.1'
+      - name: Zig format check
         run: zig fmt --check src/ examples/
 
-  docs:
-    name: Build & Deploy docs
-    runs-on: ubuntu-latest
-    # Only deploy when pushing to main, not on PRs or develop
-    if: github.ref == 'refs/heads/main'
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: 24
           cache: npm
-          cache-dependency-path: |
-            docs/package-lock.json
-            docs/package.json
-
-      - name: Install dependencies
-        working-directory: ./docs
-        run: npm ci
-
-      - name: Build VitePress docs
-        working-directory: ./docs
-        run: npm run docs:build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
+
+      - name: Clean npm state
+        working-directory: ./docs
+        run: |
+          rm -f package-lock.json
+          rm -rf node_modules
+
+      - name: Install dependencies
+        working-directory: ./docs
+        run: npm install
+
+      - name: Build with VitePress
+        working-directory: ./docs
+        run: npm run docs:build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/.vitepress/dist
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Deploy
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
