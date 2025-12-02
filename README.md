@@ -19,7 +19,7 @@
 
 </div>
 
-A production-ready, high-performance structured logging library for Zig with a clean, simplified API.
+A production-grade, high-performance structured logging library for Zig, designed with a clean, intuitive, and developer-friendly API.
 
 ## Features
 
@@ -306,7 +306,7 @@ zig build example-formatted_logging
 
 Full documentation is available at: https://muhammad-fiaz.github.io/logly.zig
 
-## Comparison with Rust Logly
+## Comparison with Logly Other Variants
 
 | Feature        | Python Logly            | Rust Logly           | Logly-Zig           |
 | -------------- | ----------------------- | -------------------- | ------------------- |
