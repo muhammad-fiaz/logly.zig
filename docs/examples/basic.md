@@ -2,6 +2,8 @@
 
 This example demonstrates the basic usage of Logly-Zig, including initialization and logging at different levels.
 
+## Code Example
+
 ```zig
 const std = @import("std");
 const logly = @import("logly");
@@ -27,4 +29,17 @@ pub fn main() !void {
 
     std.debug.print("\nBasic logging example completed!\n", .{});
 }
+```
+
+## Expected Output
+
+```text
+[TRACE] This is a trace message
+[DEBUG] This is a debug message
+[INFO] This is an info message
+[SUCCESS] Operation completed successfully!
+[WARNING] This is a warning
+[ERROR] This is an error
+[FAIL] Operation failed
+[CRITICAL] Critical system error!
 ```

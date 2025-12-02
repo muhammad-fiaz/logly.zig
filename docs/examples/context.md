@@ -1,6 +1,8 @@
 # Context Binding
 
-This example demonstrates how to use context binding to attach metadata to logs.
+This example demonstrates how to use context binding to attach metadata to logs. Context is particularly useful for tracking requests, user sessions, or system states across multiple log messages.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -43,4 +45,19 @@ fn handleRequest(logger: *logly.Logger, request_id: []const u8, user_id: []const
     logger.unbind("request_id");
     logger.unbind("user_id");
 }
+```
+
+## Expected Output
+
+(Note: Context fields are typically shown in JSON output, but some text formatters may include them)
+
+```text
+[INFO] Server starting...
+[INFO] Request received
+[DEBUG] Processing request...
+[SUCCESS] Request completed successfully
+[INFO] Request received
+[DEBUG] Processing request...
+[SUCCESS] Request completed successfully
+[INFO] Server shutting down
 ```

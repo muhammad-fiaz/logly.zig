@@ -1,6 +1,8 @@
 # File Logging
 
-This example demonstrates how to log to a file.
+This example demonstrates how to log to a file. Logly supports logging to multiple destinations simultaneously (e.g., console and file).
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -35,4 +37,20 @@ pub fn main() !void {
 
     std.debug.print("\nFile logging example completed! Check logs/app.log\n", .{});
 }
+```
+
+## Expected Output
+
+Console:
+
+```text
+[INFO] Logging to both file and console
+[SUCCESS] File created in logs/app.log
+```
+
+File (`logs/app.log`):
+
+```text
+[INFO] Logging to both file and console
+[SUCCESS] File created in logs/app.log
 ```

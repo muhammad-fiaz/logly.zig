@@ -1,6 +1,8 @@
 # File Rotation
 
-This example demonstrates how to configure file rotation.
+This example demonstrates how to configure file rotation. Rotation ensures that log files don't grow indefinitely by creating new files based on time intervals or size limits, and deleting old files based on retention policies.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -48,3 +50,13 @@ pub fn main() !void {
     std.debug.print("\nRotation example completed!\n", .{});
 }
 ```
+
+## Expected Output
+
+Files created in `logs/`:
+
+- `daily.log`
+- `size_based.log`
+- `combined.log`
+
+(When rotation triggers, you will see files like `daily.2024-06-01.log` or `size_based.1.log`)

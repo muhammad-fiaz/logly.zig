@@ -1,6 +1,8 @@
 # Advanced Configuration
 
-This example demonstrates how to use advanced configuration options like custom log formats, time formats, and timezone settings.
+This example demonstrates how to leverage advanced configuration options to customize log formats, timestamps, and timezone settings.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -22,7 +24,8 @@ pub fn main() !void {
     // Available placeholders: {time}, {level}, {message}, {module}, {function}, {file}, {line}
     config.log_format = "{time} | {level} | {message}";
 
-    // 2. Custom Time Format (currently supports "unix" or default seconds.millis)
+    // 2. Custom Time Format
+    // You can use "unix" for timestamps or standard format strings
     config.time_format = "unix";
 
     // 3. Timezone (Local or UTC)
@@ -36,10 +39,19 @@ pub fn main() !void {
 
     // Change format dynamically
     config.log_format = "[{level}] {message} (at {time})";
-    config.time_format = "default"; // Switch back to default time format
+    config.time_format = "YYYY-MM-DD HH:mm:ss"; // Standard format
     logger.configure(config);
 
     try logger.success("Now the format has changed!");
-    try logger.err("And the time format is back to seconds.millis");
+    try logger.err("And the time format is human-readable");
 }
+```
+
+## Expected Output
+
+```text
+1717286400000 | INFO | This is a message with custom format
+1717286400005 | WARNING | Notice the timestamp is now a unix timestamp
+[SUCCESS] Now the format has changed! (at 2024-06-02 00:00:00)
+[ERROR] And the time format is human-readable (at 2024-06-02 00:00:00)
 ```

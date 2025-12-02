@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "sink_formats", .path = "examples/sink_formats.zig" },
         .{ .name = "formatted_logging", .path = "examples/formatted_logging.zig" },
         .{ .name = "json_extended", .path = "examples/json_extended.zig" },
+        .{ .name = "time", .path = "examples/time.zig" },
     };
 
     inline for (examples) |example| {

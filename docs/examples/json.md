@@ -1,6 +1,8 @@
 # JSON Logging
 
-This example demonstrates how to enable JSON logging and use context binding.
+This example demonstrates how to enable JSON logging and use context binding. JSON logging is essential for modern log aggregation systems like ELK, Datadog, or CloudWatch.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -41,5 +43,32 @@ pub fn main() !void {
     try logger.info("Request completed");
 
     std.debug.print("\nJSON logging example completed!\n", .{});
+}
+```
+
+## Expected Output
+
+```json
+{
+  "level": "INFO",
+  "message": "Application started",
+  "timestamp": 1717286400000,
+  "context": {
+    "app": "myapp",
+    "version": "1.0.0",
+    "environment": "production"
+  }
+}
+{
+  "level": "INFO",
+  "message": "Processing user request",
+  "timestamp": 1717286400005,
+  "context": {
+    "app": "myapp",
+    "version": "1.0.0",
+    "environment": "production",
+    "request_id": "req-12345",
+    "user_id": "user-67890"
+  }
 }
 ```

@@ -1,6 +1,8 @@
 # Custom Colors
 
-This example demonstrates how to define and use custom colors for log levels.
+This example demonstrates how to define and use custom colors for log levels. You can customize the appearance of your logs by defining ANSI color codes for specific levels.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -30,4 +32,14 @@ pub fn main() !void {
 
     std.debug.print("\nCustom colors example completed!\n", .{});
 }
+```
+
+## Expected Output
+
+```text
+[INFO] Standard Info (Green)
+[NOTICE] This is a notice (Cyan Bold)
+[WARNING] Standard Warning (Yellow)
+[ALERT] This is an alert (Red Underline)
+[ERROR] Standard Error (Red)
 ```

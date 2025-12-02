@@ -68,7 +68,9 @@ export default defineConfig({
           { text: 'Advanced Config', link: '/examples/advanced-config' },
           { text: 'Module Levels', link: '/examples/module-levels' },
           { text: 'Sink Formats', link: '/examples/sink-formats' },
-          { text: 'Formatted Logging', link: '/examples/formatted-logging' }
+          { text: 'Formatted Logging', link: '/examples/formatted-logging' },
+          { text: 'Extended JSON', link: '/examples/json-extended' },
+          { text: 'Time Formatting', link: '/examples/time' }
         ]
       },
     ],

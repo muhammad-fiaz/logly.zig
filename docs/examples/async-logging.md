@@ -1,6 +1,8 @@
 # Async Logging
 
-This example demonstrates how to configure asynchronous logging for high-performance scenarios.
+This example demonstrates how to configure asynchronous logging for high-performance scenarios. Async logging offloads file I/O to a background thread, preventing logging from blocking your main application flow.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -45,4 +47,27 @@ pub fn main() !void {
 
     std.debug.print("Async logging example completed!\n", .{});
 }
+```
+
+## Expected Output
+
+Console output:
+
+```text
+[INFO] Starting async logging test...
+[INFO] Async log message #0
+...
+[INFO] Async log message #999
+[INFO] Finished logging 1000 messages
+Async logging example completed!
+```
+
+File output (`logs/async.log`):
+
+```text
+[INFO] Starting async logging test...
+[INFO] Async log message #0
+...
+[INFO] Async log message #999
+[INFO] Finished logging 1000 messages
 ```

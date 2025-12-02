@@ -1,6 +1,8 @@
 # Formatted Logging
 
-This example demonstrates how to use the formatted logging methods (`infof`, `debugf`, etc.) to log messages with arguments, similar to `printf` or `std.log`.
+This example demonstrates how to use the formatted logging methods (`infof`, `debugf`, etc.) to log messages with arguments, similar to `printf` or `std.log`. This allows for dynamic message construction without manual string concatenation.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -35,4 +37,17 @@ pub fn main() !void {
     try logger.info("Standard message");
     try logger.infof("Formatted message with {s}", .{ "arguments" });
 }
+```
+
+## Expected Output
+
+```text
+[INFO] User Alice logged in with ID 12345
+[WARNING] Disk usage is at 85%
+[ERROR] Failed to connect to localhost:8080
+[database] [DEBUG] Query executed in 15ms: SELECT * FROM users
+[database] [INFO] Connected to database 'production_db'
+[AUDIT] User Bob performed action: DELETE
+[INFO] Standard message
+[INFO] Formatted message with arguments
 ```

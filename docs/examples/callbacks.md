@@ -1,6 +1,8 @@
 # Callbacks
 
-This example demonstrates how to use callbacks to monitor log events.
+This example demonstrates how to use callbacks to monitor log events. Callbacks are useful for triggering external alerts, metrics, or custom logic whenever a log message is processed.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -30,4 +32,15 @@ pub fn main() !void {
 
     std.debug.print("\nCallbacks example completed!\n", .{});
 }
+```
+
+## Expected Output
+
+```text
+[INFO] Normal operation
+[WARNING] Warning message
+[ERROR] Error occurred - callback will trigger
+[ALERT] High severity log detected: Error occurred - callback will trigger
+[CRITICAL] Critical error - callback will trigger
+[ALERT] High severity log detected: Critical error - callback will trigger
 ```

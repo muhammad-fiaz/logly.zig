@@ -9,7 +9,9 @@
 <a href="https://github.com/muhammad-fiaz/logly.zig"><img src="https://img.shields.io/github/last-commit/muhammad-fiaz/logly.zig" alt="GitHub last commit"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig"><img src="https://img.shields.io/github/license/muhammad-fiaz/logly.zig" alt="License"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/ci.yml"><img src="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-<img src="https://img.shields.io/badge/platforms-linux%20%7C%20windows%20%7C%20macos-lightgrey" alt="Supported Platforms">
+<img src="https://img.shields.io/badge/platforms-linux%20%7C%20windows%20%7C%20macos-blue" alt="Supported Platforms">
+<a href="https://pay.muhammadfiaz.com"><img src="https://img.shields.io/badge/Sponsor-pay.muhammadfiaz.com-ff69b4?style=flat&logo=heart" alt="Sponsor"></a>
+<a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/github/sponsors/muhammad-fiaz?style=social&logo=github" alt="GitHub Sponsors"></a>
 
 <p><em>High-performance, structured logging library for Zig.</em></p>
 

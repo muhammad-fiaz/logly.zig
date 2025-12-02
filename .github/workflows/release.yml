@@ -1,4 +1,6 @@
 name: Release
+permissions:
+  contents: write
 
 on:
   release:
@@ -12,8 +14,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - uses: actions/checkout@v5
+      - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.0
       - name: Run Tests
@@ -38,8 +40,8 @@ jobs:
           - riscv64-freestanding
           - arm-freestanding
     steps:
-      - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - uses: actions/checkout@v5
+      - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.0
       
@@ -69,13 +71,13 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Get Release URL
         id: get_url
         run: echo "url=https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz" >> $GITHUB_OUTPUT
 
-      - uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.0
 

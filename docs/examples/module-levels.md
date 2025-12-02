@@ -1,6 +1,8 @@
 # Module Levels
 
-This example demonstrates how to use module-specific log levels to control logging verbosity for different parts of your application.
+This example demonstrates how to use module-specific log levels to control logging verbosity for different parts of your application. This is incredibly useful for debugging specific components without being overwhelmed by logs from the entire system.
+
+## Code Example
 
 ```zig
 const std = @import("std");
@@ -47,4 +49,16 @@ pub fn main() !void {
     // Verify database still follows global
     try db_logger.info("Database info"); // Visible
 }
+```
+
+## Expected Output
+
+```text
+[INFO] Application started
+[network] [INFO] Network initialized
+[INFO] Changed network module level to DEBUG
+[network] [DEBUG] Network debug message (now visible)
+[INFO] Changed UI module level to ERROR
+[ui] [ERROR] UI error
+[database] [INFO] Database info
 ```
