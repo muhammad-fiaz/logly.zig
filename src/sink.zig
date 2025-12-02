@@ -4,18 +4,44 @@ const Record = @import("record.zig").Record;
 const Formatter = @import("formatter.zig").Formatter;
 const Rotation = @import("rotation.zig").Rotation;
 
+/// Configuration for a specific log sink.
+///
+/// Sinks are destinations where logs are written (e.g., console, file).
+/// Each sink can have its own configuration, overriding global settings.
 pub const SinkConfig = struct {
+    // 📁 File path for the sink. If null, defaults to console output.
     path: ?[]const u8 = null,
+
+    // 🔄 Rotation settings: "hourly", "daily", or "size".
     rotation: ?[]const u8 = null,
+
+    // 📏 Size limit for rotation (in bytes).
     size_limit: ?u64 = null,
+    // 📝 Size limit as a string (e.g., "10MB").
     size_limit_str: ?[]const u8 = null,
+
+    // 🗑️ Retention policy: Number of rotated files to keep.
     retention: ?usize = null,
+
+    // 🎚️ Sink-specific log level. Overrides the global level if set.
     level: ?Level = null,
+
+    // ⚡ Async writing: Use a background thread for non-blocking I/O.
     async_write: bool = true,
     buffer_size: usize = 8192,
+
+    // 📝 Output format overrides
     json: bool = false,
+    pretty_json: bool = false,
+
+    // 🎨 Color override: Force enable/disable colors for this sink.
+    // If null, follows global config (usually enabled for console, disabled for files).
+    color: ?bool = null,
+
+    // 🔌 Enable/disable this sink initially.
     enabled: bool = true,
 
+    /// Returns the default sink configuration (Console, synchronous, standard format).
     pub fn default() SinkConfig {
         return .{};
     }
@@ -126,11 +152,32 @@ pub const Sink = struct {
             }
         }
 
+        // Determine effective config for this sink
+        // We need to create a new config struct that overrides specific fields
+        var effective_config = global_config;
+
+        // Override JSON setting
+        if (self.config.json) {
+            effective_config.json = true;
+        }
+        if (self.config.pretty_json) {
+            effective_config.pretty_json = true;
+        }
+
+        // Override Color setting
+        // If sink is a file, default color to false unless explicitly enabled
+        if (self.config.color) |c| {
+            effective_config.global_color_display = c;
+        } else if (self.file != null) {
+            // Default to no color for files
+            effective_config.global_color_display = false;
+        }
+
         // Format the message
-        const formatted = if (self.config.json or global_config.json)
-            try self.formatter.formatJson(record, global_config)
+        const formatted = if (effective_config.json)
+            try self.formatter.formatJson(record, effective_config)
         else
-            try self.formatter.format(record, global_config);
+            try self.formatter.format(record, effective_config);
         defer self.allocator.free(formatted);
 
         // Write to console or file

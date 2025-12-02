@@ -64,7 +64,11 @@ export default defineConfig({
           { text: 'Callbacks', link: '/examples/callbacks' },
           { text: 'Context', link: '/examples/context' },
           { text: 'Custom Colors', link: '/examples/custom-colors' },
-          { text: 'Async Logging', link: '/examples/async-logging' }
+          { text: 'Async Logging', link: '/examples/async-logging' },
+          { text: 'Advanced Config', link: '/examples/advanced-config' },
+          { text: 'Module Levels', link: '/examples/module-levels' },
+          { text: 'Sink Formats', link: '/examples/sink-formats' },
+          { text: 'Formatted Logging', link: '/examples/formatted-logging' }
         ]
       },
     ],

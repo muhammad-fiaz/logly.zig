@@ -19,7 +19,7 @@ Add Logly-Zig to your `build.zig.zon`:
     .version = "0.1.0",
     .dependencies = .{
         .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.1.tar.gz",
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.2.tar.gz",
             .hash = "1220...", // Run zig build to get the hash
         },
     },

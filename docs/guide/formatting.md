@@ -71,3 +71,47 @@ To disable colors:
 ```zig
 config.color = false;
 ```
+
+## Custom Format Strings
+
+You can define a custom format string to control the exact layout of your log messages.
+
+```zig
+config.log_format = "{time} | {level} | {message}";
+```
+
+Supported placeholders:
+
+- `{time}`
+- `{level}`
+- `{message}`
+- `{module}`
+- `{function}`
+- `{file}`
+- `{line}`
+
+## Time Formatting
+
+You can also customize the timestamp format and timezone:
+
+```zig
+config.time_format = "unix"; // or default
+config.timezone = .UTC;
+```
+
+## Formatted Logging
+
+Logly-Zig supports `printf`-style formatting using the `f` suffix methods (e.g., `infof`, `debugf`). This allows you to construct log messages dynamically without manual string concatenation.
+
+```zig
+// Standard logging
+try logger.infof("User {s} logged in from {s}", .{ "Alice", "192.168.1.1" });
+
+// Debugging with numbers
+try logger.debugf("Processed {d} items in {d}ms", .{ 100, 50 });
+
+// Error details
+try logger.errf("Failed to connect: {s} (Code: {d})", .{ "Connection Refused", 403 });
+```
+
+This feature uses Zig's standard `std.fmt` syntax, so all standard format specifiers are supported.

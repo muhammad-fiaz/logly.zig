@@ -1,5 +1,9 @@
 const std = @import("std");
 
+/// Handles log file rotation logic.
+///
+/// Supports rotation based on time intervals (hourly, daily, etc.) or file size.
+/// Also manages retention of old log files.
 pub const Rotation = struct {
     allocator: std.mem.Allocator,
     base_path: []const u8,
@@ -8,6 +12,7 @@ pub const Rotation = struct {
     retention: ?usize = null,
     last_rotation: i64,
 
+    /// Defines the time interval for rotation.
     const RotationInterval = enum {
         minutely,
         hourly,
@@ -16,6 +21,7 @@ pub const Rotation = struct {
         monthly,
         yearly,
 
+        /// Returns the duration of the interval in seconds.
         fn seconds(self: RotationInterval) i64 {
             return switch (self) {
                 .minutely => 60,
@@ -28,6 +34,13 @@ pub const Rotation = struct {
         }
     };
 
+    /// Initializes a new Rotation instance.
+    ///
+    /// - `allocator`: Memory allocator.
+    /// - `path`: Base path for log files.
+    /// - `interval_str`: Rotation interval string ("daily", "hourly", etc.).
+    /// - `size_limit`: Maximum file size in bytes before rotation.
+    /// - `retention`: Number of rotated files to keep.
     pub fn init(
         allocator: std.mem.Allocator,
         path: []const u8,

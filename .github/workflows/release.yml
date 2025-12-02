@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.15.0
+      - name: Run Tests
+        run: zig build test
+
+  build-library:
+    name: Build Library (${{ matrix.target }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-windows
+          - x86-windows
+          - x86_64-linux
+          - x86-linux
+          - aarch64-linux
+          - x86_64-macos
+          - aarch64-macos
+          - x86_64-freestanding
+          - aarch64-freestanding
+          - riscv64-freestanding
+          - arm-freestanding
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.15.0
+      
+      - name: Build Library
+        run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
+
+      - name: Rename Artifact (Windows)
+        if: contains(matrix.target, 'windows')
+        run: mv zig-out/lib/logly.lib logly-${{ matrix.target }}.lib
+
+      - name: Rename Artifact (Unix)
+        if: contains(matrix.target, 'windows') == false
+        run: mv zig-out/lib/liblogly.a liblogly-${{ matrix.target }}.a
+
+      - name: Upload Artifact
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ contains(matrix.target, 'windows') && format('logly-{0}.lib', matrix.target) || format('liblogly-{0}.a', matrix.target) }}
+          asset_name: ${{ contains(matrix.target, 'windows') && format('logly-{0}.lib', matrix.target) || format('liblogly-{0}.a', matrix.target) }}
+          asset_content_type: application/octet-stream
+
+  update-release:
+    name: Update Release Description
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Get Release URL
+        id: get_url
+        run: echo "url=https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz" >> $GITHUB_OUTPUT
+
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.15.0
+
+      - name: Calculate Hash
+        id: calc_hash
+        run: |
+          zig fetch --save ${{ steps.get_url.outputs.url }}
+          # Extract hash from build.zig.zon (it's updated by zig fetch)
+          HASH=$(grep '.hash =' build.zig.zon | cut -d '"' -f 2)
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+      - name: Update Release Body
+        uses: softprops/action-gh-release@v1
+        with:
+          body: |
+            ${{ github.event.release.body }}
+
+            ## 📦 Installation
+
+            Add this to your `build.zig.zon`:
+
+            ```zig
+            .dependencies = .{
+                .logly = .{
+                    .url = "${{ steps.get_url.outputs.url }}",
+                    .hash = "${{ steps.calc_hash.outputs.hash }}",
+                },
+            },
+            ```
+
+            ## 📥 Downloads (Prebuilt Library)
+
+            | Platform | Architecture | File |
+            |----------|--------------|------|
+            | Windows | x86_64 | [logly-x86_64-windows.lib] |
+            | Windows | x86 | [logly-x86-windows.lib] |
+            | Linux | x86_64 | [liblogly-x86_64-linux.a] |
+            | Linux | x86 | [liblogly-x86-linux.a] |
+            | Linux | aarch64 (ARM64) | [liblogly-aarch64-linux.a] |
+            | macOS | x86_64 (Intel) | [liblogly-x86_64-macos.a] |
+            | macOS | aarch64 (Apple Silicon) | [liblogly-aarch64-macos.a] |
+            | Bare Metal | x86_64 | [liblogly-x86_64-freestanding.a] |
+            | Bare Metal | aarch64 | [liblogly-aarch64-freestanding.a] |
+            | Bare Metal | RISC-V 64 | [liblogly-riscv64-freestanding.a] |
+            | Bare Metal | ARM | [liblogly-arm-freestanding.a] |
+
+            ### 🛠️ Using Prebuilt Libraries
+
+            1. Download the library for your platform.
+            2. Place it in your project (e.g., in a `libs/` folder).
+            3. Update your `build.zig`:
+
+            ```zig
+            // Assuming you placed the library in `libs/`
+            exe.addLibraryPath(b.path("libs"));
+            exe.linkSystemLibrary("logly");
+            ```

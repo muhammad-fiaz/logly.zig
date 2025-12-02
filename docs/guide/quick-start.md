@@ -38,6 +38,16 @@ try logger.fail("Operation failed");     // Priority 45
 try logger.critical("Critical!");        // Priority 50
 ```
 
+### Formatted Logging
+
+Use `printf`-style formatting with the `f` suffix methods:
+
+```zig
+try logger.infof("User {s} logged in from {s}", .{ "Alice", "127.0.0.1" });
+try logger.debugf("Processing item {d} of {d}", .{ 5, 10 });
+try logger.errf("Connection failed: {s}", .{ "Timeout" });
+```
+
 ## File Logging
 
 ```zig

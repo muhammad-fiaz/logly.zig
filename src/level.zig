@@ -1,14 +1,32 @@
 const std = @import("std");
 
-/// Log levels with associated priorities
+/// Defines the standard logging levels and their priorities.
+///
+/// Levels are ordered by priority, where higher values indicate higher severity.
+/// *   `trace` (5): Detailed tracing information.
+/// *   `debug` (10): Debugging information.
+/// *   `info` (20): General informational messages.
+/// *   `success` (25): Successful operations (often green).
+/// *   `warning` (30): Warning conditions.
+/// *   `err` (40): Error conditions.
+/// *   `fail` (45): Failure conditions (often red).
+/// *   `critical` (50): Critical failures (often bold red/background).
 pub const Level = enum(u8) {
+    // 🔍 Detailed tracing information
     trace = 5,
+    // 🐛 Debugging information
     debug = 10,
+    // ℹ️ General information
     info = 20,
+    // ✅ Success messages
     success = 25,
+    // ⚠️ Warnings
     warning = 30,
+    // ❌ Errors
     err = 40,
+    // 🛑 Failures
     fail = 45,
+    // 🚨 Critical failures
     critical = 50,
 
     pub fn priority(self: Level) u8 {

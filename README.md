@@ -9,10 +9,11 @@
 <a href="https://github.com/muhammad-fiaz/logly.zig"><img src="https://img.shields.io/github/last-commit/muhammad-fiaz/logly.zig" alt="GitHub last commit"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig"><img src="https://img.shields.io/github/license/muhammad-fiaz/logly.zig" alt="License"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/ci.yml"><img src="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<img src="https://img.shields.io/badge/platforms-linux%20%7C%20windows%20%7C%20macos-lightgrey" alt="Supported Platforms">
 
 <p><em>High-performance, structured logging library for Zig.</em></p>
 
-**📚 [Documentation](https://muhammad-fiaz.github.io/logly.zig/) | [API Reference](https://muhammad-fiaz.github.io/logly.zig/api/logger) | [Quick Start](https://muhammad-fiaz.github.io/logly.zig/guide/quick-start)**
+**📚 [Documentation](https://muhammad-fiaz.github.io/logly.zig/) | [API Reference](https://muhammad-fiaz.github.io/logly.zig/api/logger) | [Quick Start](https://muhammad-fiaz.github.io/logly.zig/guide/quick-start) | [Contributing](CONTRIBUTING.md)**
 
 </div>
 
@@ -26,10 +27,13 @@ A production-ready, high-performance structured logging library for Zig with a c
 🔄 **File Rotation** - Time-based (hourly to yearly) and size-based rotation  
 🎨 **Colored Output** - ANSI colors with customizable callbacks  
 📊 **JSON Logging** - Structured JSON output for log aggregation  
+📝 **Custom Formats** - Customizable log message and timestamp formats
 🔗 **Context Binding** - Attach persistent key-value pairs to logs  
 ⚡ **Async I/O** - Non-blocking writes with configurable buffering  
 🔒 **Thread-Safe** - Safe concurrent logging  
 🎭 **Custom Levels** - Define your own log levels with priorities  
+📦 **Module Levels** - Set different log levels for specific modules  
+🖨️ **Formatted Logging** - Printf-style formatting support (`infof`, `debugf`, etc.)  
 📞 **Callbacks** - Monitor and react to log events
 
 ## Installation
@@ -39,7 +43,8 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.1.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.2.tar.gz",
+        // Run `zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.2.tar.gz` to get the hash
         .hash = "...",
     },
 },
@@ -53,6 +58,25 @@ const logly = b.dependency("logly", .{
     .optimize = optimize,
 });
 exe.root_module.addImport("logly", logly.module("logly"));
+```
+
+### 📦 Prebuilt Library
+
+While we recommend using the Zig Package Manager, we also provide prebuilt static libraries for each release on the [Releases](https://github.com/muhammad-fiaz/logly.zig/releases) page. These can be useful for integration with other build systems or languages.
+
+- **Windows**: `logly-x86_64-windows.lib`, `logly-x86-windows.lib`
+- **Linux**: `liblogly-x86_64-linux.a`, `liblogly-x86-linux.a`, `liblogly-aarch64-linux.a`
+- **macOS**: `liblogly-x86_64-macos.a`, `liblogly-aarch64-macos.a`
+- **Bare Metal**: `liblogly-x86_64-freestanding.a`, `liblogly-aarch64-freestanding.a`, `liblogly-riscv64-freestanding.a`, `liblogly-arm-freestanding.a`
+
+To use them, link against the static library in your build process.
+
+**Example `build.zig`:**
+
+```zig
+// Assuming you downloaded the library to `libs/`
+exe.addLibraryPath(b.path("libs"));
+exe.linkSystemLibrary("logly");
 ```
 
 ## Quick Start
@@ -267,6 +291,10 @@ zig build example-rotation
 zig build example-json_logging
 zig build example-callbacks
 zig build example-context
+zig build example-advanced_config
+zig build example-module_levels
+zig build example-sink_formats
+zig build example-formatted_logging
 
 # Run an example
 ./zig-out/bin/basic
@@ -278,15 +306,15 @@ Full documentation is available at: https://muhammad-fiaz.github.io/logly.zig
 
 ## Comparison with Rust Logly
 
-| Feature         | Python Logly | Rust Logly   | Logly-Zig           |
-| --------------- | ------------ | ------------ | ------------------- |
-| Performance     | Fast         | Fast         | Native Zig (faster) |
-| Memory Safety   | Runtime      | Compile-time | Compile-time        |
-| Async Support   | ✓            | ✓            | ✓                   |
-| File Rotation   | ✓            | ✓            | ✓                   |
-| JSON Logging    | ✓            | ✓            | ✓                   |
-| Custom Colors   | ✓            | ✓            | ✓                   |
-| Simplified API | ✓            |       ✓        | ✓                   |
+| Feature        | Python Logly            | Rust Logly           | Logly-Zig           |
+| -------------- | ----------------------- | -------------------- | ------------------- |
+| Performance    | Maturin-Bindings (Fast) | Native Rust (Faster) | Native Zig (faster) |
+| Memory Safety  | Runtime                 | Compile-time         | Compile-time        |
+| Async Support  | ✓                       | ✓                    | ✓                   |
+| File Rotation  | ✓                       | ✓                    | ✓                   |
+| JSON Logging   | ✓                       | ✓                    | ✓                   |
+| Custom Colors  | ✓                       | ✓                    | ✓                   |
+| Simplified API | ✓                       | ✓                    | ✓                   |
 
 ## Contributing
 

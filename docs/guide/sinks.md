@@ -56,6 +56,8 @@ _ = try logger.addSink(.{
 | `async_write` | `bool` | `true` | Enable async writing (buffered) |
 | `buffer_size` | `usize` | `8192` | Buffer size for async writing |
 | `json` | `bool` | `false` | Force JSON output for this sink |
+| `pretty_json` | `bool` | `false` | Pretty print JSON output |
+| `color` | `?bool` | `null` | Enable/disable colors (defaults to false for files) |
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
 
 ## Runtime Control
