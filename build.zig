@@ -25,6 +25,13 @@ pub fn build(b: *std.Build) void {
         .{ .name = "formatted_logging", .path = "examples/formatted_logging.zig" },
         .{ .name = "json_extended", .path = "examples/json_extended.zig" },
         .{ .name = "time", .path = "examples/time.zig" },
+        .{ .name = "filtering", .path = "examples/filtering.zig" },
+        .{ .name = "sampling", .path = "examples/sampling.zig" },
+        .{ .name = "redaction", .path = "examples/redaction.zig" },
+        .{ .name = "metrics", .path = "examples/metrics.zig" },
+        .{ .name = "tracing", .path = "examples/tracing.zig" },
+        .{ .name = "production_config", .path = "examples/production_config.zig" },
+        .{ .name = "color_options", .path = "examples/color_options.zig" },
     };
 
     inline for (examples) |example| {

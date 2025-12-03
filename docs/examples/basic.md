@@ -13,19 +13,22 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable ANSI colors on Windows (no-op on Linux/macOS)
+    _ = logly.Terminal.enableAnsiColors();
+
     // Create logger (auto-sink enabled by default)
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Log at different levels - Python-like API
-    try logger.trace("This is a trace message");
-    try logger.debug("This is a debug message");
-    try logger.info("This is an info message");
-    try logger.success("Operation completed successfully!");
-    try logger.warning("This is a warning");
-    try logger.err("This is an error");
-    try logger.fail("Operation failed");
-    try logger.critical("Critical system error!");
+    // Log at different levels - entire line is colored!
+    try logger.trace("This is a trace message");       // Cyan
+    try logger.debug("This is a debug message");       // Blue
+    try logger.info("This is an info message");        // White
+    try logger.success("Operation completed!");        // Green
+    try logger.warning("This is a warning");           // Yellow
+    try logger.err("This is an error");                // Red
+    try logger.fail("Operation failed");               // Magenta
+    try logger.critical("Critical system error!");     // Bright Red
 
     std.debug.print("\nBasic logging example completed!\n", .{});
 }
@@ -33,13 +36,28 @@ pub fn main() !void {
 
 ## Expected Output
 
+Each line is colored according to its level:
+
 ```text
-[TRACE] This is a trace message
-[DEBUG] This is a debug message
-[INFO] This is an info message
-[SUCCESS] Operation completed successfully!
-[WARNING] This is a warning
-[ERROR] This is an error
-[FAIL] Operation failed
-[CRITICAL] Critical system error!
+[2024-01-15 10:30:45] [TRACE] This is a trace message       <- Cyan line
+[2024-01-15 10:30:45] [DEBUG] This is a debug message       <- Blue line
+[2024-01-15 10:30:45] [INFO] This is an info message        <- White line
+[2024-01-15 10:30:45] [SUCCESS] Operation completed!        <- Green line
+[2024-01-15 10:30:45] [WARNING] This is a warning           <- Yellow line
+[2024-01-15 10:30:45] [ERR] This is an error                <- Red line
+[2024-01-15 10:30:45] [FAIL] Operation failed               <- Magenta line
+[2024-01-15 10:30:45] [CRITICAL] Critical system error!     <- Bright Red line
 ```
+
+## Level Colors
+
+| Level | Color Code | Display |
+|-------|------------|---------|
+| TRACE | 36 | Cyan |
+| DEBUG | 34 | Blue |
+| INFO | 37 | White |
+| SUCCESS | 32 | Green |
+| WARNING | 33 | Yellow |
+| ERR | 31 | Red |
+| FAIL | 35 | Magenta |
+| CRITICAL | 91 | Bright Red |

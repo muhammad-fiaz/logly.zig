@@ -21,7 +21,7 @@ pub fn main() !void {
     try logger.info("Short time format");
 
     // Example 3: UTC timezone
-    config.timezone = .UTC;
+    config.timezone = .utc;
     logger.configure(config);
     try logger.info("UTC time");
 }

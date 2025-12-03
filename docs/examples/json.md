@@ -50,25 +50,39 @@ pub fn main() !void {
 
 ```json
 {
+  "timestamp": "2024-01-15 10:30:45.+000",
   "level": "INFO",
   "message": "Application started",
-  "timestamp": 1717286400000,
-  "context": {
-    "app": "myapp",
-    "version": "1.0.0",
-    "environment": "production"
-  }
+  "app": "myapp",
+  "version": "1.0.0",
+  "environment": "production"
 }
 {
+  "timestamp": "2024-01-15 10:30:45.+005",
   "level": "INFO",
   "message": "Processing user request",
-  "timestamp": 1717286400005,
-  "context": {
-    "app": "myapp",
-    "version": "1.0.0",
-    "environment": "production",
-    "request_id": "req-12345",
-    "user_id": "user-67890"
-  }
+  "app": "myapp",
+  "version": "1.0.0",
+  "environment": "production",
+  "request_id": "req-12345",
+  "user_id": "user-67890"
+}
+```
+
+## Custom Levels in JSON
+
+Custom levels display their actual names in JSON:
+
+```zig
+try logger.addCustomLevel("audit", 35, "35");
+try logger.custom("audit", "User login event");
+```
+
+Output:
+```json
+{
+  "timestamp": "2024-01-15 10:30:45.+000",
+  "level": "AUDIT",
+  "message": "User login event"
 }
 ```

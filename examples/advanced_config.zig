@@ -22,7 +22,7 @@ pub fn main() !void {
     config.time_format = "unix";
 
     // 3. Timezone (Local or UTC)
-    config.timezone = .UTC;
+    config.timezone = .utc;
 
     logger.configure(config);
 

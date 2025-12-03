@@ -17,7 +17,9 @@ Logly-Zig is a high-performance, structured logging library for Zig, engineered 
 - **Multi-Sink Support**: Simultaneously output to console, files, and custom destinations.
 - **Custom Formatting**: Flexible template strings and full printf-style formatting support.
 - **Rich Context**: Structured logging with JSON support and context binding.
-- **Vibrant Output**: Customizable ANSI color schemes for better readability.
+- **Whole-Line Coloring**: ANSI colors wrap the entire log line (timestamp, level, message) for better visual scanning.
+- **Custom Levels**: Define your own log levels with custom names, priorities, and colors.
+- **Cross-Platform Colors**: Works on Linux, macOS, Windows 10+, and popular terminals.
 
 ### 🛡️ Reliability
 
@@ -40,12 +42,37 @@ Logly-Zig is built upon the following core principles:
 
 | Feature            | Python Logly | Rust Logly   | Logly-Zig                |
 | :----------------- | :----------- | :----------- | :----------------------- |
-| **Performance**    | Maturin-Bindings (Fast)        | Native Rust (Faster)         | Native Zig (faster) || **Memory Safety**  | Runtime      | Compile-time | **Compile-time**         |
+| **Performance**    | Maturin-Bindings (Fast)        | Native Rust (Faster)         | Native Zig (faster) |
+| **Memory Safety**  | Runtime      | Compile-time | **Compile-time**         |
 | **Async Support**  | ✓            | ✓            | **✓**                    |
 | **File Rotation**  | ✓            | ✓            | **✓**                    |
 | **JSON Logging**   | ✓            | ✓            | **✓**                    |
 | **Custom Colors**  | ✓            | ✓            | **✓**                    |
 | **Simplified API** | ✓            | ✓            | **✓**                    |
+| **Filtering**      | ✓            | ✓            | **✓** (v0.0.3+)          |
+| **Sampling**       | ✗ Coming soon!)            | ✗ (Coming soon!)           | **✓** (v0.0.3+)          |
+| **Redaction**      | ✗ (Coming soon!)             | ✗ (Coming soon!)             | **✓** (v0.0.3+)          |
+| **Metrics**        | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.3+)          |
+| **Tracing**        | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.3+)          |
+
+## Enterprise Features (v0.0.3+)
+
+Logly-Zig v0.0.3 introduces enterprise-grade features:
+
+### 🔍 Filtering
+Rule-based log filtering by level, message patterns, or modules.
+
+### 📊 Sampling
+Probability-based sampling, rate limiting, and every-Nth message sampling for high-volume scenarios.
+
+### 🔒 Redaction
+Automatic masking of sensitive data (passwords, API keys, PII) in log messages.
+
+### 📈 Metrics
+Built-in metrics collection for logging performance monitoring.
+
+### 🔗 Distributed Tracing
+OpenTelemetry-compatible trace context propagation with automatic span ID generation.
 
 ## When to Use Logly-Zig
 
@@ -56,9 +83,12 @@ Logly-Zig is perfect for:
 - **Cross-platform projects** targeting multiple operating systems
 - **Projects** that need structured logging for analysis
 - **Teams** familiar with Python's logging patterns
+- **Microservices** requiring distributed tracing support
+- **Compliance-sensitive** applications needing data redaction
 
 ## Next Steps
 
 - [Getting Started](/guide/getting-started) - Install and set up Logly-Zig
 - [Quick Start](/guide/quick-start) - Your first logging program
 - [Configuration](/guide/configuration) - Configure your logger
+

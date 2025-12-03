@@ -30,7 +30,7 @@ pub fn main() !void {
 
     // Example 3: UTC timezone
     // Switch to UTC time instead of local time
-    config.timezone = .UTC;
+    config.timezone = .utc;
     logger.configure(config);
     try logger.info("UTC time");
 }

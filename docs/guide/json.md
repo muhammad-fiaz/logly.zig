@@ -39,14 +39,31 @@ The JSON output contains the following fields:
 ```
 
 - `timestamp`: Unix timestamp in milliseconds
-- `level`: Log level string
+- `level`: Log level string (uses custom level name if set)
 - `module`: Module name (if enabled)
 - `function`: Function name (if enabled)
 - `file`: Filename (if enabled)
 - `line`: Line number (if enabled)
 - `message`: The log message
-- `message`: The log message
 - Context variables are added as top-level fields
+
+## Custom Levels in JSON
+
+Custom levels display their actual names in JSON output:
+
+```zig
+try logger.addCustomLevel("audit", 35, "35");
+try logger.custom("audit", "Security event");
+```
+
+Output:
+```json
+{
+  "timestamp": 1710930645000,
+  "level": "AUDIT",
+  "message": "Security event"
+}
+```
 
 ## Pretty Printing
 

@@ -23,20 +23,28 @@ A production-grade, high-performance structured logging library for Zig, designe
 
 ## Features
 
+### Core Features
 ✨ **Simple & Clean API** - Python-like logging interface (`logger.info()`, `logger.error()`, etc.)  
 🎯 **8 Log Levels** - TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, FAIL, CRITICAL  
 📁 **Multiple Sinks** - Console, file, and custom outputs  
 🔄 **File Rotation** - Time-based (hourly to yearly) and size-based rotation  
-🎨 **Colored Output** - ANSI colors with customizable callbacks  
+🎨 **Whole-Line Colors** - ANSI colors wrap entire log lines for better visual scanning  
 📊 **JSON Logging** - Structured JSON output for log aggregation  
 📝 **Custom Formats** - Customizable log message and timestamp formats
 🔗 **Context Binding** - Attach persistent key-value pairs to logs  
 ⚡ **Async I/O** - Non-blocking writes with configurable buffering  
 🔒 **Thread-Safe** - Safe concurrent logging  
-🎭 **Custom Levels** - Define your own log levels with priorities  
+🎭 **Custom Levels** - Define your own log levels with custom priorities and colors  
 📦 **Module Levels** - Set different log levels for specific modules  
 🖨️ **Formatted Logging** - Printf-style formatting support (`infof`, `debugf`, etc.)  
 📞 **Callbacks** - Monitor and react to log events
+🔍 **Filtering** - Rule-based log filtering by level, module, or content  
+📉 **Sampling** - Control log throughput with probability and rate-limiting  
+🔐 **Redaction** - Automatic masking of sensitive data (PII, credentials)  
+📈 **Metrics** - Built-in observability with log counters and statistics  
+🔗 **Distributed Tracing** - Trace ID, span ID, and correlation ID support  
+⚙️ **Configuration Presets** - Production, development, high-throughput, and secure presets
+🖥️ **Cross-Platform Colors** - Works on Linux, macOS, Windows 10+, and terminals
 
 ## Installation
 
@@ -45,7 +53,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.2.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz",
         // Run `zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.2.tar.gz` to get the hash
         .hash = "...",
     },
@@ -92,19 +100,22 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable ANSI colors on Windows (no-op on Linux/macOS)
+    _ = logly.Terminal.enableAnsiColors();
+
     // Create logger (console sink auto-enabled)
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Log at different levels - Python-like API!
-    try logger.trace("Detailed trace information");
-    try logger.debug("Debug information");
-    try logger.info("Application started");
-    try logger.success("Operation completed successfully!");
-    try logger.warning("Warning message");
-    try logger.err("Error occurred");
-    try logger.fail("Operation failed");
-    try logger.critical("Critical system error!");
+    // Log at different levels - entire line is colored!
+    try logger.trace("Detailed trace information");   // Cyan
+    try logger.debug("Debug information");            // Blue
+    try logger.info("Application started");           // White
+    try logger.success("Operation completed!");       // Green
+    try logger.warning("Warning message");            // Yellow
+    try logger.err("Error occurred");                 // Red
+    try logger.fail("Operation failed");              // Magenta
+    try logger.critical("Critical system error!");    // Bright Red
 }
 ```
 
@@ -227,6 +238,101 @@ _ = try logger.addSink(.{
 });
 ```
 
+### Distributed Tracing
+
+```zig
+// Set trace context for request tracking
+try logger.setTraceContext("trace-abc123", "span-001");
+try logger.setCorrelationId("request-789");
+
+try logger.info("Processing request");
+
+// Create child spans for nested operations
+{
+    var span = try logger.startSpan("database-query");
+    try logger.info("Executing query");
+    try span.end(null);
+}
+
+// Clear context
+logger.clearTraceContext();
+```
+
+### Filtering
+
+```zig
+var filter = logly.Filter.init(allocator);
+defer filter.deinit();
+
+// Only allow warnings and above
+try filter.addMinLevel(.warning);
+
+logger.setFilter(&filter);
+```
+
+### Sampling
+
+```zig
+// Sample 50% of logs for high-throughput scenarios
+var sampler = logly.Sampler.init(allocator, .{ .probability = 0.5 });
+defer sampler.deinit();
+
+logger.setSampler(&sampler);
+```
+
+### Redaction
+
+```zig
+var redactor = logly.Redactor.init(allocator);
+defer redactor.deinit();
+
+// Mask passwords in logs
+try redactor.addPattern(
+    "password",
+    .contains,
+    "password=",
+    "[REDACTED]",
+);
+
+logger.setRedactor(&redactor);
+try logger.info("User login: password=secret123");
+// Output: "User login: [REDACTED]secret123"
+```
+
+### Metrics
+
+```zig
+const logger = try logly.Logger.init(allocator);
+defer logger.deinit();
+
+// Enable metrics collection
+logger.enableMetrics();
+
+// Log some messages
+try logger.info("Request processed");
+try logger.err("Database error");
+
+// Get metrics snapshot
+if (logger.getMetrics()) |snapshot| {
+    std.debug.print("Total logs: {}\n", .{snapshot.total_records});
+    std.debug.print("Errors: {}\n", .{snapshot.error_count});
+}
+```
+
+### Production Configuration
+
+```zig
+// Use preset configurations
+const config = logly.ConfigPresets.production();
+logger.configure(config);
+
+// Or customize
+var config = logly.Config.production();
+config.level = .info;
+config.include_hostname = true;
+logger.configure(config);
+```
+
 ## Configuration
 
 ```zig
@@ -298,6 +404,15 @@ zig build example-module_levels
 zig build example-sink_formats
 zig build example-formatted_logging
 
+# Enterprise feature examples
+zig build example-filtering
+zig build example-sampling
+zig build example-redaction
+zig build example-metrics
+zig build example-tracing
+zig build example-color_options
+zig build example-production_config
+
 # Run an example
 ./zig-out/bin/basic
 ```
@@ -308,15 +423,20 @@ Full documentation is available at: https://muhammad-fiaz.github.io/logly.zig
 
 ## Comparison with Logly Other Variants
 
-| Feature        | Python Logly            | Rust Logly           | Logly-Zig           |
-| -------------- | ----------------------- | -------------------- | ------------------- |
-| Performance    | Maturin-Bindings (Fast) | Native Rust (Faster) | Native Zig (faster) |
-| Memory Safety  | Runtime                 | Compile-time         | Compile-time        |
-| Async Support  | ✓                       | ✓                    | ✓                   |
-| File Rotation  | ✓                       | ✓                    | ✓                   |
-| JSON Logging   | ✓                       | ✓                    | ✓                   |
-| Custom Colors  | ✓                       | ✓                    | ✓                   |
-| Simplified API | ✓                       | ✓                    | ✓                   |
+| Feature        | Python Logly            | Rust Logly           | Logly-Zig             |
+| -------------- | ----------------------- | -------------------- | --------------------- |
+| Performance    | Maturin-Bindings (Fast) | Native Rust (Faster) | Native Zig (Fastest)  |
+| Memory Safety  | Runtime                 | Compile-time         | Compile-time          |
+| Async Support  | ✓                       | ✓                    | ✓                     |
+| File Rotation  | ✓                       | ✓                    | ✓                     |
+| JSON Logging   | ✓                       | ✓                    | ✓                     |
+| Custom Colors  | ✓                       | ✓                    | ✓                     |
+| Simplified API | ✓                       | ✓                    | ✓                     |
+| Filtering      | ✓                       | ✓                    | ✓ (v0.0.3+)           |
+| Sampling       | - (Coming soon!)                      | - (Coming soon!)           | ✓ (v0.0.3+)           |
+| Redaction      | - (Coming soon!)             | - (Coming soon!)             | ✓ (v0.0.3+)           |
+| Metrics        | - (Coming soon!)           | - (Coming soon!)            | ✓ (v0.0.3+)           |
+| Tracing        | - (Coming soon!)           | - (Coming soon!)            | ✓ (v0.0.3+)           |
 
 ## Contributing
 

@@ -9,41 +9,194 @@ const Rotation = @import("rotation.zig").Rotation;
 /// Sinks are destinations where logs are written (e.g., console, file).
 /// Each sink can have its own configuration, overriding global settings.
 pub const SinkConfig = struct {
-    // 📁 File path for the sink. If null, defaults to console output.
+    /// File path for the sink. If null, defaults to console output.
     path: ?[]const u8 = null,
 
-    // 🔄 Rotation settings: "hourly", "daily", or "size".
+    /// Sink identifier name for metrics and debugging.
+    name: ?[]const u8 = null,
+
+    /// Rotation settings: "minutely", "hourly", "daily", "weekly", "monthly", "yearly".
     rotation: ?[]const u8 = null,
 
-    // 📏 Size limit for rotation (in bytes).
+    /// Size limit for rotation (in bytes).
     size_limit: ?u64 = null,
-    // 📝 Size limit as a string (e.g., "10MB").
+
+    /// Size limit as a string (e.g., "10MB", "1GB").
     size_limit_str: ?[]const u8 = null,
 
-    // 🗑️ Retention policy: Number of rotated files to keep.
+    /// Number of rotated files to keep.
     retention: ?usize = null,
 
-    // 🎚️ Sink-specific log level. Overrides the global level if set.
+    /// Sink-specific log level. Overrides the global level if set.
     level: ?Level = null,
 
-    // ⚡ Async writing: Use a background thread for non-blocking I/O.
+    /// Maximum log level for this sink (create level range filters).
+    max_level: ?Level = null,
+
+    /// Enable async writing with background buffering.
     async_write: bool = true,
+
+    /// Buffer size for async writing in bytes.
     buffer_size: usize = 8192,
 
-    // 📝 Output format overrides
+    /// Force JSON output for this sink.
     json: bool = false,
+
+    /// Pretty print JSON output with indentation.
     pretty_json: bool = false,
 
-    // 🎨 Color override: Force enable/disable colors for this sink.
-    // If null, follows global config (usually enabled for console, disabled for files).
+    /// Enable/disable colors for this sink.
+    /// If null, auto-detect (enabled for console, disabled for files).
     color: ?bool = null,
 
-    // 🔌 Enable/disable this sink initially.
+    /// Enable/disable this sink initially.
     enabled: bool = true,
 
-    /// Returns the default sink configuration (Console, synchronous, standard format).
+    /// Include timestamp in output.
+    include_timestamp: bool = true,
+
+    /// Include log level in output.
+    include_level: bool = true,
+
+    /// Include source location in output.
+    include_source: bool = false,
+
+    /// Include trace IDs in output (for distributed tracing).
+    include_trace_id: bool = false,
+
+    /// Custom log format string for this sink.
+    /// Overrides global format if set.
+    log_format: ?[]const u8 = null,
+
+    /// Time format for this sink.
+    time_format: ?[]const u8 = null,
+
+    /// Compression settings for file sinks.
+    compression: CompressionConfig = .{},
+
+    /// Filter configuration for this sink.
+    filter: FilterConfig = .{},
+
+    /// Error handling for this sink.
+    on_error: ErrorBehavior = .log_stderr,
+
+    /// Maximum records to buffer before forcing a flush.
+    max_buffer_records: usize = 1000,
+
+    /// Flush interval in milliseconds.
+    flush_interval_ms: u64 = 1000,
+
+    /// File permissions for created log files (Unix only).
+    file_mode: ?u32 = null,
+
+    /// Compression configuration.
+    pub const CompressionConfig = struct {
+        enabled: bool = false,
+        algorithm: Algorithm = .gzip,
+        level: u4 = 6,
+
+        pub const Algorithm = enum {
+            none,
+            gzip,
+            zstd,
+        };
+    };
+
+    /// Filter configuration for sink-level filtering.
+    pub const FilterConfig = struct {
+        /// Include only logs from these modules.
+        include_modules: ?[]const []const u8 = null,
+
+        /// Exclude logs from these modules.
+        exclude_modules: ?[]const []const u8 = null,
+
+        /// Include only logs containing these substrings.
+        include_messages: ?[]const []const u8 = null,
+
+        /// Exclude logs containing these substrings.
+        exclude_messages: ?[]const []const u8 = null,
+    };
+
+    /// Error behavior for sink write failures.
+    pub const ErrorBehavior = enum {
+        /// Silently ignore errors.
+        silent,
+
+        /// Log errors to stderr.
+        log_stderr,
+
+        /// Disable the sink on error.
+        disable_sink,
+
+        /// Propagate the error to the caller.
+        propagate,
+    };
+
+    /// Returns the default sink configuration (Console, async, standard format).
     pub fn default() SinkConfig {
         return .{};
+    }
+
+    /// Returns a file sink configuration.
+    ///
+    /// Arguments:
+    ///     file_path: Path to the log file.
+    ///
+    /// Returns:
+    ///     A SinkConfig configured for file output.
+    pub fn file(file_path: []const u8) SinkConfig {
+        return .{
+            .path = file_path,
+            .color = false,
+        };
+    }
+
+    /// Returns a JSON file sink configuration.
+    ///
+    /// Arguments:
+    ///     file_path: Path to the log file.
+    ///
+    /// Returns:
+    ///     A SinkConfig configured for JSON file output.
+    pub fn jsonFile(file_path: []const u8) SinkConfig {
+        return .{
+            .path = file_path,
+            .json = true,
+            .color = false,
+        };
+    }
+
+    /// Returns a rotating file sink configuration.
+    ///
+    /// Arguments:
+    ///     file_path: Path to the log file.
+    ///     rotation_interval: Rotation interval string.
+    ///     retention_count: Number of files to retain.
+    ///
+    /// Returns:
+    ///     A SinkConfig configured for rotating file output.
+    pub fn rotating(file_path: []const u8, rotation_interval: []const u8, retention_count: usize) SinkConfig {
+        return .{
+            .path = file_path,
+            .rotation = rotation_interval,
+            .retention = retention_count,
+            .color = false,
+        };
+    }
+
+    /// Returns an error-only sink configuration.
+    ///
+    /// Arguments:
+    ///     file_path: Path to the error log file.
+    ///
+    /// Returns:
+    ///     A SinkConfig configured to only capture error-level and above.
+    pub fn errorOnly(file_path: []const u8) SinkConfig {
+        return .{
+            .path = file_path,
+            .level = .err,
+            .color = false,
+        };
     }
 };
 

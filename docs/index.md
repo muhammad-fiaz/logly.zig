@@ -2,12 +2,12 @@
 layout: home
 
 hero:
-  name: Logly-Zig
+  name: Logly.Zig
   text: High-Performance Logging for Zig
   tagline: Production-ready structured logging with a clean, simple API
   image:
-    src: /logo.svg
-    alt: Logly-Zig
+    src: /logo.png
+    alt: Logly.Zig
   actions:
     - theme: brand
       text: Get Started
@@ -34,8 +34,8 @@ features:
     details: Structured JSON output for log aggregation and analysis
 
   - icon: 🎨
-    title: Colored Output
-    details: ANSI colors with customizable callbacks
+    title: Whole-Line Colors
+    details: ANSI colors wrap entire log lines for better visual scanning on all platforms
 
   - icon: 🔗
     title: Context Binding
@@ -51,7 +51,7 @@ features:
 
   - icon: 🎭
     title: Custom Levels
-    details: Define your own log levels with custom priorities
+    details: Define your own log levels with custom priorities and colors
 ---
 
 ## Quick Example
@@ -64,13 +64,17 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
+    // Enable ANSI colors on Windows (no-op on Linux/macOS)
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(gpa.allocator());
     defer logger.deinit();
 
-    try logger.info("Application started");
-    try logger.success("Operation completed!");
-    try logger.warning("Low memory");
-    try logger.err("Connection failed");
+    // Each level colors the ENTIRE line (timestamp, level, message)
+    try logger.info("Application started");      // White line
+    try logger.success("Operation completed!");  // Green line
+    try logger.warning("Low memory");            // Yellow line
+    try logger.err("Connection failed");         // Red line
 }
 ```
 
@@ -89,7 +93,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.1.0.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz",
         .hash = "...",
     },
 },

@@ -6,13 +6,17 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable ANSI colors on Windows (no-op on Linux/macOS)
+    // This ensures colors display correctly on all platforms
+    _ = logly.Terminal.enableAnsiColors();
+
     // Create logger (auto-sink enabled by default)
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Log at different levels - Python-like API
-    try logger.trace("This is a trace message");
-    try logger.debug("This is a debug message");
+    // Log at different levels - entire line is colored!
+    // Colors: trace=cyan, debug=blue, info=white, success=green,
+    //         warning=yellow, error=red, fail=magenta, critical=bright_red
     try logger.info("This is an info message");
     try logger.success("Operation completed successfully!");
     try logger.warning("This is a warning");

@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: 'Logly-Zig',
+  title: 'Logly.Zig',
   description: 'High-Performance Logging Library for Zig',
   base: '/logly.zig/',
   
@@ -12,6 +12,7 @@ export default defineConfig({
       { text: 'Home', link: '/' },
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'API', link: '/api/logger' },
+      { text: 'Examples', link: '/examples/basic' },
       { text: 'GitHub', link: 'https://github.com/muhammad-fiaz/logly.zig' }
     ],
 
@@ -30,7 +31,8 @@ export default defineConfig({
           { text: 'Log Levels', link: '/guide/log-levels' },
           { text: 'Configuration', link: '/guide/configuration' },
           { text: 'Sinks', link: '/guide/sinks' },
-          { text: 'Formatting', link: '/guide/formatting' }
+          { text: 'Formatting', link: '/guide/formatting' },
+          { text: 'Custom Levels', link: '/guide/custom-levels' }
         ]
       },
       {
@@ -40,8 +42,17 @@ export default defineConfig({
           { text: 'JSON Logging', link: '/guide/json' },
           { text: 'Context Binding', link: '/guide/context' },
           { text: 'Callbacks', link: '/guide/callbacks' },
-          { text: 'Custom Levels', link: '/guide/custom-levels' },
           { text: 'Async Logging', link: '/guide/async' }
+        ]
+      },
+      {
+        text: 'Enterprise Features',
+        items: [
+          { text: 'Filtering', link: '/guide/filtering' },
+          { text: 'Sampling', link: '/guide/sampling' },
+          { text: 'Redaction', link: '/guide/redaction' },
+          { text: 'Metrics', link: '/guide/metrics' },
+          { text: 'Distributed Tracing', link: '/guide/tracing' }
         ]
       },
       {
@@ -61,16 +72,23 @@ export default defineConfig({
           { text: 'File Logging', link: '/examples/file-logging' },
           { text: 'Rotation', link: '/examples/rotation' },
           { text: 'JSON Logging', link: '/examples/json' },
-          { text: 'Callbacks', link: '/examples/callbacks' },
-          { text: 'Context', link: '/examples/context' },
           { text: 'Custom Colors', link: '/examples/custom-colors' },
+          { text: 'Color Control', link: '/examples/color-control' },
+          { text: 'Context', link: '/examples/context' },
+          { text: 'Callbacks', link: '/examples/callbacks' },
           { text: 'Async Logging', link: '/examples/async-logging' },
           { text: 'Advanced Config', link: '/examples/advanced-config' },
           { text: 'Module Levels', link: '/examples/module-levels' },
           { text: 'Sink Formats', link: '/examples/sink-formats' },
           { text: 'Formatted Logging', link: '/examples/formatted-logging' },
           { text: 'Extended JSON', link: '/examples/json-extended' },
-          { text: 'Time Formatting', link: '/examples/time' }
+          { text: 'Time Formatting', link: '/examples/time' },
+          { text: 'Filtering', link: '/examples/filtering' },
+          { text: 'Sampling', link: '/examples/sampling' },
+          { text: 'Redaction', link: '/examples/redaction' },
+          { text: 'Metrics', link: '/examples/metrics' },
+          { text: 'Tracing', link: '/examples/tracing' },
+          { text: 'Production Config', link: '/examples/production-config' }
         ]
       },
     ],

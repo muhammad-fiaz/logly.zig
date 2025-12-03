@@ -10,6 +10,46 @@ The default format includes the timestamp, level, module (optional), and message
 [2024-03-20 10:30:45] [INFO] [main] Application started
 ```
 
+## Whole-Line Coloring
+
+Logly colors the **entire log line** based on the log level, not just the level tag:
+
+```
+\x1b[37m[2024-03-20 10:30:45] [INFO] Application started\x1b[0m     <- All white
+\x1b[33m[2024-03-20 10:30:45] [WARNING] Low disk space\x1b[0m       <- All yellow
+\x1b[31m[2024-03-20 10:30:45] [ERR] Connection failed\x1b[0m        <- All red
+```
+
+This makes it easier to scan logs visually.
+
+## Level Colors
+
+| Level | Color Code | Color |
+|-------|------------|-------|
+| TRACE | 36 | Cyan |
+| DEBUG | 34 | Blue |
+| INFO | 37 | White |
+| SUCCESS | 32 | Green |
+| WARNING | 33 | Yellow |
+| ERR | 31 | Red |
+| FAIL | 35 | Magenta |
+| CRITICAL | 91 | Bright Red |
+
+## Enabling Colors on Windows
+
+Windows requires enabling Virtual Terminal Processing:
+
+```zig
+const logly = @import("logly");
+
+pub fn main() !void {
+    // Enable ANSI colors on Windows (no-op on Linux/macOS)
+    _ = logly.Terminal.enableAnsiColors();
+    
+    // ... rest of initialization
+}
+```
+
 ## JSON Format
 
 You can enable JSON formatting globally or per-sink.
@@ -31,23 +71,27 @@ Output:
 }
 ```
 
+Custom levels show their actual names in JSON:
+
+```zig
+try logger.addCustomLevel("audit", 35, "35");
+try logger.custom("audit", "Security event");
+```
+
+```json
+{
+  "timestamp": 1710930645000,
+  "level": "AUDIT",
+  "message": "Security event"
+}
+```
+
 ## Pretty JSON
 
 For development, you might prefer pretty-printed JSON.
 
 ```zig
 config.pretty_json = true;
-```
-
-Output:
-
-```json
-{
-  "timestamp": 1710930645000,
-  "level": "INFO",
-  "module": "main",
-  "message": "Application started"
-}
 ```
 
 ## Customizing Output
@@ -62,14 +106,21 @@ config.show_filename = true;
 config.show_lineno = true;
 ```
 
-## Colors
+## Disabling Colors
 
-Logly-Zig uses ANSI color codes by default. You can customize the colors for each level using callbacks (see [Callbacks](/guide/callbacks)).
-
-To disable colors:
+To disable colors (for file output or compatibility):
 
 ```zig
 config.color = false;
+```
+
+Or per-sink:
+
+```zig
+_ = try logger.addSink(.{
+    .path = "app.log",
+    .color = false,  // No colors in file
+});
 ```
 
 ## Custom Format Strings
@@ -96,7 +147,7 @@ You can also customize the timestamp format and timezone:
 
 ```zig
 config.time_format = "unix"; // or default
-config.timezone = .UTC;
+config.timezone = .utc;      // or .local
 ```
 
 ## Formatted Logging

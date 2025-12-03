@@ -5,15 +5,23 @@ const Config = @import("config.zig").Config;
 const Sink = @import("sink.zig").Sink;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Record = @import("record.zig").Record;
+const Filter = @import("filter.zig").Filter;
+const Sampler = @import("sampler.zig").Sampler;
+const Redactor = @import("redactor.zig").Redactor;
+const Metrics = @import("metrics.zig").Metrics;
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
 ///
 /// This struct serves as the central hub for all logging operations. It handles:
-/// *   Sink management (adding, removing, enabling/disabling).
-/// *   Configuration updates.
-/// *   Context binding (structured logging).
-/// *   Custom log levels.
-/// *   Thread-safe logging dispatch.
+/// - Sink management (adding, removing, enabling/disabling)
+/// - Configuration updates
+/// - Context binding (structured logging)
+/// - Custom log levels
+/// - Thread-safe logging dispatch
+/// - Distributed tracing context propagation
+/// - Sampling and rate limiting
+/// - Sensitive data redaction
+/// - Metrics collection
 pub const Logger = struct {
     allocator: std.mem.Allocator,
     config: Config,
@@ -26,16 +34,33 @@ pub const Logger = struct {
     log_callback: ?*const fn (*const Record) anyerror!void = null,
     color_callback: ?*const fn (Level, []const u8) []const u8 = null,
 
+    /// Tracing context for distributed systems.
+    trace_id: ?[]const u8 = null,
+    span_id: ?[]const u8 = null,
+    correlation_id: ?[]const u8 = null,
+
+    /// Enterprise components.
+    filter: ?*Filter = null,
+    sampler: ?*Sampler = null,
+    redactor: ?*Redactor = null,
+    metrics: ?*Metrics = null,
+
+    /// Initialization timestamp for uptime tracking.
+    init_timestamp: i64 = 0,
+
+    /// Total records processed counter.
+    record_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
     /// Initializes a new Logger instance.
     ///
     /// This function allocates memory for the logger and initializes its internal structures.
     /// By default, it adds a console sink if `auto_sink` is enabled in the default config.
     ///
     /// Arguments:
-    /// * `allocator`: The memory allocator to use for internal allocations.
+    ///     allocator: The memory allocator to use for internal allocations.
     ///
     /// Returns:
-    /// * `!*Logger`: A pointer to the initialized Logger or an error.
+    ///     A pointer to the initialized Logger or an error.
     pub fn init(allocator: std.mem.Allocator) !*Logger {
         const logger = try allocator.create(Logger);
         logger.* = .{
@@ -45,9 +70,9 @@ pub const Logger = struct {
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
             .module_levels = std.StringHashMap(Level).init(allocator),
+            .init_timestamp = std.time.timestamp(),
         };
 
-        // 🚀 Auto-sink: We add a default console sink so you can start logging immediately!
         if (logger.config.auto_sink) {
             _ = try logger.addSink(SinkConfig.default());
         }
@@ -55,29 +80,52 @@ pub const Logger = struct {
         return logger;
     }
 
-    /// Deinitializes the logger and frees all associated resources.
+    /// Initializes a Logger with a specific configuration preset.
     ///
-    /// This method cleans up:
-    /// *   All sinks.
-    /// *   Context variables.
-    /// *   Custom levels.
-    /// *   Module levels.
-    /// *   The logger instance itself.
+    /// Arguments:
+    ///     allocator: The memory allocator to use.
+    ///     config: The configuration to use.
+    ///
+    /// Returns:
+    ///     A pointer to the initialized Logger.
+    pub fn initWithConfig(allocator: std.mem.Allocator, config: Config) !*Logger {
+        const logger = try allocator.create(Logger);
+        logger.* = .{
+            .allocator = allocator,
+            .config = config,
+            .sinks = .empty,
+            .context = std.StringHashMap(std.json.Value).init(allocator),
+            .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
+            .module_levels = std.StringHashMap(Level).init(allocator),
+            .init_timestamp = std.time.timestamp(),
+        };
+
+        if (config.auto_sink) {
+            _ = try logger.addSink(SinkConfig.default());
+        }
+
+        if (config.enable_metrics) {
+            const m = try allocator.create(Metrics);
+            m.* = Metrics.init(allocator);
+            logger.metrics = m;
+        }
+
+        return logger;
+    }
+
+    /// Deinitializes the logger and frees all associated resources.
     pub fn deinit(self: *Logger) void {
-        // 🧹 Cleanup time! Freeing all sinks.
         for (self.sinks.items) |sink| {
             sink.deinit();
         }
         self.sinks.deinit(self.allocator);
 
-        // 🗑️ Clearing context map.
         var ctx_it = self.context.iterator();
         while (ctx_it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
         }
         self.context.deinit();
 
-        // 🎨 Removing custom levels.
         var cl_it = self.custom_levels.iterator();
         while (cl_it.next()) |entry| {
             self.allocator.free(entry.value_ptr.name);
@@ -85,27 +133,169 @@ pub const Logger = struct {
         }
         self.custom_levels.deinit();
 
-        // 📦 Clearing module levels.
         var ml_it = self.module_levels.iterator();
         while (ml_it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
         }
         self.module_levels.deinit();
 
+        // Note: filter, sampler, and redactor are NOT owned by the logger.
+        // They are set via setFilter/setSampler/setRedactor and must be
+        // deinited by the caller who created them.
+
+        if (self.metrics) |m| {
+            m.deinit();
+            self.allocator.destroy(m);
+        }
+
+        if (self.trace_id) |t| self.allocator.free(t);
+        if (self.span_id) |s| self.allocator.free(s);
+        if (self.correlation_id) |c| self.allocator.free(c);
+
         self.allocator.destroy(self);
     }
 
     /// Updates the logger configuration.
     ///
-    /// This method is thread-safe and updates the global configuration for the logger.
-    ///
     /// Arguments:
-    /// * `config`: The new configuration object.
+    ///     config: The new configuration object.
     pub fn configure(self: *Logger, config: Config) void {
-        // 🔒 Thread safety first! Locking to update config.
         self.mutex.lock();
         defer self.mutex.unlock();
         self.config = config;
+    }
+
+    /// Sets the filter for this logger.
+    ///
+    /// Note: The logger does NOT take ownership of the filter.
+    /// The caller is responsible for keeping the filter alive and deinitializing it.
+    ///
+    /// Arguments:
+    ///     filter: The filter instance to use.
+    pub fn setFilter(self: *Logger, filter: *Filter) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.filter = filter;
+    }
+
+    /// Sets the sampler for this logger.
+    ///
+    /// Note: The logger does NOT take ownership of the sampler.
+    /// The caller is responsible for keeping the sampler alive and deinitializing it.
+    ///
+    /// Arguments:
+    ///     sampler: The sampler instance to use.
+    pub fn setSampler(self: *Logger, sampler: *Sampler) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.sampler = sampler;
+    }
+
+    /// Sets the redactor for sensitive data masking.
+    ///
+    /// Note: The logger does NOT take ownership of the redactor.
+    /// The caller is responsible for keeping the redactor alive and deinitializing it.
+    ///
+    /// Arguments:
+    ///     redactor: The redactor instance to use.
+    pub fn setRedactor(self: *Logger, redactor: *Redactor) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.redactor = redactor;
+    }
+
+    /// Enables metrics collection.
+    pub fn enableMetrics(self: *Logger) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (self.metrics == null) {
+            const m = self.allocator.create(Metrics) catch return;
+            m.* = Metrics.init(self.allocator);
+            self.metrics = m;
+        }
+    }
+
+    /// Gets metrics snapshot.
+    ///
+    /// Returns:
+    ///     A snapshot of current metrics, or null if metrics are disabled.
+    pub fn getMetrics(self: *Logger) ?Metrics.Snapshot {
+        if (self.metrics) |m| {
+            return m.getSnapshot();
+        }
+        return null;
+    }
+
+    /// Sets the trace context for distributed tracing.
+    ///
+    /// Arguments:
+    ///     trace_id: The trace identifier.
+    ///     span_id: The span identifier (optional).
+    pub fn setTraceContext(self: *Logger, trace_id: []const u8, span_id: ?[]const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.trace_id) |t| self.allocator.free(t);
+        self.trace_id = try self.allocator.dupe(u8, trace_id);
+
+        if (span_id) |s| {
+            if (self.span_id) |old| self.allocator.free(old);
+            self.span_id = try self.allocator.dupe(u8, s);
+        }
+    }
+
+    /// Sets the correlation ID for request tracking.
+    ///
+    /// Arguments:
+    ///     correlation_id: The correlation identifier.
+    pub fn setCorrelationId(self: *Logger, correlation_id: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.correlation_id) |c| self.allocator.free(c);
+        self.correlation_id = try self.allocator.dupe(u8, correlation_id);
+    }
+
+    /// Clears the trace context.
+    pub fn clearTraceContext(self: *Logger) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.trace_id) |t| {
+            self.allocator.free(t);
+            self.trace_id = null;
+        }
+        if (self.span_id) |s| {
+            self.allocator.free(s);
+            self.span_id = null;
+        }
+        if (self.correlation_id) |c| {
+            self.allocator.free(c);
+            self.correlation_id = null;
+        }
+    }
+
+    /// Creates a child span for nested tracing.
+    ///
+    /// Arguments:
+    ///     name: Name for the span (used for context, not stored in span_id).
+    ///
+    /// Returns:
+    ///     A SpanContext that automatically restores the previous span on completion.
+    pub fn startSpan(self: *Logger, name: []const u8) !SpanContext {
+        _ = name;
+        const parent_span = self.span_id;
+        const new_span = try Record.generateSpanId(self.allocator);
+
+        self.mutex.lock();
+        self.span_id = new_span;
+        self.mutex.unlock();
+
+        return SpanContext{
+            .logger = self,
+            .parent_span_id = parent_span,
+            .start_time = std.time.nanoTimestamp(),
+        };
     }
 
     pub fn addSink(self: *Logger, config: SinkConfig) !usize {
@@ -290,7 +480,6 @@ pub const Logger = struct {
         defer self.mutex.unlock();
 
         // Check level filtering
-        // If module is specified, check module-specific level first
         var effective_min_level = self.config.level;
         if (module) |m| {
             if (self.module_levels.get(m)) |l| {
@@ -302,12 +491,46 @@ pub const Logger = struct {
             return;
         }
 
-        // Create record
-        var record = Record.init(self.allocator, level, message);
+        // Apply sampling if configured (do early before record creation)
+        if (self.sampler) |sampler| {
+            if (!sampler.shouldSample()) {
+                return;
+            }
+        }
+
+        // Apply redaction if configured
+        var final_message = message;
+        var redacted_message: ?[]u8 = null;
+        if (self.redactor) |redactor| {
+            redacted_message = try redactor.redact(message);
+            final_message = redacted_message orelse message;
+        }
+        defer if (redacted_message) |rm| self.allocator.free(rm);
+
+        // Create record with enhanced fields
+        var record = Record.init(self.allocator, level, final_message);
         defer record.deinit();
 
         if (module) |m| {
             record.module = m;
+        }
+
+        // Apply filter if configured (needs record)
+        if (self.filter) |filter| {
+            if (!filter.shouldLog(&record)) {
+                return;
+            }
+        }
+
+        // Add trace context
+        if (self.trace_id) |t| {
+            record.trace_id = t;
+        }
+        if (self.span_id) |s| {
+            record.span_id = s;
+        }
+        if (self.correlation_id) |c| {
+            record.correlation_id = c;
         }
 
         // Copy context
@@ -316,6 +539,14 @@ pub const Logger = struct {
             try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
         }
 
+        // Update metrics
+        if (self.metrics) |m| {
+            m.recordLog(level, final_message.len);
+        }
+
+        // Increment record count
+        _ = self.record_count.fetchAdd(1, .monotonic);
+
         // Call log callback
         if (self.config.enable_callbacks and self.log_callback != null) {
             try self.log_callback.?(&record);
@@ -323,8 +554,101 @@ pub const Logger = struct {
 
         // Write to all sinks
         for (self.sinks.items) |sink| {
+            sink.write(&record, self.config) catch |write_err| {
+                if (self.metrics) |m| {
+                    m.recordError();
+                }
+                switch (self.config.error_handling) {
+                    .silent => {},
+                    .log_and_continue => {
+                        std.debug.print("Sink write error: {}\n", .{write_err});
+                    },
+                    .fail_fast => return write_err,
+                    .callback => {},
+                }
+            };
+        }
+    }
+
+    /// Logs an error with associated error information.
+    ///
+    /// Arguments:
+    ///     message: The error message.
+    ///     err_val: The error value.
+    pub fn logError(self: *Logger, message: []const u8, err_val: anyerror) !void {
+        if (!self.enabled) return;
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var record = Record.init(self.allocator, .err, message);
+        defer record.deinit();
+
+        record.error_info = .{
+            .name = @errorName(err_val),
+            .message = message,
+            .stack_trace = null,
+            .code = null,
+        };
+
+        if (self.trace_id) |t| record.trace_id = t;
+        if (self.span_id) |s| record.span_id = s;
+
+        if (self.metrics) |m| {
+            m.recordLog(.err, message.len);
+            m.recordError();
+        }
+
+        for (self.sinks.items) |sink| {
             try sink.write(&record, self.config);
         }
+    }
+
+    /// Logs a timed operation. Returns the duration in nanoseconds.
+    ///
+    /// Arguments:
+    ///     level: The log level.
+    ///     message: The log message.
+    ///     start_time: The start timestamp from std.time.nanoTimestamp().
+    ///
+    /// Returns:
+    ///     The duration in nanoseconds.
+    pub fn logTimed(self: *Logger, level: Level, message: []const u8, start_time: i128) !i128 {
+        const end_time = std.time.nanoTimestamp();
+        const duration = end_time - start_time;
+
+        if (!self.enabled) return duration;
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var record = Record.init(self.allocator, level, message);
+        defer record.deinit();
+
+        record.duration_ns = @intCast(@max(0, duration));
+
+        if (self.trace_id) |t| record.trace_id = t;
+        if (self.span_id) |s| record.span_id = s;
+
+        if (self.metrics) |m| {
+            m.recordLog(level, message.len);
+        }
+
+        for (self.sinks.items) |sink| {
+            try sink.write(&record, self.config);
+        }
+
+        return duration;
+    }
+
+    /// Returns the total number of records logged.
+    pub fn getRecordCount(self: *Logger) u64 {
+        return self.record_count.load(.monotonic);
+    }
+
+    /// Returns uptime in seconds since logger initialization.
+    pub fn getUptime(self: *Logger) i64 {
+        return std.time.timestamp() - self.init_timestamp;
     }
 
     // Logging methods with simple, Python-like API
@@ -361,9 +685,114 @@ pub const Logger = struct {
     }
 
     pub fn custom(self: *Logger, level_name: []const u8, message: []const u8) !void {
-        const level = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
-        const mapped_level = Level.fromPriority(level.priority) orelse .info;
-        try self.log(mapped_level, message, null);
+        const level_info = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
+        const mapped_level = Level.fromPriority(level_info.priority) orelse .info;
+        try self.logCustomLevel(mapped_level, level_info.name, level_info.color, message, null);
+    }
+
+    /// Internal method to log with custom level name and color
+    fn logCustomLevel(
+        self: *Logger,
+        level: Level,
+        custom_name: []const u8,
+        custom_color: []const u8,
+        message: []const u8,
+        module: ?[]const u8,
+    ) !void {
+        if (!self.enabled) return;
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        // Check level filtering
+        var effective_min_level = self.config.level;
+        if (module) |m| {
+            if (self.module_levels.get(m)) |l| {
+                effective_min_level = l;
+            }
+        }
+
+        if (level.priority() < effective_min_level.priority()) {
+            return;
+        }
+
+        // Apply sampling if configured
+        if (self.sampler) |sampler| {
+            if (!sampler.shouldSample()) {
+                return;
+            }
+        }
+
+        // Apply redaction if configured
+        var final_message = message;
+        var redacted_message: ?[]u8 = null;
+        if (self.redactor) |redactor| {
+            redacted_message = try redactor.redact(message);
+            final_message = redacted_message orelse message;
+        }
+        defer if (redacted_message) |rm| self.allocator.free(rm);
+
+        // Create record with custom level info
+        var record = Record.initCustom(self.allocator, level, custom_name, custom_color, final_message);
+        defer record.deinit();
+
+        if (module) |m| {
+            record.module = m;
+        }
+
+        // Apply filter if configured
+        if (self.filter) |filter| {
+            if (!filter.shouldLog(&record)) {
+                return;
+            }
+        }
+
+        // Add trace context
+        if (self.trace_id) |t| {
+            record.trace_id = t;
+        }
+        if (self.span_id) |s| {
+            record.span_id = s;
+        }
+        if (self.correlation_id) |c| {
+            record.correlation_id = c;
+        }
+
+        // Copy context
+        var it = self.context.iterator();
+        while (it.next()) |entry| {
+            try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+
+        // Update metrics
+        if (self.metrics) |m| {
+            m.recordLog(level, final_message.len);
+        }
+
+        // Increment record count
+        _ = self.record_count.fetchAdd(1, .monotonic);
+
+        // Call log callback
+        if (self.config.enable_callbacks and self.log_callback != null) {
+            try self.log_callback.?(&record);
+        }
+
+        // Write to all sinks
+        for (self.sinks.items) |sink| {
+            sink.write(&record, self.config) catch |write_err| {
+                if (self.metrics) |m| {
+                    m.recordError();
+                }
+                switch (self.config.error_handling) {
+                    .silent => {},
+                    .log_and_continue => {
+                        std.debug.print("Sink write error: {}\n", .{write_err});
+                    },
+                    .fail_fast => return write_err,
+                    .callback => {},
+                }
+            };
+        }
     }
 
     // Formatted logging methods
@@ -420,22 +849,56 @@ pub const Logger = struct {
     /// This allows for dynamic custom logging levels defined at runtime.
     ///
     /// Arguments:
-    /// * `level_name`: The name of the custom level (must be registered first).
-    /// * `fmt`: The format string.
-    /// * `args`: The arguments for the format string.
+    ///     level_name: The name of the custom level (must be registered first).
+    ///     fmt: The format string.
+    ///     args: The arguments for the format string.
     pub fn customf(self: *Logger, level_name: []const u8, comptime fmt: []const u8, args: anytype) !void {
-        // 🕵️‍♂️ Look up the custom level. If it's not there, we can't log it.
-        const level = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
-
-        // 🎨 Format the message using the provided arguments.
+        const level_info = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
+        const mapped_level = Level.fromPriority(level_info.priority) orelse .info;
+        try self.logCustomLevel(mapped_level, level_info.name, level_info.color, message, null);
+    }
+};
 
-        // 🗺️ Map the custom level priority to a standard level for internal handling.
-        // This ensures the sink logic knows how to handle it (e.g., coloring).
-        const mapped_level = Level.fromPriority(level.priority) orelse .info;
+/// Context for span-based tracing operations.
+/// Automatically restores the parent span when the span is ended.
+pub const SpanContext = struct {
+    logger: *Logger,
+    parent_span_id: ?[]const u8,
+    start_time: i128,
 
-        try self.log(mapped_level, message, null);
+    /// Ends the span and logs the duration.
+    ///
+    /// Arguments:
+    ///     message: Optional message to log with span completion.
+    pub fn end(self: *SpanContext, message: ?[]const u8) !void {
+        const duration = std.time.nanoTimestamp() - self.start_time;
+
+        if (message) |msg| {
+            _ = try self.logger.logTimed(.debug, msg, self.start_time);
+        }
+
+        self.logger.mutex.lock();
+        defer self.logger.mutex.unlock();
+
+        if (self.logger.span_id) |current| {
+            self.logger.allocator.free(current);
+        }
+        self.logger.span_id = self.parent_span_id;
+
+        _ = duration;
+    }
+
+    /// Ends the span without logging.
+    pub fn endSilent(self: *SpanContext) void {
+        self.logger.mutex.lock();
+        defer self.logger.mutex.unlock();
+
+        if (self.logger.span_id) |current| {
+            self.logger.allocator.free(current);
+        }
+        self.logger.span_id = self.parent_span_id;
     }
 };
 
@@ -475,7 +938,6 @@ pub const ScopedLogger = struct {
         try self.logger.log(.critical, message, self.module);
     }
 
-    // Formatted logging methods for ScopedLogger
     pub fn tracef(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);

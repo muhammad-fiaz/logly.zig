@@ -1,6 +1,14 @@
 # Custom Colors
 
-This example demonstrates how to define and use custom colors for log levels. You can customize the appearance of your logs by defining ANSI color codes for specific levels.
+This example demonstrates how to define and use custom colors for log levels. Logly colors the **entire log line** (timestamp, level, and message), not just the level tag.
+
+## Platform Support
+
+Logly supports ANSI colors on:
+- **Linux**: Native support
+- **macOS**: Native support
+- **Windows 10+**: Enabled via `Terminal.enableAnsiColors()`
+- **VS Code Terminal**: Full support
 
 ## Code Example
 
@@ -13,33 +21,56 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable ANSI colors on Windows (no-op on Linux/macOS)
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Add a custom level with specific color
+    // Define custom levels with specific colors
     // Format: "FG;BG;STYLE" or just "FG"
-    // 31=Red, 32=Green, 33=Yellow, 34=Blue, 35=Magenta, 36=Cyan
-    // 1=Bold, 4=Underline
+    // Colors: 30=Black, 31=Red, 32=Green, 33=Yellow, 34=Blue, 35=Magenta, 36=Cyan, 37=White
+    // Bright: 90-97 for bright versions (e.g., 91=Bright Red)
+    // Styles: 1=Bold, 4=Underline, 7=Reverse
 
-    try logger.addCustomLevel("NOTICE", 22, "36;1"); // Cyan Bold
-    try logger.addCustomLevel("ALERT", 42, "31;4");  // Red Underline
+    try logger.addCustomLevel("NOTICE", 22, "36;1");    // Cyan Bold
+    try logger.addCustomLevel("ALERT", 42, "31;4");     // Red Underline
+    try logger.addCustomLevel("HIGHLIGHT", 52, "33;7"); // Yellow Reverse
 
-    try logger.info("Standard Info (Green)");
-    try logger.custom("NOTICE", "This is a notice (Cyan Bold)");
-    try logger.warning("Standard Warning (Yellow)");
-    try logger.custom("ALERT", "This is an alert (Red Underline)");
-    try logger.err("Standard Error (Red)");
+    // Standard levels (entire line colored):
+    try logger.info("Info message - entire line is white");
+    try logger.success("Success message - entire line is green");
+    try logger.warning("Warning message - entire line is yellow");
+    try logger.err("Error message - entire line is red");
 
-    std.debug.print("\nCustom colors example completed!\n", .{});
+    // Custom levels (entire line colored with custom colors):
+    try logger.custom("NOTICE", "Notice message - entire line cyan bold");
+    try logger.custom("ALERT", "Alert message - entire line red underline");
+    try logger.custom("HIGHLIGHT", "Highlighted - entire line yellow reverse");
 }
 ```
+
+## Standard Level Colors
+
+| Level    | ANSI Code | Color           |
+|----------|-----------|-----------------|
+| TRACE    | 36        | Cyan            |
+| DEBUG    | 34        | Blue            |
+| INFO     | 37        | White           |
+| SUCCESS  | 32        | Green           |
+| WARNING  | 33        | Yellow          |
+| ERROR    | 31        | Red             |
+| FAIL     | 35        | Magenta         |
+| CRITICAL | 91        | Bright Red      |
 
 ## Expected Output
 
 ```text
-[INFO] Standard Info (Green)
-[NOTICE] This is a notice (Cyan Bold)
-[WARNING] Standard Warning (Yellow)
-[ALERT] This is an alert (Red Underline)
-[ERROR] Standard Error (Red)
+[2025-01-01 12:00:00.000] [INFO] Info message - entire line is white
+[2025-01-01 12:00:00.000] [SUCCESS] Success message - entire line is green
+[2025-01-01 12:00:00.000] [WARNING] Warning message - entire line is yellow
+[2025-01-01 12:00:00.000] [ERROR] Error message - entire line is red
+[2025-01-01 12:00:00.000] [NOTICE] Notice message - entire line cyan bold
+[2025-01-01 12:00:00.000] [ALERT] Alert message - entire line red underline
+[2025-01-01 12:00:00.000] [HIGHLIGHT] Highlighted - entire line yellow reverse
 ```

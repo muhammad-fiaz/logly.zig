@@ -28,7 +28,7 @@ pub const Formatter = struct {
     /// This function handles:
     /// *   Custom format strings (parsing tags like `{time}`, `{level}`).
     /// *   Default text formatting.
-    /// *   Color application.
+    /// *   Color application (ENTIRE line is colored, not just level tag).
     ///
     /// Arguments:
     /// * `record`: The log record to format.
@@ -41,8 +41,17 @@ pub const Formatter = struct {
         errdefer buf.deinit(self.allocator);
         const writer = buf.writer(self.allocator);
 
+        const use_color = config.color and config.global_color_display;
+        // Use custom color if available, otherwise use standard level color
+        const color_code = record.levelColor();
+
         // Check for custom log format
         if (config.log_format) |fmt_str| {
+            // Start color for entire line
+            if (use_color) {
+                try writer.print("\x1b[{s}m", .{color_code});
+            }
+
             var i: usize = 0;
             while (i < fmt_str.len) {
                 if (fmt_str[i] == '{') {
@@ -56,11 +65,8 @@ pub const Formatter = struct {
                     if (std.mem.eql(u8, tag, "time")) {
                         try self.writeTimestamp(writer, record.timestamp, config);
                     } else if (std.mem.eql(u8, tag, "level")) {
-                        if (config.color and config.global_color_display) {
-                            try writer.print("\x1b[{s}m{s}\x1b[0m", .{ record.level.defaultColor(), record.level.asString() });
-                        } else {
-                            try writer.writeAll(record.level.asString());
-                        }
+                        // Use custom level name if available
+                        try writer.writeAll(record.levelName());
                     } else if (std.mem.eql(u8, tag, "message")) {
                         try writer.writeAll(record.message);
                     } else if (std.mem.eql(u8, tag, "module")) {
@@ -81,12 +87,18 @@ pub const Formatter = struct {
                     i += 1;
                 }
             }
-            // Reset color at end just in case
-            if (config.color and config.global_color_display) {
+
+            // Reset color at end of entire line
+            if (use_color) {
                 try writer.writeAll("\x1b[0m");
             }
         } else {
-            // Default format
+            // Default format - color entire line
+
+            // Start color for entire line
+            if (use_color) {
+                try writer.print("\x1b[{s}m", .{color_code});
+            }
 
             // Timestamp
             if (config.show_time) {
@@ -95,12 +107,8 @@ pub const Formatter = struct {
                 try writer.writeAll("] ");
             }
 
-            // Level (with color if enabled)
-            if (config.color and config.global_color_display) {
-                try writer.print("\x1b[{s}m[{s}]\x1b[0m ", .{ record.level.defaultColor(), record.level.asString() });
-            } else {
-                try writer.print("[{s}] ", .{record.level.asString()});
-            }
+            // Level (use custom name if available)
+            try writer.print("[{s}] ", .{record.levelName()});
 
             // Module
             if (config.show_module and record.module != null) {
@@ -123,6 +131,11 @@ pub const Formatter = struct {
 
             // Message
             try writer.writeAll(record.message);
+
+            // Reset color at end of entire line
+            if (use_color) {
+                try writer.writeAll("\x1b[0m");
+            }
         }
 
         return buf.toOwnedSlice(self.allocator);
@@ -209,9 +222,9 @@ pub const Formatter = struct {
             try writer.writeAll("\"");
         }
 
-        // Level
+        // Level (use custom name if available)
         try writer.writeAll(comma);
-        try writer.print("{s}\"level\"{s}\"{s}\"", .{ indent, sep, record.level.asString() });
+        try writer.print("{s}\"level\"{s}\"{s}\"", .{ indent, sep, record.levelName() });
 
         // Message
         try writer.writeAll(comma);

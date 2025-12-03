@@ -4,6 +4,14 @@ Learn the basics of Logly-Zig with practical examples.
 
 ## Basic Usage
 
+### Enable Colors (Windows)
+
+For colors to display correctly on Windows, call this at startup:
+
+```zig
+_ = logly.Terminal.enableAnsiColors(); // No-op on Linux/macOS
+```
+
 ### Simple Console Logging
 
 ```zig
@@ -15,27 +23,32 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable ANSI colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    try logger.info("Hello, Logly!");
-    try logger.success("Operation completed!");
-    try logger.warning("Be careful!");
-    try logger.err("Something went wrong!");
+    // Entire line is colored based on level!
+    try logger.info("Hello, Logly!");       // White line
+    try logger.success("Operation done!");   // Green line
+    try logger.warning("Be careful!");       // Yellow line
+    try logger.err("Something went wrong!"); // Red line
 }
 ```
 
 ### All Log Levels
 
 ```zig
-try logger.trace("Detailed trace");      // Priority 5
-try logger.debug("Debug info");          // Priority 10
-try logger.info("Information");          // Priority 20
-try logger.success("Success!");          // Priority 25
-try logger.warning("Warning");           // Priority 30
-try logger.err("Error occurred");        // Priority 40
-try logger.fail("Operation failed");     // Priority 45
-try logger.critical("Critical!");        // Priority 50
+// Each level colors the ENTIRE log line (timestamp, level, message)
+try logger.trace("Detailed trace");      // Priority 5  - Cyan
+try logger.debug("Debug info");          // Priority 10 - Blue
+try logger.info("Information");          // Priority 20 - White
+try logger.success("Success!");          // Priority 25 - Green
+try logger.warning("Warning");           // Priority 30 - Yellow
+try logger.err("Error occurred");        // Priority 40 - Red
+try logger.fail("Operation failed");     // Priority 45 - Magenta
+try logger.critical("Critical!");        // Priority 50 - Bright Red
 ```
 
 ### Formatted Logging
@@ -60,6 +73,7 @@ logger.configure(config);
 
 _ = try logger.addSink(.{
     .path = "app.log",
+    .color = false, // Disable colors for file (default)
 });
 
 try logger.info("Logging to file!");
@@ -86,6 +100,7 @@ config.json = true;
 logger.configure(config);
 
 try logger.info("JSON formatted");
+// Output: {"timestamp":"...","level":"INFO","message":"JSON formatted"}
 ```
 
 ### Context Binding
