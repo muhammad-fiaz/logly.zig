@@ -70,7 +70,7 @@ Add to your `build.zig.zon`:
 .dependencies = .{
     .logly = .{
         .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz",
-        .hash = "12209a4e5c3b8f7d2e6a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6",
+        .hash = "...", // you needed to add hash here :)
     },
 },
 ```
