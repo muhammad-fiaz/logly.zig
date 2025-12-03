@@ -468,14 +468,26 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 > **Note:** Benchmark results may vary based on operating system, environment, Zig version, hardware specifications, and software configurations.
 
-### Running Benchmarks
+
+### Reproducing the Benchmark Results
+
+To reproduce the benchmark table above locally, run the benchmark executable included with the repository. The benchmark implementation is at [bench/benchmark.zig](bench/benchmark.zig) and is licensed under the repository's `LICENSE` (MIT) in the project root.
+
+Run the benchmark with the following command (Windows and POSIX both supported):
 
 ```bash
-# Run all benchmarks
+# Build and run the benchmark (default build output in `zig-out`)
 zig build bench
 
-# Results are printed to stdout with formatted table
+# Or build then run the built executable directly (useful if you pass extra flags to build):
+zig build -p zig-out
+./zig-out/bin/benchmark       # POSIX
+.\zig-out\bin\benchmark.exe # Windows PowerShell
 ```
+
+Notes:
+- The benchmark code uses a null output path (NUL on Windows, /dev/null on POSIX) during tests so console/file I/O does not bottleneck results; you can inspect [bench/benchmark.zig](bench/benchmark.zig) for details and tune `BENCHMARK_ITERATIONS`/`WARMUP_ITERATIONS` to extend runs.
+- The printed results include the benchmark name, operations per second, average latency (ns), and a short notes column indicating the operation. Results will vary by OS, Zig version, hardware, and environment.
 
 
 ### Performance Notes
