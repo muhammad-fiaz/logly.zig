@@ -46,6 +46,38 @@ zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.ta
 
 Copy the output hash (e.g., `1220abcd23f9f0c8...`) into your `build.zig.zon`.
 
+### Method 3: Prebuilt Libraries
+
+While we recommend using the Zig Package Manager, we also provide prebuilt static libraries for each release on the [Releases](https://github.com/muhammad-fiaz/logly.zig/releases) page. These can be useful for integration with other build systems or languages.
+
+**Available Prebuilt Libraries:**
+
+| Platform | Architecture | File |
+|----------|-------------|------|
+| **Windows** | x86_64 | `logly-x86_64-windows.lib` |
+| **Windows** | x86 | `logly-x86-windows.lib` |
+| **Linux** | x86_64 | `liblogly-x86_64-linux.a` |
+| **Linux** | x86 | `liblogly-x86-linux.a` |
+| **Linux** | ARM64 | `liblogly-aarch64-linux.a` |
+| **macOS** | x86_64 | `liblogly-x86_64-macos.a` |
+| **macOS** | ARM64 (Apple Silicon) | `liblogly-aarch64-macos.a` |
+| **Bare Metal** | x86_64 | `liblogly-x86_64-freestanding.a` |
+| **Bare Metal** | ARM64 | `liblogly-aarch64-freestanding.a` |
+| **Bare Metal** | RISC-V 64 | `liblogly-riscv64-freestanding.a` |
+| **Bare Metal** | ARM | `liblogly-arm-freestanding.a` |
+
+**Using Prebuilt Libraries:**
+
+1. Download the appropriate library from the [Releases](https://github.com/muhammad-fiaz/logly.zig/releases) page
+2. Place it in your project (e.g., `libs/` folder)
+3. Update your `build.zig`:
+
+```zig
+// Assuming you downloaded the library to `libs/`
+exe.addLibraryPath(b.path("libs"));
+exe.linkSystemLibrary("logly");
+```
+
 ### Update build.zig
 
 Add the dependency to your `build.zig`:
@@ -129,6 +161,63 @@ You should see colored output:
 [2024-01-15 10:30:45] [INFO] Logly-Zig is working!
 [2024-01-15 10:30:45] [SUCCESS] Installation complete!
 [2024-01-15 10:30:45] [WARNING] Ready for production!
+```
+
+## Color Support
+
+Logly-Zig provides **whole-line coloring** where the entire log line (timestamp, level, message) is colored based on the log level.
+
+### Built-in Level Colors
+
+| Level | Color | ANSI Code |
+|-------|-------|-----------|
+| TRACE | Cyan | 36 |
+| DEBUG | Blue | 34 |
+| INFO | White | 37 |
+| SUCCESS | Green | 32 |
+| WARNING | Yellow | 33 |
+| ERROR | Red | 31 |
+| FAIL | Magenta | 35 |
+| CRITICAL | Bright Red | 91 |
+
+### Custom Colors
+
+You can create custom log levels with any ANSI color code:
+
+```zig
+// Add custom level with cyan bold color
+try logger.addCustomLevel("NOTICE", 35, "36;1");
+
+// Use the custom level
+try logger.custom("NOTICE", "Custom notice message");
+```
+
+**Common ANSI color codes:**
+- `30` - Black
+- `31` - Red
+- `32` - Green
+- `33` - Yellow
+- `34` - Blue
+- `35` - Magenta
+- `36` - Cyan
+- `37` - White
+- `90-97` - Bright variants
+- Add `;1` for bold (e.g., `36;1` for cyan bold)
+- Add `;4` for underline (e.g., `31;4` for red underline)
+
+### Disabling Colors
+
+```zig
+// Global color disable
+var config = logly.Config.default();
+config.global_color_display = false;
+logger.configure(config);
+
+// Per-sink color disable
+_ = try logger.addSink(.{
+    .path = "logs/app.log",
+    .color = false,  // No colors in file
+});
 ```
 
 ## Troubleshooting

@@ -126,3 +126,100 @@ Choose a priority for your custom level that fits into the standard hierarchy:
 - FAIL: 45
 - **Custom levels: 46-49** (between FAIL and CRITICAL)
 - CRITICAL: 50
+
+## Custom Levels with JSON Output
+
+Custom levels work seamlessly with JSON output - the level name appears in the JSON:
+
+```zig
+var config = logly.Config.default();
+config.json = true;
+config.pretty_json = true;
+logger.configure(config);
+
+try logger.addCustomLevel("AUDIT", 25, "35");
+try logger.custom("AUDIT", "User action logged");
+```
+
+Output:
+```json
+{
+  "timestamp": "2025-01-15 10:30:45.123",
+  "level": "AUDIT",
+  "message": "User action logged"
+}
+```
+
+## Custom Levels with File Sinks
+
+Custom levels work with all sink types - console, file (text), and file (JSON):
+
+```zig
+// Disable auto console sink
+var config = logly.Config.default();
+config.auto_sink = false;
+logger.configure(config);
+
+// Add file sink for text output
+_ = try logger.addSink(.{
+    .path = "logs/app.log",
+});
+
+// Add JSON file sink
+_ = try logger.addSink(.{
+    .path = "logs/app.json",
+    .json = true,
+    .pretty_json = true,
+});
+
+// Add console sink
+_ = try logger.addSink(.{});
+
+// Register and use custom level
+try logger.addCustomLevel("AUDIT", 25, "35");
+try logger.custom("AUDIT", "This logs to all three sinks");
+```
+
+## Custom Levels with Context
+
+Custom levels support all context features like standard levels:
+
+```zig
+var config = logly.Config.default();
+config.json = true;
+config.pretty_json = true;
+logger.configure(config);
+
+// Bind context
+try logger.bind("service", .{ .string = "auth-service" });
+try logger.bind("user_id", .{ .string = "user-12345" });
+
+try logger.addCustomLevel("AUDIT", 25, "35");
+try logger.custom("AUDIT", "User authentication successful");
+```
+
+Output:
+```json
+{
+  "timestamp": "2025-01-15 10:30:45.123",
+  "level": "AUDIT",
+  "message": "User authentication successful",
+  "service": "auth-service",
+  "user_id": "user-12345"
+}
+```
+
+## Feature Parity with Standard Levels
+
+Custom levels have **full feature parity** with standard levels:
+
+| Feature | Standard Levels | Custom Levels |
+|---------|-----------------|---------------|
+| Console output | ✅ | ✅ |
+| File output | ✅ | ✅ |
+| JSON output | ✅ | ✅ |
+| Colored output | ✅ | ✅ (custom colors) |
+| Context binding | ✅ | ✅ |
+| Formatted messages | ✅ | ✅ |
+| Level filtering | ✅ | ✅ (by priority) |
+| All sink types | ✅ | ✅ |

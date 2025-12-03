@@ -2,6 +2,9 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
+    // Enable ANSI colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();

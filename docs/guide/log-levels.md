@@ -21,7 +21,7 @@ Logly colors the **entire log line** (timestamp, level tag, and message), not ju
 
 ```
 [2024-01-15 10:30:45] [WARNING] Low disk space    <- Entire line is yellow
-[2024-01-15 10:30:46] [ERR] Connection failed     <- Entire line is red
+[2024-01-15 10:30:46] [ERROR] Connection failed   <- Entire line is red
 ```
 
 ## Usage

@@ -182,7 +182,7 @@ Combine with semicolons:
 | INFO | White | 37 |
 | SUCCESS | Green | 32 |
 | WARNING | Yellow | 33 |
-| ERR | Red | 31 |
+| ERROR | Red | 31 |
 | FAIL | Magenta | 35 |
 | CRITICAL | Bright Red | 91 |
 

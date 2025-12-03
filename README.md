@@ -21,32 +21,48 @@
 
 A production-grade, high-performance structured logging library for Zig, designed with a clean, intuitive, and developer-friendly API.
 
-## Features
+<details>
+<summary><strong>✨ Features of Logly</strong> (click to expand)</summary>
 
-### Core Features
-✨ **Simple & Clean API** - Python-like logging interface (`logger.info()`, `logger.error()`, etc.)  
-🎯 **8 Log Levels** - TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, FAIL, CRITICAL  
-📁 **Multiple Sinks** - Console, file, and custom outputs  
-🔄 **File Rotation** - Time-based (hourly to yearly) and size-based rotation  
-🎨 **Whole-Line Colors** - ANSI colors wrap entire log lines for better visual scanning  
-📊 **JSON Logging** - Structured JSON output for log aggregation  
-📝 **Custom Formats** - Customizable log message and timestamp formats
-🔗 **Context Binding** - Attach persistent key-value pairs to logs  
-⚡ **Async I/O** - Non-blocking writes with configurable buffering  
-🔒 **Thread-Safe** - Safe concurrent logging  
-🎭 **Custom Levels** - Define your own log levels with custom priorities and colors  
-📦 **Module Levels** - Set different log levels for specific modules  
-🖨️ **Formatted Logging** - Printf-style formatting support (`infof`, `debugf`, etc.)  
-📞 **Callbacks** - Monitor and react to log events
-🔍 **Filtering** - Rule-based log filtering by level, module, or content  
-📉 **Sampling** - Control log throughput with probability and rate-limiting  
-🔐 **Redaction** - Automatic masking of sensitive data (PII, credentials)  
-📈 **Metrics** - Built-in observability with log counters and statistics  
-🔗 **Distributed Tracing** - Trace ID, span ID, and correlation ID support  
-⚙️ **Configuration Presets** - Production, development, high-throughput, and secure presets
-🖥️ **Cross-Platform Colors** - Works on Linux, macOS, Windows 10+, and terminals
+| Feature | Description |
+|---------|-------------|
+| ✨ **Simple & Clean API** | Python-like logging interface (`logger.info()`, `logger.err()`, etc.) |
+| 🎯 **8 Log Levels** | TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, FAIL, CRITICAL |
+| 📁 **Multiple Sinks** | Console, file, and custom outputs simultaneously |
+| 🔄 **File Rotation** | Time-based (hourly to yearly) and size-based rotation |
+| 🎨 **Whole-Line Colors** | ANSI colors wrap entire log lines for better visual scanning |
+| 📊 **JSON Logging** | Structured JSON output with valid array format for file storage |
+| 📝 **Custom Formats** | Customizable log message and timestamp formats |
+| 🔗 **Context Binding** | Attach persistent key-value pairs to logs |
+| ⚡ **Async I/O** | Non-blocking writes with configurable buffering |
+| 🔒 **Thread-Safe** | Safe concurrent logging from multiple threads |
+| 🎭 **Custom Levels** | Define your own log levels with custom priorities and colors |
+| 📦 **Module Levels** | Set different log levels for specific modules |
+| 🖨️ **Formatted Logging** | Printf-style formatting support (`infof`, `debugf`, etc.) |
+| 📞 **Callbacks** | Monitor and react to log events programmatically |
+| 🖥️ **Cross-Platform Colors** | Works on Linux, macOS, Windows 10+, and popular terminals |
+| 🔍 **Filtering** | Rule-based log filtering by level, module, or content |
+| 📉 **Sampling** | Control log throughput with probability and rate-limiting |
+| 🔐 **Redaction** | Automatic masking of sensitive data (PII, credentials) |
+| 📈 **Metrics** | Built-in observability with log counters and statistics |
+| 🔗 **Distributed Tracing** | Trace ID, span ID, and correlation ID support |
+| ⚙️ **Configuration Presets** | Production, development, high-throughput, and secure presets |
+
+</details>
 
 ## Installation
+
+### Method 1: Zig Fetch (Recommended)
+
+The easiest way to add Logly to your project:
+
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz
+```
+
+This automatically adds the dependency with the correct hash to your `build.zig.zon`.
+
+### Method 2: Manual Configuration
 
 Add to your `build.zig.zon`:
 
@@ -54,11 +70,12 @@ Add to your `build.zig.zon`:
 .dependencies = .{
     .logly = .{
         .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz",
-        // Run `zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.2.tar.gz` to get the hash
-        .hash = "...",
+        .hash = "12209a4e5c3b8f7d2e6a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6",
     },
 },
 ```
+
+> **Note:** Run `zig fetch --save <url>` to automatically get the correct hash, or run `zig build` and copy the expected hash from the error message.
 
 Then in your `build.zig`:
 
@@ -214,8 +231,24 @@ try logger.err("Error occurred"); // Callback triggers
 ```zig
 // Add custom level between WARNING (30) and ERROR (40)
 try logger.addCustomLevel("NOTICE", 35, "96"); // Cyan color
+try logger.addCustomLevel("AUDIT", 25, "35;1"); // Magenta Bold
 
+// Use custom levels - supports all features like standard levels
 try logger.custom("NOTICE", "Custom level message");
+try logger.custom("AUDIT", "User action recorded");
+
+// Formatted custom level messages
+try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" });
+
+// Custom levels work with JSON output
+var config = logly.Config.default();
+config.json = true;
+logger.configure(config);
+try logger.custom("AUDIT", "Appears as level: AUDIT in JSON");
+
+// Custom levels work with file sinks
+_ = try logger.addSink(.{ .path = "logs/audit.log" });
+try logger.custom("AUDIT", "Written to file with custom level name");
 ```
 
 ### Multiple Sinks
@@ -385,6 +418,74 @@ logger.configure(config);
 - `weekly` - Rotate every week
 - `monthly` - Rotate every 30 days
 - `yearly` - Rotate every 365 days
+
+## Performance & Benchmarks
+
+Logly.Zig is designed for high-performance logging with minimal overhead. Below are benchmark results from running `zig build bench`:
+
+### Benchmark Results
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| Console (no color) - info | 14,554 | 68,711 | Plain text, no ANSI codes |
+| Console (no color) - formatted | 12,752 | 78,421 | Printf-style formatting |
+| Console (with color) - info | 14,913 | 67,055 | ANSI color wrapping |
+| Console (with color) - formatted | 13,374 | 74,775 | Colored + formatting |
+| JSON (no color) - info | 19,620 | 50,969 | Compact JSON output |
+| JSON (no color) - formatted | 13,852 | 72,193 | JSON with formatting |
+| JSON (with color) - info | 18,549 | 53,911 | JSON with ANSI colors |
+| JSON (with color) - error | 18,154 | 55,084 | JSON colored error |
+| Pretty JSON - info | 13,403 | 74,610 | Indented JSON output |
+| Custom format - info | 15,820 | 63,212 | `{time} \| {level} \| {message}` |
+| Level: TRACE | 20,154 | 49,619 | Trace level messages |
+| Level: DEBUG | 20,459 | 48,879 | Debug level messages |
+| Level: INFO | 14,984 | 66,737 | Info level messages |
+| Level: SUCCESS | 20,825 | 48,019 | Success level messages |
+| Level: WARNING | 20,192 | 49,524 | Warning level messages |
+| Level: ERROR | 20,906 | 47,832 | Error level messages |
+| Level: FAIL | 14,935 | 66,957 | Fail level messages |
+| Level: CRITICAL | 20,570 | 48,615 | Critical level messages |
+| Level (color): TRACE | 11,120 | 89,929 | Colored trace messages |
+| Level (color): DEBUG | 19,905 | 50,238 | Colored debug messages |
+| Level (color): INFO | 14,488 | 69,024 | Colored info messages |
+| Level (color): SUCCESS | 18,049 | 55,404 | Colored success messages |
+| Level (color): WARNING | 19,454 | 51,404 | Colored warning messages |
+| Level (color): ERROR | 18,726 | 53,402 | Colored error messages |
+| Level (color): FAIL | 18,700 | 53,476 | Colored fail messages |
+| Level (color): CRITICAL | 18,199 | 54,949 | Colored critical messages |
+| Custom Level: AUDIT | 16,018 | 62,429 | User-defined log level |
+| Custom Level (color): AUDIT | 18,164 | 55,055 | Colored custom level |
+| File (no color) - info | 16,245 | 61,557 | Plain file output |
+| File (no color) - error | 19,433 | 51,459 | Plain file error output |
+| File (with color) - info | 15,025 | 66,554 | File with ANSI codes |
+| File (with color) - error | 18,266 | 54,747 | File colored error |
+| Full metadata - info | 15,769 | 63,415 | Time + module + file + line |
+| Minimal config - info | 16,916 | 59,116 | No timestamp or module |
+| Production config - info | 18,909 | 52,885 | JSON with optimizations |
+| Multiple sinks (3) - info | 12,968 | 77,114 | Console + JSON + Pretty |
+
+**Average Throughput: ~17,000 ops/sec**
+
+> **Note:** Benchmark results may vary based on operating system, environment, Zig version, hardware specifications, and software configurations.
+
+### Running Benchmarks
+
+```bash
+# Run all benchmarks
+zig build bench
+
+# Results are printed to stdout with formatted table
+```
+
+
+### Performance Notes
+
+- **JSON logging** is fastest due to simpler string concatenation
+- **Color overhead** is minimal (~2-3% performance impact)
+- **Formatted logging** (`infof`, `debugf`, etc.) adds ~10% overhead vs simple strings
+- **Full metadata** (file, line, function) adds ~15% overhead
+- All benchmarks use `ReleaseFast` optimization
+- Results measured on Windows with output to NUL device
 
 ## Building
 

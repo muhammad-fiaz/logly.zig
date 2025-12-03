@@ -209,6 +209,15 @@ pub const Formatter = struct {
         const sep = if (pretty) ": " else ":";
         const comma = if (pretty) ",\n" else ",";
 
+        // Check if colors should be used for JSON output
+        const use_color = config.color and config.global_color_display;
+        const color_code = record.levelColor();
+
+        // Start color for entire JSON line/block
+        if (use_color) {
+            try writer.print("\x1b[{s}m", .{color_code});
+        }
+
         try writer.writeAll("{");
         try writer.writeAll(newline);
 
@@ -309,6 +318,12 @@ pub const Formatter = struct {
 
         try writer.writeAll(newline);
         try writer.writeAll("}");
+
+        // Reset color at end of JSON
+        if (use_color) {
+            try writer.writeAll("\x1b[0m");
+        }
+
         return buf.toOwnedSlice(self.allocator);
     }
 };

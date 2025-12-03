@@ -288,7 +288,7 @@ pub fn main() !void {
 | INFO | White | 37 | General info |
 | SUCCESS | Green | 32 | Success messages |
 | WARNING | Yellow | 33 | Warnings |
-| ERR | Red | 31 | Errors |
+| ERROR | Red | 31 | Errors |
 | FAIL | Magenta | 35 | Failures |
 | CRITICAL | Bright Red | 91 | Critical errors |
 

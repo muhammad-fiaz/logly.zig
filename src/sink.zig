@@ -234,6 +234,7 @@ pub const Sink = struct {
     buffer: std.ArrayList(u8),
     mutex: std.Thread.Mutex = .{},
     enabled: bool = true,
+    json_first_entry: bool = true, // Track if this is the first JSON entry for file output
 
     pub fn init(allocator: std.mem.Allocator, config: SinkConfig) !*Sink {
         const sink = try allocator.create(Sink);
@@ -243,6 +244,7 @@ pub const Sink = struct {
             .formatter = Formatter.init(allocator),
             .buffer = .empty,
             .enabled = config.enabled,
+            .json_first_entry = true,
         };
         errdefer sink.deinit();
 
@@ -256,6 +258,13 @@ pub const Sink = struct {
                 .read = true,
                 .truncate = false,
             });
+
+            // Write opening bracket for JSON array files
+            if (config.json) {
+                if (sink.file) |file| {
+                    try file.writeAll("[\n");
+                }
+            }
 
             var size_limit = config.size_limit;
             if (size_limit == null and config.size_limit_str != null) {
@@ -278,6 +287,12 @@ pub const Sink = struct {
 
     pub fn deinit(self: *Sink) void {
         self.flush() catch {};
+        // Write closing bracket for JSON array files
+        if (self.config.json and self.file != null) {
+            if (self.file) |file| {
+                file.writeAll("\n]") catch {};
+            }
+        }
         if (self.file) |f| f.close();
         if (self.rotation) |*r| r.deinit();
         self.buffer.deinit(self.allocator);
@@ -336,15 +351,36 @@ pub const Sink = struct {
         // Write to console or file
         if (self.file) |file| {
             if (global_config.global_file_storage) {
+                // For JSON file output, add comma separator between entries
+                const is_json_file = effective_config.json and self.file != null;
+
                 if (self.config.async_write) {
+                    // Add comma before entry if not first (for JSON files)
+                    if (is_json_file and !self.json_first_entry) {
+                        try self.buffer.appendSlice(self.allocator, ",\n");
+                    }
                     try self.buffer.appendSlice(self.allocator, formatted);
-                    try self.buffer.append(self.allocator, '\n');
+                    if (!is_json_file) {
+                        try self.buffer.append(self.allocator, '\n');
+                    }
+                    if (is_json_file) {
+                        self.json_first_entry = false;
+                    }
                     if (self.buffer.items.len >= self.config.buffer_size) {
                         try self.flush();
                     }
                 } else {
+                    // Add comma before entry if not first (for JSON files)
+                    if (is_json_file and !self.json_first_entry) {
+                        try file.writeAll(",\n");
+                    }
                     try file.writeAll(formatted);
-                    try file.writeAll("\n");
+                    if (!is_json_file) {
+                        try file.writeAll("\n");
+                    }
+                    if (is_json_file) {
+                        self.json_first_entry = false;
+                    }
                 }
             }
         } else {

@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "tracing", .path = "examples/tracing.zig" },
         .{ .name = "production_config", .path = "examples/production_config.zig" },
         .{ .name = "color_options", .path = "examples/color_options.zig" },
+        .{ .name = "custom_levels_full", .path = "examples/custom_levels_full.zig" },
     };
 
     inline for (examples) |example| {
@@ -62,6 +63,24 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    // Benchmark
+    const bench_exe = b.addExecutable(.{
+        .name = "benchmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/benchmark.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    bench_exe.root_module.addImport("logly", logly_module);
+
+    const install_bench = b.addInstallArtifact(bench_exe, .{});
+    const run_bench = b.addRunArtifact(bench_exe);
+    run_bench.step.dependOn(&install_bench.step);
+
+    const bench_step = b.step("bench", "Run benchmarks");
+    bench_step.dependOn(&run_bench.step);
 
     // Install step for library
     const lib = b.addLibrary(.{

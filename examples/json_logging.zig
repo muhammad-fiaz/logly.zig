@@ -2,6 +2,9 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
+    // Enable ANSI colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -9,10 +12,11 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Enable JSON output
+    // Enable JSON output with colors
     var config = logly.Config.default();
     config.json = true;
     config.pretty_json = true;
+    config.color = true; // Enable colors for JSON output
     logger.configure(config);
 
     // Bind context that will appear in all logs

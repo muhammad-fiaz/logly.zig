@@ -30,6 +30,7 @@ export default defineConfig({
         items: [
           { text: 'Log Levels', link: '/guide/log-levels' },
           { text: 'Configuration', link: '/guide/configuration' },
+          { text: 'Colors & Styling', link: '/guide/colors' },
           { text: 'Sinks', link: '/guide/sinks' },
           { text: 'Formatting', link: '/guide/formatting' },
           { text: 'Custom Levels', link: '/guide/custom-levels' }

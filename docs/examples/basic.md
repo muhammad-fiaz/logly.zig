@@ -44,7 +44,7 @@ Each line is colored according to its level:
 [2024-01-15 10:30:45] [INFO] This is an info message        <- White line
 [2024-01-15 10:30:45] [SUCCESS] Operation completed!        <- Green line
 [2024-01-15 10:30:45] [WARNING] This is a warning           <- Yellow line
-[2024-01-15 10:30:45] [ERR] This is an error                <- Red line
+[2024-01-15 10:30:45] [ERROR] This is an error              <- Red line
 [2024-01-15 10:30:45] [FAIL] Operation failed               <- Magenta line
 [2024-01-15 10:30:45] [CRITICAL] Critical system error!     <- Bright Red line
 ```
@@ -58,6 +58,6 @@ Each line is colored according to its level:
 | INFO | 37 | White |
 | SUCCESS | 32 | Green |
 | WARNING | 33 | Yellow |
-| ERR | 31 | Red |
+| ERROR | 31 | Red |
 | FAIL | 35 | Magenta |
 | CRITICAL | 91 | Bright Red |

@@ -17,7 +17,7 @@ Logly colors the **entire log line** based on the log level, not just the level 
 ```
 \x1b[37m[2024-03-20 10:30:45] [INFO] Application started\x1b[0m     <- All white
 \x1b[33m[2024-03-20 10:30:45] [WARNING] Low disk space\x1b[0m       <- All yellow
-\x1b[31m[2024-03-20 10:30:45] [ERR] Connection failed\x1b[0m        <- All red
+\x1b[31m[2024-03-20 10:30:45] [ERROR] Connection failed\x1b[0m      <- All red
 ```
 
 This makes it easier to scan logs visually.
@@ -31,7 +31,7 @@ This makes it easier to scan logs visually.
 | INFO | 37 | White |
 | SUCCESS | 32 | Green |
 | WARNING | 33 | Yellow |
-| ERR | 31 | Red |
+| ERROR | 31 | Red |
 | FAIL | 35 | Magenta |
 | CRITICAL | 91 | Bright Red |
 
