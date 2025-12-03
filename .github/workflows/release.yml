@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.0
+          version: 0.15.2
       
       - name: Build Library
         run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
@@ -90,17 +90,35 @@ jobs:
           body: |
             ${{ github.event.release.body }}
 
-            ## 📦 Installation
+            ### Option A — Automatic (Recommended)
 
-            Add this to your `build.zig.zon`:
+            Run this to install the dependency and automatically save the hash:
+
+            ```bash
+            zig fetch --save https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz
+            ```
+
+            After running, Zig updates your `build.zig.zon` with something like:
 
             ```zig
             .dependencies = .{
                 .logly = .{
-                    .url = "${{ steps.get_url.outputs.url }}",
+                    .url = "https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz",
                     .hash = "${{ steps.calc_hash.outputs.hash }}",
                 },
             },
+            ```
+
+            ### Option B — Manual
+
+            ```bash
+            zig fetch --hash https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz
+            ```
+
+            Copy that hash into:
+
+            ```zig
+            .hash = "<your_hash_here>"
             ```
 
             ## 📥 Downloads (Prebuilt Library)
