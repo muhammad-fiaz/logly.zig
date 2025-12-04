@@ -302,11 +302,23 @@ pub const Sink = struct {
 
         if (!self.enabled) return;
 
-        // Check level filtering
+        // Check minimum level filtering
         if (self.config.level) |min_level| {
             if (record.level.priority() < min_level.priority()) {
                 return;
             }
+        }
+
+        // Check maximum level filtering
+        if (self.config.max_level) |max_level| {
+            if (record.level.priority() > max_level.priority()) {
+                return;
+            }
+        }
+
+        // Apply per-sink filter configuration
+        if (!self.applyFilterConfig(record)) {
+            return;
         }
 
         // Check rotation
@@ -398,5 +410,65 @@ pub const Sink = struct {
             try file.writeAll(self.buffer.items);
             self.buffer.clearRetainingCapacity();
         }
+    }
+
+    /// Applies per-sink filter configuration to determine if the record should be logged.
+    /// Returns true if the record passes all filters, false otherwise.
+    fn applyFilterConfig(self: *const Sink, record: *const Record) bool {
+        const filter = self.config.filter;
+
+        // Check include_modules - if set, only allow logs from these modules
+        if (filter.include_modules) |modules| {
+            if (modules.len > 0) {
+                const module = record.module orelse return false;
+                var found = false;
+                for (modules) |m| {
+                    if (std.mem.indexOf(u8, record.message, m) != null or
+                        std.mem.startsWith(u8, module, m) or
+                        std.mem.eql(u8, module, m))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return false;
+            }
+        }
+
+        // Check exclude_modules - if set, exclude logs from these modules
+        if (filter.exclude_modules) |modules| {
+            if (record.module) |module| {
+                for (modules) |m| {
+                    if (std.mem.startsWith(u8, module, m) or std.mem.eql(u8, module, m)) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // Check include_messages - if set, only allow messages containing these substrings
+        if (filter.include_messages) |messages| {
+            if (messages.len > 0) {
+                var found = false;
+                for (messages) |m| {
+                    if (std.mem.indexOf(u8, record.message, m) != null) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return false;
+            }
+        }
+
+        // Check exclude_messages - if set, exclude messages containing these substrings
+        if (filter.exclude_messages) |messages| {
+            for (messages) |m| {
+                if (std.mem.indexOf(u8, record.message, m) != null) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 };

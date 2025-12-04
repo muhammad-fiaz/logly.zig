@@ -39,6 +39,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 |---------|-------------|
 | ✨ **Simple & Clean API** | Python-like logging interface (`logger.info()`, `logger.err()`, etc.) |
 | 🎯 **8 Log Levels** | TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, FAIL, CRITICAL |
+| 🚀 **Custom Levels** | Define your own log levels with custom priorities and colors |
 | 📁 **Multiple Sinks** | Console, file, and custom outputs simultaneously |
 | 🔄 **File Rotation** | Time-based (hourly to yearly) and size-based rotation |
 | 🎨 **Whole-Line Colors** | ANSI colors wrap entire log lines for better visual scanning |
@@ -53,6 +54,10 @@ A production-grade, high-performance structured logging library for Zig, designe
 | 📞 **Callbacks** | Monitor and react to log events programmatically |
 | 🖥️ **Cross-Platform Colors** | Works on Linux, macOS, Windows 10+, and popular terminals |
 | 🔍 **Filtering** | Rule-based log filtering by level, module, or content |
+| 🪪 **Per-Sink Filtering** | Configure filters on each sink in addition to global logger filters |
+| 🏗️ **Arena Allocation** | Optional arena allocator for reduced allocation overhead in high-throughput scenarios |
+| 📍 **Source Location** | Optional clickable `file:line` output via `@src()` when `show_filename`/`show_lineno` are enabled |
+| 🔧 **Method Aliases** | Convenience aliases for common APIs e.g., `add()` / `remove()` for sink management, `warn()` / `crit()` for logging |
 | 📉 **Sampling** | Control log throughput with probability and rate-limiting |
 | 🔐 **Redaction** | Automatic masking of sensitive data (PII, credentials) |
 | 📈 **Metrics** | Built-in observability with log counters and statistics |
@@ -527,7 +532,7 @@ var config = logly.Config.default()
 | INFO     | 20       | `logger.info()`     | -              | General information     |
 | SUCCESS  | 25       | `logger.success()`  | -              | Successful operations   |
 | WARNING  | 30       | `logger.warning()`  | `warn()`       | Warning messages        |
-| ERROR    | 40       | `logger.err()`      | -              | Error conditions        |
+| ERROR    | 40       | `logger.err()`      | `error()`      | Error conditions        |
 | FAIL     | 45       | `logger.fail()`     | -              | Operation failures      |
 | CRITICAL | 50       | `logger.critical()` | `crit()`       | Critical system errors  |
 

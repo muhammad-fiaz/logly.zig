@@ -238,3 +238,98 @@ test "filter basic" {
     try std.testing.expect(!filter.shouldLog(&record_info));
     try std.testing.expect(filter.shouldLog(&record_err));
 }
+
+test "filter max level" {
+    var filter = Filter.init(std.testing.allocator);
+    defer filter.deinit();
+
+    try filter.addMinLevel(.info);
+    try filter.addMaxLevel(.warning);
+
+    var record_debug = Record.init(std.testing.allocator, .debug, "test");
+    defer record_debug.deinit();
+
+    var record_info = Record.init(std.testing.allocator, .info, "test");
+    defer record_info.deinit();
+
+    var record_warning = Record.init(std.testing.allocator, .warning, "test");
+    defer record_warning.deinit();
+
+    var record_err = Record.init(std.testing.allocator, .err, "test");
+    defer record_err.deinit();
+
+    // debug < info (min), should not pass
+    try std.testing.expect(!filter.shouldLog(&record_debug));
+    // info == info (min), should pass
+    try std.testing.expect(filter.shouldLog(&record_info));
+    // warning == warning (max), should pass
+    try std.testing.expect(filter.shouldLog(&record_warning));
+    // err > warning (max), should not pass
+    try std.testing.expect(!filter.shouldLog(&record_err));
+}
+
+test "filter module prefix" {
+    var filter = Filter.init(std.testing.allocator);
+    defer filter.deinit();
+
+    try filter.addModulePrefix("database");
+
+    var record_no_module = Record.init(std.testing.allocator, .info, "test");
+    defer record_no_module.deinit();
+
+    var record_db = Record.init(std.testing.allocator, .info, "test");
+    defer record_db.deinit();
+    record_db.module = "database.query";
+
+    var record_http = Record.init(std.testing.allocator, .info, "test");
+    defer record_http.deinit();
+    record_http.module = "http.server";
+
+    // No module should fail
+    try std.testing.expect(!filter.shouldLog(&record_no_module));
+    // database.query starts with "database", should pass
+    try std.testing.expect(filter.shouldLog(&record_db));
+    // http.server does not start with "database", should fail
+    try std.testing.expect(!filter.shouldLog(&record_http));
+}
+
+test "filter message contains" {
+    var filter = Filter.init(std.testing.allocator);
+    defer filter.deinit();
+
+    try filter.addMessageFilter("heartbeat", .deny);
+
+    var record_normal = Record.init(std.testing.allocator, .info, "User logged in");
+    defer record_normal.deinit();
+
+    var record_heartbeat = Record.init(std.testing.allocator, .info, "heartbeat check");
+    defer record_heartbeat.deinit();
+
+    // Normal message should pass
+    try std.testing.expect(filter.shouldLog(&record_normal));
+    // Message containing "heartbeat" should be denied
+    try std.testing.expect(!filter.shouldLog(&record_heartbeat));
+}
+
+test "filter with custom level" {
+    var filter = Filter.init(std.testing.allocator);
+    defer filter.deinit();
+
+    // Set minimum level to warning (priority 30)
+    try filter.addMinLevel(.warning);
+
+    // Custom level with priority 35 (between warning 30 and err 40)
+    var record_custom = Record.initCustom(std.testing.allocator, .warning, "AUDIT", "35", "Audit event");
+    defer record_custom.deinit();
+
+    // Custom level uses the base level for filtering, which is .warning (30)
+    // Since warning (30) >= warning (30), it should pass
+    try std.testing.expect(filter.shouldLog(&record_custom));
+
+    // Custom level with lower priority (mapped to info which is 20)
+    var record_custom_low = Record.initCustom(std.testing.allocator, .info, "NOTICE", "96", "Notice event");
+    defer record_custom_low.deinit();
+
+    // info (20) < warning (30), should not pass
+    try std.testing.expect(!filter.shouldLog(&record_custom_low));
+}
