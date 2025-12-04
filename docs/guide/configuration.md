@@ -63,21 +63,100 @@ logger.configure(config);
 | `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss"` | Timestamp format                                     |
 | `timezone`               | `enum`        | `.local`                | Timezone for timestamps (`.local` or `.utc`)         |
 
-## Configuration Presets
+## Module Configuration
 
-Logly-Zig provides pre-configured presets for common scenarios:
+The `Config` struct provides settings for various logging modules. Each module can be enabled and configured through its respective config section:
+
+### Thread Pool Configuration
 
 ```zig
-// Use Config methods directly
-const prod_config = logly.Config.production();
-const dev_config = logly.Config.development();
-const perf_config = logly.Config.highThroughput();
-const secure_config = logly.Config.secure();
+var config = logly.Config.default();
+config.thread_pool = .{
+    .enabled = true,              // Enable thread pool
+    .thread_count = 4,            // Number of worker threads (0 = auto)
+    .queue_size = 10000,          // Max queued tasks
+    .stack_size = 1024 * 1024,    // Stack size per thread
+    .work_stealing = true,        // Enable work stealing
+};
+```
 
-// Or use the ConfigPresets wrapper
-const ConfigPresets = logly.ConfigPresets;
-const prod = ConfigPresets.production();
-const dev = ConfigPresets.development();
+### Scheduler Configuration
+
+```zig
+var config = logly.Config.default();
+config.scheduler = .{
+    .enabled = true,              // Enable scheduler
+    .cleanup_max_age_days = 7,    // Delete logs older than 7 days
+    .max_files = 10,              // Keep max 10 rotated files
+    .compress_before_cleanup = true, // Compress before deleting
+    .file_pattern = "*.log",      // Pattern for log files
+};
+```
+
+### Compression Configuration
+
+```zig
+var config = logly.Config.default();
+config.compression = .{
+    .enabled = true,              // Enable compression
+    .algorithm = .deflate,        // Compression algorithm
+    .level = .default,            // Compression level
+    .on_rotation = true,          // Compress on rotation
+    .keep_original = false,       // Delete original after compression
+    .extension = ".gz",           // Compressed file extension
+};
+```
+
+### Async Configuration
+
+```zig
+var config = logly.Config.default();
+config.async_config = .{
+    .enabled = true,              // Enable async logging
+    .buffer_size = 8192,          // Ring buffer size
+    .batch_size = 100,            // Messages per batch
+    .flush_interval_ms = 100,     // Auto-flush interval
+    .overflow_policy = .drop_oldest, // On buffer overflow
+    .auto_start = true,           // Auto-start worker thread
+};
+```
+
+### Helper Methods
+
+Use helper methods for cleaner configuration:
+
+```zig
+var config = logly.Config.default()
+```zig
+// Enable async logging
+var config = logly.Config.default().withAsync();
+
+// Enable compression
+var config2 = logly.Config.default().withCompression();
+
+// Enable thread pool with specific thread count
+var config3 = logly.Config.default().withThreadPool(4);
+
+// Enable scheduler
+var config4 = logly.Config.default().withScheduler();
+```
+
+## Configuration Presets
+
+Logly provides pre-configured presets for common scenarios:
+
+```zig
+// Production: JSON output, sampling, compression, scheduler enabled
+const prod_config = logly.Config.production();
+
+// Development: DEBUG level, colors, source location shown
+const dev_config = logly.Config.development();
+
+// High Throughput: Async, thread pool, rate limiting enabled
+const perf_config = logly.Config.highThroughput();
+
+// Secure: Redaction enabled, no hostname/PID in output
+const secure_config = logly.Config.secure();
 ```
 
 ### Using Presets
@@ -92,7 +171,7 @@ var logger = try logly.Logger.initWithConfig(allocator, logly.Config.production(
 
 You can customize the log output format using the `log_format` option. The following placeholders are supported:
 
-- `{time}`: Timestamp
+- `{time}`: Timestamp (formatted according to `time_format`)
 - `{level}`: Log level
 - `{message}`: Log message
 - `{module}`: Module name
@@ -119,11 +198,29 @@ This will output the location in `path/to/file:line` format.
 
 ### Time Configuration
 
-You can configure the timestamp format and timezone:
+Logly supports multiple timestamp formats:
+
+| Format | Example Output | Description |
+|--------|----------------|-------------|
+| `YYYY-MM-DD HH:mm:ss` | `2025-12-04 06:39:53.091` | Default human-readable |
+| `ISO8601` | `2025-12-04T06:39:53.091Z` | ISO 8601 format |
+| `RFC3339` | `2025-12-04T06:39:53+00:00` | RFC 3339 format |
+| `YYYY-MM-DD` | `2025-12-04` | Date only |
+| `HH:mm:ss` | `06:39:53` | Time only |
+| `HH:mm:ss.SSS` | `06:39:53.091` | Time with milliseconds |
+| `unix` | `1764830393` | Unix timestamp (seconds) |
+| `unix_ms` | `1764830393091` | Unix timestamp (milliseconds) |
 
 ```zig
-config.time_format = "unix"; // or default
-config.timezone = .utc;      // or .local
+// Use ISO8601 format
+config.time_format = "ISO8601";
+
+// Use Unix timestamp
+config.time_format = "unix";
+
+// Configure timezone
+config.timezone = .utc;   // Use UTC
+config.timezone = .local; // Use local time (default)
 ```
 
 ## Enterprise Configuration

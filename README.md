@@ -47,6 +47,10 @@ A production-grade, high-performance structured logging library for Zig, designe
 | 📈 **Metrics** | Built-in observability with log counters and statistics |
 | 🔗 **Distributed Tracing** | Trace ID, span ID, and correlation ID support |
 | ⚙️ **Configuration Presets** | Production, development, high-throughput, and secure presets |
+| 🗜️ **Compression** | Automatic and manual log compression (deflate, gzip, lz4, zstd) |
+| 🔄 **Async Logger** | Ring buffer-based async logging with background workers |
+| 🧵 **Thread Pool** | Parallel log processing with work stealing |
+| ⏰ **Scheduler** | Automatic log cleanup, compression, and maintenance |
 
 </details>
 
@@ -397,6 +401,64 @@ config.enable_exception_handling = true;
 logger.configure(config);
 ```
 
+### Module Configuration
+
+Configure advanced features like async logging, compression, thread pools, and scheduling:
+
+```zig
+var config = logly.Config.default();
+
+// Async logging for non-blocking writes
+config.async_config = .{
+    .enabled = true,
+    .buffer_size = 8192,
+    .batch_size = 100,
+    .flush_interval_ms = 100,
+    .overflow_policy = .drop_oldest,
+    .auto_start = true,
+};
+
+// Compression for log files
+config.compression = .{
+    .enabled = true,
+    .algorithm = .deflate,
+    .level = .default,
+    .on_rotation = true,
+    .keep_original = false,
+    .extension = ".gz",
+};
+
+// Thread pool for parallel processing
+config.thread_pool = .{
+    .enabled = true,
+    .thread_count = 4,       // 0 = auto-detect CPU cores
+    .queue_size = 10000,
+    .stack_size = 1024 * 1024,
+    .work_stealing = true,
+};
+
+// Scheduler for automatic maintenance
+config.scheduler = .{
+    .enabled = true,
+    .cleanup_max_age_days = 7,
+    .max_files = 10,
+    .compress_before_cleanup = true,
+    .file_pattern = "*.log",
+};
+
+logger.configure(config);
+```
+
+Or use convenient helper methods:
+
+```zig
+var config = logly.Config.default()
+    .withAsync()
+    .withCompression()
+    .withThreadPool(4)
+    .withScheduler();
+```
+
 ## Log Levels
 
 | Level    | Priority | Method              | Use Case                |
@@ -526,6 +588,12 @@ zig build example-tracing
 zig build example-color_options
 zig build example-production_config
 
+# Advanced feature examples
+zig build example-compression
+zig build example-thread_pool
+zig build example-scheduler
+zig build example-async_advanced
+
 # Run an example
 ./zig-out/bin/basic
 ```
@@ -546,10 +614,14 @@ Full documentation is available at: https://muhammad-fiaz.github.io/logly.zig
 | Custom Colors  | ✓                       | ✓                    | ✓                     |
 | Simplified API | ✓                       | ✓                    | ✓                     |
 | Filtering      | ✓                       | ✓                    | ✓ (v0.0.3+)           |
-| Sampling       | - (Coming soon!)                      | - (Coming soon!)           | ✓ (v0.0.3+)           |
-| Redaction      | - (Coming soon!)             | - (Coming soon!)             | ✓ (v0.0.3+)           |
-| Metrics        | - (Coming soon!)           | - (Coming soon!)            | ✓ (v0.0.3+)           |
-| Tracing        | - (Coming soon!)           | - (Coming soon!)            | ✓ (v0.0.3+)           |
+| Sampling       | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
+| Redaction      | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
+| Metrics        | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
+| Tracing        | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
+| Compression    | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
+| Thread Pool    | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
+| Scheduler      | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
+| Async Logger   | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
 
 ## Contributing
 

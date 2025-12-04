@@ -43,11 +43,11 @@ fn testConsoleWithColor(allocator: std.mem.Allocator) !void {
     try logger.addCustomLevel("SECURITY", 45, "31;7"); // Red Reverse
     try logger.addCustomLevel("METRIC", 15, "36"); // Cyan
 
-    try logger.info("Standard INFO message");
-    try logger.custom("AUDIT", "User login recorded");
-    try logger.custom("SECURITY", "Access control check passed");
-    try logger.custom("METRIC", "Response time: 42ms");
-    try logger.err("Standard ERROR message");
+    try logger.info("Standard INFO message", @src());
+    try logger.custom("AUDIT", "User login recorded", @src());
+    try logger.custom("SECURITY", "Access control check passed", @src());
+    try logger.custom("METRIC", "Response time: 42ms", @src());
+    try logger.err("Standard ERROR message", @src());
 
     std.debug.print("\n", .{});
 }
@@ -55,13 +55,12 @@ fn testConsoleWithColor(allocator: std.mem.Allocator) !void {
 fn testFileOutput(allocator: std.mem.Allocator) !void {
     std.debug.print("--- Test 2: File Output (Text) ---\n", .{});
 
-    const logger = try logly.Logger.init(allocator);
-    defer logger.deinit();
-
-    // Disable auto console sink
+    // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
     config.auto_sink = false;
-    logger.configure(config);
+
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
 
     // Add file sink
     _ = try logger.addSink(.{
@@ -74,9 +73,9 @@ fn testFileOutput(allocator: std.mem.Allocator) !void {
     // Register custom level
     try logger.addCustomLevel("AUDIT", 25, "35");
 
-    try logger.info("Standard info to file");
-    try logger.custom("AUDIT", "Custom AUDIT level in file");
-    try logger.warning("Standard warning to file");
+    try logger.info("Standard info to file", @src());
+    try logger.custom("AUDIT", "Custom AUDIT level in file", @src());
+    try logger.warning("Standard warning to file", @src());
 
     try logger.flush();
 
@@ -98,8 +97,8 @@ fn testJsonConsole(allocator: std.mem.Allocator) !void {
     // Register custom level
     try logger.addCustomLevel("AUDIT", 25, "35");
 
-    try logger.info("Standard JSON info");
-    try logger.custom("AUDIT", "Custom AUDIT in JSON format");
+    try logger.info("Standard JSON info", @src());
+    try logger.custom("AUDIT", "Custom AUDIT in JSON format", @src());
 
     std.debug.print("\n", .{});
 }
@@ -107,12 +106,12 @@ fn testJsonConsole(allocator: std.mem.Allocator) !void {
 fn testJsonFile(allocator: std.mem.Allocator) !void {
     std.debug.print("--- Test 4: JSON File Output ---\n", .{});
 
-    const logger = try logly.Logger.init(allocator);
-    defer logger.deinit();
-
+    // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
     config.auto_sink = false;
-    logger.configure(config);
+
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
 
     // Add JSON file sink
     _ = try logger.addSink(.{
@@ -131,9 +130,9 @@ fn testJsonFile(allocator: std.mem.Allocator) !void {
     try logger.addCustomLevel("AUDIT", 25, "35");
     try logger.addCustomLevel("SECURITY", 45, "31");
 
-    try logger.info("JSON file test - standard info");
-    try logger.custom("AUDIT", "JSON file test - custom AUDIT");
-    try logger.custom("SECURITY", "JSON file test - custom SECURITY");
+    try logger.info("JSON file test - standard info", @src());
+    try logger.custom("AUDIT", "JSON file test - custom AUDIT", @src());
+    try logger.custom("SECURITY", "JSON file test - custom SECURITY", @src());
 
     try logger.flush();
 
@@ -158,13 +157,13 @@ fn testWithContext(allocator: std.mem.Allocator) !void {
     // Register custom level
     try logger.addCustomLevel("AUDIT", 25, "35");
 
-    try logger.custom("AUDIT", "User authentication successful");
+    try logger.custom("AUDIT", "User authentication successful", @src());
 
     // Add request context
     try logger.bind("user_id", .{ .string = "user-12345" });
     try logger.bind("session_id", .{ .string = "sess-67890" });
 
-    try logger.custom("AUDIT", "Permission check passed");
+    try logger.custom("AUDIT", "Permission check passed", @src());
 
     std.debug.print("\n", .{});
 }
@@ -180,9 +179,9 @@ fn testFormatted(allocator: std.mem.Allocator) !void {
     try logger.addCustomLevel("AUDIT", 25, "35;1");
 
     // Formatted messages with custom levels
-    try logger.customf("METRIC", "Response time: {d}ms", .{42});
-    try logger.customf("METRIC", "Memory usage: {d}MB", .{256});
-    try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "john_doe", "192.168.1.100" });
+    try logger.customf("METRIC", "Response time: {d}ms", .{42}, @src());
+    try logger.customf("METRIC", "Memory usage: {d}MB", .{256}, @src());
+    try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "john_doe", "192.168.1.100" }, @src());
 
     std.debug.print("\n", .{});
 }

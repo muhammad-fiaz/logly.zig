@@ -26,14 +26,14 @@ pub fn main() !void {
     std.debug.print("Attempting to log at various levels:\n\n", .{});
 
     // These should be filtered out
-    try logger.trace("This trace message will be filtered");
-    try logger.debug("This debug message will be filtered");
-    try logger.info("This info message will be filtered");
+    try logger.trace("This trace message will be filtered", @src());
+    try logger.debug("This debug message will be filtered", @src());
+    try logger.info("This info message will be filtered", @src());
 
     // These should pass through
-    try logger.warning("This warning will be displayed");
-    try logger.err("This error will be displayed");
-    try logger.critical("This critical message will be displayed");
+    try logger.warning("This warning will be displayed", @src());
+    try logger.err("This error will be displayed", @src());
+    try logger.critical("This critical message will be displayed", @src());
 
     std.debug.print("\n--- Using Filter Presets ---\n\n", .{});
 
@@ -47,9 +47,9 @@ pub fn main() !void {
     error_logger.setFilter(&error_filter);
 
     std.debug.print("Error-only filter applied:\n", .{});
-    try error_logger.warning("Warning - will be filtered");
-    try error_logger.err("Error - will be displayed");
-    try error_logger.critical("Critical - will be displayed");
+    try error_logger.warning("Warning - will be filtered", @src());
+    try error_logger.err("Error - will be displayed", @src());
+    try error_logger.critical("Critical - will be displayed", @src());
 
     std.debug.print("\n=== Filtering Example Complete ===\n", .{});
 }

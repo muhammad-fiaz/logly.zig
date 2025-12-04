@@ -2,6 +2,28 @@
 
 This example demonstrates how to configure asynchronous logging for high-performance scenarios. Async logging offloads file I/O to a background thread, preventing logging from blocking your main application flow.
 
+## Centralized Configuration
+
+```zig
+const logly = @import("logly");
+
+var config = logly.Config.default();
+config.async_config = logly.AsyncConfig{
+    .buffer_size = 8192,           // Ring buffer size
+    .flush_interval_ms = 100,      // Auto-flush interval
+    .max_pending = 10000,          // Max queued messages
+    .overflow_strategy = .drop_oldest,
+    .enable_batching = true,
+    .batch_size = 64,
+};
+
+// Or use helper method
+var config2 = logly.Config.default().withAsync(.{
+    .buffer_size = 4096,
+    .flush_interval_ms = 50,
+});
+```
+
 ## Code Example
 
 ```zig
@@ -16,9 +38,13 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Configure logger
+    // Configure logger with async settings
     var config = logly.Config.default();
     config.auto_sink = false;
+    config.async_config = logly.AsyncConfig{
+        .buffer_size = 8192,
+        .flush_interval_ms = 100,
+    };
     logger.configure(config);
 
     // Add a file sink with async writing enabled (default)

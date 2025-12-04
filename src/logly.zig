@@ -60,6 +60,20 @@ pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;
 pub const Rotation = @import("rotation.zig").Rotation;
 
+// Nested config types (convenience re-exports from Config)
+pub const ThreadPoolConfig = Config.ThreadPoolConfig;
+pub const SchedulerConfig = Config.SchedulerConfig;
+pub const CompressionConfig = Config.CompressionConfig;
+pub const CompressionAlgorithm = Config.CompressionConfig.CompressionAlgorithm;
+pub const CompressionLevel = Config.CompressionConfig.CompressionLevel;
+pub const AsyncConfig = Config.AsyncConfig;
+pub const SamplingConfig = Config.SamplingConfig;
+pub const RateLimitConfig = Config.RateLimitConfig;
+pub const RedactionConfig = Config.RedactionConfig;
+pub const BufferConfig = Config.BufferConfig;
+pub const ErrorHandling = Config.ErrorHandling;
+pub const Timezone = Config.Timezone;
+
 // Enterprise components
 pub const Filter = @import("filter.zig").Filter;
 pub const FilterRule = Filter.FilterRule;
@@ -69,6 +83,17 @@ pub const SamplerPresets = @import("sampler.zig").SamplerPresets;
 pub const Redactor = @import("redactor.zig").Redactor;
 pub const RedactionPresets = @import("redactor.zig").RedactionPresets;
 pub const Metrics = @import("metrics.zig").Metrics;
+
+// Advanced I/O components
+pub const Compression = @import("compression.zig").Compression;
+pub const CompressionPresets = @import("compression.zig").CompressionPresets;
+pub const AsyncLogger = @import("async.zig").AsyncLogger;
+pub const AsyncFileWriter = @import("async.zig").AsyncFileWriter;
+pub const AsyncPresets = @import("async.zig").AsyncPresets;
+pub const Scheduler = @import("scheduler.zig").Scheduler;
+pub const SchedulerPresets = @import("scheduler.zig").SchedulerPresets;
+pub const ThreadPool = @import("thread_pool.zig").ThreadPool;
+pub const ThreadPoolPresets = @import("thread_pool.zig").ThreadPoolPresets;
 
 // Configuration presets
 pub const ConfigPresets = struct {

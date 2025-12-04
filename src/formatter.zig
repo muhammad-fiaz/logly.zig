@@ -1,4 +1,5 @@
 const std = @import("std");
+const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
 const Level = @import("level.zig").Level;
 
@@ -120,11 +121,13 @@ pub const Formatter = struct {
                 try writer.print("[{s}] ", .{record.function.?});
             }
 
-            // Filename and line (Clickable format: path/to/file:line)
+            // Filename and line (Clickable format: file:line:column: for terminal clickability)
             if (config.show_filename and record.filename != null) {
                 try writer.print("{s}", .{record.filename.?});
                 if (config.show_lineno and record.line != null) {
-                    try writer.print(":{d}", .{record.line.?});
+                    try writer.print(":{d}:0:", .{record.line.?});
+                } else {
+                    try writer.writeAll(":0:0:");
                 }
                 try writer.writeAll(" ");
             }
@@ -144,17 +147,23 @@ pub const Formatter = struct {
     fn writeTimestamp(self: *Formatter, writer: anytype, timestamp_ms: i64, config: anytype) !void {
         _ = self;
 
+        // Handle special time formats
         if (std.mem.eql(u8, config.time_format, "unix")) {
+            try writer.print("{d}", .{@divFloor(timestamp_ms, 1000)});
+            return;
+        }
+        if (std.mem.eql(u8, config.time_format, "unix_ms")) {
             try writer.print("{d}", .{timestamp_ms});
             return;
         }
 
-        const seconds = @divFloor(timestamp_ms, 1000);
-        const millis = @mod(timestamp_ms, 1000);
+        // Ensure positive values for date/time calculation
+        const abs_timestamp = if (timestamp_ms < 0) @as(u64, 0) else @as(u64, @intCast(timestamp_ms));
+        const seconds = abs_timestamp / 1000;
+        const millis = abs_timestamp % 1000;
 
-        // Convert to YYYY-MM-DD HH:MM:SS
-        const epoch_seconds = @as(u64, @intCast(seconds));
-        const epoch = std.time.epoch.EpochSeconds{ .secs = epoch_seconds };
+        // Convert to date/time components
+        const epoch = std.time.epoch.EpochSeconds{ .secs = seconds };
         const day_seconds = epoch.getDaySeconds();
         const year_day = epoch.getEpochDay();
         const yd = year_day.calculateYearDay();
@@ -165,7 +174,65 @@ pub const Formatter = struct {
         const minutes = (seconds_in_day % 3600) / 60;
         const secs = seconds_in_day % 60;
 
-        // Default format: YYYY-MM-DD HH:MM:SS.mmm
+        // ISO8601 format: 2025-12-04T06:39:53.091Z
+        if (std.mem.eql(u8, config.time_format, "ISO8601")) {
+            try writer.print("{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}Z", .{
+                yd.year,
+                month_day.month.numeric(),
+                month_day.day_index + 1,
+                hours,
+                minutes,
+                secs,
+                millis,
+            });
+            return;
+        }
+
+        // RFC3339 format: 2025-12-04T06:39:53+00:00
+        if (std.mem.eql(u8, config.time_format, "RFC3339")) {
+            try writer.print("{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}+00:00", .{
+                yd.year,
+                month_day.month.numeric(),
+                month_day.day_index + 1,
+                hours,
+                minutes,
+                secs,
+            });
+            return;
+        }
+
+        // Date only format: 2025-12-04
+        if (std.mem.eql(u8, config.time_format, "YYYY-MM-DD")) {
+            try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{
+                yd.year,
+                month_day.month.numeric(),
+                month_day.day_index + 1,
+            });
+            return;
+        }
+
+        // Time only format: 06:39:53
+        if (std.mem.eql(u8, config.time_format, "HH:mm:ss")) {
+            try writer.print("{d:0>2}:{d:0>2}:{d:0>2}", .{
+                hours,
+                minutes,
+                secs,
+            });
+            return;
+        }
+
+        // Time with millis format: 06:39:53.091
+        if (std.mem.eql(u8, config.time_format, "HH:mm:ss.SSS")) {
+            try writer.print("{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{
+                hours,
+                minutes,
+                secs,
+                millis,
+            });
+            return;
+        }
+
+        // Default format: YYYY-MM-DD HH:mm:ss.mmm (or YYYY-MM-DD HH:mm:ss)
         try writer.print("{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{
             yd.year,
             month_day.month.numeric(),
@@ -273,12 +340,12 @@ pub const Formatter = struct {
             // 🐛 Workaround: std.posix.gethostname seems to have issues on some Windows builds.
             // We'll use a safe fallback for now to ensure the library compiles.
             if (@import("builtin").os.tag == .windows) {
-                try writer.writeAll("\"windows-host\"");
+                try writer.writeAll("windows-host");
             } else {
                 // var hostname_buf: [std.posix.HOST_NAME_MAX]u8 = undefined;
                 // const hostname = std.posix.gethostname(&hostname_buf) catch "unknown";
                 // try escapeJsonString(writer, hostname);
-                try writer.writeAll("\"non-windows-host\"");
+                try writer.writeAll("non-windows-host");
             }
             try writer.writeAll("\"");
         }

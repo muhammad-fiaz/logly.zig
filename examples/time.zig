@@ -13,15 +13,15 @@ pub fn main() !void {
 
     // Example 1: Default format
     logger.configure(config);
-    try logger.info("Default time format");
+    try logger.info("Default time format", @src());
 
     // Example 2: Custom time format
     config.time_format = "HH:mm:ss";
     logger.configure(config);
-    try logger.info("Short time format");
+    try logger.info("Short time format", @src());
 
     // Example 3: UTC timezone
     config.timezone = .utc;
     logger.configure(config);
-    try logger.info("UTC time");
+    try logger.info("UTC time", @src());
 }

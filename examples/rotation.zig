@@ -6,12 +6,12 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const logger = try logly.Logger.init(allocator);
-    defer logger.deinit();
-
+    // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
     config.auto_sink = false;
-    logger.configure(config);
+
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
 
     // Daily rotation with 7 day retention
     _ = try logger.addSink(.{
@@ -35,8 +35,8 @@ pub fn main() !void {
         .retention = 10,
     });
 
-    try logger.info("Rotation example - files will rotate based on time or size");
-    try logger.success("Check logs/ directory for rotated files");
+    try logger.info("Rotation example - files will rotate based on time or size", @src());
+    try logger.success("Check logs/ directory for rotated files", @src());
 
     try logger.flush();
 

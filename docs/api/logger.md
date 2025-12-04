@@ -225,22 +225,22 @@ try logger.addCustomLevel("alert", 42, "31;4");   // Underline red
 
 Removes a previously registered custom level.
 
-### `custom(level_name: []const u8, message: []const u8) !void`
+### `custom(level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs using a registered custom level. The entire line is colored:
 
 ```zig
 try logger.addCustomLevel("audit", 35, "35;1"); // Bold magenta
-try logger.custom("audit", "User login detected");
-// Output: [2024-01-15 10:30:45] [AUDIT] User login detected (bold magenta)
+try logger.custom("audit", "User login detected", @src());
+// Output: [2024-01-15 10:30:45] [AUDIT] myfile.zig:42:0: User login detected (bold magenta)
 ```
 
-### `customf(level_name: []const u8, comptime fmt: []const u8, args: anytype) !void`
+### `customf(level_name: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
 Formatted logging with custom levels:
 
 ```zig
-try logger.customf("audit", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" });
+try logger.customf("audit", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" }, @src());
 ```
 
 ## Callbacks
@@ -269,67 +269,90 @@ Flushes all sinks, ensuring all buffered data is written.
 
 ## Logging Methods
 
-### `log(level: Level, message: []const u8) !void`
+All logging methods accept an optional source location parameter. Pass `@src()` to enable clickable file:line:column output in terminal, or `null` if source location is not needed.
 
-Logs a raw message at the specified level.
-
-### `trace(message: []const u8) !void`
+### `trace(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **TRACE** level (Priority 5).
 
-### `debug(message: []const u8) !void`
+```zig
+try logger.trace("Detailed trace info", @src());  // With source location
+try logger.trace("Trace without location", null); // Without source location
+```
+
+### `debug(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **DEBUG** level (Priority 10).
 
-### `info(message: []const u8) !void`
+### `info(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **INFO** level (Priority 20).
 
-### `success(message: []const u8) !void`
+### `success(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **SUCCESS** level (Priority 25).
 
-### `warning(message: []const u8) !void`
+### `warning(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **WARNING** level (Priority 30).
 
-### `err(message: []const u8) !void`
+### `err(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **ERROR** level (Priority 40).
 
-### `fail(message: []const u8) !void`
+### `fail(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **FAIL** level (Priority 45).
 
-### `critical(message: []const u8) !void`
+### `critical(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **CRITICAL** level (Priority 50).
 
-### `custom(level_name: []const u8, message: []const u8) !void`
+### `custom(level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message using a user-defined custom level. The level must be registered first.
 
 ## Formatted Logging
 
-All standard logging methods have a corresponding `f` suffix variant (e.g., `infof`, `debugf`) that accepts a format string and arguments, similar to `std.log` or `printf`.
+All standard logging methods have a corresponding `f` suffix variant (e.g., `infof`, `debugf`) that accepts a format string and arguments, similar to `std.log` or `printf`. All also accept an optional source location.
 
-### `tracef(comptime fmt: []const u8, args: anytype) !void`
+### `tracef(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-### `debugf(comptime fmt: []const u8, args: anytype) !void`
+### `debugf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-### `infof(comptime fmt: []const u8, args: anytype) !void`
+### `infof(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-### `successf(comptime fmt: []const u8, args: anytype) !void`
+```zig
+try logger.infof("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src());
+```
 
-### `warningf(comptime fmt: []const u8, args: anytype) !void`
+### `successf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-### `errf(comptime fmt: []const u8, args: anytype) !void`
+### `warningf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-### `failf(comptime fmt: []const u8, args: anytype) !void`
+### `errf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-### `criticalf(comptime fmt: []const u8, args: anytype) !void`
+### `failf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-### `customf(level_name: []const u8, comptime fmt: []const u8, args: anytype) !void`
+### `criticalf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
+
+### `customf(level_name: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
+
+## Source Location Display
+
+When you enable `show_filename` and `show_lineno` in the configuration and pass `@src()` to logging calls, the output includes clickable file:line:column information:
+
+```zig
+var config = logly.Config.default();
+config.show_filename = true;
+config.show_lineno = true;
+logger.configure(config);
+
+try logger.info("This message has source location", @src());
+// Output: [2024-01-15 10:30:45] [INFO] myfile.zig:42:0: This message has source location
+```
+
+The format `file:line:column:` is compatible with most terminals and IDEs, allowing you to click on it to jump directly to the source location.
 
 ## Utility Methods
 

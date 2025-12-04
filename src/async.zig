@@ -1,0 +1,614 @@
+const std = @import("std");
+const Config = @import("config.zig").Config;
+const Record = @import("record.zig").Record;
+const Sink = @import("sink.zig").Sink;
+
+/// Asynchronous logging infrastructure.
+///
+/// Provides non-blocking log operations with configurable buffering,
+/// background processing threads, and batch writing for high-throughput scenarios.
+pub const AsyncLogger = struct {
+    allocator: std.mem.Allocator,
+    config: AsyncConfig,
+    buffer: RingBuffer,
+    stats: AsyncStats,
+    mutex: std.Thread.Mutex = .{},
+    condition: std.Thread.Condition = .{},
+    worker_thread: ?std.Thread = null,
+    running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    sinks: std.ArrayList(*Sink),
+    overflow_callback: ?*const fn (dropped_count: u64) void = null,
+
+    /// Configuration for async logging behavior.
+    /// Re-exports centralized config for convenience.
+    pub const AsyncConfig = Config.AsyncConfig;
+
+    /// What to do when the buffer is full.
+    /// Re-exports centralized overflow policy for convenience.
+    pub const OverflowPolicy = Config.AsyncConfig.OverflowPolicy;
+
+    /// Worker thread priority levels.
+    pub const WorkerPriority = enum {
+        low,
+        normal,
+        high,
+        realtime,
+    };
+
+    /// Statistics for async operations.
+    pub const AsyncStats = struct {
+        records_queued: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        records_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        records_dropped: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        buffer_overflows: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        flush_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_latency_ns: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        max_queue_depth: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        pub fn averageLatencyNs(self: *const AsyncStats) u64 {
+            const written = self.records_written.load(.monotonic);
+            if (written == 0) return 0;
+            return self.total_latency_ns.load(.monotonic) / written;
+        }
+
+        pub fn dropRate(self: *const AsyncStats) f64 {
+            const total = self.records_queued.load(.monotonic);
+            if (total == 0) return 0;
+            const dropped = self.records_dropped.load(.monotonic);
+            return @as(f64, @floatFromInt(dropped)) / @as(f64, @floatFromInt(total));
+        }
+    };
+
+    /// Entry in the ring buffer.
+    pub const BufferEntry = struct {
+        timestamp: i64,
+        formatted_message: []const u8,
+        level_priority: u8,
+        queued_at: i64,
+        owned: bool = false,
+    };
+
+    /// Simple ring buffer for log entries.
+    pub const RingBuffer = struct {
+        allocator: std.mem.Allocator,
+        entries: []?BufferEntry,
+        head: usize = 0,
+        tail: usize = 0,
+        count: usize = 0,
+        capacity: usize,
+
+        pub fn init(allocator: std.mem.Allocator, capacity: usize) !RingBuffer {
+            const entries = try allocator.alloc(?BufferEntry, capacity);
+            @memset(entries, null);
+            return .{
+                .allocator = allocator,
+                .entries = entries,
+                .capacity = capacity,
+            };
+        }
+
+        pub fn deinit(self: *RingBuffer) void {
+            for (self.entries) |entry_opt| {
+                if (entry_opt) |entry| {
+                    if (entry.owned) {
+                        self.allocator.free(entry.formatted_message);
+                    }
+                }
+            }
+            self.allocator.free(self.entries);
+        }
+
+        pub fn push(self: *RingBuffer, entry: BufferEntry) bool {
+            if (self.count >= self.capacity) {
+                return false;
+            }
+            self.entries[self.head] = entry;
+            self.head = (self.head + 1) % self.capacity;
+            self.count += 1;
+            return true;
+        }
+
+        pub fn pop(self: *RingBuffer) ?BufferEntry {
+            if (self.count == 0) return null;
+            const entry = self.entries[self.tail];
+            self.entries[self.tail] = null;
+            self.tail = (self.tail + 1) % self.capacity;
+            self.count -= 1;
+            return entry;
+        }
+
+        pub fn popBatch(self: *RingBuffer, batch: []BufferEntry) usize {
+            var count: usize = 0;
+            while (count < batch.len) {
+                if (self.pop()) |entry| {
+                    batch[count] = entry;
+                    count += 1;
+                } else {
+                    break;
+                }
+            }
+            return count;
+        }
+
+        pub fn isFull(self: *const RingBuffer) bool {
+            return self.count >= self.capacity;
+        }
+
+        pub fn isEmpty(self: *const RingBuffer) bool {
+            return self.count == 0;
+        }
+
+        pub fn size(self: *const RingBuffer) usize {
+            return self.count;
+        }
+
+        pub fn clear(self: *RingBuffer) void {
+            while (self.pop()) |entry| {
+                if (entry.owned) {
+                    self.allocator.free(entry.formatted_message);
+                }
+            }
+        }
+    };
+
+    /// Initializes a new AsyncLogger.
+    ///
+    /// Arguments:
+    ///     allocator: Memory allocator for internal operations.
+    ///
+    /// Returns:
+    ///     A new AsyncLogger instance with default configuration.
+    pub fn init(allocator: std.mem.Allocator) !*AsyncLogger {
+        return initWithConfig(allocator, .{});
+    }
+
+    /// Initializes an AsyncLogger with custom configuration.
+    ///
+    /// Arguments:
+    ///     allocator: Memory allocator.
+    ///     config: Custom async configuration.
+    ///
+    /// Returns:
+    ///     A new AsyncLogger instance.
+    pub fn initWithConfig(allocator: std.mem.Allocator, config: AsyncConfig) !*AsyncLogger {
+        const self = try allocator.create(AsyncLogger);
+        errdefer allocator.destroy(self);
+
+        self.* = .{
+            .allocator = allocator,
+            .config = config,
+            .buffer = try RingBuffer.init(allocator, config.buffer_size),
+            .stats = .{},
+            .sinks = .empty,
+        };
+
+        if (config.background_worker) {
+            try self.startWorker();
+        }
+
+        return self;
+    }
+
+    /// Releases all resources.
+    pub fn deinit(self: *AsyncLogger) void {
+        self.stop();
+
+        // Flush remaining entries
+        self.flushSync();
+
+        self.buffer.deinit();
+        self.sinks.deinit(self.allocator);
+        self.allocator.destroy(self);
+    }
+
+    /// Adds a sink for async writing.
+    pub fn addSink(self: *AsyncLogger, sink: *Sink) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.sinks.append(self.allocator, sink);
+    }
+
+    /// Queues a log record for async processing.
+    ///
+    /// Arguments:
+    ///     message: The formatted log message.
+    ///     level_priority: Priority of the log level.
+    ///
+    /// Returns:
+    ///     true if queued successfully, false if dropped.
+    pub fn queue(self: *AsyncLogger, message: []const u8, level_priority: u8) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const now = std.time.nanoTimestamp();
+
+        // Handle overflow
+        if (self.buffer.isFull()) {
+            switch (self.config.overflow_policy) {
+                .drop_oldest => {
+                    if (self.buffer.pop()) |old_entry| {
+                        if (old_entry.owned) {
+                            self.allocator.free(old_entry.formatted_message);
+                        }
+                        _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
+                    }
+                },
+                .drop_newest => {
+                    _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
+                    _ = self.stats.buffer_overflows.fetchAdd(1, .monotonic);
+                    if (self.overflow_callback) |cb| {
+                        cb(self.stats.records_dropped.load(.monotonic));
+                    }
+                    return false;
+                },
+                .block => {
+                    // Wait for space (with timeout to prevent deadlock)
+                    self.mutex.unlock();
+                    std.Thread.sleep(1 * std.time.ns_per_ms);
+                    self.mutex.lock();
+                    if (self.buffer.isFull()) {
+                        _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
+                        return false;
+                    }
+                },
+                .expand => {
+                    // For simplicity, just drop in this implementation
+                    _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
+                    return false;
+                },
+            }
+        }
+
+        // Copy message
+        const owned_message = self.allocator.dupe(u8, message) catch {
+            _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
+            return false;
+        };
+
+        const entry = BufferEntry{
+            .timestamp = std.time.milliTimestamp(),
+            .formatted_message = owned_message,
+            .level_priority = level_priority,
+            .queued_at = now,
+            .owned = true,
+        };
+
+        if (self.buffer.push(entry)) {
+            _ = self.stats.records_queued.fetchAdd(1, .monotonic);
+
+            // Update max queue depth
+            const current = self.buffer.size();
+            var max = self.stats.max_queue_depth.load(.monotonic);
+            while (current > max) {
+                const result = self.stats.max_queue_depth.cmpxchgWeak(max, current, .monotonic, .monotonic);
+                if (result) |v| {
+                    max = v;
+                } else {
+                    break;
+                }
+            }
+
+            // Signal worker
+            self.condition.signal();
+            return true;
+        }
+
+        self.allocator.free(owned_message);
+        return false;
+    }
+
+    /// Starts the background worker thread.
+    pub fn startWorker(self: *AsyncLogger) !void {
+        if (self.running.load(.acquire)) return;
+
+        self.running.store(true, .release);
+        self.worker_thread = try std.Thread.spawn(.{}, workerLoop, .{self});
+    }
+
+    /// Stops the background worker thread.
+    pub fn stop(self: *AsyncLogger) void {
+        if (!self.running.load(.acquire)) return;
+
+        self.running.store(false, .release);
+        self.condition.broadcast();
+
+        if (self.worker_thread) |thread| {
+            thread.join();
+            self.worker_thread = null;
+        }
+    }
+
+    /// Flushes all pending entries synchronously.
+    pub fn flushSync(self: *AsyncLogger) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var batch: [64]BufferEntry = undefined;
+        while (true) {
+            const count = self.buffer.popBatch(&batch);
+            if (count == 0) break;
+
+            for (batch[0..count]) |entry| {
+                self.writeToSinks(entry);
+                if (entry.owned) {
+                    self.allocator.free(entry.formatted_message);
+                }
+            }
+        }
+
+        _ = self.stats.flush_count.fetchAdd(1, .monotonic);
+    }
+
+    /// Triggers an async flush.
+    pub fn flush(self: *AsyncLogger) void {
+        self.condition.signal();
+    }
+
+    fn workerLoop(self: *AsyncLogger) void {
+        var batch: [64]BufferEntry = undefined;
+        var last_flush = std.time.milliTimestamp();
+
+        while (self.running.load(.acquire) or !self.buffer.isEmpty()) {
+            self.mutex.lock();
+
+            // Wait for entries or timeout
+            const now = std.time.milliTimestamp();
+            const elapsed = now - last_flush;
+
+            if (self.buffer.isEmpty() and elapsed < @as(i64, @intCast(self.config.flush_interval_ms))) {
+                // Wait with timeout
+                self.condition.timedWait(&self.mutex, self.config.flush_interval_ms * std.time.ns_per_ms) catch {};
+            }
+
+            // Process batch
+            const count = self.buffer.popBatch(&batch);
+            self.mutex.unlock();
+
+            if (count > 0) {
+                const write_start = std.time.nanoTimestamp();
+
+                for (batch[0..count]) |entry| {
+                    self.writeToSinks(entry);
+                    if (entry.owned) {
+                        self.allocator.free(entry.formatted_message);
+                    }
+                }
+
+                const write_time = std.time.nanoTimestamp() - write_start;
+                _ = self.stats.total_latency_ns.fetchAdd(@intCast(write_time), .monotonic);
+                last_flush = std.time.milliTimestamp();
+            }
+        }
+    }
+
+    fn writeToSinks(self: *AsyncLogger, entry: BufferEntry) void {
+        for (self.sinks.items) |sink| {
+            sink.writeRaw(entry.formatted_message) catch {};
+        }
+        _ = self.stats.records_written.fetchAdd(1, .monotonic);
+    }
+
+    /// Gets current statistics.
+    pub fn getStats(self: *const AsyncLogger) AsyncStats {
+        return self.stats;
+    }
+
+    /// Resets statistics.
+    pub fn resetStats(self: *AsyncLogger) void {
+        self.stats = .{};
+    }
+
+    /// Gets current queue depth.
+    pub fn queueDepth(self: *AsyncLogger) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.buffer.size();
+    }
+
+    /// Checks if queue is empty.
+    pub fn isQueueEmpty(self: *AsyncLogger) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.buffer.isEmpty();
+    }
+
+    /// Sets overflow callback.
+    pub fn setOverflowCallback(self: *AsyncLogger, callback: *const fn (u64) void) void {
+        self.overflow_callback = callback;
+    }
+};
+
+/// Async file writer for high-performance file logging.
+pub const AsyncFileWriter = struct {
+    allocator: std.mem.Allocator,
+    file: std.fs.File,
+    buffer: std.ArrayList(u8),
+    config: FileConfig,
+    mutex: std.Thread.Mutex = .{},
+    flush_thread: ?std.Thread = null,
+    running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    last_flush: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+
+    pub const FileConfig = struct {
+        buffer_size: usize = 64 * 1024, // 64KB
+        flush_interval_ms: u64 = 1000,
+        sync_on_flush: bool = false,
+        append_mode: bool = true,
+    };
+
+    pub fn init(allocator: std.mem.Allocator, path: []const u8, config: FileConfig) !*AsyncFileWriter {
+        const self = try allocator.create(AsyncFileWriter);
+        errdefer allocator.destroy(self);
+
+        const file = try std.fs.cwd().createFile(path, .{
+            .truncate = !config.append_mode,
+        });
+        errdefer file.close();
+
+        // Seek to end if appending
+        if (config.append_mode) {
+            try file.seekFromEnd(0);
+        }
+
+        self.* = .{
+            .allocator = allocator,
+            .file = file,
+            .buffer = .empty,
+            .config = config,
+        };
+
+        try self.buffer.ensureTotalCapacity(self.allocator, config.buffer_size);
+
+        return self;
+    }
+
+    pub fn deinit(self: *AsyncFileWriter) void {
+        self.stop();
+        self.flushSync();
+        self.buffer.deinit(self.allocator);
+        self.file.close();
+        self.allocator.destroy(self);
+    }
+
+    pub fn write(self: *AsyncFileWriter, data: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        try self.buffer.appendSlice(self.allocator, data);
+
+        if (self.buffer.items.len >= self.config.buffer_size) {
+            try self.flushInternal();
+        }
+    }
+
+    pub fn writeLine(self: *AsyncFileWriter, data: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        try self.buffer.appendSlice(self.allocator, data);
+        try self.buffer.append(self.allocator, '\n');
+
+        if (self.buffer.items.len >= self.config.buffer_size) {
+            try self.flushInternal();
+        }
+    }
+
+    fn flushInternal(self: *AsyncFileWriter) !void {
+        if (self.buffer.items.len == 0) return;
+
+        try self.file.writeAll(self.buffer.items);
+        _ = self.bytes_written.fetchAdd(self.buffer.items.len, .monotonic);
+
+        if (self.config.sync_on_flush) {
+            try self.file.sync();
+        }
+
+        self.buffer.clearRetainingCapacity();
+        self.last_flush.store(std.time.milliTimestamp(), .monotonic);
+    }
+
+    pub fn flushSync(self: *AsyncFileWriter) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.flushInternal() catch {};
+    }
+
+    pub fn startAutoFlush(self: *AsyncFileWriter) !void {
+        if (self.running.load(.acquire)) return;
+        self.running.store(true, .release);
+        self.flush_thread = try std.Thread.spawn(.{}, autoFlushLoop, .{self});
+    }
+
+    pub fn stop(self: *AsyncFileWriter) void {
+        if (!self.running.load(.acquire)) return;
+        self.running.store(false, .release);
+        if (self.flush_thread) |thread| {
+            thread.join();
+            self.flush_thread = null;
+        }
+    }
+
+    fn autoFlushLoop(self: *AsyncFileWriter) void {
+        while (self.running.load(.acquire)) {
+            std.Thread.sleep(self.config.flush_interval_ms * std.time.ns_per_ms);
+            self.flushSync();
+        }
+    }
+
+    pub fn bytesWritten(self: *const AsyncFileWriter) u64 {
+        return self.bytes_written.load(.monotonic);
+    }
+};
+
+/// Preset configurations for async logging.
+pub const AsyncPresets = struct {
+    /// High-throughput configuration for maximum performance.
+    pub fn highThroughput() AsyncLogger.AsyncConfig {
+        return .{
+            .buffer_size = 65536,
+            .flush_interval_ms = 500,
+            .batch_size = 256,
+            .overflow_policy = .drop_oldest,
+            .preallocate_buffers = true,
+        };
+    }
+
+    /// Low-latency configuration for responsive logging.
+    pub fn lowLatency() AsyncLogger.AsyncConfig {
+        return .{
+            .buffer_size = 1024,
+            .flush_interval_ms = 10,
+            .batch_size = 16,
+            .overflow_policy = .block,
+        };
+    }
+
+    /// Balanced configuration for general use.
+    pub fn balanced() AsyncLogger.AsyncConfig {
+        return .{
+            .buffer_size = 8192,
+            .flush_interval_ms = 100,
+            .batch_size = 64,
+            .overflow_policy = .drop_oldest,
+        };
+    }
+
+    /// No-drop configuration (blocks when full).
+    pub fn noDrop() AsyncLogger.AsyncConfig {
+        return .{
+            .buffer_size = 16384,
+            .flush_interval_ms = 100,
+            .batch_size = 64,
+            .overflow_policy = .block,
+        };
+    }
+};
+
+test "ring buffer basic" {
+    const allocator = std.testing.allocator;
+
+    var rb = try AsyncLogger.RingBuffer.init(allocator, 4);
+    defer rb.deinit();
+
+    try std.testing.expect(rb.isEmpty());
+    try std.testing.expect(!rb.isFull());
+
+    _ = rb.push(.{ .timestamp = 1, .formatted_message = "test1", .level_priority = 20, .queued_at = 0 });
+    _ = rb.push(.{ .timestamp = 2, .formatted_message = "test2", .level_priority = 20, .queued_at = 0 });
+
+    try std.testing.expectEqual(@as(usize, 2), rb.size());
+
+    const entry = rb.pop();
+    try std.testing.expect(entry != null);
+    try std.testing.expectEqual(@as(i64, 1), entry.?.timestamp);
+}
+
+test "async stats" {
+    var stats = AsyncLogger.AsyncStats{};
+
+    _ = stats.records_queued.fetchAdd(100, .monotonic);
+    _ = stats.records_dropped.fetchAdd(10, .monotonic);
+
+    try std.testing.expect(stats.dropRate() > 0.09 and stats.dropRate() < 0.11);
+}

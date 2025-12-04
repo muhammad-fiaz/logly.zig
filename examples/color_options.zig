@@ -27,10 +27,10 @@ pub fn main() !void {
         logger.configure(config);
 
         std.debug.print("All logs below have colors DISABLED globally:\n", .{});
-        try logger.info("Info message (no color)");
-        try logger.success("Success message (no color)");
-        try logger.warning("Warning message (no color)");
-        try logger.err("Error message (no color)");
+        try logger.info("Info message (no color)", @src());
+        try logger.success("Success message (no color)", @src());
+        try logger.warning("Warning message (no color)", @src());
+        try logger.err("Error message (no color)", @src());
     }
 
     // --- Global Color Enable (default) ---
@@ -45,22 +45,22 @@ pub fn main() !void {
         logger.configure(config);
 
         std.debug.print("All logs below have colors ENABLED:\n", .{});
-        try logger.info("Info message (with color)");
-        try logger.success("Success message (with color)");
-        try logger.warning("Warning message (with color)");
-        try logger.err("Error message (with color)");
+        try logger.info("Info message (with color)", @src());
+        try logger.success("Success message (with color)", @src());
+        try logger.warning("Warning message (with color)", @src());
+        try logger.err("Error message (with color)", @src());
     }
 
     // --- Per-Sink Color Control ---
     std.debug.print("\n--- 3. Per-Sink Color Control ---\n\n", .{});
     {
-        const logger = try logly.Logger.init(allocator);
-        defer logger.deinit();
-
+        // Use initWithConfig to disable auto_sink from the start
         var config = Config.default();
         config.auto_sink = false; // We're providing our own sinks
         config.global_color_display = true;
-        logger.configure(config);
+
+        const logger = try logly.Logger.initWithConfig(allocator, config);
+        defer logger.deinit();
 
         // Console sink with colors enabled (default)
         _ = try logger.addSink(.{
@@ -75,21 +75,21 @@ pub fn main() !void {
         });
 
         std.debug.print("Console has colors, file sink does not:\n", .{});
-        try logger.info("This appears colored on stdout, plain in file");
-        try logger.warning("Warning with different formats per sink");
+        try logger.info("This appears colored on stdout, plain in file", @src());
+        try logger.warning("Warning with different formats per sink", @src());
         try logger.flush();
     }
 
     // --- Auto-Detection for Files ---
     std.debug.print("\n--- 4. Auto-Detection (null = auto) ---\n\n", .{});
     {
-        const logger = try logly.Logger.init(allocator);
-        defer logger.deinit();
-
+        // Use initWithConfig to disable auto_sink from the start
         var config = Config.default();
         config.auto_sink = false;
         config.global_color_display = true;
-        logger.configure(config);
+
+        const logger = try logly.Logger.initWithConfig(allocator, config);
+        defer logger.deinit();
 
         // Console with auto-detection (uses terminal detection)
         _ = try logger.addSink(.{
@@ -104,21 +104,21 @@ pub fn main() !void {
         });
 
         std.debug.print("Auto-detection: terminal=on, file=off:\n", .{});
-        try logger.info("Color auto-detected based on output type");
-        try logger.success("Files automatically get no ANSI codes");
+        try logger.info("Color auto-detected based on output type", @src());
+        try logger.success("Files automatically get no ANSI codes", @src());
         try logger.flush();
     }
 
     // --- Force Colors for File (e.g., for ANSI-aware viewers) ---
     std.debug.print("\n--- 5. Force Colors in File (for ANSI viewers) ---\n\n", .{});
     {
-        const logger = try logly.Logger.init(allocator);
-        defer logger.deinit();
-
+        // Use initWithConfig to disable auto_sink from the start
         var config = Config.default();
         config.auto_sink = false;
         config.global_color_display = true;
-        logger.configure(config);
+
+        const logger = try logly.Logger.initWithConfig(allocator, config);
+        defer logger.deinit();
 
         _ = try logger.addSink(.{
             .path = "logs/with_color.log",
@@ -126,21 +126,21 @@ pub fn main() !void {
         });
 
         std.debug.print("File will contain ANSI escape codes:\n", .{});
-        try logger.info("This file can be viewed with 'less -R' or similar");
-        try logger.warning("Useful for tools that support ANSI colors");
+        try logger.info("This file can be viewed with 'less -R' or similar", @src());
+        try logger.warning("Useful for tools that support ANSI colors", @src());
         try logger.flush();
     }
 
     // --- JSON Format (colors typically disabled) ---
     std.debug.print("\n--- 6. JSON Format (colors auto-disabled) ---\n\n", .{});
     {
-        const logger = try logly.Logger.init(allocator);
-        defer logger.deinit();
-
+        // Use initWithConfig to disable auto_sink from the start
         var config = Config.default();
         config.auto_sink = false;
         config.global_color_display = true; // Global is on, but sink overrides
-        logger.configure(config);
+
+        const logger = try logly.Logger.initWithConfig(allocator, config);
+        defer logger.deinit();
 
         _ = try logger.addSink(.{
             .json = true, // JSON format
@@ -148,7 +148,7 @@ pub fn main() !void {
         });
 
         std.debug.print("JSON output (colors disabled for parsing):\n", .{});
-        try logger.info("JSON logs should not contain ANSI codes");
+        try logger.info("JSON logs should not contain ANSI codes", @src());
     }
 
     std.debug.print("\n=== Color Control Example Complete ===\n", .{});

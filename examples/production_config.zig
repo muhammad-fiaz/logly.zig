@@ -27,10 +27,10 @@ pub fn main() !void {
         std.debug.print("  - Async writing for performance\n\n", .{});
 
         // These debug logs are sampled at 1%
-        try logger.debug("Debug: Most of these won't appear");
-        try logger.info("Info: Some sampling applied");
-        try logger.warning("Warning: Always logged");
-        try logger.err("Error: Always logged");
+        try logger.debug("Debug: Most of these won't appear", @src());
+        try logger.info("Info: Some sampling applied", @src());
+        try logger.warning("Warning: Always logged", @src());
+        try logger.err("Error: Always logged", @src());
     }
 
     // --- Using Development Preset ---
@@ -49,10 +49,10 @@ pub fn main() !void {
         std.debug.print("  - Source location shown\n", .{});
         std.debug.print("  - No sampling (all logs shown)\n\n", .{});
 
-        try logger.trace("Trace: Detailed debugging");
-        try logger.debug("Debug: Development info");
-        try logger.info("Info: General information");
-        try logger.success("Success: Operation completed");
+        try logger.trace("Trace: Detailed debugging", @src());
+        try logger.debug("Debug: Development info", @src());
+        try logger.info("Info: General information", @src());
+        try logger.success("Success: Operation completed", @src());
     }
 
     // --- Using High Throughput Preset ---
@@ -74,7 +74,7 @@ pub fn main() !void {
         // Simulate high volume logging
         var i: usize = 0;
         while (i < 100) : (i += 1) {
-            try logger.info("High volume log message");
+            try logger.info("High volume log message", @src());
         }
         std.debug.print("Logged 100 messages with sampling\n", .{});
     }
@@ -96,8 +96,8 @@ pub fn main() !void {
         std.debug.print("  - Audit-ready logging\n\n", .{});
 
         // Sensitive data will be redacted
-        try logger.info("User login: email=test@example.com");
-        try logger.info("Payment: card=4111111111111111");
+        try logger.info("User login: email=test@example.com", @src());
+        try logger.info("Payment: card=4111111111111111", @src());
     }
 
     // --- Custom Production Configuration ---
@@ -127,9 +127,9 @@ pub fn main() !void {
         });
 
         std.debug.print("Custom production config with file logging:\n", .{});
-        try logger.info("Application started");
-        try logger.info("Configuration loaded successfully");
-        try logger.warning("Connection pool near capacity");
+        try logger.info("Application started", @src());
+        try logger.info("Configuration loaded successfully", @src());
+        try logger.warning("Connection pool near capacity", @src());
 
         try logger.flush();
     }
@@ -137,13 +137,13 @@ pub fn main() !void {
     // --- Multi-Sink Production Setup ---
     std.debug.print("\n--- 6. Multi-Sink Production Architecture ---\n\n", .{});
     {
-        const logger = try logly.Logger.init(allocator);
-        defer logger.deinit();
-
+        // Use initWithConfig to disable auto_sink from the start
         var config = Config.default();
         config.auto_sink = false;
         config.level = .debug;
-        logger.configure(config);
+
+        const logger = try logly.Logger.initWithConfig(allocator, config);
+        defer logger.deinit();
 
         // Console: Colored output for development/monitoring
         _ = try logger.addSink(.{
@@ -177,10 +177,10 @@ pub fn main() !void {
         std.debug.print("  - app.log: info+ (14 days retention)\n", .{});
         std.debug.print("  - error.log: errors+ (90 days retention)\n\n", .{});
 
-        try logger.debug("Debug: Only in full app log");
-        try logger.info("Info: In app.log");
-        try logger.warning("Warning: In console and app.log");
-        try logger.err("Error: In all three outputs");
+        try logger.debug("Debug: Only in full app log", @src());
+        try logger.info("Info: In app.log", @src());
+        try logger.warning("Warning: In console and app.log", @src());
+        try logger.err("Error: In all three outputs", @src());
 
         try logger.flush();
     }

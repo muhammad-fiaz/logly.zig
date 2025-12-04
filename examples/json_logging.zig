@@ -24,20 +24,20 @@ pub fn main() !void {
     try logger.bind("version", .{ .string = "1.0.0" });
     try logger.bind("environment", .{ .string = "production" });
 
-    try logger.info("Application started");
-    try logger.success("All systems operational");
+    try logger.info("Application started", @src());
+    try logger.success("All systems operational", @src());
 
     // Add request-specific context
     try logger.bind("request_id", .{ .string = "req-12345" });
     try logger.bind("user_id", .{ .string = "user-67890" });
 
-    try logger.info("Processing user request");
+    try logger.info("Processing user request", @src());
 
     // Clean up request context
     logger.unbind("request_id");
     logger.unbind("user_id");
 
-    try logger.info("Request completed");
+    try logger.info("Request completed", @src());
 
     std.debug.print("\nJSON logging example completed!\n", .{});
 }

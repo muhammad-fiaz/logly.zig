@@ -32,7 +32,15 @@ pub const Config = struct {
     log_format: ?[]const u8 = null,
 
     /// Time format string.
-    /// Supports: "YYYY-MM-DD HH:mm:ss", "ISO8601", "RFC3339", "unix", "unix_ms"
+    /// Supports:
+    ///   - "YYYY-MM-DD HH:mm:ss" (default) - Human readable with milliseconds
+    ///   - "ISO8601" - ISO 8601 format (2025-12-04T06:39:53.091Z)
+    ///   - "RFC3339" - RFC 3339 format (2025-12-04T06:39:53+00:00)
+    ///   - "YYYY-MM-DD" - Date only
+    ///   - "HH:mm:ss" - Time only
+    ///   - "HH:mm:ss.SSS" - Time with milliseconds
+    ///   - "unix" - Unix timestamp in seconds
+    ///   - "unix_ms" - Unix timestamp in milliseconds
     time_format: []const u8 = "YYYY-MM-DD HH:mm:ss",
 
     /// Timezone for timestamp formatting.
@@ -114,6 +122,18 @@ pub const Config = struct {
     /// Buffer configuration for async operations.
     buffer_config: BufferConfig = .{},
 
+    /// Thread pool configuration.
+    thread_pool: ThreadPoolConfig = .{},
+
+    /// Scheduler configuration.
+    scheduler: SchedulerConfig = .{},
+
+    /// Compression configuration.
+    compression: CompressionConfig = .{},
+
+    /// Async logging configuration.
+    async_config: AsyncConfig = .{},
+
     /// Timezone options.
     pub const Timezone = enum {
         local,
@@ -178,6 +198,90 @@ pub const Config = struct {
         };
     };
 
+    /// Thread pool configuration.
+    pub const ThreadPoolConfig = struct {
+        /// Enable thread pool for parallel processing.
+        enabled: bool = false,
+        /// Number of worker threads (0 = auto-detect based on CPU cores).
+        thread_count: usize = 0,
+        /// Maximum queue size for pending tasks.
+        queue_size: usize = 10000,
+        /// Stack size per thread in bytes.
+        stack_size: usize = 1024 * 1024,
+        /// Enable work stealing between threads.
+        work_stealing: bool = true,
+    };
+
+    /// Scheduler configuration.
+    pub const SchedulerConfig = struct {
+        /// Enable the scheduler.
+        enabled: bool = false,
+        /// Default cleanup max age in days.
+        cleanup_max_age_days: u64 = 7,
+        /// Default max files to keep.
+        max_files: ?usize = null,
+        /// Enable compression before cleanup.
+        compress_before_cleanup: bool = false,
+        /// Default file pattern for cleanup.
+        file_pattern: []const u8 = "*.log",
+    };
+
+    /// Compression configuration.
+    pub const CompressionConfig = struct {
+        /// Enable compression.
+        enabled: bool = false,
+        /// Compression algorithm.
+        algorithm: CompressionAlgorithm = .deflate,
+        /// Compression level.
+        level: CompressionLevel = .default,
+        /// Compress on rotation.
+        on_rotation: bool = true,
+        /// Keep original file after compression.
+        keep_original: bool = false,
+        /// File extension for compressed files.
+        extension: []const u8 = ".gz",
+
+        pub const CompressionAlgorithm = enum {
+            none,
+            deflate,
+            zlib,
+            raw_deflate,
+        };
+
+        pub const CompressionLevel = enum(u4) {
+            none = 0,
+            fast = 1,
+            default = 6,
+            best = 9,
+
+            pub fn toInt(self: CompressionLevel) u4 {
+                return @intFromEnum(self);
+            }
+        };
+    };
+
+    /// Async logging configuration.
+    pub const AsyncConfig = struct {
+        /// Enable async logging.
+        enabled: bool = false,
+        /// Buffer size for async queue.
+        buffer_size: usize = 8192,
+        /// Batch size for flushing.
+        batch_size: usize = 100,
+        /// Flush interval in milliseconds.
+        flush_interval_ms: u64 = 100,
+        /// What to do when buffer is full.
+        overflow_policy: OverflowPolicy = .drop_oldest,
+        /// Auto-start worker thread.
+        auto_start: bool = true,
+
+        pub const OverflowPolicy = enum {
+            drop_oldest,
+            drop_newest,
+            block,
+        };
+    };
+
     /// Returns the default configuration.
     ///
     /// The default configuration is:
@@ -197,6 +301,8 @@ pub const Config = struct {
     ///   - No colors
     ///   - Sampling enabled at 10%
     ///   - Metrics enabled
+    ///   - Compression enabled (on rotation)
+    ///   - Scheduler enabled (auto cleanup)
     pub fn production() Config {
         return .{
             .level = .info,
@@ -206,6 +312,16 @@ pub const Config = struct {
             .sampling = .{ .enabled = true, .rate = 0.1 },
             .enable_metrics = true,
             .structured = true,
+            .compression = .{
+                .enabled = true,
+                .level = .default,
+                .on_rotation = true,
+            },
+            .scheduler = .{
+                .enabled = true,
+                .cleanup_max_age_days = 30,
+                .compress_before_cleanup = true,
+            },
         };
     }
 
@@ -234,6 +350,8 @@ pub const Config = struct {
     ///   - Async buffering optimized
     ///   - Rate limiting enabled
     ///   - Adaptive sampling
+    ///   - Thread pool enabled
+    ///   - Async logging enabled
     pub fn highThroughput() Config {
         return .{
             .level = .warning,
@@ -243,6 +361,18 @@ pub const Config = struct {
                 .size = 65536,
                 .flush_interval_ms = 500,
                 .max_pending = 100000,
+            },
+            .thread_pool = .{
+                .enabled = true,
+                .thread_count = 0, // auto-detect
+                .queue_size = 50000,
+                .work_stealing = true,
+            },
+            .async_config = .{
+                .enabled = true,
+                .buffer_size = 32768,
+                .batch_size = 256,
+                .flush_interval_ms = 50,
             },
         };
     }
@@ -283,6 +413,38 @@ pub const Config = struct {
         if (other.sampling.enabled) result.sampling = other.sampling;
         if (other.rate_limit.enabled) result.rate_limit = other.rate_limit;
         if (other.redaction.enabled) result.redaction = other.redaction;
+        if (other.thread_pool.enabled) result.thread_pool = other.thread_pool;
+        if (other.scheduler.enabled) result.scheduler = other.scheduler;
+        if (other.compression.enabled) result.compression = other.compression;
+        if (other.async_config.enabled) result.async_config = other.async_config;
+        return result;
+    }
+
+    /// Returns a configuration with async logging enabled.
+    pub fn withAsync(self: Config) Config {
+        var result = self;
+        result.async_config = .{ .enabled = true };
+        return result;
+    }
+
+    /// Returns a configuration with compression enabled.
+    pub fn withCompression(self: Config) Config {
+        var result = self;
+        result.compression = .{ .enabled = true };
+        return result;
+    }
+
+    /// Returns a configuration with thread pool enabled.
+    pub fn withThreadPool(self: Config, thread_count: usize) Config {
+        var result = self;
+        result.thread_pool = .{ .enabled = true, .thread_count = thread_count };
+        return result;
+    }
+
+    /// Returns a configuration with scheduler enabled.
+    pub fn withScheduler(self: Config) Config {
+        var result = self;
+        result.scheduler = .{ .enabled = true };
         return result;
     }
 };

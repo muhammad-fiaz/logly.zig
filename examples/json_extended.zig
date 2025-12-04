@@ -30,6 +30,6 @@ pub fn main() !void {
         .pretty_json = true,
     });
 
-    try logger.info("This JSON log includes hostname and PID");
-    try logger.warning("And also uses formatted timestamp");
+    try logger.info("This JSON log includes hostname and PID", @src());
+    try logger.warning("And also uses formatted timestamp", @src());
 }

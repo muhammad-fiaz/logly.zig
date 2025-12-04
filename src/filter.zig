@@ -1,4 +1,5 @@
 const std = @import("std");
+const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
 

@@ -17,8 +17,10 @@ pub fn main() !void {
     // Available placeholders: {time}, {level}, {message}, {module}, {function}, {file}, {line}
     config.log_format = "{time} | {level} | {message}";
 
-    // 2. Custom Time Format (currently supports "unix" or default seconds.millis)
-    // In a future update, this will support full date formatting strings
+    // 2. Time Format Options:
+    //    - "YYYY-MM-DD HH:mm:ss" (default) - Human readable format
+    //    - "unix" - Unix timestamp in seconds
+    //    - "unix_ms" - Unix timestamp in milliseconds
     config.time_format = "unix";
 
     // 3. Timezone (Local or UTC)
@@ -27,16 +29,16 @@ pub fn main() !void {
     logger.configure(config);
 
     // Log some messages
-    try logger.info("This is a message with custom format");
-    try logger.warning("Notice the timestamp is now a unix timestamp");
+    try logger.info("This is a message with custom format", @src());
+    try logger.warning("Notice the timestamp is now a unix timestamp", @src());
 
     // Change format dynamically
     config.log_format = "[{level}] {message} (at {time})";
-    config.time_format = "default"; // Switch back to default time format
+    config.time_format = "YYYY-MM-DD HH:mm:ss"; // Switch back to human readable
     logger.configure(config);
 
-    try logger.success("Now the format has changed!");
-    try logger.err("And the time format is back to seconds.millis");
+    try logger.success("Now the format has changed!", @src());
+    try logger.err("And the time format is back to readable datetime", @src());
 
     // Example with module/function context (simulated)
     // Note: In real usage, these are automatically captured if show_module/show_function are true
@@ -45,5 +47,5 @@ pub fn main() !void {
     config.show_module = true;
     logger.configure(config);
 
-    try logger.info("Message with module info");
+    try logger.info("Message with module info", @src());
 }

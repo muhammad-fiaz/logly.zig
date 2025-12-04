@@ -26,9 +26,9 @@ pub fn main() !void {
     std.debug.print("\n--- Logging with Trace Context ---\n\n", .{});
 
     // Log messages - trace context will be included in records
-    try logger.info("Request received");
-    try logger.debug("Processing request data");
-    try logger.info("Calling external service");
+    try logger.info("Request received", @src());
+    try logger.debug("Processing request data", @src());
+    try logger.info("Calling external service", @src());
 
     std.debug.print("\n--- Using Child Spans ---\n\n", .{});
 
@@ -37,9 +37,9 @@ pub fn main() !void {
     {
         var span = try logger.startSpan("external-service");
 
-        try logger.info("External service call started");
-        try logger.debug("Sending request to API");
-        try logger.info("External service responded");
+        try logger.info("External service call started", @src());
+        try logger.debug("Sending request to API", @src());
+        try logger.info("External service responded", @src());
 
         try span.end(null); // End span, pass optional message
     }
@@ -50,15 +50,15 @@ pub fn main() !void {
     {
         var db_span = try logger.startSpan("database-operation");
 
-        try logger.info("Saving to database");
-        try logger.success("Database write successful");
+        try logger.info("Saving to database", @src());
+        try logger.success("Database write successful", @src());
 
         try db_span.end("database operation completed");
     }
 
     std.debug.print("\n--- Back to Parent Span ---\n\n", .{});
 
-    try logger.success("Request completed successfully");
+    try logger.success("Request completed successfully", @src());
 
     std.debug.print("\n--- Using Context for Service Metadata ---\n\n", .{});
 
@@ -68,7 +68,7 @@ pub fn main() !void {
     try logger.bind("version", .{ .string = "1.0.0" });
     try logger.bind("environment", .{ .string = "production" });
 
-    try logger.info("Service metadata added to context");
+    try logger.info("Service metadata added to context", @src());
 
     std.debug.print("\n--- Clearing Trace Context ---\n\n", .{});
 
@@ -77,7 +77,7 @@ pub fn main() !void {
 
     std.debug.print("Trace context cleared\n", .{});
 
-    try logger.info("New request without trace context");
+    try logger.info("New request without trace context", @src());
 
     std.debug.print("\n=== Tracing Example Complete ===\n", .{});
 }

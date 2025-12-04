@@ -23,7 +23,7 @@ pub fn main() !void {
 
     var i: u32 = 0;
     while (i < 10) : (i += 1) {
-        try logger.infof("Message {d} of 10", .{i + 1});
+        try logger.infof("Message {d} of 10", .{i + 1}, @src());
     }
 
     std.debug.print("\n--- Rate Limiting ---\n", .{});
@@ -45,7 +45,7 @@ pub fn main() !void {
 
     i = 0;
     while (i < 10) : (i += 1) {
-        try rate_logger.infof("Rate limited message {d}", .{i + 1});
+        try rate_logger.infof("Rate limited message {d}", .{i + 1}, @src());
     }
 
     std.debug.print("\n--- Every N Sampling ---\n", .{});
@@ -63,7 +63,7 @@ pub fn main() !void {
 
     i = 0;
     while (i < 9) : (i += 1) {
-        try every_logger.infof("Every-N message {d}", .{i + 1});
+        try every_logger.infof("Every-N message {d}", .{i + 1}, @src());
     }
 
     std.debug.print("\n--- Using Sampler Presets ---\n", .{});

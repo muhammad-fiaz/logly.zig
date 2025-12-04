@@ -61,9 +61,9 @@ pub fn main() !void {
     std.debug.print("\n--- Pattern-based Redaction in Logs ---\n\n", .{});
 
     // Log messages with sensitive data - redactor will mask them
-    try logger.info("User login attempt with password=secret123");
-    try logger.info("API call with secret: mysupersecret");
-    try logger.info("Processing order for user@example.com");
+    try logger.info("User login attempt with password=secret123", @src());
+    try logger.info("API call with secret: mysupersecret", @src());
+    try logger.info("Processing order for user@example.com", @src());
 
     std.debug.print("\n--- Using Redaction Presets ---\n\n", .{});
 

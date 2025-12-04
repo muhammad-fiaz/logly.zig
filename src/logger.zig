@@ -473,7 +473,7 @@ pub const Logger = struct {
         return ScopedLogger{ .logger = self, .module = module };
     }
 
-    fn log(self: *Logger, level: Level, message: []const u8, module: ?[]const u8) !void {
+    fn log(self: *Logger, level: Level, message: []const u8, module: ?[]const u8, src: ?std.builtin.SourceLocation) !void {
         if (!self.enabled) return;
 
         self.mutex.lock();
@@ -513,6 +513,20 @@ pub const Logger = struct {
 
         if (module) |m| {
             record.module = m;
+        }
+
+        // Add source location if available and configured
+        if (src) |s| {
+            if (self.config.show_filename) {
+                record.filename = s.file;
+            }
+            if (self.config.show_lineno) {
+                record.line = s.line;
+                record.column = s.column;
+            }
+            if (self.config.show_function) {
+                record.function = s.fn_name;
+            }
         }
 
         // Apply filter if configured (needs record)
@@ -652,42 +666,44 @@ pub const Logger = struct {
     }
 
     // Logging methods with simple, Python-like API
-    pub fn trace(self: *Logger, message: []const u8) !void {
-        try self.log(.trace, message, null);
+    // Pass @src() from your call site to enable clickable file:line in terminal
+    // Example: try logger.info("message", @src());
+    pub fn trace(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.trace, message, null, src);
     }
 
-    pub fn debug(self: *Logger, message: []const u8) !void {
-        try self.log(.debug, message, null);
+    pub fn debug(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.debug, message, null, src);
     }
 
-    pub fn info(self: *Logger, message: []const u8) !void {
-        try self.log(.info, message, null);
+    pub fn info(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.info, message, null, src);
     }
 
-    pub fn success(self: *Logger, message: []const u8) !void {
-        try self.log(.success, message, null);
+    pub fn success(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.success, message, null, src);
     }
 
-    pub fn warning(self: *Logger, message: []const u8) !void {
-        try self.log(.warning, message, null);
+    pub fn warning(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.warning, message, null, src);
     }
 
-    pub fn err(self: *Logger, message: []const u8) !void {
-        try self.log(.err, message, null);
+    pub fn err(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.err, message, null, src);
     }
 
-    pub fn fail(self: *Logger, message: []const u8) !void {
-        try self.log(.fail, message, null);
+    pub fn fail(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.fail, message, null, src);
     }
 
-    pub fn critical(self: *Logger, message: []const u8) !void {
-        try self.log(.critical, message, null);
+    pub fn critical(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.critical, message, null, src);
     }
 
-    pub fn custom(self: *Logger, level_name: []const u8, message: []const u8) !void {
+    pub fn custom(self: *Logger, level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         const level_info = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
         const mapped_level = Level.fromPriority(level_info.priority) orelse .info;
-        try self.logCustomLevel(mapped_level, level_info.name, level_info.color, message, null);
+        try self.logCustomLevel(mapped_level, level_info.name, level_info.color, message, null, src);
     }
 
     /// Internal method to log with custom level name and color
@@ -698,6 +714,7 @@ pub const Logger = struct {
         custom_color: []const u8,
         message: []const u8,
         module: ?[]const u8,
+        src: ?std.builtin.SourceLocation,
     ) !void {
         if (!self.enabled) return;
 
@@ -738,6 +755,20 @@ pub const Logger = struct {
 
         if (module) |m| {
             record.module = m;
+        }
+
+        // Add source location if available and configured
+        if (src) |s| {
+            if (self.config.show_filename) {
+                record.filename = s.file;
+            }
+            if (self.config.show_lineno) {
+                record.line = s.line;
+                record.column = s.column;
+            }
+            if (self.config.show_function) {
+                record.function = s.fn_name;
+            }
         }
 
         // Apply filter if configured
@@ -796,52 +827,54 @@ pub const Logger = struct {
     }
 
     // Formatted logging methods
-    pub fn tracef(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    // Pass @src() from your call site to enable clickable file:line in terminal
+    // Example: try logger.infof("value: {d}", .{42}, @src());
+    pub fn tracef(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.trace, message, null);
+        try self.log(.trace, message, null, src);
     }
 
-    pub fn debugf(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn debugf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.debug, message, null);
+        try self.log(.debug, message, null, src);
     }
 
-    pub fn infof(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn infof(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.info, message, null);
+        try self.log(.info, message, null, src);
     }
 
-    pub fn successf(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn successf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.success, message, null);
+        try self.log(.success, message, null, src);
     }
 
-    pub fn warningf(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn warningf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.warning, message, null);
+        try self.log(.warning, message, null, src);
     }
 
-    pub fn errf(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn errf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.err, message, null);
+        try self.log(.err, message, null, src);
     }
 
-    pub fn failf(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn failf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.fail, message, null);
+        try self.log(.fail, message, null, src);
     }
 
-    pub fn criticalf(self: *Logger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn criticalf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
-        try self.log(.critical, message, null);
+        try self.log(.critical, message, null, src);
     }
 
     /// Logs a message with a custom level name and format arguments.
@@ -852,12 +885,13 @@ pub const Logger = struct {
     ///     level_name: The name of the custom level (must be registered first).
     ///     fmt: The format string.
     ///     args: The arguments for the format string.
-    pub fn customf(self: *Logger, level_name: []const u8, comptime fmt: []const u8, args: anytype) !void {
+    ///     src: Optional source location for clickable file:line display.
+    pub fn customf(self: *Logger, level_name: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const level_info = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
         const mapped_level = Level.fromPriority(level_info.priority) orelse .info;
-        try self.logCustomLevel(mapped_level, level_info.name, level_info.color, message, null);
+        try self.logCustomLevel(mapped_level, level_info.name, level_info.color, message, null, src);
     }
 };
 
@@ -906,84 +940,84 @@ pub const ScopedLogger = struct {
     logger: *Logger,
     module: []const u8,
 
-    pub fn trace(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.trace, message, self.module);
+    pub fn trace(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.trace, message, self.module, src);
     }
 
-    pub fn debug(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.debug, message, self.module);
+    pub fn debug(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.debug, message, self.module, src);
     }
 
-    pub fn info(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.info, message, self.module);
+    pub fn info(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.info, message, self.module, src);
     }
 
-    pub fn success(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.success, message, self.module);
+    pub fn success(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.success, message, self.module, src);
     }
 
-    pub fn warning(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.warning, message, self.module);
+    pub fn warning(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.warning, message, self.module, src);
     }
 
-    pub fn err(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.err, message, self.module);
+    pub fn err(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.err, message, self.module, src);
     }
 
-    pub fn fail(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.fail, message, self.module);
+    pub fn fail(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.fail, message, self.module, src);
     }
 
-    pub fn critical(self: ScopedLogger, message: []const u8) !void {
-        try self.logger.log(.critical, message, self.module);
+    pub fn critical(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.critical, message, self.module, src);
     }
 
-    pub fn tracef(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn tracef(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.trace, message, self.module);
+        try self.logger.log(.trace, message, self.module, src);
     }
 
-    pub fn debugf(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn debugf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.debug, message, self.module);
+        try self.logger.log(.debug, message, self.module, src);
     }
 
-    pub fn infof(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn infof(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.info, message, self.module);
+        try self.logger.log(.info, message, self.module, src);
     }
 
-    pub fn successf(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn successf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.success, message, self.module);
+        try self.logger.log(.success, message, self.module, src);
     }
 
-    pub fn warningf(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn warningf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.warning, message, self.module);
+        try self.logger.log(.warning, message, self.module, src);
     }
 
-    pub fn errf(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn errf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.err, message, self.module);
+        try self.logger.log(.err, message, self.module, src);
     }
 
-    pub fn failf(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn failf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.fail, message, self.module);
+        try self.logger.log(.fail, message, self.module, src);
     }
 
-    pub fn criticalf(self: ScopedLogger, comptime fmt: []const u8, args: anytype) !void {
+    pub fn criticalf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
-        try self.logger.log(.critical, message, self.module);
+        try self.logger.log(.critical, message, self.module, src);
     }
 };
 

@@ -6,10 +6,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const logger = try logly.Logger.init(allocator);
-    defer logger.deinit();
-
-    // Disable auto console sink to configure everything manually
+    // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
     config.auto_sink = false;
 
@@ -20,7 +17,8 @@ pub fn main() !void {
     // Custom date format
     config.time_format = "default"; // Will use YYYY-MM-DD HH:MM:SS.mmm
 
-    logger.configure(config);
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
 
     // 1. Standard Console Sink (with colors)
     _ = try logger.addSink(.{});
@@ -50,9 +48,9 @@ pub fn main() !void {
         .color = true,
     });
 
-    try logger.info("This message goes to all sinks in different formats!");
-    try logger.warning("Check the logs/ directory to see the differences.");
+    try logger.info("This message goes to all sinks in different formats!", @src());
+    try logger.warning("Check the logs/ directory to see the differences.", @src());
 
     // Demonstrate clickable links (VS Code terminal format)
-    try logger.err("Error at specific line (try clicking the filename in console)");
+    try logger.err("Error at specific line (try clicking the filename in console)", @src());
 }

@@ -17,16 +17,13 @@ pub fn main() !void {
 
     std.debug.print("--- Logging messages to collect metrics ---\n\n", .{});
 
-    // Log various messages
-    try logger.trace("Trace message 1");
-    try logger.debug("Debug message 1");
-    try logger.debug("Debug message 2");
-    try logger.info("Info message 1");
-    try logger.info("Info message 2");
-    try logger.info("Info message 3");
-    try logger.warning("Warning message 1");
-    try logger.err("Error message 1");
-    try logger.critical("Critical message 1");
+    // Log various messages (pass @src() for source location or null)
+    try logger.info("Info message 1", @src());
+    try logger.info("Info message 2", @src());
+    try logger.info("Info message 3", @src());
+    try logger.warning("Warning message 1", @src());
+    try logger.err("Error message 1", @src());
+    try logger.critical("Critical message 1", @src());
 
     std.debug.print("\n--- Metrics Snapshot ---\n\n", .{});
 

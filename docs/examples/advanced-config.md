@@ -2,6 +2,27 @@
 
 This example demonstrates how to leverage advanced configuration options including custom log formats, timestamps, timezone settings, colors, and enterprise features.
 
+## Centralized Configuration Types
+
+Logly now provides centralized configuration for all modules:
+
+```zig
+const logly = @import("logly");
+
+// Access all config types from logly namespace
+const ThreadPoolConfig = logly.ThreadPoolConfig;
+const SchedulerConfig = logly.SchedulerConfig;
+const CompressionConfig = logly.CompressionConfig;
+const AsyncConfig = logly.AsyncConfig;
+
+// Build comprehensive config using helper methods
+var config = logly.Config.default()
+    .withThreadPool(.{ .worker_count = 4 })
+    .withScheduler(.{ .max_tasks = 256 })
+    .withCompression(.{ .level = 6 })
+    .withAsync(.{ .buffer_size = 4096 });
+```
+
 ## Code Example
 
 ```zig

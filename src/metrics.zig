@@ -1,4 +1,5 @@
 const std = @import("std");
+const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 
 /// Metrics collection for logging system observability.
@@ -54,6 +55,35 @@ pub const Metrics = struct {
         critical = 7,
     };
 
+    /// Maps a Level enum value to a LevelIndex for the metrics array.
+    fn levelToIndex(level: Level) u3 {
+        return switch (level) {
+            .trace => 0,
+            .debug => 1,
+            .info => 2,
+            .success => 3,
+            .warning => 4,
+            .err => 5,
+            .fail => 6,
+            .critical => 7,
+        };
+    }
+
+    /// Maps a LevelIndex back to a Level name string.
+    pub fn indexToLevelName(index: usize) []const u8 {
+        return switch (index) {
+            0 => "TRACE",
+            1 => "DEBUG",
+            2 => "INFO",
+            3 => "SUCCESS",
+            4 => "WARNING",
+            5 => "ERROR",
+            6 => "FAIL",
+            7 => "CRITICAL",
+            else => "UNKNOWN",
+        };
+    }
+
     /// Initializes a new Metrics instance.
     ///
     /// Arguments:
@@ -85,7 +115,7 @@ pub const Metrics = struct {
     pub fn recordLog(self: *Metrics, level: Level, bytes: u64) void {
         _ = self.total_records.fetchAdd(1, .monotonic);
         _ = self.total_bytes.fetchAdd(bytes, .monotonic);
-        const level_index: u3 = @truncate(@intFromEnum(level));
+        const level_index = levelToIndex(level);
         _ = self.level_counts[level_index].fetchAdd(1, .monotonic);
         self.last_record_time.store(std.time.milliTimestamp(), .monotonic);
     }
@@ -214,6 +244,38 @@ pub const Metrics = struct {
             snapshot.records_per_second,
             snapshot.bytes_per_second,
         });
+    }
+
+    /// Formats level breakdown as a human-readable string.
+    ///
+    /// Arguments:
+    ///     allocator: Allocator for the result string.
+    ///
+    /// Returns:
+    ///     A formatted string describing levels with counts > 0 (caller must free).
+    pub fn formatLevelBreakdown(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
+        const snapshot = self.getSnapshot();
+        var buf = std.ArrayList(u8).init(allocator);
+        errdefer buf.deinit();
+        const writer = buf.writer();
+
+        try writer.writeAll("Level Breakdown:");
+        var has_levels = false;
+        for (0..8) |i| {
+            const count = snapshot.level_counts[i];
+            if (count > 0) {
+                if (has_levels) {
+                    try writer.writeAll(",");
+                }
+                try writer.print(" {s}:{d}", .{ indexToLevelName(i), count });
+                has_levels = true;
+            }
+        }
+        if (!has_levels) {
+            try writer.writeAll(" (none)");
+        }
+
+        return buf.toOwnedSlice();
     }
 };
 

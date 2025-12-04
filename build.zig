@@ -9,6 +9,13 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/logly.zig"),
     });
 
+    // Expose the module for external projects that depend on this package.
+    // This allows users to do: `const logly = @import("logly");` in their code
+    // after adding logly as a dependency and calling `dep.module("logly")` in their build.zig
+    _ = b.addModule("logly", .{
+        .root_source_file = b.path("src/logly.zig"),
+    });
+
     // Build examples
     const examples = [_]struct { name: []const u8, path: []const u8 }{
         .{ .name = "basic", .path = "examples/basic.zig" },
@@ -33,6 +40,12 @@ pub fn build(b: *std.Build) void {
         .{ .name = "production_config", .path = "examples/production_config.zig" },
         .{ .name = "color_options", .path = "examples/color_options.zig" },
         .{ .name = "custom_levels_full", .path = "examples/custom_levels_full.zig" },
+        .{ .name = "compression", .path = "examples/compression.zig" },
+        .{ .name = "thread_pool", .path = "examples/thread_pool.zig" },
+        .{ .name = "scheduler", .path = "examples/scheduler.zig" },
+        .{ .name = "async_advanced", .path = "examples/async_advanced.zig" },
+        .{ .name = "compression_demo", .path = "examples/compression_demo.zig" },
+        .{ .name = "scheduler_demo", .path = "examples/scheduler_demo.zig" },
     };
 
     inline for (examples) |example| {
@@ -49,6 +62,12 @@ pub fn build(b: *std.Build) void {
         const install_exe = b.addInstallArtifact(exe, .{});
         const example_step = b.step("example-" ++ example.name, "Build " ++ example.name ++ " example");
         example_step.dependOn(&install_exe.step);
+
+        // Add run step for each example
+        const run_exe = b.addRunArtifact(exe);
+        run_exe.step.dependOn(&install_exe.step);
+        const run_step = b.step("run-" ++ example.name, "Run " ++ example.name ++ " example");
+        run_step.dependOn(&run_exe.step);
     }
 
     // Unit tests

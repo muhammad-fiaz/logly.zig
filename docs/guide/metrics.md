@@ -141,6 +141,36 @@ std.debug.print("{s}\n", .{formatted});
 //   Uptime: 1234ms
 //   Rate: 1.62 records/sec
 //   Throughput: 121.55 bytes/sec
+
+// Get level breakdown
+const level_breakdown = try metrics.formatLevelBreakdown(allocator);
+defer allocator.free(level_breakdown);
+
+std.debug.print("{s}\n", .{level_breakdown});
+// Output: Level Breakdown: INFO:1, ERROR:1
+```
+
+## Level Breakdown
+
+The `formatLevelBreakdown` method provides a compact view of non-zero level counts:
+
+```zig
+var metrics = Metrics.init(allocator);
+defer metrics.deinit();
+
+// Log at different levels
+metrics.recordLog(.info, 100);
+metrics.recordLog(.info, 80);
+metrics.recordLog(.info, 90);
+metrics.recordLog(.warning, 50);
+metrics.recordLog(.err, 60);
+metrics.recordLog(.critical, 70);
+
+const breakdown = try metrics.formatLevelBreakdown(allocator);
+defer allocator.free(breakdown);
+
+std.debug.print("{s}\n", .{breakdown});
+// Output: Level Breakdown: INFO:3, WARNING:1, ERROR:1, CRITICAL:1
 ```
 
 ## Periodic Metrics Reporting

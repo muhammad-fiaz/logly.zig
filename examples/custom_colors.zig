@@ -38,17 +38,17 @@ pub fn main() !void {
 
     std.debug.print("=== Whole-Line Color Demo ===\n\n", .{});
 
-    try logger.info("Standard Info - entire line is white");
-    try logger.success("Success message - entire line is green");
-    try logger.warning("Warning message - entire line is yellow");
-    try logger.err("Error message - entire line is red");
-    try logger.critical("Critical message - entire line is bright red");
+    try logger.info("Standard Info - entire line is white", @src());
+    try logger.success("Success message - entire line is green", @src());
+    try logger.warning("Warning message - entire line is yellow", @src());
+    try logger.err("Error message - entire line is red", @src());
+    try logger.critical("Critical message - entire line is bright red", @src());
 
     std.debug.print("\n=== Custom Level Colors ===\n\n", .{});
 
-    try logger.custom("NOTICE", "This is a notice (Cyan Bold) - entire line colored");
-    try logger.custom("ALERT", "This is an alert (Red Underline) - entire line colored");
-    try logger.custom("HIGHLIGHT", "This is highlighted (Yellow Bold Reverse)");
+    try logger.custom("NOTICE", "This is a notice (Cyan Bold) - entire line colored", @src());
+    try logger.custom("ALERT", "This is an alert (Red Underline) - entire line colored", @src());
+    try logger.custom("HIGHLIGHT", "This is highlighted (Yellow Bold Reverse)", @src());
 
     std.debug.print("\n=== Platform Support ===\n", .{});
     std.debug.print("Colors work on: Linux, macOS, Windows 10+, VS Code Terminal, etc.\n", .{});

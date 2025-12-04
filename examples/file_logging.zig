@@ -6,13 +6,12 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const logger = try logly.Logger.init(allocator);
-    defer logger.deinit();
-
-    // Configure to disable auto console sink
+    // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
     config.auto_sink = false;
-    logger.configure(config);
+
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
 
     // Add file sink
     _ = try logger.addSink(.{
@@ -22,8 +21,8 @@ pub fn main() !void {
     // Add console sink
     _ = try logger.addSink(.{});
 
-    try logger.info("Logging to both file and console");
-    try logger.success("File created in logs/app.log");
+    try logger.info("Logging to both file and console", @src());
+    try logger.success("File created in logs/app.log", @src());
 
     // Flush to ensure all data is written
     try logger.flush();

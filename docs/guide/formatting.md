@@ -143,11 +143,47 @@ Supported placeholders:
 
 ## Time Formatting
 
-You can also customize the timestamp format and timezone:
+Logly supports multiple timestamp formats to suit different use cases:
 
 ```zig
-config.time_format = "unix"; // or default
-config.timezone = .utc;      // or .local
+// Human-readable format (default)
+config.time_format = "YYYY-MM-DD HH:mm:ss";
+// Output: 2025-12-04 06:39:53.091
+
+// ISO 8601 format
+config.time_format = "ISO8601";
+// Output: 2025-12-04T06:39:53.091Z
+
+// RFC 3339 format
+config.time_format = "RFC3339";
+// Output: 2025-12-04T06:39:53+00:00
+
+// Date only
+config.time_format = "YYYY-MM-DD";
+// Output: 2025-12-04
+
+// Time only
+config.time_format = "HH:mm:ss";
+// Output: 06:39:53
+
+// Time with milliseconds
+config.time_format = "HH:mm:ss.SSS";
+// Output: 06:39:53.091
+
+// Unix timestamp (seconds)
+config.time_format = "unix";
+// Output: 1764830393
+
+// Unix timestamp (milliseconds)
+config.time_format = "unix_ms";
+// Output: 1764830393091
+```
+
+### Timezone Configuration
+
+```zig
+config.timezone = .utc;    // Use UTC time
+config.timezone = .local;  // Use local time (default)
 ```
 
 ## Formatted Logging

@@ -1,4 +1,5 @@
 const std = @import("std");
+const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
 const Formatter = @import("formatter.zig").Formatter;
@@ -89,17 +90,12 @@ pub const SinkConfig = struct {
     /// File permissions for created log files (Unix only).
     file_mode: ?u32 = null,
 
-    /// Compression configuration.
+    /// Compression configuration for sink.
+    /// Re-exports centralized config for convenience.
     pub const CompressionConfig = struct {
         enabled: bool = false,
-        algorithm: Algorithm = .gzip,
-        level: u4 = 6,
-
-        pub const Algorithm = enum {
-            none,
-            gzip,
-            zstd,
-        };
+        algorithm: Config.CompressionConfig.CompressionAlgorithm = .deflate,
+        level: Config.CompressionConfig.CompressionLevel = .default,
     };
 
     /// Filter configuration for sink-level filtering.

@@ -30,10 +30,11 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Entire line is colored based on level!
-    try logger.info("Hello, Logly!");       // White line
-    try logger.success("Operation done!");   // Green line
-    try logger.warning("Be careful!");       // Yellow line
-    try logger.err("Something went wrong!"); // Red line
+    // Pass @src() for clickable file:line output, or null for no source location
+    try logger.info("Hello, Logly!", @src());       // White line
+    try logger.success("Operation done!", @src());   // Green line
+    try logger.warning("Be careful!", @src());       // Yellow line
+    try logger.err("Something went wrong!", @src()); // Red line
 }
 ```
 
@@ -41,14 +42,18 @@ pub fn main() !void {
 
 ```zig
 // Each level colors the ENTIRE log line (timestamp, level, message)
-try logger.trace("Detailed trace");      // Priority 5  - Cyan
-try logger.debug("Debug info");          // Priority 10 - Blue
-try logger.info("Information");          // Priority 20 - White
-try logger.success("Success!");          // Priority 25 - Green
-try logger.warning("Warning");           // Priority 30 - Yellow
-try logger.err("Error occurred");        // Priority 40 - Red
-try logger.fail("Operation failed");     // Priority 45 - Magenta
-try logger.critical("Critical!");        // Priority 50 - Bright Red
+// All logging methods accept an optional source location as the last parameter
+try logger.trace("Detailed trace", @src());      // Priority 5  - Cyan
+try logger.debug("Debug info", @src());          // Priority 10 - Blue
+try logger.info("Information", @src());          // Priority 20 - White
+try logger.success("Success!", @src());          // Priority 25 - Green
+try logger.warning("Warning", @src());           // Priority 30 - Yellow
+try logger.err("Error occurred", @src());        // Priority 40 - Red
+try logger.fail("Operation failed", @src());     // Priority 45 - Magenta
+try logger.critical("Critical!", @src());        // Priority 50 - Bright Red
+
+// Without source location (no clickable file:line)
+try logger.info("Simple message", null);
 ```
 
 ### Formatted Logging
@@ -56,9 +61,9 @@ try logger.critical("Critical!");        // Priority 50 - Bright Red
 Use `printf`-style formatting with the `f` suffix methods:
 
 ```zig
-try logger.infof("User {s} logged in from {s}", .{ "Alice", "127.0.0.1" });
-try logger.debugf("Processing item {d} of {d}", .{ 5, 10 });
-try logger.errf("Connection failed: {s}", .{ "Timeout" });
+try logger.infof("User {s} logged in from {s}", .{ "Alice", "127.0.0.1" }, @src());
+try logger.debugf("Processing item {d} of {d}", .{ 5, 10 }, @src());
+try logger.errf("Connection failed: {s}", .{ "Timeout" }, @src());
 ```
 
 ## File Logging
@@ -76,7 +81,7 @@ _ = try logger.addSink(.{
     .color = false, // Disable colors for file (default)
 });
 
-try logger.info("Logging to file!");
+try logger.info("Logging to file!", @src());
 try logger.flush(); // Ensure data is written
 ```
 
@@ -99,8 +104,8 @@ var config = logly.Config.default();
 config.json = true;
 logger.configure(config);
 
-try logger.info("JSON formatted");
-// Output: {"timestamp":"...","level":"INFO","message":"JSON formatted"}
+try logger.info("JSON formatted", @src());
+// Output: {"timestamp":"...","level":"INFO","message":"JSON formatted","filename":"myfile.zig","line":42}
 ```
 
 ### Context Binding
@@ -109,7 +114,7 @@ try logger.info("JSON formatted");
 try logger.bind("user_id", .{ .string = "12345" });
 try logger.bind("request_id", .{ .string = "req-abc" });
 
-try logger.info("User action");
+try logger.info("User action", @src());
 // Logs include user_id and request_id automatically
 ```
 
@@ -117,7 +122,7 @@ try logger.info("User action");
 
 ```zig
 try logger.addCustomLevel("NOTICE", 35, "96");
-try logger.custom("NOTICE", "Custom level message");
+try logger.custom("NOTICE", "Custom level message", @src());
 ```
 
 ### Callbacks
@@ -187,10 +192,12 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Configure
+    // Configure with source location display
     var config = logly.Config.default();
     config.level = .debug;
     config.color = true;
+    config.show_filename = true;  // Enable clickable file:line
+    config.show_lineno = true;
     config.enable_callbacks = true;
     logger.configure(config);
 
@@ -206,22 +213,16 @@ pub fn main() !void {
     try logger.bind("app", .{ .string = "myapp" });
     try logger.bind("version", .{ .string = "1.0.0" });
 
-    // Log messages
-    try logger.info("Application started");
-    try logger.success("Initialization complete");
+    // Log messages with source location (clickable in terminals)
+    try logger.info("Application started", @src());
+    try logger.success("Initialization complete", @src());
 
     // Simulate work
     for (0..10) |i| {
-        const msg = try std.fmt.allocPrint(
-            allocator,
-            "Processing item {d}",
-            .{i}
-        );
-        defer allocator.free(msg);
-        try logger.debug(msg);
+        try logger.debugf("Processing item {d}", .{i}, @src());
     }
 
-    try logger.success("All items processed");
+    try logger.success("All items processed", @src());
 }
 ```
 

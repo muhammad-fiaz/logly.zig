@@ -1,4 +1,5 @@
 const std = @import("std");
+const Config = @import("config.zig").Config;
 
 /// Sampler for controlling log throughput.
 ///
