@@ -22,6 +22,7 @@ const Metrics = @import("metrics.zig").Metrics;
 /// - Sampling and rate limiting
 /// - Sensitive data redaction
 /// - Metrics collection
+/// - Arena allocator support for improved performance
 pub const Logger = struct {
     allocator: std.mem.Allocator,
     config: Config,
@@ -50,6 +51,29 @@ pub const Logger = struct {
 
     /// Total records processed counter.
     record_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+    /// Arena allocator for temporary allocations (optional).
+    /// When enabled, reduces allocation overhead for formatting operations.
+    arena_state: ?std.heap.ArenaAllocator = null,
+
+    /// The parent allocator used to create the arena (if applicable).
+    parent_allocator: ?std.mem.Allocator = null,
+
+    /// Returns the arena allocator if enabled, otherwise the main allocator.
+    pub fn scratchAllocator(self: *Logger) std.mem.Allocator {
+        if (self.arena_state) |*arena| {
+            return arena.allocator();
+        }
+        return self.allocator;
+    }
+
+    /// Resets the arena allocator if enabled, freeing temporary allocations.
+    /// Call this periodically in high-throughput scenarios to prevent memory growth.
+    pub fn resetArena(self: *Logger) void {
+        if (self.arena_state) |*arena| {
+            _ = arena.reset(.retain_capacity);
+        }
+    }
 
     /// Initializes a new Logger instance.
     ///
@@ -99,6 +123,12 @@ pub const Logger = struct {
             .module_levels = std.StringHashMap(Level).init(allocator),
             .init_timestamp = std.time.timestamp(),
         };
+
+        // Initialize arena allocator if configured
+        if (config.use_arena_allocator) {
+            logger.arena_state = std.heap.ArenaAllocator.init(allocator);
+            logger.parent_allocator = allocator;
+        }
 
         if (config.auto_sink) {
             _ = try logger.addSink(SinkConfig.default());
@@ -151,6 +181,11 @@ pub const Logger = struct {
         if (self.trace_id) |t| self.allocator.free(t);
         if (self.span_id) |s| self.allocator.free(s);
         if (self.correlation_id) |c| self.allocator.free(c);
+
+        // Deinitialize arena allocator if it was created
+        if (self.arena_state) |*arena| {
+            arena.deinit();
+        }
 
         self.allocator.destroy(self);
     }
@@ -298,6 +333,16 @@ pub const Logger = struct {
         };
     }
 
+    /// Adds a new sink to the logger with the specified configuration.
+    /// Thread-safe: Uses mutex for concurrent access protection.
+    ///
+    /// Arguments:
+    ///     config: The sink configuration.
+    ///
+    /// Returns:
+    ///     The index of the newly added sink.
+    ///
+    /// Also available as: `logger.add(config)`
     pub fn addSink(self: *Logger, config: SinkConfig) !usize {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -308,6 +353,12 @@ pub const Logger = struct {
         return self.sinks.items.len - 1;
     }
 
+    /// Alias for addSink() - shorter form.
+    /// Usage: `_ = try logger.add(SinkConfig.file("app.log"));`
+    pub const add = addSink;
+
+    /// Removes a sink by index.
+    /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn removeSink(self: *Logger, id: usize) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -318,18 +369,32 @@ pub const Logger = struct {
         }
     }
 
+    /// Alias for removeSink() - shorter form.
+    pub const remove = removeSink;
+
+    /// Removes all sinks from the logger.
+    /// Thread-safe: Uses mutex for concurrent access protection.
+    ///
+    /// Returns:
+    ///     The number of sinks removed.
     pub fn removeAllSinks(self: *Logger) usize {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const count = self.sinks.items.len;
+        const removed_count = self.sinks.items.len;
         for (self.sinks.items) |sink| {
             sink.deinit();
         }
         self.sinks.clearRetainingCapacity();
-        return count;
+        return removed_count;
     }
 
+    /// Alias for removeAllSinks() - shorter form.
+    pub const removeAll = removeAllSinks;
+    pub const clear = removeAllSinks;
+
+    /// Enables a sink by index.
+    /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn enableSink(self: *Logger, id: usize) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -339,6 +404,8 @@ pub const Logger = struct {
         }
     }
 
+    /// Disables a sink by index.
+    /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn disableSink(self: *Logger, id: usize) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -348,11 +415,17 @@ pub const Logger = struct {
         }
     }
 
+    /// Returns the number of sinks.
+    /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn getSinkCount(self: *Logger) usize {
         self.mutex.lock();
         defer self.mutex.unlock();
         return self.sinks.items.len;
     }
+
+    /// Alias for getSinkCount() - shorter form.
+    pub const count = getSinkCount;
+    pub const sinkCount = getSinkCount;
 
     pub fn bind(self: *Logger, key: []const u8, value: std.json.Value) !void {
         self.mutex.lock();
@@ -684,9 +757,20 @@ pub const Logger = struct {
         try self.log(.success, message, null, src);
     }
 
+    /// Logs a warning message.
+    /// Also available as: `logger.warn("message", @src())`
     pub fn warning(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.warning, message, null, src);
     }
+
+    /// Alias for warning() - shorter form.
+    pub const warn = warning;
+
+    /// Logs an error message.
+    /// Note: This method is named `@"error"` to use 'error' as identifier.
+    /// Call it as: `logger.@"error"("message", @src())`
+    /// Or use the alias: `logger.err("message", @src())`
+    pub const @"error" = err;
 
     pub fn err(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.err, message, null, src);
@@ -696,9 +780,14 @@ pub const Logger = struct {
         try self.log(.fail, message, null, src);
     }
 
+    /// Logs a critical message.
+    /// Also available as: `logger.crit("message", @src())`
     pub fn critical(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.critical, message, null, src);
     }
+
+    /// Alias for critical() - shorter form.
+    pub const crit = critical;
 
     pub fn custom(self: *Logger, level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         const level_info = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
@@ -853,11 +942,22 @@ pub const Logger = struct {
         try self.log(.success, message, null, src);
     }
 
+    /// Logs a formatted warning message.
+    /// Also available as: `logger.warnf("format", .{args}, @src())`
     pub fn warningf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
         try self.log(.warning, message, null, src);
     }
+
+    /// Alias for warningf() - shorter form.
+    pub const warnf = warningf;
+
+    /// Logs a formatted error message.
+    /// Note: This method is named `@"errorf"` to provide 'errorf' function.
+    /// Call it as: `logger.errorf("format {d}", .{val}, @src())`
+    /// Or use the alias: `logger.errf("format {d}", .{val}, @src())`
+    pub const errorf = errf;
 
     pub fn errf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
@@ -871,11 +971,16 @@ pub const Logger = struct {
         try self.log(.fail, message, null, src);
     }
 
+    /// Logs a formatted critical message.
+    /// Also available as: `logger.critf("format", .{args}, @src())`
     pub fn criticalf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
         try self.log(.critical, message, null, src);
     }
+
+    /// Alias for criticalf() - shorter form.
+    pub const critf = criticalf;
 
     /// Logs a message with a custom level name and format arguments.
     ///
@@ -956,9 +1061,18 @@ pub const ScopedLogger = struct {
         try self.logger.log(.success, message, self.module, src);
     }
 
+    /// Logs a warning message with module scope.
+    /// Also available as: `scoped.warn("message", @src())`
     pub fn warning(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.warning, message, self.module, src);
     }
+
+    /// Alias for warning() - shorter form.
+    pub const warn = warning;
+
+    /// Logs an error message with module scope.
+    /// Use `@"error"` or `err` to call this method.
+    pub const @"error" = err;
 
     pub fn err(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.err, message, self.module, src);
@@ -968,9 +1082,14 @@ pub const ScopedLogger = struct {
         try self.logger.log(.fail, message, self.module, src);
     }
 
+    /// Logs a critical message with module scope.
+    /// Also available as: `scoped.crit("message", @src())`
     pub fn critical(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.critical, message, self.module, src);
     }
+
+    /// Alias for critical() - shorter form.
+    pub const crit = critical;
 
     pub fn tracef(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
@@ -996,11 +1115,20 @@ pub const ScopedLogger = struct {
         try self.logger.log(.success, message, self.module, src);
     }
 
+    /// Logs a formatted warning message with module scope.
+    /// Also available as: `scoped.warnf("format", .{args}, @src())`
     pub fn warningf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.warning, message, self.module, src);
     }
+
+    /// Alias for warningf() - shorter form.
+    pub const warnf = warningf;
+
+    /// Logs a formatted error message with module scope.
+    /// Use `errorf` or `errf` to call this method.
+    pub const errorf = errf;
 
     pub fn errf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
@@ -1014,11 +1142,16 @@ pub const ScopedLogger = struct {
         try self.logger.log(.fail, message, self.module, src);
     }
 
+    /// Logs a formatted critical message with module scope.
+    /// Also available as: `scoped.critf("format", .{args}, @src())`
     pub fn criticalf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.critical, message, self.module, src);
     }
+
+    /// Alias for criticalf() - shorter form.
+    pub const critf = criticalf;
 };
 
 test "logger basic" {

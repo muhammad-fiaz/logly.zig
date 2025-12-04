@@ -20,30 +20,30 @@ pub fn main() !void {
     config.auto_sink = false;
     logger.configure(config);
 
-    // Daily rotation with 7 day retention
-    _ = try logger.addSink(.{
+    // Daily rotation with 7 day retention (using add() alias)
+    _ = try logger.add(.{
         .path = "logs/daily.log",
         .rotation = "daily",
         .retention = 7,
     });
 
     // Size-based rotation (10MB limit)
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/size_based.log",
         .size_limit = 10 * 1024 * 1024,
         .retention = 5,
     });
 
     // Combined rotation (daily OR 5MB)
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/combined.log",
         .rotation = "daily",
         .size_limit = 5 * 1024 * 1024,
         .retention = 10,
     });
 
-    try logger.info("Rotation example - files will rotate based on time or size");
-    try logger.success("Check logs/ directory for rotated files");
+    try logger.info("Rotation example - files will rotate based on time or size", @src());
+    try logger.success("Check logs/ directory for rotated files", @src());
 
     try logger.flush();
 

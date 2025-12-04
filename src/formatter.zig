@@ -201,47 +201,107 @@ pub const Formatter = struct {
             return;
         }
 
-        // Date only format: 2025-12-04
-        if (std.mem.eql(u8, config.time_format, "YYYY-MM-DD")) {
-            try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{
-                yd.year,
-                month_day.month.numeric(),
-                month_day.day_index + 1,
-            });
-            return;
-        }
+        // Custom format parsing - supports any format with placeholders:
+        // YYYY = 4-digit year, YY = 2-digit year
+        // MM = 2-digit month, M = 1-2 digit month
+        // DD = 2-digit day, D = 1-2 digit day
+        // HH = 2-digit hour (24h), hh = 2-digit hour (12h)
+        // mm = 2-digit minute
+        // ss = 2-digit second
+        // SSS = 3-digit millisecond
+        // Any other characters are output literally (-, /, :, space, T, etc.)
+        try writeCustomFormat(writer, config.time_format, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs, millis);
+    }
 
-        // Time only format: 06:39:53
-        if (std.mem.eql(u8, config.time_format, "HH:mm:ss")) {
-            try writer.print("{d:0>2}:{d:0>2}:{d:0>2}", .{
-                hours,
-                minutes,
-                secs,
-            });
-            return;
+    /// Writes a timestamp using a custom format string.
+    /// Supports placeholders: YYYY, YY, MM, M, DD, D, HH, hh, mm, ss, SSS
+    /// Any other characters are written literally.
+    fn writeCustomFormat(
+        writer: anytype,
+        fmt: []const u8,
+        year: i32,
+        month: u9,
+        day: u9,
+        hours: u64,
+        minutes: u64,
+        secs: u64,
+        millis: u64,
+    ) !void {
+        var i: usize = 0;
+        while (i < fmt.len) {
+            // Check for YYYY (4-digit year)
+            if (i + 4 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 4], "YYYY")) {
+                const abs_year: u32 = @intCast(if (year < 0) 0 else year);
+                try writer.print("{d:0>4}", .{abs_year});
+                i += 4;
+                continue;
+            }
+            // Check for YY (2-digit year)
+            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "YY")) {
+                const short_year = @mod(@as(u32, @intCast(if (year < 0) 0 else year)), 100);
+                try writer.print("{d:0>2}", .{short_year});
+                i += 2;
+                continue;
+            }
+            // Check for SSS (3-digit milliseconds) - must check before ss
+            if (i + 3 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 3], "SSS")) {
+                try writer.print("{d:0>3}", .{millis});
+                i += 3;
+                continue;
+            }
+            // Check for MM (2-digit month)
+            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "MM")) {
+                try writer.print("{d:0>2}", .{month});
+                i += 2;
+                continue;
+            }
+            // Check for M (1-2 digit month)
+            if (i + 1 <= fmt.len and fmt[i] == 'M' and (i + 1 >= fmt.len or fmt[i + 1] != 'M')) {
+                try writer.print("{d}", .{month});
+                i += 1;
+                continue;
+            }
+            // Check for DD (2-digit day)
+            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "DD")) {
+                try writer.print("{d:0>2}", .{day});
+                i += 2;
+                continue;
+            }
+            // Check for D (1-2 digit day)
+            if (i + 1 <= fmt.len and fmt[i] == 'D' and (i + 1 >= fmt.len or fmt[i + 1] != 'D')) {
+                try writer.print("{d}", .{day});
+                i += 1;
+                continue;
+            }
+            // Check for HH (2-digit hour 24h)
+            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "HH")) {
+                try writer.print("{d:0>2}", .{hours});
+                i += 2;
+                continue;
+            }
+            // Check for hh (2-digit hour 12h)
+            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "hh")) {
+                const hour12 = if (hours == 0) 12 else if (hours > 12) hours - 12 else hours;
+                try writer.print("{d:0>2}", .{hour12});
+                i += 2;
+                continue;
+            }
+            // Check for mm (2-digit minute)
+            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "mm")) {
+                try writer.print("{d:0>2}", .{minutes});
+                i += 2;
+                continue;
+            }
+            // Check for ss (2-digit second)
+            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "ss")) {
+                try writer.print("{d:0>2}", .{secs});
+                i += 2;
+                continue;
+            }
+            // Any other character - write literally
+            try writer.writeByte(fmt[i]);
+            i += 1;
         }
-
-        // Time with millis format: 06:39:53.091
-        if (std.mem.eql(u8, config.time_format, "HH:mm:ss.SSS")) {
-            try writer.print("{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{
-                hours,
-                minutes,
-                secs,
-                millis,
-            });
-            return;
-        }
-
-        // Default format: YYYY-MM-DD HH:mm:ss.mmm (or YYYY-MM-DD HH:mm:ss)
-        try writer.print("{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{
-            yd.year,
-            month_day.month.numeric(),
-            month_day.day_index + 1,
-            hours,
-            minutes,
-            secs,
-            millis,
-        });
     }
 
     fn escapeJsonString(writer: anytype, s: []const u8) !void {

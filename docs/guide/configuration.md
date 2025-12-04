@@ -430,6 +430,73 @@ config.color = false;                  // Disable ANSI codes
 logger.configure(config);
 ```
 
+## Performance Configuration
+
+### Arena Allocator
+
+For high-throughput logging scenarios, enable the arena allocator to reduce allocation overhead:
+
+```zig
+var config = logly.Config.default();
+
+// Enable arena allocator for temporary allocations
+config.use_arena_allocator = true;
+
+// Optionally set the reset threshold (default: 64KB)
+config.arena_reset_threshold = 128 * 1024;  // 128KB
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+```
+
+Or use the convenience method:
+
+```zig
+const config = logly.Config.default().withArenaAllocation();
+const logger = try logly.Logger.initWithConfig(allocator, config);
+```
+
+**Benefits:**
+- Reduces allocation overhead for formatting operations
+- Better cache locality for temporary buffers
+- Faster logging in high-frequency scenarios
+
+**Manual Arena Reset:**
+
+For long-running applications, you can manually reset the arena to prevent memory growth:
+
+```zig
+// Reset periodically in high-throughput scenarios
+logger.resetArena();
+```
+
+### Cross-Platform Colors
+
+Logly automatically handles ANSI color support across platforms:
+
+```zig
+// Enable colors (call at startup)
+_ = logly.Terminal.enableAnsiColors();
+
+// Check if colors are supported
+if (logly.Terminal.supportsAnsiColors()) {
+    // Terminal supports colors
+}
+
+// Explicitly enable/disable colors (useful for bare metal)
+logly.Terminal.setColorEnabled(true);  // or false
+
+// Check effective color status
+if (logly.Terminal.isColorEnabled()) {
+    // Colors are available
+}
+```
+
+**Platform Support:**
+- **Windows**: Automatically enables Virtual Terminal Processing
+- **Linux/macOS**: ANSI colors natively supported
+- **Bare Metal/Freestanding**: Controllable via `setColorEnabled()`
+
 ## JSON Configuration
 
 ### Basic JSON Logging

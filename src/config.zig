@@ -31,17 +31,36 @@ pub const Config = struct {
     /// {trace_id}, {span_id}, {caller}, {thread}
     log_format: ?[]const u8 = null,
 
-    /// Time format string.
-    /// Supports:
-    ///   - "YYYY-MM-DD HH:mm:ss" (default) - Human readable with milliseconds
+    /// Time format string - supports custom formats with any separators.
+    ///
+    /// Predefined formats:
     ///   - "ISO8601" - ISO 8601 format (2025-12-04T06:39:53.091Z)
     ///   - "RFC3339" - RFC 3339 format (2025-12-04T06:39:53+00:00)
-    ///   - "YYYY-MM-DD" - Date only
-    ///   - "HH:mm:ss" - Time only
-    ///   - "HH:mm:ss.SSS" - Time with milliseconds
     ///   - "unix" - Unix timestamp in seconds
     ///   - "unix_ms" - Unix timestamp in milliseconds
-    time_format: []const u8 = "YYYY-MM-DD HH:mm:ss",
+    ///
+    /// Custom format placeholders (any separator allowed: -, /, ., :, space, etc.):
+    ///   - YYYY = 4-digit year (2025)
+    ///   - YY = 2-digit year (25)
+    ///   - MM = 2-digit month (01-12)
+    ///   - M = 1-2 digit month (1-12)
+    ///   - DD = 2-digit day (01-31)
+    ///   - D = 1-2 digit day (1-31)
+    ///   - HH = 2-digit hour 24h (00-23)
+    ///   - hh = 2-digit hour 12h (01-12)
+    ///   - mm = 2-digit minute (00-59)
+    ///   - ss = 2-digit second (00-59)
+    ///   - SSS = 3-digit millisecond (000-999)
+    ///
+    /// Examples:
+    ///   - "YYYY-MM-DD HH:mm:ss.SSS" (default)
+    ///   - "YYYY/MM/DD HH:mm:ss"
+    ///   - "DD-MM-YYYY HH:mm:ss"
+    ///   - "MM/DD/YYYY hh:mm:ss"
+    ///   - "YY.MM.DD"
+    ///   - "HH:mm:ss"
+    ///   - "HH:mm:ss.SSS"
+    time_format: []const u8 = "YYYY-MM-DD HH:mm:ss.SSS",
 
     /// Timezone for timestamp formatting.
     timezone: Timezone = .local,
@@ -133,6 +152,13 @@ pub const Config = struct {
 
     /// Async logging configuration.
     async_config: AsyncConfig = .{},
+
+    /// Use arena allocator for internal temporary allocations.
+    /// Improves performance by batching allocations and reducing malloc overhead.
+    use_arena_allocator: bool = false,
+
+    /// Arena reset threshold in bytes. When arena reaches this size, it resets.
+    arena_reset_threshold: usize = 64 * 1024,
 
     /// Timezone options.
     pub const Timezone = enum {
@@ -445,6 +471,15 @@ pub const Config = struct {
     pub fn withScheduler(self: Config) Config {
         var result = self;
         result.scheduler = .{ .enabled = true };
+        return result;
+    }
+
+    /// Returns a configuration with arena allocator hint enabled.
+    /// When set, the logger will use an arena for internal temporary allocations
+    /// which can improve performance by reducing allocation overhead.
+    pub fn withArenaAllocation(self: Config) Config {
+        var result = self;
+        result.use_arena_allocator = true;
         return result;
     }
 };

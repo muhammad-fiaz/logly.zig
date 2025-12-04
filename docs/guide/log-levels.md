@@ -4,16 +4,16 @@ Logly-Zig supports 8 distinct log levels, each with a specific priority, color, 
 
 ## Level Overview
 
-| Level    | Priority | Color | ANSI | Method              | Use Case                |
-| -------- | -------- | ----- | ---- | ------------------- | ----------------------- |
-| TRACE    | 5        | Cyan | 36 | `logger.trace()`    | Very detailed debugging |
-| DEBUG    | 10       | Blue | 34 | `logger.debug()`    | Debugging information   |
-| INFO     | 20       | White | 37 | `logger.info()`     | General information     |
-| SUCCESS  | 25       | Green | 32 | `logger.success()`  | Successful operations   |
-| WARNING  | 30       | Yellow | 33 | `logger.warning()`  | Warning messages        |
-| ERROR    | 40       | Red | 31 | `logger.err()`      | Error conditions        |
-| FAIL     | 45       | Magenta | 35 | `logger.fail()`     | Operation failures      |
-| CRITICAL | 50       | Bright Red | 91 | `logger.critical()` | Critical system errors  |
+| Level    | Priority | Color | ANSI | Method              | Alias | Use Case                |
+| -------- | -------- | ----- | ---- | ------------------- | ----- | ----------------------- |
+| TRACE    | 5        | Cyan | 36 | `logger.trace()`    | - | Very detailed debugging |
+| DEBUG    | 10       | Blue | 34 | `logger.debug()`    | - | Debugging information   |
+| INFO     | 20       | White | 37 | `logger.info()`     | - | General information     |
+| SUCCESS  | 25       | Green | 32 | `logger.success()`  | - | Successful operations   |
+| WARNING  | 30       | Yellow | 33 | `logger.warning()`  | `warn()` | Warning messages        |
+| ERROR    | 40       | Red | 31 | `logger.err()` | `@"error"()` | Error conditions        |
+| FAIL     | 45       | Magenta | 35 | `logger.fail()`     | - | Operation failures      |
+| CRITICAL | 50       | Bright Red | 91 | `logger.critical()` | `crit()` | Critical system errors  |
 
 ## Whole-Line Coloring
 
@@ -30,14 +30,17 @@ Logly colors the **entire log line** (timestamp, level tag, and message), not ju
 // Enable colors on Windows first
 _ = logly.Terminal.enableAnsiColors();
 
-try logger.trace("Detailed trace information");   // Cyan line
-try logger.debug("Debug information");            // Blue line
-try logger.info("Application started");           // White line
-try logger.success("Operation completed!");       // Green line
-try logger.warning("Warning message");            // Yellow line
-try logger.err("Error occurred");                 // Red line
-try logger.fail("Operation failed");              // Magenta line
-try logger.critical("Critical system error!");    // Bright red line
+// All methods accept optional @src() for clickable file:line output
+try logger.trace("Detailed trace information", @src());   // Cyan line
+try logger.debug("Debug information", @src());            // Blue line
+try logger.info("Application started", @src());           // White line
+try logger.success("Operation completed!", @src());       // Green line
+try logger.warning("Warning message", @src());            // Yellow line
+try logger.warn("Short alias for warning", @src());       // Yellow line (alias)
+try logger.err("Error occurred", @src());                 // Red line
+try logger.fail("Operation failed", @src());              // Magenta line
+try logger.critical("Critical system error!", @src());    // Bright red line
+try logger.crit("Short alias for critical", @src());      // Bright red line (alias)
 ```
 
 > **Note:** Each level also has a formatted variant (e.g., `tracef`, `infof`) that accepts a format string and arguments. See [Formatting](/guide/formatting#formatted-logging) for details.

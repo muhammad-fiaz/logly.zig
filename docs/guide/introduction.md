@@ -54,10 +54,15 @@ Logly-Zig is built upon the following core principles:
 | **Redaction**      | ✗ (Coming soon!)             | ✗ (Coming soon!)             | **✓** (v0.0.3+)          |
 | **Metrics**        | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.3+)          |
 | **Tracing**        | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.3+)          |
+| **Compression**    | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.4+)          |
+| **Thread Pool**    | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.4+)          |
+| **Scheduler**      | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.4+)          |
+| **Custom Formats** | ✗ (Coming soon!)           | ✗ (Coming soon!)            | **✓** (v0.0.4+)          |
+| **Cross-Platform Colors** | ✓      | ✓            | **✓** (v0.0.4+ - improved)|
 
-## Enterprise Features (v0.0.3+)
+## Enterprise Features (v0.0.4+)
 
-Logly-Zig v0.0.3 introduces enterprise-grade features:
+Logly-Zig v0.0.4 introduces enterprise-grade features:
 
 ### 🔍 Filtering
 Rule-based log filtering by level, message patterns, or modules.
@@ -74,6 +79,15 @@ Built-in metrics collection for logging performance monitoring.
 ### 🔗 Distributed Tracing
 OpenTelemetry-compatible trace context propagation with automatic span ID generation.
 
+### 🚀 Arena Allocator (v0.0.4+)
+Optional arena allocator support for improved performance in high-throughput scenarios, reducing allocation overhead for temporary formatting operations.
+
+### 🎨 Cross-Platform Colors (v0.0.4+)
+Enhanced ANSI color support for Windows, Linux, macOS, and bare metal/freestanding targets.
+
+### 📝 Method Aliases (v0.0.4+)
+Short aliases for common methods: `warn`/`crit` for levels, `add`/`remove`/`clear`/`count` for sink management.
+
 ## When to Use Logly-Zig
 
 Logly-Zig is perfect for:
@@ -85,6 +99,7 @@ Logly-Zig is perfect for:
 - **Teams** familiar with Python's logging patterns
 - **Microservices** requiring distributed tracing support
 - **Compliance-sensitive** applications needing data redaction
+- **Embedded/bare metal** systems needing efficient logging
 
 ## Next Steps
 

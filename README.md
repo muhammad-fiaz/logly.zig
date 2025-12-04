@@ -10,14 +10,23 @@
 <a href="https://github.com/muhammad-fiaz/logly.zig"><img src="https://img.shields.io/github/license/muhammad-fiaz/logly.zig" alt="License"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/ci.yml"><img src="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 <img src="https://img.shields.io/badge/platforms-linux%20%7C%20windows%20%7C%20macos-blue" alt="Supported Platforms">
+<a href="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/github-code-scanning/codeql"><img src="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL"></a>
+<a href="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/release.yml"><img src="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+<a href="https://github.com/muhammad-fiaz/logly.zig/releases/latest"><img src="https://img.shields.io/github/v/release/muhammad-fiaz/logly.zig?label=Latest%20Release&style=flat-square" alt="Latest Release"></a>
 <a href="https://pay.muhammadfiaz.com"><img src="https://img.shields.io/badge/Sponsor-pay.muhammadfiaz.com-ff69b4?style=flat&logo=heart" alt="Sponsor"></a>
-<a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/github/sponsors/muhammad-fiaz?style=social&logo=github" alt="GitHub Sponsors"></a>
+<a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/badge/Sponsor-💖-pink?style=social&logo=github" alt="GitHub Sponsors"></a>
+<a href="https://github.com/muhammad-fiaz/logly.zig/releases"><img src="https://img.shields.io/github/downloads/muhammad-fiaz/logly.zig/total?label=Downloads&logo=github" alt="Downloads"></a>
+<a href="https://hits.sh/muhammad-fiaz/logly.zig/"><img src="https://hits.sh/muhammad-fiaz/logly.zig.svg?label=Visitors&extraCount=0&color=green" alt="Repo Visitors"></a>
 
-<p><em>High-performance, structured logging library for Zig.</em></p>
+<p><em>A fast, high-performance structured logging library for Zig.</em></p>
 
-**📚 [Documentation](https://muhammad-fiaz.github.io/logly.zig/) | [API Reference](https://muhammad-fiaz.github.io/logly.zig/api/logger) | [Quick Start](https://muhammad-fiaz.github.io/logly.zig/guide/quick-start) | [Contributing](CONTRIBUTING.md)**
+<b>📚 <a href="https://muhammad-fiaz.github.io/logly.zig/">Documentation</a> |
+<a href="https://muhammad-fiaz.github.io/logly.zig/api/logger">API Reference</a> |
+<a href="https://muhammad-fiaz.github.io/logly.zig/guide/quick-start">Quick Start</a> |
+<a href="CONTRIBUTING.md">Contributing</a></b>
 
 </div>
+
 
 A production-grade, high-performance structured logging library for Zig, designed with a clean, intuitive, and developer-friendly API.
 
@@ -54,6 +63,39 @@ A production-grade, high-performance structured logging library for Zig, designe
 
 </details>
 
+## Prerequisites
+
+Before installing Logly, ensure you have the following:
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| **Zig** | 0.15.0+ | Download from [ziglang.org](https://ziglang.org/download/) |
+| **Operating System** | Windows 10+, Linux, macOS | Cross-platform support |
+| **Terminal** | Any modern terminal | For colored output support |
+
+> **Tip:** Verify your Zig installation by running `zig version` in your terminal.
+
+## Supported Platforms
+
+Logly.Zig supports a wide range of platforms and architectures:
+
+| Platform | Architectures | Status |
+|----------|---------------|--------|
+| **Windows** | x86_64, x86 | ✅ Full support |
+| **Linux** | x86_64, x86, aarch64 | ✅ Full support |
+| **macOS** | x86_64, aarch64 (Apple Silicon) | ✅ Full support |
+| **Bare Metal/Freestanding** | x86_64, aarch64, arm, riscv64 | ✅ Full support |
+
+### Color Support
+
+| Terminal | Platform | Support |
+|----------|----------|---------|
+| **Windows Terminal** | Windows 10+ | ✅ Native ANSI |
+| **cmd.exe** | Windows 10+ | ✅ Requires enable call |
+| **iTerm2, Terminal.app** | macOS | ✅ Native |
+| **GNOME Terminal, Konsole** | Linux | ✅ Native |
+| **VS Code Terminal** | All | ✅ Native |
+
 ## Installation
 
 ### Method 1: Zig Fetch (Recommended)
@@ -61,7 +103,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.4.tar.gz
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
@@ -73,7 +115,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.4.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -121,7 +163,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Enable ANSI colors on Windows (no-op on Linux/macOS)
+    // Enable ANSI colors (Windows requires explicit enable, Unix-like natively supports)
     _ = logly.Terminal.enableAnsiColors();
 
     // Create logger (console sink auto-enabled)
@@ -129,14 +171,14 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Log at different levels - entire line is colored!
-    try logger.trace("Detailed trace information");   // Cyan
-    try logger.debug("Debug information");            // Blue
-    try logger.info("Application started");           // White
-    try logger.success("Operation completed!");       // Green
-    try logger.warning("Warning message");            // Yellow
-    try logger.err("Error occurred");                 // Red
-    try logger.fail("Operation failed");              // Magenta
-    try logger.critical("Critical system error!");    // Bright Red
+    try logger.trace("Detailed trace information", @src());   // Cyan
+    try logger.debug("Debug information", @src());            // Blue
+    try logger.info("Application started", @src());           // White
+    try logger.success("Operation completed!", @src());       // Green
+    try logger.warn("Warning message", @src());               // Yellow (alias for .warning())
+    try logger.err("Error occurred", @src());                 // Red
+    try logger.fail("Operation failed", @src());              // Magenta
+    try logger.crit("Critical system error!", @src());        // Bright Red (alias for .critical())
 }
 ```
 
@@ -153,12 +195,12 @@ var config = logly.Config.default();
 config.auto_sink = false;
 logger.configure(config);
 
-// Add file sink
-_ = try logger.addSink(.{
+// Add file sink using add() alias (same as addSink())
+_ = try logger.add(.{
     .path = "logs/app.log",
 });
 
-try logger.info("Logging to file!");
+try logger.info("Logging to file!", @src());
 try logger.flush(); // Ensure data is written
 ```
 
@@ -166,21 +208,21 @@ try logger.flush(); // Ensure data is written
 
 ```zig
 // Daily rotation with 7-day retention
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/daily.log",
     .rotation = "daily",
     .retention = 7,
 });
 
 // Size-based rotation (10MB limit, keep 5 files)
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/app.log",
     .size_limit = 10 * 1024 * 1024,
     .retention = 5,
 });
 
 // Combined: rotate daily OR when 5MB reached
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/combined.log",
     .rotation = "daily",
     .size_limit = 5 * 1024 * 1024,
@@ -196,7 +238,7 @@ config.json = true;
 config.pretty_json = true;
 logger.configure(config);
 
-try logger.info("JSON formatted log");
+try logger.info("JSON formatted log", @src());
 // Output: {"timestamp":1701234567890,"level":"INFO","message":"JSON formatted log"}
 ```
 
@@ -207,12 +249,12 @@ try logger.info("JSON formatted log");
 try logger.bind("app", .{ .string = "myapp" });
 try logger.bind("version", .{ .string = "1.0.0" });
 
-try logger.info("Application started");
+try logger.info("Application started", @src());
 // All logs include app and version fields
 
 // Request-specific context
 try logger.bind("request_id", .{ .string = "req-12345" });
-try logger.info("Processing request");
+try logger.info("Processing request", @src());
 logger.unbind("request_id"); // Clean up
 ```
 
@@ -227,7 +269,7 @@ fn logCallback(record: *const logly.Record) !void {
 }
 
 logger.setLogCallback(&logCallback);
-try logger.err("Error occurred"); // Callback triggers
+try logger.err("Error occurred", @src()); // Callback triggers
 ```
 
 ### Custom Log Levels
@@ -238,21 +280,21 @@ try logger.addCustomLevel("NOTICE", 35, "96"); // Cyan color
 try logger.addCustomLevel("AUDIT", 25, "35;1"); // Magenta Bold
 
 // Use custom levels - supports all features like standard levels
-try logger.custom("NOTICE", "Custom level message");
-try logger.custom("AUDIT", "User action recorded");
+try logger.custom("NOTICE", "Custom level message", @src());
+try logger.custom("AUDIT", "User action recorded", @src());
 
 // Formatted custom level messages
-try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" });
+try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" }, @src());
 
 // Custom levels work with JSON output
 var config = logly.Config.default();
 config.json = true;
 logger.configure(config);
-try logger.custom("AUDIT", "Appears as level: AUDIT in JSON");
+try logger.custom("AUDIT", "Appears as level: AUDIT in JSON", @src());
 
 // Custom levels work with file sinks
-_ = try logger.addSink(.{ .path = "logs/audit.log" });
-try logger.custom("AUDIT", "Written to file with custom level name");
+_ = try logger.add(.{ .path = "logs/audit.log" });
+try logger.custom("AUDIT", "Written to file with custom level name", @src());
 ```
 
 ### Multiple Sinks
@@ -282,12 +324,12 @@ _ = try logger.addSink(.{
 try logger.setTraceContext("trace-abc123", "span-001");
 try logger.setCorrelationId("request-789");
 
-try logger.info("Processing request");
+try logger.info("Processing request", @src());
 
 // Create child spans for nested operations
 {
     var span = try logger.startSpan("database-query");
-    try logger.info("Executing query");
+    try logger.info("Executing query", @src());
     try span.end(null);
 }
 
@@ -332,7 +374,7 @@ try redactor.addPattern(
 );
 
 logger.setRedactor(&redactor);
-try logger.info("User login: password=secret123");
+try logger.info("User login: password=secret123", @src());
 // Output: "User login: [REDACTED]secret123"
 ```
 
@@ -346,8 +388,8 @@ defer logger.deinit();
 logger.enableMetrics();
 
 // Log some messages
-try logger.info("Request processed");
-try logger.err("Database error");
+try logger.info("Request processed", @src());
+try logger.err("Database error", @src());
 
 // Get metrics snapshot
 if (logger.getMetrics()) |snapshot| {
@@ -461,16 +503,25 @@ var config = logly.Config.default()
 
 ## Log Levels
 
-| Level    | Priority | Method              | Use Case                |
-| -------- | -------- | ------------------- | ----------------------- |
-| TRACE    | 5        | `logger.trace()`    | Very detailed debugging |
-| DEBUG    | 10       | `logger.debug()`    | Debugging information   |
-| INFO     | 20       | `logger.info()`     | General information     |
-| SUCCESS  | 25       | `logger.success()`  | Successful operations   |
-| WARNING  | 30       | `logger.warning()`  | Warning messages        |
-| ERROR    | 40       | `logger.err()`      | Error conditions        |
-| FAIL     | 45       | `logger.fail()`     | Operation failures      |
-| CRITICAL | 50       | `logger.critical()` | Critical system errors  |
+| Level    | Priority | Method              | Alias          | Use Case                |
+| -------- | -------- | ------------------- | -------------- | ----------------------- |
+| TRACE    | 5        | `logger.trace()`    | -              | Very detailed debugging |
+| DEBUG    | 10       | `logger.debug()`    | -              | Debugging information   |
+| INFO     | 20       | `logger.info()`     | -              | General information     |
+| SUCCESS  | 25       | `logger.success()`  | -              | Successful operations   |
+| WARNING  | 30       | `logger.warning()`  | `warn()`       | Warning messages        |
+| ERROR    | 40       | `logger.err()`      | -              | Error conditions        |
+| FAIL     | 45       | `logger.fail()`     | -              | Operation failures      |
+| CRITICAL | 50       | `logger.critical()` | `crit()`       | Critical system errors  |
+
+### Sink Management Aliases
+
+| Full Method       | Alias           | Description              |
+| ----------------- | --------------- | ------------------------ |
+| `addSink()`       | `add()`         | Add a new sink           |
+| `removeSink()`    | `remove()`      | Remove a specific sink   |
+| `removeAllSinks()`| `removeAll()`, `clear()` | Remove all sinks |
+| `getSinkCount()`  | `count()`, `sinkCount()` | Get number of sinks |
 
 ## Rotation Intervals
 
@@ -487,46 +538,151 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 ### Benchmark Results
 
+<details>
+<summary><strong>Basic Logging</strong></summary>
+
 | Benchmark | Ops/sec | Avg Latency (ns) | Notes |
 |-----------|---------|------------------|-------|
-| Console (no color) - info | 14,554 | 68,711 | Plain text, no ANSI codes |
-| Console (no color) - formatted | 12,752 | 78,421 | Printf-style formatting |
-| Console (with color) - info | 14,913 | 67,055 | ANSI color wrapping |
-| Console (with color) - formatted | 13,374 | 74,775 | Colored + formatting |
-| JSON (no color) - info | 19,620 | 50,969 | Compact JSON output |
-| JSON (no color) - formatted | 13,852 | 72,193 | JSON with formatting |
-| JSON (with color) - info | 18,549 | 53,911 | JSON with ANSI colors |
-| JSON (with color) - error | 18,154 | 55,084 | JSON colored error |
-| Pretty JSON - info | 13,403 | 74,610 | Indented JSON output |
-| Custom format - info | 15,820 | 63,212 | `{time} \| {level} \| {message}` |
-| Level: TRACE | 20,154 | 49,619 | Trace level messages |
-| Level: DEBUG | 20,459 | 48,879 | Debug level messages |
-| Level: INFO | 14,984 | 66,737 | Info level messages |
-| Level: SUCCESS | 20,825 | 48,019 | Success level messages |
-| Level: WARNING | 20,192 | 49,524 | Warning level messages |
-| Level: ERROR | 20,906 | 47,832 | Error level messages |
-| Level: FAIL | 14,935 | 66,957 | Fail level messages |
-| Level: CRITICAL | 20,570 | 48,615 | Critical level messages |
-| Level (color): TRACE | 11,120 | 89,929 | Colored trace messages |
-| Level (color): DEBUG | 19,905 | 50,238 | Colored debug messages |
-| Level (color): INFO | 14,488 | 69,024 | Colored info messages |
-| Level (color): SUCCESS | 18,049 | 55,404 | Colored success messages |
-| Level (color): WARNING | 19,454 | 51,404 | Colored warning messages |
-| Level (color): ERROR | 18,726 | 53,402 | Colored error messages |
-| Level (color): FAIL | 18,700 | 53,476 | Colored fail messages |
-| Level (color): CRITICAL | 18,199 | 54,949 | Colored critical messages |
-| Custom Level: AUDIT | 16,018 | 62,429 | User-defined log level |
-| Custom Level (color): AUDIT | 18,164 | 55,055 | Colored custom level |
-| File (no color) - info | 16,245 | 61,557 | Plain file output |
-| File (no color) - error | 19,433 | 51,459 | Plain file error output |
-| File (with color) - info | 15,025 | 66,554 | File with ANSI codes |
-| File (with color) - error | 18,266 | 54,747 | File colored error |
-| Full metadata - info | 15,769 | 63,415 | Time + module + file + line |
-| Minimal config - info | 16,916 | 59,116 | No timestamp or module |
-| Production config - info | 18,909 | 52,885 | JSON with optimizations |
-| Multiple sinks (3) - info | 12,968 | 77,114 | Console + JSON + Pretty |
+| Simple log (no color) | 15,557 | 64,280 | Plain text output |
+| Formatted log (no color) | 15,083 | 66,300 | Printf-style formatting |
+| Simple log (with color) | 15,744 | 63,515 | ANSI color codes |
+| Formatted log (with color) | 14,428 | 69,311 | Colored + formatting |
 
-**Average Throughput: ~17,000 ops/sec**
+</details>
+
+<details>
+<summary><strong>JSON Logging</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| JSON compact | 19,705 | 50,748 | Compact JSON output |
+| JSON formatted | 13,654 | 73,239 | JSON with formatting |
+| JSON pretty | 14,879 | 67,209 | Indented JSON output |
+| JSON with color | 19,929 | 50,179 | JSON with ANSI colors |
+
+</details>
+
+<details>
+<summary><strong>Log Levels</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| TRACE level | 19,460 | 51,387 | Lowest priority level |
+| DEBUG level | 20,867 | 47,922 | Debug information |
+| INFO level | 16,436 | 60,844 | General information |
+| SUCCESS level | 20,706 | 48,296 | Success messages |
+| WARNING level | 19,587 | 51,054 | Warning messages |
+| ERROR level | 20,513 | 48,750 | Error messages |
+| FAIL level | 16,222 | 61,645 | Failure messages |
+| CRITICAL level | 19,574 | 51,087 | Critical messages |
+
+</details>
+
+<details>
+<summary><strong>Custom Features</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| Custom level (AUDIT) | 16,592 | 60,269 | User-defined log level |
+| Custom log format | 16,136 | 61,975 | `{time} \| {level} \| {message}` |
+| Custom time format | 15,432 | 64,801 | DD/MM/YYYY HH:mm:ss |
+| ISO8601 time format | 14,644 | 68,287 | ISO 8601 standard format |
+| Unix timestamp (ms) | 15,922 | 62,806 | Millisecond Unix timestamp |
+
+</details>
+
+<details>
+<summary><strong>Configuration Presets</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| Full metadata config | 15,798 | 63,301 | Time + module + file + line |
+| Minimal config | 16,536 | 60,474 | No timestamp or module |
+| Production preset | 18,204 | 54,934 | JSON + sampling + metrics |
+| Development preset | 15,807 | 63,263 | Debug + source location |
+| High throughput preset | 26,364,355 | 38 | Async + thread pool + sampling |
+| Secure preset | 15,643 | 63,927 | Redaction enabled |
+| Multiple sinks (3) | 13,221 | 75,635 | Text + JSON + Pretty |
+
+</details>
+
+<details>
+<summary><strong>Allocator Comparison</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| Standard allocator (GPA) | 15,274 | 65,469 | Default allocation |
+| Standard allocator (formatted) | 14,085 | 70,996 | GPA with formatting |
+| Arena allocator | 15,731 | 63,568 | Reduced alloc overhead |
+| Arena allocator (formatted) | 13,344 | 74,940 | Arena with formatting |
+| Page allocator | 20,907 | 47,830 | System page allocator |
+
+</details>
+
+<details>
+<summary><strong>Enterprise Features</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| With context (3 fields) | 14,338 | 69,743 | Bound context data |
+| With trace context | 15,201 | 65,786 | Trace ID + Span ID |
+| With metrics enabled | 15,932 | 62,765 | Performance monitoring |
+| Structured logging | 19,372 | 51,621 | JSON structured output |
+
+</details>
+
+<details>
+<summary><strong>Sampling & Rate Limiting</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| Sampling (50% probability) | 15,325 | 65,253 | Probability sampling |
+| Sampling (rate limit) | 16,597 | 60,253 | Rate-based sampling |
+| Sampling (adaptive) | 16,231 | 61,609 | Adaptive sampling |
+| Sampling (every-N) | 16,235 | 61,595 | Every-N message sampling |
+| Rate limiting (10K/sec) | 14,951 | 66,883 | Max 10K logs per second |
+| With redaction enabled | 15,834 | 63,156 | Sensitive data masking |
+
+</details>
+
+<details>
+<summary><strong>Multi-Threading</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| Single thread baseline | 18,151 | 55,094 | 1 thread sequential |
+| 2 threads concurrent | 16,896 | 59,186 | 2 threads parallel |
+| 4 threads concurrent | 16,275 | 61,443 | 4 threads parallel |
+| 8 threads concurrent | 16,122 | 62,026 | 8 threads parallel |
+| 16 threads concurrent | 15,816 | 63,227 | 16 threads parallel |
+| 4 threads JSON | 17,967 | 55,659 | Parallel JSON logging |
+| 4 threads colored | 16,880 | 59,243 | Parallel colored logging |
+| 4 threads formatted | 13,402 | 74,618 | Parallel formatted logging |
+| 4 threads arena allocator | 16,684 | 59,938 | Parallel with arena alloc |
+
+</details>
+
+<details>
+<summary><strong>Performance Comparison</strong></summary>
+
+| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
+|-----------|---------|------------------|-------|
+| File output (plain) | 16,413 | 60,926 | Null device output |
+| File output (error) | 20,503 | 48,773 | Error to file |
+| No sampling (baseline) | 15,816 | 63,228 | Sampling disabled |
+| Compression enabled (fast) | 15,881 | 62,968 | Deflate compression |
+
+</details>
+
+### Summary
+
+| Metric | Value |
+|--------|-------|
+| **Total Benchmarks** | 56 |
+| **Average Throughput** | ~487,000 ops/sec |
+| **Maximum Throughput** | 26,364,355 ops/sec (High throughput preset) |
+| **Minimum Throughput** | 13,221 ops/sec (Multiple sinks) |
+| **Average Latency** | ~2 μs |
 
 > **Note:** Benchmark results may vary based on operating system, environment, Zig version, hardware specifications, and software configurations.
 
@@ -622,6 +778,7 @@ Full documentation is available at: https://muhammad-fiaz.github.io/logly.zig
 | Thread Pool    | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
 | Scheduler      | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
 | Async Logger   | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
+| Custom Formats | ✓          | ✓                    | ✓ (v0.0.4+)           |
 
 ## Contributing
 

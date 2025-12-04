@@ -7,7 +7,7 @@ Logly-Zig supports automatic file rotation based on time or file size. This ensu
 You can rotate files at specific time intervals.
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{  // Short alias for addSink()
     .path = "logs/app.log",
     .rotation = "daily", // Rotate every day
     .retention = 7,      // Keep 7 rotated files
@@ -28,7 +28,7 @@ Supported intervals:
 You can rotate files when they reach a certain size.
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{  // Short alias for addSink()
     .path = "logs/app.log",
     .size_limit = 10 * 1024 * 1024, // 10 MB
     // Or use a string:
@@ -42,7 +42,7 @@ _ = try logger.addSink(.{
 You can combine both time and size limits. The rotation will trigger when _either_ condition is met.
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{  // Short alias for addSink()
     .path = "logs/app.log",
     .rotation = "daily",
     .size_limit = 5 * 1024 * 1024,

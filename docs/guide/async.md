@@ -17,7 +17,7 @@ Logly offers multiple async logging options:
 The simplest way to use async logging:
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{  // Short alias for addSink()
     .path = "logs/app.log",
     .async_write = true,      // Enable async (default)
     .buffer_size = 8192,      // Buffer size in bytes (default 8KB)

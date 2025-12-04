@@ -21,16 +21,16 @@ pub fn main() !void {
     config.auto_sink = false;
     logger.configure(config);
 
-    // Add file sink
+    // Add file sink (also available as logger.add())
     _ = try logger.addSink(.{
         .path = "logs/app.log",
     });
 
     // Add console sink
-    _ = try logger.addSink(.{});
+    _ = try logger.add(.{});  // Using the short alias
 
-    try logger.info("Logging to both file and console");
-    try logger.success("File created in logs/app.log");
+    try logger.info("Logging to both file and console", @src());
+    try logger.success("File created in logs/app.log", @src());
 
     // Flush to ensure all data is written
     try logger.flush();

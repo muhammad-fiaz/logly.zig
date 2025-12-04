@@ -7,8 +7,9 @@ Sinks are destinations where log messages are written. Logly-Zig supports multip
 A console sink is automatically added when you initialize the logger, unless `auto_sink` is disabled in the config.
 
 ```zig
-// Add a console sink manually
+// Add a console sink manually (both methods are equivalent)
 _ = try logger.addSink(.{});
+_ = try logger.add(.{});  // Short alias
 ```
 
 ## File Sink
@@ -16,7 +17,7 @@ _ = try logger.addSink(.{});
 File sinks write logs to a file. You can configure rotation, retention, and specific log levels for each sink.
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/app.log",
 });
 ```
@@ -27,20 +28,36 @@ You can add as many sinks as you need.
 
 ```zig
 // Console
-_ = try logger.addSink(.{});
+_ = try logger.add(.{});
 
 // Application logs
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/app.log",
     .rotation = "daily",
     .retention = 7,
 });
 
 // Error-only file
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/errors.log",
     .level = .err, // Only ERROR and above
 });
+```
+
+## Sink Management
+
+```zig
+// Add sinks
+const sink_id = try logger.add(.{ .path = "app.log" });
+
+// Get sink count
+const count = logger.count();  // or logger.getSinkCount()
+
+// Remove specific sink
+logger.remove(sink_id);  // or logger.removeSink(sink_id)
+
+// Remove all sinks
+_ = logger.clear();  // or logger.removeAll() or logger.removeAllSinks()
 ```
 
 ## Sink Configuration

@@ -33,11 +33,11 @@ fn handleRequest(logger: *logly.Logger, req: Request) !void {
     try logger.bind("path", .{ .string = req.path });
     try logger.bind("method", .{ .string = req.method });
 
-    try logger.info("Handling request");
+    try logger.info("Handling request", @src());
 
     // ... processing ...
 
-    try logger.success("Request completed");
+    try logger.success("Request completed", @src());
 
     // Cleanup
     logger.unbind("path");

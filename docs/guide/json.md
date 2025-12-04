@@ -17,7 +17,7 @@ logger.configure(config);
 ### Per-Sink JSON
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{  // Short alias for addSink()
     .path = "logs/app.json",
     .json = true,
 });
@@ -53,7 +53,7 @@ Custom levels display their actual names in JSON output:
 
 ```zig
 try logger.addCustomLevel("audit", 35, "35");
-try logger.custom("audit", "Security event");
+try logger.custom("audit", "Security event", @src());
 ```
 
 Output:

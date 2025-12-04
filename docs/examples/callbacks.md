@@ -19,16 +19,19 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     // Set log callback for monitoring
     logger.setLogCallback(&logCallback);
 
-    try logger.info("Normal operation");
-    try logger.warning("Warning message");
-    try logger.err("Error occurred - callback will trigger");
-    try logger.critical("Critical error - callback will trigger");
+    try logger.info("Normal operation", @src());
+    try logger.warn("Warning message", @src());  // Using short alias
+    try logger.err("Error occurred - callback will trigger", @src());
+    try logger.crit("Critical error - callback will trigger", @src());  // Using short alias
 
     std.debug.print("\nCallbacks example completed!\n", .{});
 }

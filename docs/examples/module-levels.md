@@ -13,6 +13,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -28,26 +31,26 @@ pub fn main() !void {
     const ui_logger = logger.scoped("ui");
 
     // Default behavior (INFO and above)
-    try logger.info("Application started");
-    try net_logger.info("Network initialized"); // Shows [network]
-    try net_logger.debug("Network debug message"); // Hidden (global level is INFO)
+    try logger.info("Application started", @src());
+    try net_logger.info("Network initialized", @src()); // Shows [network]
+    try net_logger.debug("Network debug message", @src()); // Hidden (global level is INFO)
 
     // Set specific level for network module (allow DEBUG)
     try logger.setModuleLevel("network", .debug);
-    try logger.info("Changed network module level to DEBUG");
+    try logger.info("Changed network module level to DEBUG", @src());
 
-    try net_logger.debug("Network debug message (now visible)");
-    try db_logger.debug("Database debug message"); // Still hidden
+    try net_logger.debug("Network debug message (now visible)", @src());
+    try db_logger.debug("Database debug message", @src()); // Still hidden
 
     // Set specific level for UI module (only ERROR)
     try logger.setModuleLevel("ui", .err);
-    try logger.info("Changed UI module level to ERROR");
+    try logger.info("Changed UI module level to ERROR", @src());
 
-    try ui_logger.warning("UI warning"); // Hidden
-    try ui_logger.err("UI error"); // Visible
+    try ui_logger.warn("UI warning", @src()); // Hidden (using short alias)
+    try ui_logger.err("UI error", @src()); // Visible
 
     // Verify database still follows global
-    try db_logger.info("Database info"); // Visible
+    try db_logger.info("Database info", @src()); // Visible
 }
 ```
 

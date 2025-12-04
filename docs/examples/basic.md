@@ -21,14 +21,19 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Log at different levels - entire line is colored!
-    try logger.trace("This is a trace message");       // Cyan
-    try logger.debug("This is a debug message");       // Blue
-    try logger.info("This is an info message");        // White
-    try logger.success("Operation completed!");        // Green
-    try logger.warning("This is a warning");           // Yellow
-    try logger.err("This is an error");                // Red
-    try logger.fail("Operation failed");               // Magenta
-    try logger.critical("Critical system error!");     // Bright Red
+    // Pass @src() for clickable file:line, or null for no source location
+    try logger.trace("This is a trace message", @src());       // Cyan
+    try logger.debug("This is a debug message", @src());       // Blue
+    try logger.info("This is an info message", @src());        // White
+    try logger.success("Operation completed!", @src());        // Green
+    try logger.warning("This is a warning", @src());           // Yellow (also: .warn())
+    try logger.err("This is an error", @src());                // Red
+    try logger.fail("Operation failed", @src());               // Magenta
+    try logger.critical("Critical system error!", @src());     // Bright Red (also: .crit())
+
+    // Short aliases also available
+    try logger.warn("Warning with short alias", @src());
+    try logger.crit("Critical with short alias", @src());
 
     std.debug.print("\nBasic logging example completed!\n", .{});
 }

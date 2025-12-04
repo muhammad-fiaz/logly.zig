@@ -54,14 +54,14 @@ Combine codes with semicolons: `"36;1"` = Cyan Bold, `"31;4"` = Red Underline
 To log using a custom level, use the `custom` method:
 
 ```zig
-try logger.custom("NOTICE", "This is a notice message");
-try logger.custom("ALERT", "This is an alert message");
+try logger.custom("NOTICE", "This is a notice message", @src());
+try logger.custom("ALERT", "This is an alert message", @src());
 ```
 
 Or use formatted logging with `customf`:
 
 ```zig
-try logger.customf("NOTICE", "User {s} action: {s}", .{ "alice", "login" });
+try logger.customf("NOTICE", "User {s} action: {s}", .{ "alice", "login" }, @src());
 ```
 
 ## Standard Level Colors
@@ -100,14 +100,15 @@ pub fn main() !void {
     try logger.addCustomLevel("AUDIT", 22, "35");       // Magenta
 
     // Use standard levels (entire line colored)
-    try logger.info("Standard info - white line");
-    try logger.warning("Standard warning - yellow line");
-    try logger.err("Standard error - red line");
+    // Note: warn/crit are short aliases for warning/critical
+    try logger.info("Standard info - white line", @src());
+    try logger.warn("Standard warning - yellow line", @src());  // Short alias
+    try logger.err("Standard error - red line", @src());
 
     // Use custom levels (entire line colored with custom colors)
-    try logger.custom("NOTICE", "Notice - cyan bold line");
-    try logger.custom("ALERT", "Alert - red underline line");
-    try logger.custom("AUDIT", "Audit - magenta line");
+    try logger.custom("NOTICE", "Notice - cyan bold line", @src());
+    try logger.custom("ALERT", "Alert - red underline line", @src());
+    try logger.custom("AUDIT", "Audit - magenta line", @src());
 }
 ```
 
@@ -138,7 +139,7 @@ config.pretty_json = true;
 logger.configure(config);
 
 try logger.addCustomLevel("AUDIT", 25, "35");
-try logger.custom("AUDIT", "User action logged");
+try logger.custom("AUDIT", "User action logged", @src());
 ```
 
 Output:

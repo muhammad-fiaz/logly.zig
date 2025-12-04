@@ -71,10 +71,11 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Each level colors the ENTIRE line (timestamp, level, message)
-    try logger.info("Application started");      // White line
-    try logger.success("Operation completed!");  // Green line
-    try logger.warning("Low memory");            // Yellow line
-    try logger.err("Connection failed");         // Red line
+    // @src() is optional - enables file:line display when show_filename/show_lineno are true
+    try logger.info(@src(), "Application started", .{});      // White line
+    try logger.success(@src(), "Operation completed!", .{});  // Green line
+    try logger.warn(@src(), "Low memory", .{});               // Yellow line (alias for warning)
+    try logger.err(@src(), "Connection failed", .{});         // Red line
 }
 ```
 
@@ -93,7 +94,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.3.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.4.tar.gz",
         .hash = "...",
     },
 },

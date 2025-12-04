@@ -86,13 +86,14 @@ Flushes the sink buffer to ensure all data is written.
 ### Console Sink (Default)
 
 ```zig
-_ = try logger.addSink(SinkConfig.default());
+// Using add() alias (same as addSink())
+_ = try logger.add(SinkConfig.default());
 ```
 
 ### File Sink with Rotation
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/app.log",
     .rotation = "daily",
     .retention = 7,
@@ -103,7 +104,7 @@ _ = try logger.addSink(.{
 ### JSON Sink for Structured Logging
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/app.json",
     .json = true,
     .pretty_json = true,
@@ -114,7 +115,7 @@ _ = try logger.addSink(.{
 ### Error-Only File Sink
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/errors.log",
     .level = .err,           // Minimum: error
     .max_level = .critical,  // Maximum: critical
@@ -126,7 +127,7 @@ _ = try logger.addSink(.{
 
 ```zig
 // Disable colors for console output
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .color = false,  // Override auto-detection
 });
 
@@ -139,7 +140,7 @@ logger.configure(config);
 ### High-Throughput Async Sink
 
 ```zig
-_ = try logger.addSink(.{
+_ = try logger.add(.{
     .path = "logs/high-volume.log",
     .async_write = true,
     .buffer_size = 65536, // 64KB buffer

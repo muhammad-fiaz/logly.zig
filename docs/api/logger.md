@@ -2,6 +2,20 @@
 
 The `Logger` struct is the central component of the Logly library, orchestrating all logging operations, sink management, configuration, and enterprise features like filtering, sampling, redaction, metrics, and distributed tracing.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `addSink()` | `add()` | Add a new sink |
+| `removeSink()` | `remove()` | Remove a sink by ID |
+| `removeAllSinks()` | `removeAll()`, `clear()` | Remove all sinks |
+| `getSinkCount()` | `count()`, `sinkCount()` | Get number of sinks |
+| `warning()` | `warn()` | Log at WARNING level |
+| `warningf()` | `warnf()` | Formatted WARNING log |
+| `critical()` | `crit()` | Log at CRITICAL level |
+| `criticalf()` | `critf()` | Formatted CRITICAL log |
+| `errf()` | `errorf()` | Formatted ERROR log |
+
 ## Lifecycle Methods
 
 ### `init(allocator: std.mem.Allocator) !*Logger`
@@ -34,14 +48,25 @@ Updates the global configuration of the logger in a thread-safe manner.
 Adds a new output sink (e.g., console, file) with the specified configuration.
 
 - **Returns**: The unique ID of the added sink.
+- **Alias**: `add()`
+
+```zig
+// Both are equivalent
+_ = try logger.addSink(.{ .path = "app.log" });
+_ = try logger.add(.{ .path = "app.log" });
+```
 
 ### `removeSink(id: usize) void`
 
 Removes a sink by its ID.
 
+- **Alias**: `remove()`
+
 ### `removeAllSinks() usize`
 
 Removes all sinks and returns the count of removed sinks.
+
+- **Aliases**: `removeAll()`, `clear()`
 
 ### `enableSink(id: usize) void`
 
@@ -54,6 +79,8 @@ Disables a specific sink by its ID, preventing it from processing log records.
 ### `getSinkCount() usize`
 
 Returns the current number of sinks.
+
+- **Aliases**: `count()`, `sinkCount()`
 
 ## Context Management
 
@@ -271,50 +298,91 @@ Flushes all sinks, ensuring all buffered data is written.
 
 All logging methods accept an optional source location parameter. Pass `@src()` to enable clickable file:line:column output in terminal, or `null` if source location is not needed.
 
-### `trace(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### Source Location Parameter
+
+The `src` parameter is **optional** (type `?std.builtin.SourceLocation`):
+
+| Value | Result |
+|-------|--------|
+| `@src()` | Includes file:line:column in output (when enabled in config) |
+| `null` | No source location in output |
+
+```zig
+// With source location - recommended for debugging
+try logger.info(@src(), "Application started", .{});
+
+// Without source location - useful for high-volume logging
+try logger.debug(null, "Processing item", .{});
+```
+
+### `trace(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **TRACE** level (Priority 5).
 
 ```zig
-try logger.trace("Detailed trace info", @src());  // With source location
-try logger.trace("Trace without location", null); // Without source location
+try logger.trace(@src(), "Detailed trace info", .{});  // With source location
+try logger.trace(null, "Trace without location", .{}); // Without source location
 ```
 
-### `debug(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### `debug(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **DEBUG** level (Priority 10).
 
-### `info(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### `info(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **INFO** level (Priority 20).
 
-### `success(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### `success(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **SUCCESS** level (Priority 25).
 
-### `warning(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### `warning(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **WARNING** level (Priority 30).
 
-### `err(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+- **Alias**: `warn()`
+
+### `err(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **ERROR** level (Priority 40).
 
-### `fail(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+- **Alias**: `@"error"()` (Zig keyword escape)
+
+### `fail(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **FAIL** level (Priority 45).
 
-### `critical(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### `critical(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message at the **CRITICAL** level (Priority 50).
 
-### `custom(level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
+- **Alias**: `crit()`
+
+### `custom(level_name: []const u8, src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
 
 Logs a message using a user-defined custom level. The level must be registered first.
 
+```zig
+try logger.addCustomLevel("audit", 35, "35;1");
+try logger.custom("audit", @src(), "User login detected", .{});
+```
+
 ## Formatted Logging
 
-All standard logging methods have a corresponding `f` suffix variant (e.g., `infof`, `debugf`) that accepts a format string and arguments, similar to `std.log` or `printf`. All also accept an optional source location.
+> **Note**: The main logging methods (`info`, `debug`, etc.) now directly support format strings and arguments. The `f` suffix variants are maintained for backward compatibility.
+
+All logging methods accept a format string and arguments in the same call:
+
+```zig
+// Recommended: Use main method with format string
+try logger.info(@src(), "User {s} connected from {s}", .{ "alice", "10.0.0.1" });
+try logger.warn(@src(), "Request took {d}ms", .{elapsed_ms});
+try logger.crit(@src(), "Failed after {d} retries: {s}", .{ retry_count, error_msg });
+```
+
+### Legacy Format Methods (f-suffix)
+
+These methods are maintained for backward compatibility:
 
 ### `tracef(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
@@ -323,6 +391,7 @@ All standard logging methods have a corresponding `f` suffix variant (e.g., `inf
 ### `infof(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
 ```zig
+// Legacy style (still works)
 try logger.infof("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src());
 ```
 
@@ -330,11 +399,17 @@ try logger.infof("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src()
 
 ### `warningf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
+- **Alias**: `warnf()`
+
 ### `errf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
+
+- **Alias**: `errorf()`
 
 ### `failf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
 ### `criticalf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
+
+- **Alias**: `critf()`
 
 ### `customf(level_name: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
@@ -348,7 +423,7 @@ config.show_filename = true;
 config.show_lineno = true;
 logger.configure(config);
 
-try logger.info("This message has source location", @src());
+try logger.info(@src(), "This message has source location", .{});
 // Output: [2024-01-15 10:30:45] [INFO] myfile.zig:42:0: This message has source location
 ```
 

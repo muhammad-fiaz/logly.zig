@@ -13,6 +13,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -26,11 +29,11 @@ pub fn main() !void {
 
     logger.configure(config);
 
-    try logger.info("This log includes hostname and PID");
+    try logger.info("This log includes hostname and PID", @src());
 
     // You can also combine with context
     try logger.bind("session", .{ .string = "123" });
-    try logger.warning("Something happened in this session");
+    try logger.warn("Something happened in this session", @src());  // Short alias
 }
 ```
 

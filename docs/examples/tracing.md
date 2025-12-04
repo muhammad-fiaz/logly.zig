@@ -13,6 +13,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -21,9 +24,9 @@ pub fn main() !void {
     try logger.setCorrelationId("request-789");
 
     // All logs will now include trace info
-    try logger.info("Processing request");
-    try logger.debug("Validating input");
-    try logger.info("Request completed");
+    try logger.info("Processing request", @src());
+    try logger.debug("Validating input", @src());
+    try logger.info("Request completed", @src());
 
     // Clear trace context
     logger.clearTraceContext();
@@ -40,9 +43,9 @@ try logger.setTraceContext("trace-main", "span-root");
 {
     var span = try logger.startSpan("external-api");
     
-    try logger.info("Calling external API");
-    try logger.debug("Sending request");
-    try logger.info("Response received");
+    try logger.info("Calling external API", @src());
+    try logger.debug("Sending request", @src());
+    try logger.info("Response received", @src());
     
     try span.end(null); // End with optional message
 }
@@ -51,8 +54,8 @@ try logger.setTraceContext("trace-main", "span-root");
 {
     var db_span = try logger.startSpan("database");
     
-    try logger.info("Executing query");
-    try logger.success("Query complete");
+    try logger.info("Executing query", @src());
+    try logger.success("Query complete", @src());
     
     try db_span.end("database operation done");
 }
@@ -67,7 +70,7 @@ try logger.bind("version", .{ .string = "1.2.3" });
 try logger.bind("environment", .{ .string = "production" });
 
 // All logs will include this context
-try logger.info("Service ready");
+try logger.info("Service ready", @src());
 
 // Remove context
 logger.unbind("version");
@@ -92,7 +95,7 @@ pub fn handleRequest(req: Request, logger: *logly.Logger) !void {
     defer span.end(null) catch {};
     
     // Process request
-    try logger.info("Request received");
+    try logger.info("Request received", @src());
     // ...
 }
 ```

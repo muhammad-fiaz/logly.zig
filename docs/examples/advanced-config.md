@@ -54,8 +54,8 @@ pub fn main() !void {
     
     logger.configure(config);
     
-    try logger.info("Custom format with pipe separators");
-    try logger.warning("Notice the UTC timestamp");
+    try logger.info("Custom format with pipe separators", @src());
+    try logger.warn("Notice the UTC timestamp", @src());  // Short alias for warning
 
     // ============================================
     // SECTION 2: Unix Timestamp Format
@@ -63,7 +63,7 @@ pub fn main() !void {
     config.time_format = "unix";
     logger.configure(config);
     
-    try logger.info("Now using Unix timestamp");
+    try logger.info("Now using Unix timestamp", @src());
 
     // ============================================
     // SECTION 3: Clickable File Links
@@ -74,7 +74,7 @@ pub fn main() !void {
     config.log_format = null;  // Use default format to show file:line
     logger.configure(config);
     
-    try logger.debug("This shows file:line for VS Code clickable links");
+    try logger.debug("This shows file:line for VS Code clickable links", @src());
 
     // ============================================
     // SECTION 4: Color Configuration
@@ -85,15 +85,15 @@ pub fn main() !void {
     config.color = true;                  // Enable ANSI color codes
     logger.configure(config);
     
-    try logger.info("Colors enabled globally");
-    try logger.success("Green success message");
-    try logger.err("Red error message");
+    try logger.info("Colors enabled globally", @src());
+    try logger.success("Green success message", @src());
+    try logger.err("Red error message", @src());
 
     // Disable colors
     config.global_color_display = false;
     logger.configure(config);
     
-    try logger.info("Colors now disabled");
+    try logger.info("Colors now disabled", @src());
 
     // Re-enable for remaining examples
     config.global_color_display = true;
@@ -109,10 +109,10 @@ pub fn main() !void {
     try logger.addCustomLevel("ALERT", 48, "31;1");    // Bold Red (priority 48)
     try logger.addCustomLevel("SECURITY", 55, "91;4"); // Underline Bright Red
     
-    try logger.custom("AUDIT", "User login event");
-    try logger.custom("NOTICE", "System maintenance scheduled");
-    try logger.custom("ALERT", "High memory usage detected");
-    try logger.customf("SECURITY", "Failed login from IP: {s}", .{"192.168.1.100"});
+    try logger.custom("AUDIT", "User login event", @src());
+    try logger.custom("NOTICE", "System maintenance scheduled", @src());
+    try logger.custom("ALERT", "High memory usage detected", @src());
+    try logger.customf("SECURITY", "Failed login from IP: {s}", .{"192.168.1.100"}, @src());
 
     // ============================================
     // SECTION 6: JSON Configuration
@@ -123,8 +123,8 @@ pub fn main() !void {
     config.global_color_display = false;  // Colors don't apply to JSON structure
     logger.configure(config);
     
-    try logger.info("JSON formatted output");
-    try logger.custom("AUDIT", "JSON with custom level name");
+    try logger.info("JSON formatted output", @src());
+    try logger.custom("AUDIT", "JSON with custom level name", @src());
 
     // ============================================
     // SECTION 7: Multiple Sinks with Different Settings
@@ -136,19 +136,19 @@ pub fn main() !void {
     config.auto_sink = false;  // Disable default console sink
     logger.configure(config);
     
-    // Console sink with colors
-    _ = try logger.addSink(.{
+    // Console sink with colors (using add() alias)
+    _ = try logger.add(.{
         .color = true,
     });
     
     // File sink without colors
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/app.log",
         .color = false,
     });
     
     // JSON file sink
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/app.json",
         .json = true,
         .pretty_json = false,
@@ -156,14 +156,14 @@ pub fn main() !void {
     });
     
     // Error-only file sink
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/errors.log",
         .level = .err,
         .color = false,
     });
 
-    try logger.info("This goes to console (colored) and app.log (no color)");
-    try logger.err("This goes to all sinks including errors.log");
+    try logger.info("This goes to console (colored) and app.log (no color)", @src());
+    try logger.err("This goes to all sinks including errors.log", @src());
 
     try logger.flush();
     std.debug.print("\nAdvanced configuration example completed!\n", .{});

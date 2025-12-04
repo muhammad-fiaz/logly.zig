@@ -22,24 +22,27 @@ pub fn main() !void {
     // 1. Formatted Logging with Colors
     // Use methods ending with 'f' to pass format strings and arguments
     // Each line will be colored based on log level
-    try logger.infof("User {s} logged in with ID {d}", .{ "Alice", 12345 });
-    try logger.warningf("Disk usage is at {d}%", .{ 85 });
-    try logger.errf("Failed to connect to {s}:{d}", .{ "localhost", 8080 });
+    // Pass @src() for clickable file:line output
+    try logger.infof("User {s} logged in with ID {d}", .{ "Alice", 12345 }, @src());
+    try logger.warningf("Disk usage is at {d}%", .{ 85 }, @src());
+    try logger.warnf("Short alias: {d}% disk used", .{ 85 }, @src());  // warnf alias
+    try logger.errf("Failed to connect to {s}:{d}", .{ "localhost", 8080 }, @src());
+    try logger.critf("System critical: {s}", .{ "out of memory" }, @src());  // critf alias
 
     // 2. Scoped Formatted Logging
     // Scoped loggers also support formatted methods with colors
     const db_logger = logger.scoped("database");
-    try db_logger.debugf("Query executed in {d}ms: {s}", .{ 15, "SELECT * FROM users" });
-    try db_logger.infof("Connected to database '{s}'", .{ "production_db" });
+    try db_logger.debugf("Query executed in {d}ms: {s}", .{ 15, "SELECT * FROM users" }, @src());
+    try db_logger.infof("Connected to database '{s}'", .{ "production_db" }, @src());
 
     // 3. Custom Level Formatted Logging with Custom Colors
     try logger.addCustomLevel("AUDIT", 22, "35"); // Magenta
-    try logger.customf("AUDIT", "User {s} performed action: {s}", .{ "Bob", "DELETE" });
+    try logger.customf("AUDIT", "User {s} performed action: {s}", .{ "Bob", "DELETE" }, @src());
 
     // 4. Mixing styles
     // You can mix standard string logging with formatted logging
-    try logger.info("Standard message");
-    try logger.infof("Formatted message with {s}", .{ "arguments" });
+    try logger.info("Standard message", @src());
+    try logger.infof("Formatted message with {s}", .{ "arguments" }, @src());
 }
 ```
 

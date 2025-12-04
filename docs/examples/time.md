@@ -13,6 +13,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -20,19 +23,19 @@ pub fn main() !void {
 
     // Example 1: Default format (YYYY-MM-DD HH:mm:ss)
     logger.configure(config);
-    try logger.info("Default time format");
+    try logger.info("Default time format", @src());
 
     // Example 2: Custom time format
     // Supports standard format specifiers
     config.time_format = "HH:mm:ss";
     logger.configure(config);
-    try logger.info("Short time format");
+    try logger.info("Short time format", @src());
 
     // Example 3: UTC timezone
     // Switch to UTC time instead of local time
     config.timezone = .utc;
     logger.configure(config);
-    try logger.info("UTC time");
+    try logger.info("UTC time", @src());
 }
 ```
 

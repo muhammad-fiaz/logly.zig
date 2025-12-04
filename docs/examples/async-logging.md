@@ -35,6 +35,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -48,25 +51,24 @@ pub fn main() !void {
     logger.configure(config);
 
     // Add a file sink with async writing enabled (default)
-    _ = try logger.addSink(.{
+    // Using add() alias (same as addSink())
+    _ = try logger.add(.{
         .path = "logs/async.log",
         .async_write = true,
         .buffer_size = 4096, // 4KB buffer
     });
 
     // Add a console sink
-    _ = try logger.addSink(.{});
+    _ = try logger.add(.{});
 
-    try logger.info("Starting async logging test...");
+    try logger.info("Starting async logging test...", @src());
 
     // Log many messages quickly
     for (0..1000) |i| {
-        const msg = try std.fmt.allocPrint(allocator, "Async log message #{d}", .{i});
-        defer allocator.free(msg);
-        try logger.info(msg);
+        try logger.infof("Async log message #{d}", .{i}, @src());
     }
 
-    try logger.info("Finished logging 1000 messages");
+    try logger.info("Finished logging 1000 messages", @src());
 
     // Flush is important for async sinks before exit
     try logger.flush();

@@ -38,15 +38,15 @@ pub fn main() !void {
     try logger.addCustomLevel("HIGHLIGHT", 52, "33;7"); // Yellow Reverse
 
     // Standard levels (entire line colored):
-    try logger.info("Info message - entire line is white");
-    try logger.success("Success message - entire line is green");
-    try logger.warning("Warning message - entire line is yellow");
-    try logger.err("Error message - entire line is red");
+    try logger.info("Info message - entire line is white", @src());
+    try logger.success("Success message - entire line is green", @src());
+    try logger.warn("Warning message - entire line is yellow", @src());  // Short alias
+    try logger.err("Error message - entire line is red", @src());
 
     // Custom levels (entire line colored with custom colors):
-    try logger.custom("NOTICE", "Notice message - entire line cyan bold");
-    try logger.custom("ALERT", "Alert message - entire line red underline");
-    try logger.custom("HIGHLIGHT", "Highlighted - entire line yellow reverse");
+    try logger.custom("NOTICE", "Notice message - entire line cyan bold", @src());
+    try logger.custom("ALERT", "Alert message - entire line red underline", @src());
+    try logger.custom("HIGHLIGHT", "Highlighted - entire line yellow reverse", @src());
 }
 ```
 

@@ -13,6 +13,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -29,30 +32,30 @@ pub fn main() !void {
 
     logger.configure(config);
 
-    // 1. Standard Console Sink (with colors)
-    _ = try logger.addSink(.{});
+    // 1. Standard Console Sink (with colors) - using add() alias
+    _ = try logger.add(.{});
 
     // 2. Plain Text File Sink (no colors)
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/plain.txt",
         .color = false,
     });
 
     // 3. JSON File Sink
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/data.json",
         .json = true,
     });
 
     // 4. Pretty JSON File Sink
-    _ = try logger.addSink(.{
+    _ = try logger.add(.{
         .path = "logs/pretty.json",
         .json = true,
         .pretty_json = true,
     });
 
-    try logger.info("This message goes to all sinks in different formats!");
-    try logger.err("Error at specific line (try clicking the filename in console)");
+    try logger.info("This message goes to all sinks in different formats!", @src());
+    try logger.err("Error at specific line (try clicking the filename in console)", @src());
 }
 ```
 

@@ -14,6 +14,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -25,7 +28,7 @@ pub fn main() !void {
     var i: usize = 0;
     while (i < 100) : (i += 1) {
         if (sampler.shouldSample()) {
-            try logger.info("Log message {d}", .{i});
+            try logger.infof("Log message {d}", .{i}, @src());
         }
     }
 }
@@ -44,7 +47,7 @@ defer sampler.deinit();
 // After 100 logs/second, remaining logs are dropped until next window
 for (0..200) |i| {
     if (sampler.shouldSample()) {
-        try logger.info("Message {d}", .{i});
+        try logger.infof("Message {d}", .{i}, @src());
     }
 }
 ```
@@ -72,7 +75,7 @@ defer sampler.deinit();
 // Only every 10th log passes through
 for (0..100) |i| {
     if (sampler.shouldSample()) {
-        try logger.info("Sampled message {d}", .{i});
+        try logger.infof("Sampled message {d}", .{i}, @src());
     }
 }
 ```

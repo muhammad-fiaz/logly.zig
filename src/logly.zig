@@ -137,51 +137,77 @@ pub const SinkPresets = struct {
     }
 };
 
-/// Platform utilities for terminal/console support.
+/// Platform utilities for terminal and console support.
+/// Handles ANSI color detection and enablement across all platforms.
 pub const Terminal = struct {
-    /// Enable ANSI color support on Windows consoles.
-    /// On other platforms, this is a no-op as ANSI is supported by default.
+    /// Enable ANSI color codes for the current terminal.
     ///
-    /// Call this at the start of your program if you want colors on Windows:
-    /// ```zig
-    /// logly.Terminal.enableAnsiColors();
-    /// ```
+    /// - Windows: Enables Virtual Terminal Processing in the console
+    /// - Linux/macOS/Unix: Returns true (ANSI supported natively)
+    /// - Bare metal/freestanding: Returns based on color_enabled flag
     ///
-    /// Returns true if colors are enabled/supported, false otherwise.
+    /// Returns true if colors are available, false otherwise.
     pub fn enableAnsiColors() bool {
         const builtin = @import("builtin");
+
+        // Bare metal / freestanding - no terminal, but allow if explicitly enabled
+        if (builtin.os.tag == .freestanding) {
+            return color_enabled;
+        }
+
+        // Windows requires explicit enablement
         if (builtin.os.tag == .windows) {
             return enableWindowsAnsi();
         }
-        // Linux, macOS, and other Unix-like systems support ANSI by default
+
+        // Unix-like systems (Linux, macOS, BSD, etc.) support ANSI natively
         return true;
     }
 
-    /// Check if the current terminal supports ANSI colors.
+    /// Check if the terminal likely supports ANSI color codes.
     pub fn supportsAnsiColors() bool {
         const builtin = @import("builtin");
+
+        if (builtin.os.tag == .freestanding) {
+            return color_enabled;
+        }
+
         if (builtin.os.tag == .windows) {
-            // On Windows, try to detect if we're in a modern terminal
             return detectWindowsAnsiSupport();
         }
+
         // Check TERM environment variable on Unix-like systems
         if (std.posix.getenv("TERM")) |term| {
-            // Most common terminals that support color
             const color_terms = [_][]const u8{
                 "xterm",         "xterm-256color",  "xterm-color",
                 "screen",        "screen-256color", "tmux",
                 "tmux-256color", "linux",           "vt100",
                 "vt220",         "rxvt",            "ansi",
-                "cygwin",        "putty",
+                "cygwin",        "putty",           "konsole",
+                "gnome",         "alacritty",       "kitty",
             };
             for (color_terms) |ct| {
                 if (std.mem.startsWith(u8, term, ct)) return true;
             }
-            // Also check for "color" in the term name
             if (std.mem.indexOf(u8, term, "color") != null) return true;
         }
-        // Fallback: assume color support on non-Windows platforms
-        return true;
+
+        // Check for known color-supporting environment variables
+        if (std.posix.getenv("COLORTERM")) |_| return true;
+        if (std.posix.getenv("FORCE_COLOR")) |_| return true;
+
+        return true; // Default to enabled on Unix-like systems
+    }
+
+    /// Explicitly enable or disable colors (useful for bare metal or testing).
+    var color_enabled: bool = true;
+
+    pub fn setColorEnabled(enabled: bool) void {
+        color_enabled = enabled;
+    }
+
+    pub fn isColorEnabled() bool {
+        return color_enabled and supportsAnsiColors();
     }
 
     fn enableWindowsAnsi() bool {
@@ -191,29 +217,23 @@ pub const Terminal = struct {
         const windows = std.os.windows;
         const kernel32 = windows.kernel32;
 
-        // Get stdout handle
         const stdout_handle = kernel32.GetStdHandle(windows.STD_OUTPUT_HANDLE);
         if (stdout_handle == windows.INVALID_HANDLE_VALUE) return false;
 
-        // Handle can be null if there's no console
         const handle = stdout_handle orelse return false;
 
-        // Get current console mode
         var mode: windows.DWORD = 0;
         if (kernel32.GetConsoleMode(handle, &mode) == 0) {
-            // Not a console (e.g., redirected to file) - that's fine
             return false;
         }
 
-        // Enable virtual terminal processing
         const ENABLE_VIRTUAL_TERMINAL_PROCESSING: windows.DWORD = 0x0004;
         const new_mode = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
         if (kernel32.SetConsoleMode(handle, new_mode) == 0) {
-            // Failed to set mode - older Windows version?
             return false;
         }
 
-        // Also enable for stderr
+        // Enable for stderr as well
         const stderr_handle = kernel32.GetStdHandle(windows.STD_ERROR_HANDLE);
         if (stderr_handle != windows.INVALID_HANDLE_VALUE) {
             if (stderr_handle) |stderr| {
@@ -231,14 +251,16 @@ pub const Terminal = struct {
         const builtin = @import("builtin");
         if (builtin.os.tag != .windows) return true;
 
-        // Check if we're in Windows Terminal, VS Code, or other modern terminals
-        if (std.posix.getenv("WT_SESSION")) |_| return true; // Windows Terminal
+        // Modern Windows terminals
+        if (std.posix.getenv("WT_SESSION")) |_| return true;
         if (std.posix.getenv("TERM_PROGRAM")) |prog| {
             if (std.mem.eql(u8, prog, "vscode")) return true;
         }
-        if (std.posix.getenv("ANSICON")) |_| return true; // ANSICON
+        if (std.posix.getenv("ANSICON")) |_| return true;
+        if (std.posix.getenv("ConEmuANSI")) |v| {
+            if (std.mem.eql(u8, v, "ON")) return true;
+        }
 
-        // Try to enable and test
         return enableWindowsAnsi();
     }
 };

@@ -13,6 +13,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Enable colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
@@ -27,10 +30,10 @@ pub fn main() !void {
     logger.setFilter(&filter);
 
     // Only warning and above will pass
-    try logger.debug("This won't appear");  // Filtered out
-    try logger.info("This won't appear");   // Filtered out
-    try logger.warning("This will appear"); // Passes filter
-    try logger.err("This will appear");     // Passes filter
+    try logger.debug("This won't appear", @src());  // Filtered out
+    try logger.info("This won't appear", @src());   // Filtered out
+    try logger.warn("This will appear", @src());    // Passes filter (short alias)
+    try logger.err("This will appear", @src());     // Passes filter
 }
 ```
 
@@ -47,9 +50,9 @@ logger.setFilter(&filter);
 
 // Create scoped logger
 const db_logger = logger.scoped("database");
-try db_logger.info("This will appear");     // Module matches
+try db_logger.info("This will appear", @src());     // Module matches
 
-try logger.info("This won't appear");       // No module, filtered
+try logger.info("This won't appear", @src());       // No module, filtered
 ```
 
 ## Message Content Filtering
@@ -64,8 +67,8 @@ try filter.addMessageFilter("secret", .deny);
 
 logger.setFilter(&filter);
 
-try logger.info("Normal message");           // Passes
-try logger.info("User password changed");    // Filtered (contains "password")
+try logger.info("Normal message", @src());           // Passes
+try logger.info("User password changed", @src());    // Filtered (contains "password")
 ```
 
 ## Filter Presets

@@ -31,10 +31,10 @@ pub fn main() !void {
     try logger.bind("version", .{ .string = "1.0.0" });
     try logger.bind("environment", .{ .string = "production" });
 
-    try logger.info("Application started");
-    try logger.success("All systems operational");
-    try logger.warning("Connection pool near capacity");
-    try logger.err("Database connection failed");
+    try logger.info("Application started", @src());
+    try logger.success("All systems operational", @src());
+    try logger.warn("Connection pool near capacity", @src());  // Short alias
+    try logger.err("Database connection failed", @src());
 
     std.debug.print("\nJSON logging example completed!\n", .{});
 }
