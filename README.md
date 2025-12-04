@@ -130,7 +130,31 @@ zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
-### Method 2: Manual Configuration
+### Method 2: Project Starter Template (Quick Start)
+
+Get started quickly with a pre-configured project template:
+
+📦 **[Download Project Starter Example](https://github.com/muhammad-fiaz/logly.zig/releases/latest/download/project-starter-example.zip)**
+
+Or clone directly:
+```bash
+# Download and extract the starter template
+curl -L https://github.com/muhammad-fiaz/logly.zig/releases/latest/download/project-starter-example.zip -o logly-starter.zip
+unzip logly-starter.zip
+cd project-starter-example
+
+# Build and run
+zig build run
+```
+
+The starter template includes:
+- ✅ Pre-configured `build.zig` and `build.zig.zon`
+- ✅ Example code demonstrating all major features
+- ✅ Multiple sink configurations (console, file, rotation)
+- ✅ Context binding and custom log levels
+- ✅ JSON logging examples
+
+### Method 3: Manual Configuration
 
 Add to your `build.zig.zon`:
 

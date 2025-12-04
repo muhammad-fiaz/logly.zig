@@ -80,6 +80,27 @@ pub const Scheduler = struct {
                     .compress_before_delete = cfg.compress_before_cleanup,
                 };
             }
+
+            /// Returns a copy with the specified path.
+            pub fn withPath(self: TaskConfig, path: []const u8) TaskConfig {
+                var result = self;
+                result.path = path;
+                return result;
+            }
+
+            /// Returns a copy with the specified max age in days.
+            pub fn withMaxAgeDays(self: TaskConfig, days: u64) TaskConfig {
+                var result = self;
+                result.max_age_seconds = days * 24 * 60 * 60;
+                return result;
+            }
+
+            /// Returns a copy with the specified file pattern.
+            pub fn withFilePattern(self: TaskConfig, pattern: []const u8) TaskConfig {
+                var result = self;
+                result.file_pattern = pattern;
+                return result;
+            }
         };
     };
 
@@ -187,6 +208,34 @@ pub const Scheduler = struct {
             .health_callback = null,
             .metrics_callback = null,
         };
+
+        return self;
+    }
+
+    /// Initializes a Scheduler from global Config.SchedulerConfig.
+    ///
+    /// Arguments:
+    ///     allocator: Memory allocator for internal operations.
+    ///     config: Global scheduler configuration from Config.
+    ///     logs_path: Optional path for log files (used for auto-setup cleanup task).
+    ///
+    /// Returns:
+    ///     A pointer to the new Scheduler instance with configured tasks.
+    pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logs_path: ?[]const u8) !*Scheduler {
+        const self = try init(allocator);
+        errdefer self.deinit();
+
+        // If scheduler is enabled and path is provided, auto-setup default cleanup task
+        if (config.enabled) {
+            if (logs_path) |path| {
+                _ = try self.addTask(
+                    "auto_cleanup",
+                    .cleanup,
+                    .{ .daily = .{ .hour = 2, .minute = 0 } }, // Run at 2 AM daily
+                    ScheduledTask.TaskConfig.fromCentralized(config).withPath(path),
+                );
+            }
+        }
 
         return self;
     }

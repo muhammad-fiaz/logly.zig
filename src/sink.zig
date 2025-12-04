@@ -360,46 +360,44 @@ pub const Sink = struct {
         if (self.file) |file| {
             if (global_config.global_file_storage) {
                 // For JSON file output, add comma separator between entries
-                const is_json_file = effective_config.json and self.file != null;
+                const is_json_file = effective_config.json;
 
                 if (self.config.async_write) {
-                    // Add comma before entry if not first (for JSON files)
-                    if (is_json_file and !self.json_first_entry) {
-                        try self.buffer.appendSlice(self.allocator, ",\n");
-                    }
-                    try self.buffer.appendSlice(self.allocator, formatted);
-                    if (!is_json_file) {
+                    // Buffered async write
+                    if (is_json_file) {
+                        if (!self.json_first_entry) {
+                            try self.buffer.appendSlice(self.allocator, ",\n");
+                        }
+                        try self.buffer.appendSlice(self.allocator, formatted);
+                        self.json_first_entry = false;
+                    } else {
+                        try self.buffer.appendSlice(self.allocator, formatted);
                         try self.buffer.append(self.allocator, '\n');
                     }
-                    if (is_json_file) {
-                        self.json_first_entry = false;
-                    }
+                    // Flush when buffer exceeds threshold
                     if (self.buffer.items.len >= self.config.buffer_size) {
                         try self.flush();
                     }
                 } else {
-                    // Add comma before entry if not first (for JSON files)
-                    if (is_json_file and !self.json_first_entry) {
-                        try file.writeAll(",\n");
-                    }
-                    try file.writeAll(formatted);
-                    if (!is_json_file) {
-                        try file.writeAll("\n");
-                    }
+                    // Direct synchronous write
                     if (is_json_file) {
+                        if (!self.json_first_entry) {
+                            try file.writeAll(",\n");
+                        }
+                        try file.writeAll(formatted);
                         self.json_first_entry = false;
+                    } else {
+                        try file.writeAll(formatted);
+                        try file.writeAll("\n");
                     }
                 }
             }
         } else {
-            // Console output
+            // Console output - direct write for best performance
             if (global_config.global_console_display) {
-                var stdout_buffer: [4096]u8 = undefined;
-                var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-                const stdout = &stdout_writer.interface;
-                try stdout.writeAll(formatted);
-                try stdout.writeAll("\n");
-                try stdout.flush();
+                const stdout_file = std.fs.File.stdout();
+                try stdout_file.writeAll(formatted);
+                try stdout_file.writeAll("\n");
             }
         }
     }

@@ -1,0 +1,18 @@
+.{
+    .name = .logly_demo,
+    .version = "0.1.0",
+    .fingerprint = 0x5cdb49617137be96,
+    .dependencies = .{
+        .logly = .{
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.4.tar.gz",
+            .hash = "logly-0.0.4-kZjLe0R7BAA4pDkQMqx49KQsGbCy54G6imVBdgTytHg5",
+            // To regenerate the hash after changing the version, run: zig fetch <url>
+            // Replace <url> with the URL above, then update this hash value
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
