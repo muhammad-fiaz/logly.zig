@@ -6,376 +6,532 @@ Logly provides comprehensive system diagnostics with automatic collection of OS,
 
 ### Auto-emit at Startup
 
+The simplest way to enable diagnostics is to have them automatically logged when your logger initializes:
+
 ```zig
+const std = @import("std");
 const logly = @import("logly");
 
-var config = logly.Config.default();
-config.emit_system_diagnostics_on_init = true; // Emit during init
-config.include_drive_diagnostics = true;        // Include drive info
-config.use_colors = true;                        // Enable colors
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-const logger = try logly.Logger.initWithConfig(allocator, config);
-// System diagnostics are automatically logged
+    // Enable ANSI colors on Windows
+    _ = logly.Terminal.enableAnsiColors();
+
+    var config = logly.Config.default();
+    config.emit_system_diagnostics_on_init = true;  // Auto-emit on init
+    config.include_drive_diagnostics = true;         // Include drive info
+    config.color = true;                              // Enable colors
+
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+    
+    // System diagnostics are automatically logged at INFO level
+    try logger.info("Application started", @src());
+}
+```
+
+**Output:**
+```
+[INFO] [DIAGNOSTICS] os=windows arch=x86_64 cpu=Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz cores=8 ram_total=32768MB ram_available=16384MB drives=[C:\ total=931GB free=256GB; D:\ total=1863GB free=512GB]
+[INFO] Application started
 ```
 
 ### On-Demand Emission
 
+You can also emit diagnostics at any time during your application's lifecycle:
+
 ```zig
+const logger = try logly.Logger.init(allocator);
+defer logger.deinit();
+
+// Emit diagnostics on demand
 try logger.logSystemDiagnostics(@src());
+
+// Continue with normal logging
+try logger.info("After diagnostics", @src());
+```
+
+### Direct Collection
+
+For custom processing, you can collect diagnostics directly without logging:
+
+```zig
+var diag = try logly.Diagnostics.collect(allocator, true);
+defer diag.deinit(allocator);
+
+std.debug.print("System: {s} on {s}\n", .{diag.os_tag, diag.arch});
+std.debug.print("CPU: {s} ({d} cores)\n", .{diag.cpu_model, diag.logical_cores});
+
+if (diag.total_mem) |total| {
+    if (diag.avail_mem) |avail| {
+        const used_mb = (total - avail) / (1024 * 1024);
+        const total_mb = total / (1024 * 1024);
+        std.debug.print("Memory: {d}/{d} MB ({d:.1}% used)\n", 
+            .{used_mb, total_mb, (@as(f64, @floatFromInt(used_mb)) / @as(f64, @floatFromInt(total_mb))) * 100.0});
+    }
+}
+
+for (diag.drives) |drive| {
+    const total_gb = @as(f64, @floatFromInt(drive.total_bytes)) / (1024 * 1024 * 1024);
+    const free_gb = @as(f64, @floatFromInt(drive.free_bytes)) / (1024 * 1024 * 1024);
+    std.debug.print("Drive {s}: {d:.1} GB / {d:.1} GB free\n", 
+        .{drive.name, free_gb, total_gb});
+}
 ```
 
 ## Configuration Options
 
 ### emit_system_diagnostics_on_init
 
-Automatically emit system diagnostics when logger initializes.
+**Type:** `bool`  
+**Default:** `false`
+
+Automatically emit system diagnostics when the logger initializes.
 
 ```zig
 config.emit_system_diagnostics_on_init = true;
 ```
 
-- Emits once during logger initialization
-- Useful for production logs to capture baseline system info
-- Logs at `info` level
+- Emits once during `Logger.init()` or `Logger.initWithConfig()`
+- Logs at `INFO` level
+- Useful for production logs to capture baseline system information
+- Adds ~2-7ms to initialization time (with drives)
+
+**Best Practices:**
+- Enable for production applications to track deployment environments
+- Disable for high-frequency test runs to reduce noise
+- Combine with structured logging to parse system info programmatically
 
 ### include_drive_diagnostics
+
+**Type:** `bool`  
+**Default:** `true`
 
 Include disk drive information in diagnostics output.
 
 ```zig
-config.include_drive_diagnostics = true; // Include all drives
+config.include_drive_diagnostics = true;  // Include all drives
+config.include_drive_diagnostics = false; // Skip drive enumeration
 ```
 
-- Windows: Enumerates all logical drives (C:\, D:\, etc.)
-- Linux: Includes mounted filesystems
-- macOS: Includes mounted volumes
-- Adds ~1-5ms latency (optional)
+- **Windows**: Enumerates all logical drives (C:\, D:\, E:\, etc.)
+- **Linux**: Includes mounted filesystems from `/proc/mounts`
+- **macOS**: Enumerates mount points
 
-### use_colors
+**Performance:**
+- Windows: Adds ~1-5ms (varies by number of drives)
+- Linux: Adds ~1-2ms
+- macOS: Adds ~1-2ms
 
-Enable color-coded output for better visibility.
+**When to disable:**
+- High-frequency diagnostic calls
+- Containerized environments with limited drive access
+- Systems with many network drives (Windows)
+
+### color
+
+**Type:** `bool`  
+**Default:** `true`
+
+Enable color-coded diagnostic output.
 
 ```zig
-config.use_colors = true;
+config.color = true;  // Enable ANSI colors
 ```
 
-- Automatically enables ANSI colors
-- Windows Terminal, PowerShell, VSCode all supported
-- On Windows, call `Terminal.enableAnsiColors()` first
+**Platform Notes:**
+- **Windows**: Requires `logly.Terminal.enableAnsiColors()` call before logger init
+- **Linux/macOS**: Works out of the box
 
-## Enabling ANSI Colors
-
-On Windows, enable ANSI support before using colors:
-
+**Example:**
 ```zig
+// Enable colors on Windows
 _ = logly.Terminal.enableAnsiColors();
 
 var config = logly.Config.default();
-config.use_colors = true;
+config.color = true;
+
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
-
-This is a no-op on Linux/macOS where ANSI is always supported.
-
-## Diagnostic Information
-
-### Collected Data
-
-System diagnostics include:
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `diag.os` | string | Operating system tag | "windows", "linux", "macos" |
-| `diag.arch` | string | CPU architecture | "x86_64", "aarch64", "arm" |
-| `diag.cpu` | string | CPU model name | "Intel Core i7-9700K" |
-| `diag.cores` | integer | Logical CPU cores | 8, 16, 32 |
-| `diag.ram_total_mb` | integer | Total RAM in MB | 16384, 32768 |
-| `diag.ram_avail_mb` | integer | Available RAM in MB | 8192, 15000 |
-
-### Drive Information (Windows/Linux)
-
-When `include_drive_diagnostics = true`:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| Drive name | string | "C:\\", "D:\\", "/mnt/data" |
-| Total bytes | integer | Drive capacity |
-| Free bytes | integer | Available space |
 
 ## Custom Formatting
 
-### Basic Custom Format
+### Using Context Fields
 
-Use diagnostic context fields in format strings:
+When diagnostics are logged, context fields are automatically populated:
 
 ```zig
-config.log_format = "[{level}] {message} | CPU={diag.cpu} Cores={diag.cores}";
-
-try logger.logSystemDiagnostics(@src());
-// Output: [INFO] System initialized | CPU=Intel Core i7-9700K Cores=8
+config.log_format = "[{level}] {diag.os}/{diag.arch} | CPU: {diag.cpu} ({diag.cores} cores) | RAM: {diag.ram_avail_mb}/{diag.ram_total_mb} MB";
 ```
 
-### Emoji Format
+**Available Fields:**
+- `{diag.os}` - Operating system (`windows`, `linux`, `macos`)
+- `{diag.arch}` - Architecture (`x86_64`, `aarch64`)
+- `{diag.cpu}` - CPU model name
+- `{diag.cores}` - Logical core count
+- `{diag.ram_total_mb}` - Total RAM in MB
+- `{diag.ram_avail_mb}` - Available RAM in MB
 
-Add emojis for visual appeal:
-
-```zig
-config.log_format = "🖥️  {diag.os} | 🏗️  {diag.arch} | 💻 {diag.cpu} | ⚙️  {diag.cores} cores";
-
-try logger.logSystemDiagnostics(@src());
-// Output: 🖥️  windows | 🏗️  x86_64 | 💻 Intel Core i7-9700K | ⚙️  8 cores
+**Example Output:**
+```
+[INFO] windows/x86_64 | CPU: Intel Core i7-9700K (8 cores) | RAM: 16384/32768 MB
 ```
 
-### Memory Information Format
+### Table Format
+
+For a more structured output:
 
 ```zig
-config.log_format = "🧠 Total: {diag.ram_total_mb} MB | Available: {diag.ram_avail_mb} MB";
-
-try logger.logSystemDiagnostics(@src());
-// Output: 🧠 Total: 32768 MB | Available: 16384 MB
+config.log_format = 
+\\[{level}] System Diagnostics:
+\\  OS:       {diag.os}
+\\  Arch:     {diag.arch}
+\\  CPU:      {diag.cpu}
+\\  Cores:    {diag.cores}
+\\  RAM:      {diag.ram_avail_mb}/{diag.ram_total_mb} MB
+;
 ```
 
-### Comprehensive Format with Timestamp
+## Use Cases
+
+### 1. Production Monitoring
+
+Track system resources in production environments:
 
 ```zig
-config.log_format = "[{timestamp:s}] {level:>5} | System: {diag.os}/{diag.arch} | CPU: {diag.cpu} ({diag.cores} cores) | RAM: {diag.ram_total_mb}MB";
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-try logger.logSystemDiagnostics(@src());
-```
+    var config = logly.Config.default();
+    config.emit_system_diagnostics_on_init = true;
+    config.include_drive_diagnostics = true;
+    
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
 
-## Programmatic Collection
-
-Collect diagnostics directly without a logger:
-
-```zig
-// Collect system information
-var diagnostics = try logly.Diagnostics.collect(allocator, true);
-defer diagnostics.deinit(allocator);
-
-// Access fields
-std.debug.print("OS: {s}\n", .{diagnostics.os_tag});
-std.debug.print("Arch: {s}\n", .{diagnostics.arch});
-std.debug.print("CPU: {s}\n", .{diagnostics.cpu_model});
-std.debug.print("Cores: {d}\n", .{diagnostics.logical_cores});
-
-// Memory info
-if (diagnostics.total_mem) |total| {
-    std.debug.print("Total RAM: {d} MB\n", .{total / (1024 * 1024)});
-}
-
-// Drive info
-for (diagnostics.drives) |drive| {
-    std.debug.print("Drive {s}: {d} bytes free\n", .{drive.name, drive.free_bytes});
-}
-```
-
-## Platform Support
-
-### Windows
-- ✅ Full ANSI color support (requires `Terminal.enableAnsiColors()`)
-- ✅ Memory information via GlobalMemoryStatusEx
-- ✅ Drive enumeration via GetLogicalDriveStrings
-- ✅ Works in PowerShell, Windows Terminal, VSCode
-
-### Linux
-- ✅ Full ANSI color support
-- ✅ Memory information via /proc/meminfo
-- ✅ Drive enumeration via /proc/mounts
-
-### macOS
-- ✅ Full ANSI color support
-- ✅ Memory information via sysctl
-- ✅ Drive enumeration via mount points
-
-## Performance Considerations
-
-### Startup Emission
-- OS/CPU info: ~1ms
-- Memory info: ~0.5ms
-- Drive enumeration: ~1-5ms (optional)
-- Total: ~2-7ms
-
-### On-Demand Emission
-- Same as startup (uses arena allocator)
-- No significant performance impact
-
-### Drive Enumeration Latency
-Drive info adds ~1-5ms depending on number of volumes:
-
-```zig
-// Fast startup - skip drive info
-config.include_drive_diagnostics = false;
-
-// Full diagnostics
-config.include_drive_diagnostics = true;
-```
-
-## Best Practices
-
-### 1. Enable at Startup in Production
-
-```zig
-#if production
-config.emit_system_diagnostics_on_init = true;
-config.use_colors = false; // Colors not needed in file logs
-#endif
-```
-
-### 2. Include Drive Info for Long-Running Services
-
-```zig
-// Useful for detecting disk space issues early
-config.include_drive_diagnostics = true;
-```
-
-### 3. Custom Format for Log Aggregation
-
-```zig
-// Structured format for parsing by aggregation tools
-config.log_format = "diag os={diag.os} arch={diag.arch} cpu={diag.cpu} cores={diag.cores} ram={diag.ram_total_mb}";
-```
-
-### 4. Use Colors in Development/Interactive
-
-```zig
-if (std.io.getStdIn().isTty()) {
-    config.use_colors = true;
-}
-```
-
-### 5. Collect Programmatically for Custom Display
-
-```zig
-var diagnostics = try logly.Diagnostics.collect(allocator, true);
-defer diagnostics.deinit(allocator);
-
-// Custom display logic
-displaySystemInfo(diagnostics);
-```
-
-## Color Scheme
-
-When colors are enabled, diagnostics output uses:
-
-- **OS/Architecture**: Cyan (system information)
-- **CPU**: Magenta (processor details)
-- **Memory**: Green (resource info)
-- **Drives**: Yellow (storage information)
-
-Colors are automatically stripped when output is redirected to files.
-
-## Examples
-
-### Example 1: Development Setup
-
-```zig
-var config = logly.Config.default();
-config.emit_system_diagnostics_on_init = true;
-config.include_drive_diagnostics = true;
-config.use_colors = true;
-config.log_level = .debug;
-
-_ = logly.Terminal.enableAnsiColors();
-const logger = try logly.Logger.initWithConfig(allocator, config);
-
-// Output includes full colored diagnostics at startup
-```
-
-### Example 2: Production Setup
-
-```zig
-var config = logly.Config.default();
-config.emit_system_diagnostics_on_init = true;
-config.include_drive_diagnostics = true;
-config.use_colors = false; // Disable colors for file logging
-config.log_level = .info;
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
-
-// Output includes diagnostics in structured format, parseable by log aggregators
-```
-
-### Example 3: Monitoring Dashboard
-
-```zig
-var diagnostics = try logly.Diagnostics.collect(allocator, true);
-defer diagnostics.deinit(allocator);
-
-// Display in dashboard or monitoring tool
-std.debug.print("System Health Report\n", .{});
-std.debug.print("  OS: {s} ({s})\n", .{diagnostics.os_tag, diagnostics.arch});
-std.debug.print("  CPU: {s} ({d} cores)\n", .{diagnostics.cpu_model, diagnostics.logical_cores});
-
-if (diagnostics.total_mem) |total| {
-    if (diagnostics.avail_mem) |avail| {
-        const usage = 100.0 * (1.0 - (@as(f64, @floatFromInt(avail)) / @as(f64, @floatFromInt(total))));
-        std.debug.print("  Memory: {d:.1}% used\n", .{usage});
+    // Application continues with system info logged
+    try logger.info("Application started", @src());
+    
+    // Periodically re-emit to track changes
+    while (app_running) {
+        // ... application logic ...
+        
+        if (should_emit_diagnostics()) {
+            try logger.logSystemDiagnostics(@src());
+        }
     }
 }
 ```
 
-### Example 4: Conditional Diagnostics
+### 2. Debug Information
+
+Collect comprehensive system info for bug reports:
 
 ```zig
-try logger.info("Application starting", .{});
-
-// Only include drive info on startup
-if (should_include_drives) {
+fn reportBug(logger: *logly.Logger, error_msg: []const u8) !void {
+    try logger.error(error_msg, @src());
+    
+    // Include full system diagnostics
     try logger.logSystemDiagnostics(@src());
+    
+    // Additional debug info
+    try logger.debug("Application version: 1.0.0", @src());
+    try logger.debug("Build: Release", @src());
 }
+```
 
-// Collect diagnostics programmatically for analysis
+### 3. Performance Baselines
+
+Establish performance baselines based on system capabilities:
+
+```zig
 var diag = try logly.Diagnostics.collect(allocator, false);
 defer diag.deinit(allocator);
 
-if (isLowMemory(diag)) {
-    try logger.warn("System running low on memory", .{});
+// Adjust worker pool size based on cores
+const worker_count = if (diag.logical_cores > 4) 
+    diag.logical_cores - 1  // Leave one core free
+else 
+    diag.logical_cores;
+
+std.debug.print("Starting {d} workers (system has {d} cores)\n", 
+    .{worker_count, diag.logical_cores});
+```
+
+### 4. Health Checks
+
+Include diagnostics in application health endpoints:
+
+```zig
+fn healthCheck(logger: *logly.Logger) !HealthStatus {
+    var diag = try logly.Diagnostics.collect(allocator, true);
+    defer diag.deinit(allocator);
+
+    var status = HealthStatus{ .healthy = true };
+
+    // Check memory availability
+    if (diag.avail_mem) |avail| {
+        if (diag.total_mem) |total| {
+            const avail_percent = (@as(f64, @floatFromInt(avail)) / @as(f64, @floatFromInt(total))) * 100.0;
+            if (avail_percent < 10.0) {
+                status.healthy = false;
+                try logger.warning("Low memory: {d:.1}% available", @src());
+            }
+        }
+    }
+
+    // Check drive space
+    for (diag.drives) |drive| {
+        const free_percent = (@as(f64, @floatFromInt(drive.free_bytes)) / @as(f64, @floatFromInt(drive.total_bytes))) * 100.0;
+        if (free_percent < 5.0) {
+            status.healthy = false;
+            try logger.warning("Low disk space on {s}: {d:.1}% free", @src());
+        }
+    }
+
+    return status;
 }
 ```
+
+### 5. Containerized Applications
+
+Detect container environments and adjust behavior:
+
+```zig
+var diag = try logly.Diagnostics.collect(allocator, false);
+defer diag.deinit(allocator);
+
+// Check if running in a container (typically has fewer cores)
+const is_container = diag.logical_cores <= 2 or 
+    (diag.total_mem != null and diag.total_mem.? < 4 * 1024 * 1024 * 1024);
+
+if (is_container) {
+    std.debug.print("Detected container environment\n", .{});
+    // Adjust resource usage accordingly
+}
+```
+
+## Platform-Specific Examples
+
+### Windows
+
+```zig
+const std = @import("std");
+const logly = @import("logly");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Enable Virtual Terminal Processing for colors
+    _ = logly.Terminal.enableAnsiColors();
+
+    var diag = try logly.Diagnostics.collect(allocator, true);
+    defer diag.deinit(allocator);
+
+    std.debug.print("Windows System Information:\n", .{});
+    std.debug.print("  Edition: {s}\n", .{diag.os_tag});
+    std.debug.print("  CPU: {s}\n", .{diag.cpu_model});
+    
+    if (diag.total_mem) |total| {
+        if (diag.avail_mem) |avail| {
+            std.debug.print("  Physical Memory: {d} MB total, {d} MB available\n",
+                .{total / (1024 * 1024), avail / (1024 * 1024)});
+        }
+    }
+
+    std.debug.print("\nLogical Drives:\n", .{});
+    for (diag.drives) |drive| {
+        const total_gb = @as(f64, @floatFromInt(drive.total_bytes)) / (1024 * 1024 * 1024);
+        const free_gb = @as(f64, @floatFromInt(drive.free_bytes)) / (1024 * 1024 * 1024);
+        std.debug.print("  {s} {d:.1} GB / {d:.1} GB free\n",
+            .{drive.name, free_gb, total_gb});
+    }
+}
+```
+
+### Linux
+
+```zig
+const std = @import("std");
+const logly = @import("logly");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var diag = try logly.Diagnostics.collect(allocator, true);
+    defer diag.deinit(allocator);
+
+    std.debug.print("Linux System Information:\n", .{});
+    std.debug.print("  Kernel: {s}\n", .{diag.os_tag});
+    std.debug.print("  Architecture: {s}\n", .{diag.arch});
+    std.debug.print("  CPU: {s}\n", .{diag.cpu_model});
+    std.debug.print("  Cores: {d}\n", .{diag.logical_cores});
+    
+    if (diag.total_mem) |total| {
+        if (diag.avail_mem) |avail| {
+            std.debug.print("  Memory: {d} MB / {d} MB (from /proc/meminfo)\n",
+                .{avail / (1024 * 1024), total / (1024 * 1024)});
+        }
+    }
+
+    std.debug.print("\nMounted Filesystems:\n", .{});
+    for (diag.drives) |drive| {
+        const total_gb = @as(f64, @floatFromInt(drive.total_bytes)) / (1024 * 1024 * 1024);
+        const free_gb = @as(f64, @floatFromInt(drive.free_bytes)) / (1024 * 1024 * 1024);
+        std.debug.print("  {s}: {d:.1} GB / {d:.1} GB free\n",
+            .{drive.name, free_gb, total_gb});
+    }
+}
+```
+
+### macOS
+
+```zig
+const std = @import("std");
+const logly = @import("logly");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var diag = try logly.Diagnostics.collect(allocator, true);
+    defer diag.deinit(allocator);
+
+    std.debug.print("macOS System Information:\n", .{});
+    std.debug.print("  OS: {s}\n", .{diag.os_tag});
+    std.debug.print("  Architecture: {s}\n", .{diag.arch});
+    std.debug.print("  CPU: {s}\n", .{diag.cpu_model});
+    std.debug.print("  Logical Cores: {d}\n", .{diag.logical_cores});
+    
+    if (diag.total_mem) |total| {
+        if (diag.avail_mem) |avail| {
+            std.debug.print("  Memory: {d} GB / {d} GB (via sysctl)\n",
+                .{avail / (1024 * 1024 * 1024), total / (1024 * 1024 * 1024)});
+        }
+    }
+
+    std.debug.print("\nMount Points:\n", .{});
+    for (diag.drives) |drive| {
+        const total_gb = @as(f64, @floatFromInt(drive.total_bytes)) / (1024 * 1024 * 1024);
+        const free_gb = @as(f64, @floatFromInt(drive.free_bytes)) / (1024 * 1024 * 1024);
+        std.debug.print("  {s}: {d:.1} GB / {d:.1} GB free\n",
+            .{drive.name, free_gb, total_gb});
+    }
+}
+```
+
+## Performance Considerations
+
+### Collection Overhead
+
+Diagnostic collection has minimal overhead:
+
+| Platform | Without Drives | With Drives | Notes |
+|----------|----------------|-------------|-------|
+| Windows  | ~1-2ms        | ~2-7ms      | Varies by drive count |
+| Linux    | ~0.5-1ms      | ~1-3ms      | Fast file parsing |
+| macOS    | ~0.5-1ms      | ~1-3ms      | Efficient syscalls |
+
+### Best Practices
+
+1. **Cache Results**: If collecting frequently, cache diagnostics:
+   ```zig
+   var cached_diag: ?Diagnostics = null;
+   var last_collection: i64 = 0;
+   
+   fn getDiagnostics(allocator: std.mem.Allocator) !Diagnostics {
+       const now = std.time.milliTimestamp();
+       if (cached_diag == null or (now - last_collection) > 60000) {
+           if (cached_diag) |*old| {
+               old.deinit(allocator);
+           }
+           cached_diag = try logly.Diagnostics.collect(allocator, true);
+           last_collection = now;
+       }
+       return cached_diag.?;
+   }
+   ```
+
+2. **Disable Drives When Not Needed**: Save 1-5ms per collection:
+   ```zig
+   var diag = try logly.Diagnostics.collect(allocator, false);  // Skip drives
+   ```
+
+3. **Async Collection**: For web servers, collect diagnostics asynchronously:
+   ```zig
+   const thread = try std.Thread.spawn(.{}, collectDiagnosticsAsync, .{allocator});
+   thread.detach();
+   ```
 
 ## Troubleshooting
 
-### Colors Not Showing on Windows
+### No Memory Information (null values)
 
-Ensure you call `Terminal.enableAnsiColors()` before creating the logger:
+**Symptom**: `total_mem` and `avail_mem` are `null`
 
+**Causes:**
+- **Windows**: Insufficient permissions for `GlobalMemoryStatusEx`
+- **Linux**: Unable to read `/proc/meminfo`
+- **macOS**: `sysctl` query failed
+
+**Solution:**
 ```zig
-_ = logly.Terminal.enableAnsiColors();
-var config = logly.Config.default();
-config.use_colors = true;
-```
-
-### Drive Info Takes Too Long
-
-If drive enumeration is slow, disable it:
-
-```zig
-config.include_drive_diagnostics = false;
-```
-
-### Memory Info Shows as Null
-
-On non-Windows platforms, memory info may be unavailable. Check for `null`:
-
-```zig
-if (diagnostics.total_mem) |total| {
-    // Use memory info
+if (diag.total_mem) |total| {
+    std.debug.print("Memory: {d} MB\n", .{total / (1024 * 1024)});
 } else {
-    // Fallback
+    std.debug.print("Memory information unavailable\n", .{});
 }
 ```
 
-### Garbled Output in File Logs
+### No Drives Listed
 
-Colors in file logs appear as ANSI escape codes. Disable colors for file output:
+**Symptom**: `drives` array is empty
 
+**Causes:**
+- `include_drive_diagnostics = false` in config
+- **Windows**: No logical drives found
+- **Linux**: `/proc/mounts` unavailable or empty
+- **macOS**: Mount point enumeration failed
+
+**Solution:**
 ```zig
-config.use_colors = false; // Or auto-detect TTY
+config.include_drive_diagnostics = true;  // Ensure enabled
+
+if (diag.drives.len == 0) {
+    std.debug.print("No drives found or enumeration disabled\n", .{});
+}
+```
+
+### Colors Not Working (Windows)
+
+**Symptom**: ANSI escape codes appear as text
+
+**Cause**: Virtual Terminal Processing not enabled
+
+**Solution:**
+```zig
+// Call BEFORE logger init
+_ = logly.Terminal.enableAnsiColors();
+
+var config = logly.Config.default();
+config.color = true;
+const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
 
 ## See Also
 
-- [Configuration Guide](configuration.md) - Full config options
+- [Diagnostics API Reference](../api/diagnostics.md) - Complete API documentation
+- [Configuration Guide](configuration.md) - All config options
 - [Formatting Guide](formatting.md) - Custom format strings
 - [Colors Guide](colors.md) - Color customization
-- [Examples](../../examples/diagnostics.zig) - Complete working examples
+- [Complete Example](../../examples/diagnostics.zig) - Working code

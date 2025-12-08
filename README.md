@@ -155,18 +155,6 @@ The starter template includes:
 - ✅ Context binding and custom log levels
 - ✅ JSON logging examples
 
-### Update Checker
-
-- Runs in a detached background thread so startup stays fast.
-- If your local version is older than the latest release, you will see: "A newer logly.zig release is available".
-- If your local build is ahead of the latest release (e.g., dev/nightly), you will see: "Running a dev/nightly build ahead of latest release".
-
-### System Diagnostics Logging
-
-- Enable automatic startup emission via `emit_system_diagnostics_on_init = true` (config) or call `try logger.logSystemDiagnostics(@src());` manually.
-- Captures OS, architecture, CPU model, logical cores, RAM totals/available, and (on Windows) per-drive storage totals/frees.
-- Respects existing sinks and formatting (text/JSON/async/thread pool) so diagnostics land where your logs already go.
-- Toggle drive enumeration with `include_drive_diagnostics`.
 
 ### Method 3: Manual Configuration
 
