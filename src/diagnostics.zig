@@ -1,6 +1,17 @@
+/// System diagnostics collection module.
+///
+/// Collects and provides access to host system information including:
+/// - Operating system and CPU architecture
+/// - CPU model name and logical core count
+/// - Physical memory (total and available)
+/// - Drive/volume information (Windows/Linux)
+///
+/// All collected data is owned by the caller and must be freed with deinit().
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// Windows kernel32 API bindings for system diagnostics.
+/// Provides access to memory status and drive enumeration functions.
 const k32 = struct {
     pub const MEMORYSTATUSEX = extern struct {
         dwLength: u32,
@@ -24,12 +35,31 @@ const k32 = struct {
     ) callconv(.winapi) i32;
 };
 
+/// Information about a single drive or mounted volume.
+///
+/// Fields:
+/// - name: Drive identifier (e.g., "C:\\" on Windows or "/mnt/data" on Linux)
+/// - total_bytes: Total capacity of the drive in bytes
+/// - free_bytes: Available space on the drive in bytes
 pub const DriveInfo = struct {
     name: []const u8,
     total_bytes: u64,
     free_bytes: u64,
 };
 
+/// Complete system diagnostics snapshot.
+///
+/// Contains all collected system information at the time of collection.
+/// Memory must be freed by calling deinit() with the same allocator.
+///
+/// Fields:
+/// - os_tag: Operating system tag (e.g., "windows", "linux", "macos")
+/// - arch: CPU architecture (e.g., "x86_64", "aarch64", "arm")
+/// - cpu_model: Human-readable CPU model name
+/// - logical_cores: Number of logical CPU cores (minimum 1)
+/// - total_mem: Total physical RAM in bytes (null if unavailable)
+/// - avail_mem: Available physical RAM in bytes (null if unavailable)
+/// - drives: Array of drive information (empty if not collected)
 pub const Diagnostics = struct {
     os_tag: []const u8,
     arch: []const u8,
@@ -39,6 +69,10 @@ pub const Diagnostics = struct {
     avail_mem: ?u64,
     drives: []DriveInfo,
 
+    /// Releases all dynamically allocated memory associated with diagnostics.
+    ///
+    /// Must be called exactly once with the same allocator used in collect().
+    /// After calling deinit(), the Diagnostics struct becomes invalid.
     pub fn deinit(self: *Diagnostics, allocator: std.mem.Allocator) void {
         for (self.drives) |d| {
             allocator.free(d.name);
@@ -47,6 +81,28 @@ pub const Diagnostics = struct {
     }
 };
 
+/// Collects system diagnostics information.
+///
+/// Gathers host system information including OS, CPU, memory, and optionally
+/// drive/volume information. The returned Diagnostics struct owns all allocated
+/// memory and must be freed with deinit().
+///
+/// Arguments:
+///     allocator: Memory allocator for diagnostic data ownership
+///     include_drives: Whether to collect drive/volume information
+///                     (adds ~1-5ms on Windows, minimal on other platforms)
+///
+/// Returns:
+///     Diagnostics struct with collected system information
+///
+/// Errors:
+///     error.OutOfMemory: If memory allocation fails
+///
+/// Platform-specific behavior:
+/// - Windows: Uses Win32 APIs for memory and drive enumeration
+/// - Linux: Reads /proc/meminfo for memory information
+/// - macOS: Uses sysctl for memory information
+/// - Other platforms: Returns OS/CPU/core info only
 pub fn collect(allocator: std.mem.Allocator, include_drives: bool) !Diagnostics {
     var drives = std.ArrayList(DriveInfo).empty;
     errdefer {
@@ -81,6 +137,13 @@ pub fn collect(allocator: std.mem.Allocator, include_drives: bool) !Diagnostics 
     };
 }
 
+/// Retrieves physical memory information on Windows.
+///
+/// Uses GlobalMemoryStatusEx Windows API to query total and available
+/// physical memory. Returns null if the API call fails.
+///
+/// Returns:
+///     Struct with total and available memory in bytes, or null if unavailable
 fn getWindowsMemory() ?struct { total: u64, avail: u64 } {
     var status: k32.MEMORYSTATUSEX = .{
         .dwLength = @sizeOf(k32.MEMORYSTATUSEX),
@@ -98,6 +161,18 @@ fn getWindowsMemory() ?struct { total: u64, avail: u64 } {
     return .{ .total = status.ullTotalPhys, .avail = status.ullAvailPhys };
 }
 
+/// Enumerates logical drives on Windows.
+///
+/// Uses GetLogicalDriveStrings and GetDiskFreeSpaceEx Windows APIs to
+/// discover all mounted drives and their capacity/free space information.
+/// Silently skips drives that cannot be queried.
+///
+/// Arguments:
+///     allocator: Allocator for drive name strings
+///     list: ArrayList to append DriveInfo structs to
+///
+/// Errors:
+///     error.OutOfMemory: If memory allocation fails
 fn collectWindowsDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveInfo)) !void {
     var buffer: [512]u16 = undefined;
     const len = k32.GetLogicalDriveStringsW(buffer.len, &buffer);

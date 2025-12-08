@@ -67,6 +67,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | 🔄 **Async Logger** | Ring buffer-based async logging with background workers |
 | 🧵 **Thread Pool** | Parallel log processing with work stealing |
 | ⏰ **Scheduler** | Automatic log cleanup, compression, and maintenance |
+| 🖥️ **System Diagnostics** | Automatic OS, CPU, memory, and drive information collection |
 
 </details>
 
