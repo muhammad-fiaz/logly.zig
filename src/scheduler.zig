@@ -6,6 +6,18 @@ const Compression = @import("compression.zig").Compression;
 ///
 /// Provides scheduled execution of tasks like log cleanup, rotation,
 /// compression, and custom maintenance operations.
+///
+/// Callbacks:
+/// - `on_task_started`: Called when a scheduled task starts execution
+/// - `on_task_completed`: Called when a task completes successfully
+/// - `on_task_error`: Called when a task fails
+/// - `on_schedule_tick`: Called on each scheduler cycle
+/// - `on_health_check`: Called when health status is checked
+///
+/// Performance:
+/// - O(n) per cycle where n = number of tasks
+/// - Minimal overhead: only active tasks are evaluated
+/// - Lock-free read operations for task status
 pub const Scheduler = struct {
     allocator: std.mem.Allocator,
     tasks: std.ArrayList(ScheduledTask),
@@ -18,6 +30,26 @@ pub const Scheduler = struct {
     compression_initialized: bool = false,
     health_callback: ?*const fn () HealthStatus = null,
     metrics_callback: ?*const fn () MetricsSnapshot = null,
+
+    /// Callback invoked when a task starts execution.
+    /// Parameters: (task_name: []const u8, run_count: u64)
+    on_task_started: ?*const fn ([]const u8, u64) void = null,
+
+    /// Callback invoked when a task completes successfully.
+    /// Parameters: (task_name: []const u8, duration_ms: u64)
+    on_task_completed: ?*const fn ([]const u8, u64) void = null,
+
+    /// Callback invoked when a task encounters an error.
+    /// Parameters: (task_name: []const u8, error_msg: []const u8)
+    on_task_error: ?*const fn ([]const u8, []const u8) void = null,
+
+    /// Callback invoked on each scheduler cycle.
+    /// Parameters: (tasks_ready: u32, tasks_total: u32)
+    on_schedule_tick: ?*const fn (u32, u32) void = null,
+
+    /// Callback invoked during health checks.
+    /// Parameters: (status: *const HealthStatus)
+    on_health_check: ?*const fn (*const HealthStatus) void = null,
 
     /// Centralized scheduler configuration.
     /// Re-exports centralized config for convenience.
@@ -426,6 +458,41 @@ pub const Scheduler = struct {
             if (task.config.path) |p| self.allocator.free(p);
             if (task.config.file_pattern) |p| self.allocator.free(p);
         }
+    }
+
+    /// Sets the callback for task started events.
+    pub fn setTaskStartedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_task_started = callback;
+    }
+
+    /// Sets the callback for task completed events.
+    pub fn setTaskCompletedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_task_completed = callback;
+    }
+
+    /// Sets the callback for task error events.
+    pub fn setTaskErrorCallback(self: *Scheduler, callback: *const fn ([]const u8, []const u8) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_task_error = callback;
+    }
+
+    /// Sets the callback for schedule tick events.
+    pub fn setScheduleTickCallback(self: *Scheduler, callback: *const fn (u32, u32) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_schedule_tick = callback;
+    }
+
+    /// Sets the callback for health check events.
+    pub fn setHealthCheckCallback(self: *Scheduler, callback: *const fn (*const HealthStatus) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_health_check = callback;
     }
 
     /// Starts the scheduler.

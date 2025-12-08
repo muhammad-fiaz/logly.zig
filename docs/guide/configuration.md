@@ -58,6 +58,7 @@ logger.configure(config);
 | `include_pid`            | `bool`        | `false`                 | Include the process ID.                              |
 | `show_lineno`            | `bool`        | `false`                 | Show line number                                     |
 | `auto_sink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
+| `check_for_updates`      | `bool`        | `true`                  | Check for updates on startup                         |
 | `enable_callbacks`       | `bool`        | `true`                  | Enable log callbacks                                 |
 | `log_format`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
 | `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss"` | Timestamp format                                     |

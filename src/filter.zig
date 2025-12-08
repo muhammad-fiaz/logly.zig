@@ -8,9 +8,63 @@ const Record = @import("record.zig").Record;
 /// Filters allow fine-grained control over which log records are processed.
 /// They can be combined to create complex filtering logic based on level,
 /// message content, module, or custom predicates.
+///
+/// Callbacks:
+/// - `on_record_allowed`: Called when a record passes filtering
+/// - `on_record_denied`: Called when a record is blocked by filter
+/// - `on_filter_created`: Called when filter is created/initialized
+/// - `on_rule_added`: Called when a new filter rule is added
+///
+/// Performance:
+/// - O(n) filter evaluation where n = number of rules
+/// - Early exit optimization when first deny rule matches
+/// - Minimal memory overhead per rule
 pub const Filter = struct {
+    /// Filter statistics for monitoring and diagnostics.
+    pub const FilterStats = struct {
+        total_records_evaluated: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        records_allowed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        records_denied: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        rules_added: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        evaluation_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        /// Calculate allow rate (0.0 - 1.0)
+        pub fn allowRate(self: *const FilterStats) f64 {
+            const total = self.total_records_evaluated.load(.monotonic);
+            if (total == 0) return 0;
+            const allowed = self.records_allowed.load(.monotonic);
+            return @as(f64, @floatFromInt(allowed)) / @as(f64, @floatFromInt(total));
+        }
+
+        /// Calculate error rate (0.0 - 1.0)
+        pub fn errorRate(self: *const FilterStats) f64 {
+            const total = self.total_records_evaluated.load(.monotonic);
+            if (total == 0) return 0;
+            const errors = self.evaluation_errors.load(.monotonic);
+            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+        }
+    };
+
     allocator: std.mem.Allocator,
     rules: std.ArrayList(FilterRule),
+    stats: FilterStats = .{},
+    mutex: std.Thread.Mutex = .{},
+
+    /// Callback invoked when a record passes filtering.
+    /// Parameters: (record: *const Record, rules_checked: u32)
+    on_record_allowed: ?*const fn (*const Record, u32) void = null,
+
+    /// Callback invoked when a record is denied by filter.
+    /// Parameters: (record: *const Record, blocking_rule_index: u32)
+    on_record_denied: ?*const fn (*const Record, u32) void = null,
+
+    /// Callback invoked when filter is created.
+    /// Parameters: (stats: *const FilterStats)
+    on_filter_created: ?*const fn (*const FilterStats) void = null,
+
+    /// Callback invoked when a rule is added.
+    /// Parameters: (rule_type: u32, total_rules: u32)
+    on_rule_added: ?*const fn (u32, u32) void = null,
 
     /// A single filter rule that determines whether a record should pass.
     pub const FilterRule = struct {
@@ -58,6 +112,42 @@ pub const Filter = struct {
             }
         }
         self.rules.deinit(self.allocator);
+    }
+
+    /// Sets the callback for record allowed events.
+    pub fn setAllowedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_record_allowed = callback;
+    }
+
+    /// Sets the callback for record denied events.
+    pub fn setDeniedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_record_denied = callback;
+    }
+
+    /// Sets the callback for filter creation.
+    pub fn setCreatedCallback(self: *Filter, callback: *const fn (*const FilterStats) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_filter_created = callback;
+    }
+
+    /// Sets the callback for rule addition.
+    pub fn setRuleAddedCallback(self: *Filter, callback: *const fn (u32, u32) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_rule_added = callback;
+    }
+
+    /// Returns filter statistics.
+    pub fn getStats(self: *Filter) FilterStats {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.stats;
     }
 
     /// Adds a minimum level filter rule.

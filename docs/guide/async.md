@@ -42,6 +42,31 @@ try async_logger.start();
 defer async_logger.stop();
 ```
 
+## Parallel Logging (Thread Pool)
+
+For high-throughput scenarios requiring heavy processing (e.g., complex formatting, compression, or multiple slow sinks), Logly supports parallel logging using a work-stealing thread pool.
+
+### Enabling Parallel Logging
+
+```zig
+var config = logly.Config.default();
+config.thread_pool = .{
+    .enabled = true,
+    .thread_count = 0, // 0 = auto-detect based on CPU cores
+    .queue_size = 10000,
+    .work_stealing = true,
+};
+const logger = try logly.Logger.initWithConfig(allocator, config);
+```
+
+When enabled, the `Logger` dispatches log records to the thread pool. Each record is deep-copied to ensure thread safety. The thread pool distributes tasks among worker threads, which then write to the configured sinks.
+
+### Benefits
+
+- **Non-blocking**: The main application thread submits the task and returns immediately (unless the queue is full).
+- **Scalability**: Utilizes multiple CPU cores for formatting and I/O.
+- **Resilience**: Isolates slow sinks from the main application flow.
+
 ## How it Works
 
 When async logging is enabled, log messages follow this flow:

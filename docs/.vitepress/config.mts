@@ -43,7 +43,14 @@ export default defineConfig({
           { text: 'JSON Logging', link: '/guide/json' },
           { text: 'Context Binding', link: '/guide/context' },
           { text: 'Callbacks', link: '/guide/callbacks' },
-          { text: 'Async Logging', link: '/guide/async' }
+          { text: 'Async Logging', link: '/guide/async' },
+          { text: 'Compression', link: '/guide/compression' },
+          { text: 'Thread Pool', link: '/guide/thread-pool' },
+          { text: 'Scheduler', link: '/guide/scheduler' },
+          { text: 'System Diagnostics', link: '/guide/diagnostics' },
+          { text: 'Source Location', link: '/guide/source-location' },
+          { text: 'Arena Allocation', link: '/guide/arena-allocation' },
+          { text: 'Update Checker', link: '/guide/update-checker' }
         ]
       },
       {
@@ -53,7 +60,8 @@ export default defineConfig({
           { text: 'Sampling', link: '/guide/sampling' },
           { text: 'Redaction', link: '/guide/redaction' },
           { text: 'Metrics', link: '/guide/metrics' },
-          { text: 'Distributed Tracing', link: '/guide/tracing' }
+          { text: 'Distributed Tracing', link: '/guide/tracing' },
+          { text: 'Customizations', link: '/guide/customizations' }
         ]
       },
       {
@@ -63,7 +71,13 @@ export default defineConfig({
           { text: 'Config', link: '/api/config' },
           { text: 'Level', link: '/api/level' },
           { text: 'Sink', link: '/api/sink' },
-          { text: 'Record', link: '/api/record' }
+          { text: 'Record', link: '/api/record' },
+          { text: 'Async', link: '/api/async' },
+          { text: 'Compression', link: '/api/compression' },
+          { text: 'Thread Pool', link: '/api/thread-pool' },
+          { text: 'Scheduler', link: '/api/scheduler' },
+          { text: 'Diagnostics', link: '/api/diagnostics' },
+          { text: 'Customizations', link: '/api/customizations' }
         ]
       },
       {
@@ -89,7 +103,8 @@ export default defineConfig({
           { text: 'Redaction', link: '/examples/redaction' },
           { text: 'Metrics', link: '/examples/metrics' },
           { text: 'Tracing', link: '/examples/tracing' },
-          { text: 'Production Config', link: '/examples/production-config' }
+          { text: 'Production Config', link: '/examples/production-config' },
+          { text: 'Diagnostics', link: '/examples/diagnostics' }
         ]
       },
     ],

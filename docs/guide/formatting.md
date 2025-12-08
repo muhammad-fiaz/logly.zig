@@ -50,7 +50,26 @@ pub fn main() !void {
 }
 ```
 
-## JSON Format
+## Custom Format Strings
+
+You can customize the log output format using the `log_format` option in `Config` or `SinkConfig`.
+
+Supported tags:
+- `{time}`: Timestamp
+- `{level}`: Log level
+- `{message}`: Log message
+- `{module}`: Module name
+- `{function}`: Function name
+- `{file}`: Source filename
+- `{line}`: Source line number
+- `{thread}`: Thread ID
+
+Example:
+```zig
+config.log_format = "[{time}] [{level}] [TID:{thread}] {message}";
+```
+
+## JSON Formatting
 
 You can enable JSON formatting globally or per-sink.
 

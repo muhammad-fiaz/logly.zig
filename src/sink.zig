@@ -72,6 +72,10 @@ pub const SinkConfig = struct {
     /// Time format for this sink.
     time_format: ?[]const u8 = null,
 
+    /// File write mode: false = append (default), true = overwrite.
+    /// When true, existing files are truncated before writing.
+    overwrite_mode: bool = false,
+
     /// Compression settings for file sinks.
     compression: CompressionConfig = .{},
 
@@ -222,6 +226,39 @@ fn parseSize(s: []const u8) ?u64 {
 }
 
 pub const Sink = struct {
+    /// Sink statistics for monitoring and diagnostics.
+    pub const SinkStats = struct {
+        total_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        write_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        flush_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        rotation_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        /// Calculate throughput (bytes per second)
+        pub fn throughputBytesPerSecond(self: *const SinkStats, elapsed_seconds: f64) f64 {
+            if (elapsed_seconds == 0) return 0;
+            const bytes = self.bytes_written.load(.monotonic);
+            return @as(f64, @floatFromInt(bytes)) / elapsed_seconds;
+        }
+
+        /// Calculate error rate (0.0 - 1.0)
+        pub fn errorRate(self: *const SinkStats) f64 {
+            const total = self.total_written.load(.monotonic);
+            const errors = self.write_errors.load(.monotonic);
+            const total_ops = total + errors;
+            if (total_ops == 0) return 0;
+            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total_ops));
+        }
+
+        /// Calculate average bytes per write
+        pub fn avgBytesPerWrite(self: *const SinkStats) f64 {
+            const total = self.total_written.load(.monotonic);
+            if (total == 0) return 0;
+            const bytes = self.bytes_written.load(.monotonic);
+            return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
+        }
+    };
+
     allocator: std.mem.Allocator,
     config: SinkConfig,
     file: ?std.fs.File = null,
@@ -231,6 +268,27 @@ pub const Sink = struct {
     mutex: std.Thread.Mutex = .{},
     enabled: bool = true,
     json_first_entry: bool = true, // Track if this is the first JSON entry for file output
+    stats: SinkStats = .{},
+
+    /// Callback invoked when a record is written to the sink.
+    /// Parameters: (record_count: u64, bytes_written: u64)
+    on_write: ?*const fn (u64, u64) void = null,
+
+    /// Callback invoked when a flush operation completes.
+    /// Parameters: (bytes_flushed: u64, duration_ns: u64)
+    on_flush: ?*const fn (u64, u64) void = null,
+
+    /// Callback invoked when a write error occurs.
+    /// Parameters: (error_msg: []const u8, record_count: u64)
+    on_error: ?*const fn ([]const u8, u64) void = null,
+
+    /// Callback invoked when rotation occurs (if enabled).
+    /// Parameters: (old_file: []const u8, new_file: []const u8)
+    on_rotation: ?*const fn ([]const u8, []const u8) void = null,
+
+    /// Callback invoked when sink is disabled/enabled.
+    /// Parameters: (is_enabled: bool)
+    on_state_change: ?*const fn (bool) void = null,
 
     pub fn init(allocator: std.mem.Allocator, config: SinkConfig) !*Sink {
         const sink = try allocator.create(Sink);
@@ -244,15 +302,22 @@ pub const Sink = struct {
         };
         errdefer sink.deinit();
 
-        if (config.path) |path| {
+        if (config.path) |path_pattern| {
+            // Resolve dynamic path patterns (e.g. {date}, {YYYY-MM-DD})
+            const path = try resolvePath(allocator, path_pattern);
+            defer allocator.free(path);
+
             const dir = std.fs.path.dirname(path);
             if (dir) |d| {
-                try std.fs.cwd().makePath(d);
+                std.fs.cwd().makePath(d) catch {
+                    // Failed to create directory - continue anyway
+                };
             }
 
+            // Use overwrite_mode to determine file truncation behavior
             sink.file = try std.fs.cwd().createFile(path, .{
                 .read = true,
-                .truncate = false,
+                .truncate = config.overwrite_mode,
             });
 
             // Write opening bracket for JSON array files
@@ -281,6 +346,83 @@ pub const Sink = struct {
         return sink;
     }
 
+    fn resolvePath(allocator: std.mem.Allocator, path_pattern: []const u8) ![]u8 {
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+        const writer = buf.writer(allocator);
+
+        const timestamp = std.time.milliTimestamp();
+        const abs_timestamp = if (timestamp < 0) @as(u64, 0) else @as(u64, @intCast(timestamp));
+        const seconds = abs_timestamp / 1000;
+
+        const epoch = std.time.epoch.EpochSeconds{ .secs = seconds };
+        const day_seconds = epoch.getDaySeconds();
+        const year_day = epoch.getEpochDay();
+        const yd = year_day.calculateYearDay();
+        const month_day = yd.calculateMonthDay();
+
+        const seconds_in_day = day_seconds.secs;
+        const hours = seconds_in_day / 3600;
+        const minutes = (seconds_in_day % 3600) / 60;
+        const secs = seconds_in_day % 60;
+
+        var i: usize = 0;
+        while (i < path_pattern.len) {
+            if (path_pattern[i] == '{') {
+                const end = std.mem.indexOfScalarPos(u8, path_pattern, i + 1, '}') orelse {
+                    try writer.writeByte(path_pattern[i]);
+                    i += 1;
+                    continue;
+                };
+                const tag = path_pattern[i + 1 .. end];
+
+                if (std.mem.eql(u8, tag, "date")) {
+                    try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{ yd.year, month_day.month.numeric(), month_day.day_index + 1 });
+                } else if (std.mem.eql(u8, tag, "time")) {
+                    try writer.print("{d:0>2}-{d:0>2}-{d:0>2}", .{ hours, minutes, secs });
+                } else {
+                    try formatCustomTime(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs);
+                }
+                i = end + 1;
+            } else {
+                try writer.writeByte(path_pattern[i]);
+                i += 1;
+            }
+        }
+        return buf.toOwnedSlice(allocator);
+    }
+
+    fn formatCustomTime(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64) !void {
+        var i: usize = 0;
+        while (i < fmt.len) {
+            if (i + 4 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 4], "YYYY")) {
+                try writer.print("{d:0>4}", .{year});
+                i += 4;
+            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "YY")) {
+                try writer.print("{d:0>2}", .{@mod(year, 100)});
+                i += 2;
+            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "MM")) {
+                try writer.print("{d:0>2}", .{month});
+                i += 2;
+            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "DD")) {
+                try writer.print("{d:0>2}", .{day});
+                i += 2;
+            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "HH")) {
+                try writer.print("{d:0>2}", .{hour});
+                i += 2;
+            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "mm")) {
+                try writer.print("{d:0>2}", .{minute});
+                i += 2;
+            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "ss")) {
+                try writer.print("{d:0>2}", .{second});
+                i += 2;
+            } else {
+                try writer.writeByte(fmt[i]);
+                i += 1;
+            }
+        }
+    }
+
     pub fn deinit(self: *Sink) void {
         self.flush() catch {};
         // Write closing bracket for JSON array files
@@ -296,7 +438,54 @@ pub const Sink = struct {
         self.allocator.destroy(self);
     }
 
+    /// Sets the callback for write events.
+    pub fn setWriteCallback(self: *Sink, callback: *const fn (u64, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_write = callback;
+    }
+
+    /// Sets the callback for flush events.
+    pub fn setFlushCallback(self: *Sink, callback: *const fn (u64, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_flush = callback;
+    }
+
+    /// Sets the callback for error events.
+    pub fn setErrorCallback(self: *Sink, callback: *const fn ([]const u8, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_error = callback;
+    }
+
+    /// Sets the callback for rotation events.
+    pub fn setRotationCallback(self: *Sink, callback: *const fn ([]const u8, []const u8) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_rotation = callback;
+    }
+
+    /// Sets the callback for state changes.
+    pub fn setStateChangeCallback(self: *Sink, callback: *const fn (bool) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_state_change = callback;
+    }
+
+    /// Returns sink statistics.
+    pub fn getStats(self: *Sink) SinkStats {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.stats;
+    }
+
     pub fn write(self: *Sink, record: *const Record, global_config: anytype) !void {
+        return self.writeWithAllocator(record, global_config, null);
+    }
+
+    pub fn writeWithAllocator(self: *Sink, record: *const Record, global_config: anytype, scratch_allocator: ?std.mem.Allocator) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -350,11 +539,19 @@ pub const Sink = struct {
         }
 
         // Format the message
+        // Use scratch allocator if provided, otherwise use sink's allocator
+        const fmt_allocator = scratch_allocator orelse self.allocator;
+
+        // We need a temporary formatter if using scratch allocator
+        var formatter = if (scratch_allocator) |_| Formatter.init(fmt_allocator) else self.formatter;
+        // If we created a temp formatter, we don't need to deinit it as it doesn't hold resources,
+        // but we should be aware of it.
+
         const formatted = if (effective_config.json)
-            try self.formatter.formatJson(record, effective_config)
+            try formatter.formatJson(record, effective_config)
         else
-            try self.formatter.format(record, effective_config);
-        defer self.allocator.free(formatted);
+            try formatter.format(record, effective_config);
+        defer fmt_allocator.free(formatted);
 
         // Write to console or file
         if (self.file) |file| {
@@ -399,6 +596,30 @@ pub const Sink = struct {
                 try stdout_file.writeAll(formatted);
                 try stdout_file.writeAll("\n");
             }
+        }
+    }
+
+    pub fn writeRaw(self: *Sink, data: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (!self.enabled) return;
+
+        if (self.file) |file| {
+            if (self.config.async_write) {
+                try self.buffer.appendSlice(self.allocator, data);
+                try self.buffer.append(self.allocator, '\n');
+                if (self.buffer.items.len >= self.config.buffer_size) {
+                    try self.flush();
+                }
+            } else {
+                try file.writeAll(data);
+                try file.writeAll("\n");
+            }
+        } else {
+            const stdout_file = std.fs.File.stdout();
+            try stdout_file.writeAll(data);
+            try stdout_file.writeAll("\n");
         }
     }
 

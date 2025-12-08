@@ -27,3 +27,4 @@ docs/.vitepress/cache
 NUL
 *.txt
 *.log
+/logs_dynamic

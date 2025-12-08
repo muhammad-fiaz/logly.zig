@@ -83,6 +83,7 @@ pub const SamplerPresets = @import("sampler.zig").SamplerPresets;
 pub const Redactor = @import("redactor.zig").Redactor;
 pub const RedactionPresets = @import("redactor.zig").RedactionPresets;
 pub const Metrics = @import("metrics.zig").Metrics;
+pub const Diagnostics = @import("diagnostics.zig");
 
 // Advanced I/O components
 pub const Compression = @import("compression.zig").Compression;

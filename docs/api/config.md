@@ -34,9 +34,25 @@ Pretty print JSON output. Default: `false`.
 
 Enable ANSI colors. Default: `true`.
 
+#### `check_for_updates: bool`
+
+Check GitHub for the latest Logly release on startup. Runs in a background thread and prints a highlighted notice when a newer version is available. Default: `true`.
+
+#### `emit_system_diagnostics_on_init: bool`
+
+Emit a single system diagnostics log (OS, arch, CPU, cores, memory) when the logger initializes. Default: `false`.
+
+#### `include_drive_diagnostics: bool`
+
+When emitting diagnostics, include per-drive totals and free space. Applies to startup diagnostics and manual `logSystemDiagnostics` calls. Default: `true`.
+
 #### `log_compact: bool`
 
 Use compact log format. Default: `false`.
+
+#### `use_arena_allocator: bool`
+
+Enable arena allocator for the main logger instance. When enabled, the logger uses an arena allocator for creating log records, which can improve performance by reducing memory fragmentation and allocation overhead. Default: `false`.
 
 ### Display Options
 
@@ -217,6 +233,8 @@ pub const ThreadPoolConfig = struct {
     stack_size: usize = 1024 * 1024,
     /// Enable work stealing between threads.
     work_stealing: bool = true,
+    /// Enable per-worker arena allocator for efficient memory usage.
+    enable_arena: bool = false,
 };
 ```
 

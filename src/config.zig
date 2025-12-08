@@ -21,6 +21,14 @@ pub const Config = struct {
     /// Enable or disable ANSI color codes in output.
     color: bool = true,
 
+    /// Check for updates on startup.
+    check_for_updates: bool = true,
+
+    /// Emit system diagnostics on startup (OS, CPU, memory, drives).
+    emit_system_diagnostics_on_init: bool = false,
+    /// Include per-drive storage information when emitting diagnostics.
+    include_drive_diagnostics: bool = true,
+
     /// Output format settings.
     json: bool = false,
     pretty_json: bool = false,
@@ -160,6 +168,147 @@ pub const Config = struct {
     /// Arena reset threshold in bytes. When arena reaches this size, it resets.
     arena_reset_threshold: usize = 64 * 1024,
 
+    /// Optional global root path for all log files.
+    /// If set, file sinks will be stored relative to this path.
+    /// The directory will be auto-created if it doesn't exist.
+    /// If the path cannot be created, a warning is emitted but logging continues.
+    logs_root_path: ?[]const u8 = null,
+
+    /// Optional custom path for diagnostics logs.
+    /// If set, system diagnostics will be stored at this path.
+    /// If null, diagnostics will use logs_root_path or default behavior.
+    diagnostics_output_path: ?[]const u8 = null,
+
+    /// Custom format structure configuration.
+    format_structure: FormatStructureConfig = .{},
+
+    /// Level-specific color customization.
+    level_colors: LevelColorConfig = .{},
+
+    /// Highlighter and alert configuration.
+    highlighters: HighlighterConfig = .{},
+
+    /// Custom log format structure configuration.
+    pub const FormatStructureConfig = struct {
+        /// Prefix to add before each log message (e.g., ">>> ").
+        message_prefix: ?[]const u8 = null,
+
+        /// Suffix to add after each log message (e.g., " <<<").
+        message_suffix: ?[]const u8 = null,
+
+        /// Separator between log fields/components.
+        field_separator: []const u8 = " | ",
+
+        /// Enable nested/hierarchical formatting for structured logs.
+        enable_nesting: bool = false,
+
+        /// Indentation for nested fields (spaces or tabs).
+        nesting_indent: []const u8 = "  ",
+
+        /// Custom field order: which fields appear first in output.
+        /// If null, uses default order: [time, level, message, context].
+        field_order: ?[]const []const u8 = null,
+
+        /// Whether to include empty/null fields in output.
+        include_empty_fields: bool = false,
+
+        /// Custom placeholder prefix/suffix (default: {}, can be changed to [[]], etc.)
+        placeholder_open: []const u8 = "{",
+        placeholder_close: []const u8 = "}",
+    };
+
+    /// Per-level color customization.
+    pub const LevelColorConfig = struct {
+        /// Custom ANSI color code for TRACE level (null = use default).
+        /// Format: ANSI escape code like "\x1b[36m" (cyan) or RGB tuple.
+        trace_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for DEBUG level.
+        debug_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for INFO level.
+        info_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for SUCCESS level.
+        success_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for WARNING level.
+        warning_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for ERROR level.
+        error_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for FAIL level.
+        fail_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for CRITICAL level.
+        critical_color: ?[]const u8 = null,
+
+        /// Use RGB color mode (true) instead of standard ANSI codes.
+        use_rgb: bool = false,
+
+        /// Background color support (true = color backgrounds, false = only text).
+        support_background: bool = false,
+
+        /// Reset code at end of each log (default: "\x1b[0m").
+        reset_code: []const u8 = "\x1b[0m",
+    };
+
+    /// Highlighter patterns and alert configuration.
+    pub const HighlighterConfig = struct {
+        /// Enable highlighter system.
+        enabled: bool = false,
+
+        /// Pattern-based highlighters.
+        patterns: ?[]const HighlightPattern = null,
+
+        /// Alert callbacks for matched patterns.
+        alert_on_match: bool = false,
+
+        /// Severity level that triggers alerts.
+        alert_min_severity: AlertSeverity = .warning,
+
+        /// Custom callback function name for alerts (optional).
+        alert_callback: ?[]const u8 = null,
+
+        /// Maximum number of highlighter matches to track per message.
+        max_matches_per_message: usize = 10,
+
+        /// Whether to log highlighter matches as separate records.
+        log_matches: bool = false,
+
+        pub const AlertSeverity = enum {
+            trace,
+            debug,
+            info,
+            success,
+            warning,
+            err,
+            fail,
+            critical,
+        };
+
+        pub const HighlightPattern = struct {
+            /// Pattern name/label.
+            name: []const u8,
+
+            /// Pattern to match (regex or substring).
+            pattern: []const u8,
+
+            /// Is this a regex pattern (true) or substring match (false)?
+            is_regex: bool = false,
+
+            /// Color to highlight with (ANSI code).
+            highlight_color: []const u8 = "\x1b[1;93m", // bright yellow
+
+            /// Severity level of this pattern.
+            severity: AlertSeverity = .warning,
+
+            /// Custom data associated with pattern (e.g., metric name, callback).
+            metadata: ?[]const u8 = null,
+        };
+    };
+
     /// Timezone options.
     pub const Timezone = enum {
         local,
@@ -236,6 +385,8 @@ pub const Config = struct {
         stack_size: usize = 1024 * 1024,
         /// Enable work stealing between threads.
         work_stealing: bool = true,
+        /// Enable per-worker arena allocator for temporary allocations.
+        enable_arena: bool = false,
     };
 
     /// Scheduler configuration.

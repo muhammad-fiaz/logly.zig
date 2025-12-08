@@ -10,9 +10,16 @@ Configuration for a sink.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `path` | `?[]const u8` | `null` | Path to log file (null for console) |
+| `path` | `?[]const u8` | `null` | Path to log file (null for console). Supports dynamic placeholders like `{date}`, `{time}`. |
 | `name` | `?[]const u8` | `null` | Sink identifier for metrics/debugging |
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
+
+### Dynamic Path Formatting
+
+The `path` field supports dynamic placeholders that are resolved when the sink is initialized:
+- `{date}`: YYYY-MM-DD
+- `{time}`: HH-mm-ss
+- `{YYYY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}`, `{ss}`: Custom date/time components.
 
 ### Level Filtering
 
@@ -40,6 +47,12 @@ Configuration for a sink.
 | `include_source` | `bool` | `false` | Include source location |
 | `include_trace_id` | `bool` | `false` | Include trace IDs (distributed tracing) |
 
+### File Write Mode
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `overwrite_mode` | `bool` | `false` | **Append mode (default)**: logs appended to existing files. **Overwrite mode**: logs overwrite files on each write (truncate at initialization). |
+
 ### File Rotation
 
 | Field | Type | Default | Description |
@@ -62,6 +75,59 @@ Configuration for a sink.
 |-------|------|---------|-------------|
 | `compression` | `CompressionConfig` | `{}` | Compression settings for file sinks |
 | `filter` | `FilterConfig` | `{}` | Per-sink filter configuration |
+
+## Write Mode Examples
+
+### Append Mode (Default)
+
+Keep a permanent log file that grows over time:
+
+```zig
+_ = try logger.addSink(.{
+    .path = "logs/app.log",
+    .overwrite_mode = false,  // Default: append to existing file
+});
+```
+
+Every time you run the application, new logs are appended to the file.
+
+### Overwrite Mode
+
+Start fresh each run with only current session logs:
+
+```zig
+_ = try logger.addSink(.{
+    .path = "logs/session.log",
+    .overwrite_mode = true,  // Overwrite file on initialization
+});
+```
+
+When the sink is initialized, it truncates the file, creating a fresh log for the current session.
+
+### Mixed Approach
+
+Use different modes for different sinks:
+
+```zig
+// Persistent history - append mode
+_ = try logger.addSink(.{
+    .path = "logs/history.log",
+    .overwrite_mode = false,  // Keep all logs forever
+});
+
+// Current session - overwrite mode
+_ = try logger.addSink(.{
+    .path = "logs/session.log",
+    .overwrite_mode = true,   // Fresh start each time
+});
+
+// Error tracking - append mode for permanent record
+_ = try logger.addSink(.{
+    .path = "logs/errors.log",
+    .level = .err,
+    .overwrite_mode = false,  // Keep error history
+});
+```
 
 ## Methods
 

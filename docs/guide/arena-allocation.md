@@ -35,12 +35,25 @@ pub fn main() !void {
 }
 ```
 
+## Thread Pool Integration
+
+When using the Thread Pool, you can enable per-worker arena allocation to further improve performance for parallel logging tasks. Each worker thread maintains its own arena, which is reset after every task, ensuring minimal memory overhead and contention.
+
+```zig
+    // Enable Thread Pool with Arena
+    config.thread_pool = .{
+        .enabled = true,
+        .thread_count = 4,
+        .enable_arena = true, // Enable per-worker arena
+    };
+```
+
 ## Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `use_arena_allocator` | `bool` | `false` | Enable/disable arena allocation |
-| `arena_reset_threshold` | `usize` | `64 * 1024` | Arena size threshold before auto-reset (bytes) |
+| `use_arena_allocator` | `bool` | `false` | Enable/disable arena allocation for main logger |
+| `thread_pool.enable_arena` | `bool` | `false` | Enable per-worker arena allocation in thread pool |
 
 ## Arena Methods
 
@@ -92,6 +105,25 @@ pub fn main() !void {
     try logger.info(@src(), "Batch processing complete", .{});
 }
 ```
+
+## Thread Pool Integration
+
+When using the Thread Pool for parallel logging, you can also enable per-worker arena allocation. This provides each worker thread with its own arena for temporary allocations during formatting and sink writing, further reducing contention on the global allocator.
+
+```zig
+var config = logly.Config.default();
+config.thread_pool = .{
+    .enabled = true,
+    .thread_count = 4,
+    .enable_arena = true, // Enable per-worker arena
+};
+// Also enable main logger arena for initial record creation
+config.use_arena_allocator = true;
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+```
+
+With `enable_arena = true`, each worker thread initializes an `ArenaAllocator`. This allocator is passed to the sink's write method, allowing formatters to use it for temporary string building. The arena is automatically reset after each log task is processed.
 
 ## High-Throughput Example
 

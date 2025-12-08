@@ -25,7 +25,7 @@ pub fn main() !void {
 
     // Add a file sink for JSON output
     _ = try logger.addSink(.{
-        .path = "logs/extended.json",
+        .path = "logs/{}extended.json",
         .json = true,
         .pretty_json = true,
     });

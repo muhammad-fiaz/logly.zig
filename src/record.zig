@@ -315,15 +315,43 @@ pub const Record = struct {
     /// Returns:
     ///     A new Record that is a copy of this one.
     pub fn clone(self: *const Record, allocator: std.mem.Allocator) !Record {
-        var new_record = Record.init(allocator, self.level, self.message);
+        // Deep copy the message
+        const owned_message = try allocator.dupe(u8, self.message);
+        var new_record = Record.init(allocator, self.level, owned_message);
+        try new_record.owned_strings.append(allocator, owned_message);
+
         new_record.timestamp = self.timestamp;
-        new_record.module = self.module;
-        new_record.function = self.function;
-        new_record.filename = self.filename;
         new_record.line = self.line;
         new_record.column = self.column;
         new_record.thread_id = self.thread_id;
         new_record.duration_ns = self.duration_ns;
+
+        // Deep copy optional strings
+        if (self.module) |m| {
+            const owned = try allocator.dupe(u8, m);
+            try new_record.owned_strings.append(allocator, owned);
+            new_record.module = owned;
+        }
+        if (self.function) |f| {
+            const owned = try allocator.dupe(u8, f);
+            try new_record.owned_strings.append(allocator, owned);
+            new_record.function = owned;
+        }
+        if (self.filename) |f| {
+            const owned = try allocator.dupe(u8, f);
+            try new_record.owned_strings.append(allocator, owned);
+            new_record.filename = owned;
+        }
+        if (self.custom_level_name) |n| {
+            const owned = try allocator.dupe(u8, n);
+            try new_record.owned_strings.append(allocator, owned);
+            new_record.custom_level_name = owned;
+        }
+        if (self.custom_level_color) |c| {
+            const owned = try allocator.dupe(u8, c);
+            try new_record.owned_strings.append(allocator, owned);
+            new_record.custom_level_color = owned;
+        }
 
         if (self.trace_id) |tid| try new_record.setTraceId(tid);
         if (self.span_id) |sid| try new_record.setSpanId(sid);

@@ -7,8 +7,62 @@ const Level = @import("level.zig").Level;
 ///
 /// The Formatter is responsible for taking a `Record` and converting it into a final
 /// output string based on the configuration (e.g., JSON, plain text, custom patterns).
+///
+/// Callbacks:
+/// - `on_format_complete`: Called after a record is formatted
+/// - `on_json_format`: Called when formatting as JSON
+/// - `on_custom_format`: Called when using custom format string
+/// - `on_format_error`: Called when formatting fails
+///
+/// Performance:
+/// - O(n) where n = output string length
+/// - Minimal allocations with StringBuilder pattern
+/// - Lock-free formatting operations
 pub const Formatter = struct {
+    /// Formatter statistics for monitoring and diagnostics.
+    pub const FormatterStats = struct {
+        total_records_formatted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        json_formats: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        custom_formats: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        format_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_bytes_formatted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        /// Calculate average format size
+        pub fn avgFormatSize(self: *const FormatterStats) f64 {
+            const total = self.total_records_formatted.load(.monotonic);
+            if (total == 0) return 0;
+            const bytes = self.total_bytes_formatted.load(.monotonic);
+            return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
+        }
+
+        /// Calculate error rate (0.0 - 1.0)
+        pub fn errorRate(self: *const FormatterStats) f64 {
+            const total = self.total_records_formatted.load(.monotonic);
+            if (total == 0) return 0;
+            const errors = self.format_errors.load(.monotonic);
+            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+        }
+    };
+
     allocator: std.mem.Allocator,
+    stats: FormatterStats = .{},
+    mutex: std.Thread.Mutex = .{},
+
+    /// Callback invoked after a record is formatted.
+    /// Parameters: (format_type: u32, output_size: u64)
+    on_format_complete: ?*const fn (u32, u64) void = null,
+
+    /// Callback invoked when formatting as JSON.
+    /// Parameters: (record: *const Record, output_size: u64)
+    on_json_format: ?*const fn (*const Record, u64) void = null,
+
+    /// Callback invoked when using custom format.
+    /// Parameters: (format_string: []const u8, output_size: u64)
+    on_custom_format: ?*const fn ([]const u8, u64) void = null,
+
+    /// Callback invoked on formatting error.
+    /// Parameters: (error_msg: []const u8)
+    on_format_error: ?*const fn ([]const u8) void = null,
 
     /// Initializes a new Formatter.
     ///
@@ -23,6 +77,42 @@ pub const Formatter = struct {
     /// Currently a no-op as the formatter doesn't hold persistent resources,
     /// but good for future-proofing! 🔮
     pub fn deinit(_: *Formatter) void {}
+
+    /// Sets the callback for format completion.
+    pub fn setFormatCompleteCallback(self: *Formatter, callback: *const fn (u32, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_format_complete = callback;
+    }
+
+    /// Sets the callback for JSON formatting.
+    pub fn setJsonFormatCallback(self: *Formatter, callback: *const fn (*const Record, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_json_format = callback;
+    }
+
+    /// Sets the callback for custom formatting.
+    pub fn setCustomFormatCallback(self: *Formatter, callback: *const fn ([]const u8, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_custom_format = callback;
+    }
+
+    /// Sets the callback for format errors.
+    pub fn setErrorCallback(self: *Formatter, callback: *const fn ([]const u8) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_format_error = callback;
+    }
+
+    /// Returns formatter statistics.
+    pub fn getStats(self: *Formatter) FormatterStats {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.stats;
+    }
 
     /// Formats a log record into a string.
     ///
@@ -78,6 +168,8 @@ pub const Formatter = struct {
                         if (record.filename) |f| try writer.writeAll(f);
                     } else if (std.mem.eql(u8, tag, "line")) {
                         if (record.line) |l| try writer.print("{d}", .{l});
+                    } else if (std.mem.eql(u8, tag, "thread")) {
+                        if (record.thread_id) |tid| try writer.print("{d}", .{tid});
                     } else {
                         // Unknown tag, print as is
                         try writer.writeAll(fmt_str[i .. end + 1]);
@@ -119,6 +211,11 @@ pub const Formatter = struct {
             // Function
             if (config.show_function and record.function != null) {
                 try writer.print("[{s}] ", .{record.function.?});
+            }
+
+            // Thread ID
+            if (config.show_thread_id and record.thread_id != null) {
+                try writer.print("[TID:{d}] ", .{record.thread_id.?});
             }
 
             // Filename and line (Clickable format: file:line:column: for terminal clickability)

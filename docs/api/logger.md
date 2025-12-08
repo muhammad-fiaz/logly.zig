@@ -294,6 +294,18 @@ Temporarily disables all logging.
 
 Flushes all sinks, ensuring all buffered data is written.
 
+### `logSystemDiagnostics(src: ?std.builtin.SourceLocation) !void`
+
+Collects OS/CPU/memory (and optional per-drive storage) and logs them as a single `info` record. Honors `config.include_drive_diagnostics` and uses the logger's scratch allocator.
+
+```zig
+var cfg = logly.Config.default();
+cfg.include_drive_diagnostics = true;
+
+const logger = try logly.Logger.initWithConfig(allocator, cfg);
+try logger.logSystemDiagnostics(@src());
+```
+
 ## Logging Methods
 
 All logging methods accept an optional source location parameter. Pass `@src()` to enable clickable file:line:column output in terminal, or `null` if source location is not needed.

@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "metrics", .path = "examples/metrics.zig" },
         .{ .name = "tracing", .path = "examples/tracing.zig" },
         .{ .name = "production_config", .path = "examples/production_config.zig" },
+        .{ .name = "diagnostics", .path = "examples/diagnostics.zig" },
         .{ .name = "color_options", .path = "examples/color_options.zig" },
         .{ .name = "custom_levels_full", .path = "examples/custom_levels_full.zig" },
         .{ .name = "compression", .path = "examples/compression.zig" },
@@ -46,6 +47,10 @@ pub fn build(b: *std.Build) void {
         .{ .name = "async_advanced", .path = "examples/async_advanced.zig" },
         .{ .name = "compression_demo", .path = "examples/compression_demo.zig" },
         .{ .name = "scheduler_demo", .path = "examples/scheduler_demo.zig" },
+        .{ .name = "thread_pool_arena", .path = "examples/thread_pool_arena.zig" },
+        .{ .name = "dynamic_path", .path = "examples/dynamic_path.zig" },
+        .{ .name = "customizations", .path = "examples/customizations.zig" },
+        .{ .name = "sink_write_modes", .path = "examples/sink_write_modes.zig" },
     };
 
     inline for (examples) |example| {

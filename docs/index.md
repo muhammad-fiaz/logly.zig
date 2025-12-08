@@ -52,6 +52,10 @@ features:
   - icon: 🎭
     title: Custom Levels
     details: Define your own log levels with custom priorities and colors
+
+  - icon: 🩺
+    title: System Diagnostics
+    details: Emit OS/CPU/memory (and drives) on startup or on-demand for quick host visibility
 ---
 
 ## Quick Example
@@ -94,7 +98,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.4.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.5.tar.gz",
         .hash = "...",
     },
 },

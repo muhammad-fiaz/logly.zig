@@ -85,6 +85,16 @@ Enable threads to steal work from other threads' queues:
 
 This improves load balancing when some threads finish faster than others.
 
+### Arena Allocation
+
+Enable per-worker arena allocation for efficient memory usage:
+
+```zig
+.enable_arena = true
+```
+
+When enabled, each worker thread maintains its own arena allocator. This is particularly useful for formatting operations, as it reduces contention on the global allocator and improves cache locality. The arena is automatically reset after each task.
+
 ### Priority Queues
 
 Enable task prioritization:

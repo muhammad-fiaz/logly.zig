@@ -35,7 +35,15 @@ const config = logly.Config.default().withThreadPool(4);
 
 ### ThreadPool
 
-A configurable thread pool with work stealing support.
+The core thread pool implementation that manages worker threads and task distribution. It employs a work-stealing algorithm to balance load across multiple worker threads, ensuring high throughput and low latency.
+
+**Fields:**
+- `allocator`: The memory allocator used for internal structures.
+- `config`: The active configuration for the thread pool.
+- `workers`: Slice of worker threads.
+- `work_queue`: The global task queue for incoming tasks.
+- `stats`: Performance statistics (submitted, completed, stolen tasks).
+- `running`: Atomic flag indicating the pool's operational state.
 
 ```zig
 pub const ThreadPool = struct {
@@ -50,7 +58,14 @@ pub const ThreadPool = struct {
 
 ### ThreadPoolConfig (Centralized)
 
-Configuration available through `Config.ThreadPoolConfig`:
+Configuration available through `Config.ThreadPoolConfig`. This struct controls the initialization and behavior of the thread pool.
+
+**Fields:**
+- `enabled`: Master switch to enable/disable the thread pool.
+- `thread_count`: Number of worker threads to spawn. Set to 0 to automatically detect and use the number of available CPU cores.
+- `queue_size`: Capacity of the global task queue. If the queue is full, submission may block or fail depending on policy.
+- `stack_size`: Stack size allocated for each worker thread (in bytes). Default is 1MB.
+- `work_stealing`: Enables the work-stealing algorithm, allowing idle workers to take tasks from busy workers' local queues.
 
 ```zig
 pub const ThreadPoolConfig = struct {
@@ -64,6 +79,8 @@ pub const ThreadPoolConfig = struct {
     stack_size: usize = 1024 * 1024,
     /// Enable work stealing between threads.
     work_stealing: bool = true,
+    /// Enable per-worker arena allocator.
+    enable_arena: bool = false,
 };
 ```
 
@@ -87,6 +104,25 @@ pub const ThreadPoolConfig = struct {
     keep_alive_ms: u64 = 60000,
     /// Enable thread affinity (pin threads to CPUs)
     thread_affinity: bool = false,
+    /// Enable per-worker arena allocator for temporary allocations
+    enable_arena: bool = false,
+};
+```
+
+### ThreadPoolPresets
+
+Helper functions to create common thread pool configurations.
+
+```zig
+pub const ThreadPoolPresets = struct {
+    /// Default configuration: auto-detect threads, standard queue size.
+    pub fn default() ThreadPoolConfig { ... }
+
+    /// High-throughput configuration: larger queues, work stealing enabled.
+    pub fn highThroughput() ThreadPoolConfig { ... }
+
+    /// Low-resource configuration: minimal threads, small queues.
+    pub fn lowResource() ThreadPoolConfig { ... }
 };
 ```
 

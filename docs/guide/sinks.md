@@ -22,6 +22,32 @@ _ = try logger.add(.{
 });
 ```
 
+## Dynamic File Paths
+
+You can use placeholders in the file path to automatically include date and time information. This is useful for organizing logs by date or creating unique log files per session.
+
+Supported placeholders:
+- `{date}`: Current date (YYYY-MM-DD)
+- `{time}`: Current time (HH-mm-ss)
+- Custom formats: `{YYYY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}`, `{ss}`
+
+```zig
+// Create a log file in a date-stamped directory
+_ = try logger.addSink(.{
+    .path = "logs/{date}/app.log", // e.g., logs/2025-12-08/app.log
+});
+
+// Create a unique log file with full timestamp
+_ = try logger.addSink(.{
+    .path = "logs/session-{YYYY}-{MM}-{DD}_{HH}-{mm}-{ss}.log",
+});
+
+// Use custom separators
+_ = try logger.addSink(.{
+    .path = "logs/{YYYY}/{MM}/{DD}/app.log",
+});
+```
+
 ## Multiple Sinks
 
 You can add as many sinks as you need.

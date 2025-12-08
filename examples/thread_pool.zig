@@ -62,7 +62,8 @@ pub fn main() !void {
     const num_tasks: u32 = 100;
 
     const TestTask = struct {
-        fn increment(ctx: *anyopaque) void {
+        fn increment(ctx: *anyopaque, maybe_allocator: ?std.mem.Allocator) void {
+            _ = maybe_allocator;
             const c: *std.atomic.Value(u32) = @ptrCast(@alignCast(ctx));
             _ = c.fetchAdd(1, .monotonic);
         }

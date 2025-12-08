@@ -99,7 +99,6 @@ pub fn main() !void {
         .drop_oldest,
         .drop_newest,
         .block,
-        .expand,
     };
 
     for (policies) |policy| {
@@ -108,7 +107,6 @@ pub fn main() !void {
             .drop_oldest => std.debug.print("Remove oldest entries to make room\n", .{}),
             .drop_newest => std.debug.print("Drop new entries when full\n", .{}),
             .block => std.debug.print("Block until space available\n", .{}),
-            .expand => std.debug.print("Dynamically grow buffer\n", .{}),
         }
     }
 

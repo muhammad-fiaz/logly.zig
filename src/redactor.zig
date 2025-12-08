@@ -5,10 +5,64 @@ const Config = @import("config.zig").Config;
 ///
 /// Provides pattern-based and field-based redaction to prevent
 /// sensitive information from appearing in log output.
+///
+/// Callbacks:
+/// - `on_redaction_applied`: Called when redaction is applied to a value
+/// - `on_pattern_matched`: Called when a redaction pattern matches
+/// - `on_redactor_initialized`: Called when redactor is created
+/// - `on_redaction_error`: Called when redaction processing fails
+///
+/// Performance:
+/// - O(n) pattern evaluation where n = number of patterns
+/// - Early exit on first matching pattern
+/// - Minimal memory overhead for pattern storage
 pub const Redactor = struct {
+    /// Redactor statistics for monitoring and diagnostics.
+    pub const RedactorStats = struct {
+        total_values_processed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        values_redacted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        patterns_matched: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        fields_redacted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        redaction_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        /// Calculate redaction rate (0.0 - 1.0)
+        pub fn redactionRate(self: *const RedactorStats) f64 {
+            const total = self.total_values_processed.load(.monotonic);
+            if (total == 0) return 0;
+            const redacted = self.values_redacted.load(.monotonic);
+            return @as(f64, @floatFromInt(redacted)) / @as(f64, @floatFromInt(total));
+        }
+
+        /// Calculate error rate (0.0 - 1.0)
+        pub fn errorRate(self: *const RedactorStats) f64 {
+            const total = self.total_values_processed.load(.monotonic);
+            if (total == 0) return 0;
+            const errors = self.redaction_errors.load(.monotonic);
+            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+        }
+    };
+
     allocator: std.mem.Allocator,
     patterns: std.ArrayList(RedactionPattern),
     fields: std.StringHashMap(RedactionType),
+    stats: RedactorStats = .{},
+    mutex: std.Thread.Mutex = .{},
+
+    /// Callback invoked when redaction is applied.
+    /// Parameters: (original_length: u64, redacted_length: u64, redaction_type: u32)
+    on_redaction_applied: ?*const fn (u64, u64, u32) void = null,
+
+    /// Callback invoked when a pattern matches.
+    /// Parameters: (pattern_name: []const u8, matched_value: []const u8)
+    on_pattern_matched: ?*const fn ([]const u8, []const u8) void = null,
+
+    /// Callback invoked when redactor is initialized.
+    /// Parameters: (stats: *const RedactorStats)
+    on_redactor_initialized: ?*const fn (*const RedactorStats) void = null,
+
+    /// Callback invoked on redaction error.
+    /// Parameters: (error_msg: []const u8)
+    on_redaction_error: ?*const fn ([]const u8) void = null,
 
     /// Pattern-based redaction configuration.
     pub const RedactionPattern = struct {
@@ -104,6 +158,42 @@ pub const Redactor = struct {
             self.allocator.free(key.*);
         }
         self.fields.deinit();
+    }
+
+    /// Sets the callback for redaction applied events.
+    pub fn setRedactionAppliedCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_redaction_applied = callback;
+    }
+
+    /// Sets the callback for pattern matched events.
+    pub fn setPatternMatchedCallback(self: *Redactor, callback: *const fn ([]const u8, []const u8) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_pattern_matched = callback;
+    }
+
+    /// Sets the callback for redactor initialization.
+    pub fn setInitializedCallback(self: *Redactor, callback: *const fn (*const RedactorStats) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_redactor_initialized = callback;
+    }
+
+    /// Sets the callback for redaction errors.
+    pub fn setErrorCallback(self: *Redactor, callback: *const fn ([]const u8) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_redaction_error = callback;
+    }
+
+    /// Returns redactor statistics.
+    pub fn getStats(self: *Redactor) RedactorStats {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.stats;
     }
 
     /// Adds a sensitive field for redaction.

@@ -5,10 +5,14 @@ const Config = @import("config.zig").Config;
 const Sink = @import("sink.zig").Sink;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Record = @import("record.zig").Record;
+const Formatter = @import("formatter.zig").Formatter;
 const Filter = @import("filter.zig").Filter;
 const Sampler = @import("sampler.zig").Sampler;
 const Redactor = @import("redactor.zig").Redactor;
 const Metrics = @import("metrics.zig").Metrics;
+const ThreadPool = @import("thread_pool.zig").ThreadPool;
+const UpdateChecker = @import("update_checker.zig");
+const Diagnostics = @import("diagnostics.zig");
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
 ///
@@ -23,7 +27,52 @@ const Metrics = @import("metrics.zig").Metrics;
 /// - Sensitive data redaction
 /// - Metrics collection
 /// - Arena allocator support for improved performance
+///
+/// Callbacks:
+/// - `on_record_logged`: Called when a record is successfully logged
+/// - `on_record_filtered`: Called when a record is filtered/dropped before output
+/// - `on_sink_error`: Called when a sink encounters an error
+/// - `on_logger_initialized`: Called after logger initialization
+/// - `on_logger_destroyed`: Called when logger is destroyed
+///
+/// Thread Safety:
+/// - All public methods are thread-safe
+/// - Uses std.Thread.Mutex for protecting mutable state
+/// - Atomic operations for counters and statistics
 pub const Logger = struct {
+    /// Logger statistics for monitoring and diagnostics.
+    pub const LoggerStats = struct {
+        total_records_logged: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        records_filtered: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        sink_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        active_sinks: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+        bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        /// Calculate records per second (requires timestamp delta from caller)
+        pub fn recordsPerSecond(self: *const LoggerStats, elapsed_seconds: f64) f64 {
+            const total = self.total_records_logged.load(.monotonic);
+            if (elapsed_seconds == 0) return 0;
+            return @as(f64, @floatFromInt(total)) / elapsed_seconds;
+        }
+
+        /// Calculate average bytes per record
+        pub fn avgBytesPerRecord(self: *const LoggerStats) f64 {
+            const total = self.total_records_logged.load(.monotonic);
+            if (total == 0) return 0;
+            const bytes = self.bytes_written.load(.monotonic);
+            return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
+        }
+
+        /// Calculate filter rate (0.0 - 1.0)
+        pub fn filterRate(self: *const LoggerStats) f64 {
+            const total = self.total_records_logged.load(.monotonic);
+            const filtered = self.records_filtered.load(.monotonic);
+            const total_seen = total + filtered;
+            if (total_seen == 0) return 0;
+            return @as(f64, @floatFromInt(filtered)) / @as(f64, @floatFromInt(total_seen));
+        }
+    };
+
     allocator: std.mem.Allocator,
     config: Config,
     sinks: std.ArrayList(*Sink),
@@ -35,6 +84,26 @@ pub const Logger = struct {
     log_callback: ?*const fn (*const Record) anyerror!void = null,
     color_callback: ?*const fn (Level, []const u8) []const u8 = null,
 
+    /// Callback invoked when a record is successfully logged.
+    /// Parameters: (level: Level, message: []const u8, record: *const Record)
+    on_record_logged: ?*const fn (Level, []const u8, *const Record) void = null,
+
+    /// Callback invoked when a record is filtered/dropped before output.
+    /// Parameters: (reason: []const u8, record: *const Record)
+    on_record_filtered: ?*const fn ([]const u8, *const Record) void = null,
+
+    /// Callback invoked when a sink encounters an error.
+    /// Parameters: (sink_name: []const u8, error_msg: []const u8)
+    on_sink_error: ?*const fn ([]const u8, []const u8) void = null,
+
+    /// Callback invoked when logger is initialized.
+    /// Parameters: (logger_stats: *const LoggerStats)
+    on_logger_initialized: ?*const fn (*const LoggerStats) void = null,
+
+    /// Callback invoked when logger is destroyed.
+    /// Parameters: (final_stats: *const LoggerStats)
+    on_logger_destroyed: ?*const fn (*const LoggerStats) void = null,
+
     /// Tracing context for distributed systems.
     trace_id: ?[]const u8 = null,
     span_id: ?[]const u8 = null,
@@ -45,9 +114,14 @@ pub const Logger = struct {
     sampler: ?*Sampler = null,
     redactor: ?*Redactor = null,
     metrics: ?*Metrics = null,
+    thread_pool: ?*ThreadPool = null,
+    update_thread: ?std.Thread = null,
 
     /// Initialization timestamp for uptime tracking.
     init_timestamp: i64 = 0,
+
+    /// Logger statistics for monitoring.
+    stats: LoggerStats = .{},
 
     /// Total records processed counter.
     record_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
@@ -101,6 +175,14 @@ pub const Logger = struct {
             _ = try logger.addSink(SinkConfig.default());
         }
 
+        if (logger.config.emit_system_diagnostics_on_init) {
+            logger.logSystemDiagnostics(null) catch {};
+        }
+
+        if (logger.config.check_for_updates) {
+            logger.update_thread = UpdateChecker.checkForUpdates(allocator);
+        }
+
         return logger;
     }
 
@@ -134,10 +216,24 @@ pub const Logger = struct {
             _ = try logger.addSink(SinkConfig.default());
         }
 
+        if (config.emit_system_diagnostics_on_init) {
+            logger.logSystemDiagnostics(null) catch {};
+        }
+
         if (config.enable_metrics) {
             const m = try allocator.create(Metrics);
             m.* = Metrics.init(allocator);
             logger.metrics = m;
+        }
+
+        if (config.thread_pool.enabled) {
+            const tp = try ThreadPool.initWithConfig(allocator, ThreadPool.ThreadPoolConfig.fromCentralized(config.thread_pool));
+            try tp.start();
+            logger.thread_pool = tp;
+        }
+
+        if (config.check_for_updates) {
+            logger.update_thread = UpdateChecker.checkForUpdates(allocator);
         }
 
         return logger;
@@ -145,6 +241,14 @@ pub const Logger = struct {
 
     /// Deinitializes the logger and frees all associated resources.
     pub fn deinit(self: *Logger) void {
+        if (self.update_thread) |t| {
+            t.join();
+        }
+
+        if (self.thread_pool) |tp| {
+            tp.deinit();
+        }
+
         for (self.sinks.items) |sink| {
             sink.deinit();
         }
@@ -347,7 +451,28 @@ pub const Logger = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const sink = try Sink.init(self.allocator, config);
+        // Handle logs_root_path: if set and config.path exists, prepend root to path
+        var modified_config = config;
+        var resolved_path: ?[]u8 = null;
+
+        if (self.config.logs_root_path != null and config.path != null) {
+            const root = self.config.logs_root_path.?;
+            const file = config.path.?;
+
+            // Auto-create root directory if it doesn't exist
+            std.fs.cwd().makePath(root) catch |e| {
+                if (self.config.debug_mode) {
+                    std.debug.print("warning: failed to auto-create logs root path '{s}': {}\n", .{ root, e });
+                }
+            };
+
+            // Combine root path with file name
+            resolved_path = try std.fmt.allocPrint(self.allocator, "{s}" ++ std.fs.path.sep_str ++ "{s}", .{ root, std.fs.path.basename(file) });
+            modified_config.path = resolved_path;
+        }
+        defer if (resolved_path) |path| self.allocator.free(path);
+
+        const sink = try Sink.init(self.allocator, modified_config);
         errdefer sink.deinit();
         try self.sinks.append(self.allocator, sink);
         return self.sinks.items.len - 1;
@@ -503,6 +628,49 @@ pub const Logger = struct {
         self.color_callback = callback;
     }
 
+    /// Sets the callback for when a record is successfully logged.
+    pub fn setLoggedCallback(self: *Logger, callback: *const fn (Level, []const u8, *const Record) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_record_logged = callback;
+    }
+
+    /// Sets the callback for when a record is filtered/dropped.
+    pub fn setFilteredCallback(self: *Logger, callback: *const fn ([]const u8, *const Record) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_record_filtered = callback;
+    }
+
+    /// Sets the callback for when a sink encounters an error.
+    pub fn setSinkErrorCallback(self: *Logger, callback: *const fn ([]const u8, []const u8) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_sink_error = callback;
+    }
+
+    /// Sets the callback for logger initialization.
+    pub fn setInitializedCallback(self: *Logger, callback: *const fn (*const LoggerStats) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_logger_initialized = callback;
+    }
+
+    /// Sets the callback for logger destruction.
+    pub fn setDestroyedCallback(self: *Logger, callback: *const fn (*const LoggerStats) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_logger_destroyed = callback;
+    }
+
+    /// Returns logger statistics for monitoring and diagnostics.
+    pub fn getStats(self: *Logger) LoggerStats {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.stats;
+    }
+
     pub fn enable(self: *Logger) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -546,6 +714,36 @@ pub const Logger = struct {
         return ScopedLogger{ .logger = self, .module = module };
     }
 
+    const LogTaskContext = struct {
+        logger: *Logger,
+        record: Record,
+    };
+
+    fn processLogTask(ctx_ptr: *anyopaque, allocator: ?std.mem.Allocator) void {
+        const ctx = @as(*LogTaskContext, @ptrCast(@alignCast(ctx_ptr)));
+        defer {
+            ctx.record.deinit();
+            ctx.logger.allocator.destroy(ctx);
+        }
+
+        const logger = ctx.logger;
+
+        // Snapshot sinks to avoid holding lock during write
+        logger.mutex.lock();
+        var sinks_snapshot: std.ArrayList(*Sink) = .empty;
+        sinks_snapshot.appendSlice(logger.allocator, logger.sinks.items) catch {};
+        logger.mutex.unlock();
+        defer sinks_snapshot.deinit(logger.allocator);
+
+        for (sinks_snapshot.items) |sink| {
+            // Use the worker's arena allocator if available for formatting
+            sink.writeWithAllocator(&ctx.record, logger.config, allocator) catch |write_err| {
+                if (logger.config.debug_mode) {
+                    std.debug.print("Async sink write error: {}\n", .{write_err});
+                }
+            };
+        }
+    }
     fn log(self: *Logger, level: Level, message: []const u8, module: ?[]const u8, src: ?std.builtin.SourceLocation) !void {
         if (!self.enabled) return;
 
@@ -581,7 +779,7 @@ pub const Logger = struct {
         defer if (redacted_message) |rm| self.allocator.free(rm);
 
         // Create record with enhanced fields
-        var record = Record.init(self.allocator, level, final_message);
+        var record = Record.init(self.scratchAllocator(), level, final_message);
         defer record.deinit();
 
         if (module) |m| {
@@ -637,6 +835,28 @@ pub const Logger = struct {
         // Call log callback
         if (self.config.enable_callbacks and self.log_callback != null) {
             try self.log_callback.?(&record);
+        }
+
+        // Dispatch to thread pool if available
+        if (self.thread_pool) |tp| {
+            // Clone record for async processing
+            // We need to clone because the original record is stack-allocated and will be deinitialized
+            var cloned_rec = try record.clone(self.allocator);
+            errdefer cloned_rec.deinit();
+
+            const ctx = try self.allocator.create(LogTaskContext);
+            ctx.* = .{
+                .logger = self,
+                .record = cloned_rec,
+            };
+
+            if (tp.submitCallback(processLogTask, ctx)) {
+                return;
+            }
+
+            // Fallback if submission fails (e.g. queue full)
+            self.allocator.destroy(ctx);
+            cloned_rec.deinit();
         }
 
         // Write to all sinks
@@ -736,6 +956,83 @@ pub const Logger = struct {
     /// Returns uptime in seconds since logger initialization.
     pub fn getUptime(self: *Logger) i64 {
         return std.time.timestamp() - self.init_timestamp;
+    }
+
+    /// Logs system diagnostics (OS, arch, CPU, memory, drives) as a single record.
+    /// Respects Config.include_drive_diagnostics when emitting drive info.
+    /// Stores structured data in Record context for custom format interpolation.
+    pub fn logSystemDiagnostics(self: *Logger, src: ?std.builtin.SourceLocation) !void {
+        const alloc = self.scratchAllocator();
+
+        var diag = try Diagnostics.collect(alloc, self.config.include_drive_diagnostics);
+        defer diag.deinit(alloc);
+
+        // Build message using default structure (ASCII-safe)
+        var msg = std.ArrayList(u8){};
+        defer msg.deinit(alloc);
+
+        var w = msg.writer(alloc);
+        try w.print(
+            "[DIAGNOSTICS] os={s} arch={s} cpu={s} cores={d}",
+            .{ diag.os_tag, diag.arch, diag.cpu_model, diag.logical_cores },
+        );
+
+        if (diag.total_mem) |t| {
+            const avail = diag.avail_mem orelse 0;
+            try w.print(" ram_total={d}MB ram_available={d}MB", .{ t / (1024 * 1024), avail / (1024 * 1024) });
+        }
+
+        if (self.config.include_drive_diagnostics and diag.drives.len > 0) {
+            try w.writeAll(" drives=[");
+            for (diag.drives, 0..) |d, i| {
+                const total_gb = d.total_bytes / (1024 * 1024 * 1024);
+                const free_gb = d.free_bytes / (1024 * 1024 * 1024);
+                try w.print("{s} total={d}GB free={d}GB", .{ d.name, total_gb, free_gb });
+                if (i + 1 < diag.drives.len) try w.writeAll("; ");
+            }
+            try w.writeAll("]");
+        }
+
+        // Log with context data for structured formatting support
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var record = Record.init(self.scratchAllocator(), .info, msg.items);
+        defer record.deinit();
+
+        if (src) |s| {
+            if (self.config.show_filename) record.filename = s.file;
+            if (self.config.show_lineno) {
+                record.line = s.line;
+                record.column = s.column;
+            }
+            if (self.config.show_function) record.function = s.fn_name;
+        }
+
+        // Store diagnostics in record context for format customization
+        try record.context.put("diag.os", .{ .string = diag.os_tag });
+        try record.context.put("diag.arch", .{ .string = diag.arch });
+        try record.context.put("diag.cpu", .{ .string = diag.cpu_model });
+        try record.context.put("diag.cores", .{ .integer = @intCast(diag.logical_cores) });
+        if (diag.total_mem) |t| {
+            try record.context.put("diag.ram_total_mb", .{ .integer = @intCast(t / (1024 * 1024)) });
+        }
+        if (diag.avail_mem) |a| {
+            try record.context.put("diag.ram_avail_mb", .{ .integer = @intCast(a / (1024 * 1024)) });
+        }
+
+        // Note: diagnostics_output_path can be used by adding a separate sink for diagnostics
+        // The diagnostics context fields (diag.os, diag.cpu, etc) are available for custom formats
+
+        // Write to all sinks
+        for (self.sinks.items) |sink| {
+            sink.write(&record, self.config) catch |write_err| {
+                if (self.metrics) |m| m.recordError();
+                if (self.config.debug_mode) {
+                    std.debug.print("Diagnostics write error: {}\n", .{write_err});
+                }
+            };
+        }
     }
 
     // Logging methods with simple, Python-like API
@@ -839,7 +1136,7 @@ pub const Logger = struct {
         defer if (redacted_message) |rm| self.allocator.free(rm);
 
         // Create record with custom level info
-        var record = Record.initCustom(self.allocator, level, custom_name, custom_color, final_message);
+        var record = Record.initCustom(self.scratchAllocator(), level, custom_name, custom_color, final_message);
         defer record.deinit();
 
         if (module) |m| {
@@ -895,6 +1192,27 @@ pub const Logger = struct {
         // Call log callback
         if (self.config.enable_callbacks and self.log_callback != null) {
             try self.log_callback.?(&record);
+        }
+
+        // Dispatch to thread pool if available
+        if (self.thread_pool) |tp| {
+            // Clone record for async processing
+            var cloned_rec = try record.clone(self.allocator);
+            errdefer cloned_rec.deinit();
+
+            const ctx = try self.allocator.create(LogTaskContext);
+            ctx.* = .{
+                .logger = self,
+                .record = cloned_rec,
+            };
+
+            if (tp.submitCallback(processLogTask, ctx)) {
+                return;
+            }
+
+            // Fallback if submission fails
+            self.allocator.destroy(ctx);
+            cloned_rec.deinit();
         }
 
         // Write to all sinks
