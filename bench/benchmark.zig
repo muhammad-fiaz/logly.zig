@@ -48,6 +48,8 @@ fn printResults(results: []const BenchmarkResult) void {
         "Allocator Comparison",
         "Enterprise Features",
         "Sampling & Rate Limiting",
+        "Filtering",
+        "System Diagnostics",
         "Multi-Threading",
         "Performance Comparison",
     };
@@ -65,13 +67,13 @@ fn printResults(results: []const BenchmarkResult) void {
         std.debug.print("\n[{s}]\n", .{cat});
         std.debug.print("-" ** 130, .{});
         std.debug.print("\n", .{});
-        std.debug.print("{s:<50} {s:>12} {s:>18} {s:>45}\n", .{ "Benchmark", "Ops/sec", "Avg Latency (ns)", "Notes" });
+        std.debug.print("{s:<50} {s:>25} {s:>30} {s:>20}\n", .{ "Benchmark", "Ops/sec (higher is better)", "Avg Latency (ns) (lower is better)", "Notes" });
         std.debug.print("-" ** 130, .{});
         std.debug.print("\n", .{});
 
         for (results) |r| {
             if (std.mem.eql(u8, r.category, cat)) {
-                std.debug.print("{s:<50} {d:>12.0} {d:>18.0} {s:>45}\n", .{
+                std.debug.print("{s:<50} {d:>25.0} {d:>30.0} {s:>20}\n", .{
                     r.name,
                     r.ops_per_sec,
                     r.avg_latency_ns,
@@ -189,6 +191,28 @@ fn benchFailLog(ctx: *const BenchContext) !void {
 
 fn benchCustomLevel(ctx: *const BenchContext) !void {
     try ctx.logger.custom("AUDIT", "User action logged for audit", null);
+}
+
+// ============================================
+// Filtering Benchmark Functions
+// ============================================
+fn benchFilterAllowed(ctx: *const BenchContext) !void {
+    try ctx.logger.info("This message passes the filter", null);
+}
+
+fn benchFilterRejected(ctx: *const BenchContext) !void {
+    try ctx.logger.debug("This message is rejected by filter", null);
+}
+
+fn benchFilterComplex(ctx: *const BenchContext) !void {
+    try ctx.logger.info("Checking complex filter rules", null);
+}
+
+// ============================================
+// Diagnostics Benchmark Functions
+// ============================================
+fn benchDiagnostics(ctx: *const BenchContext) !void {
+    try ctx.logger.logSystemDiagnostics(null);
 }
 
 // ============================================
@@ -753,7 +777,7 @@ pub fn main() !void {
         defer loggerProb.deinit();
 
         var configProb = Config.default();
-        configProb.sampling = .{ .enabled = true, .rate = 0.5, .strategy = .probability };
+        configProb.sampling = .{ .enabled = true, .strategy = .{ .probability = 0.5 } };
         configProb.auto_sink = false;
         loggerProb.configure(configProb);
 
@@ -769,7 +793,7 @@ pub fn main() !void {
         defer loggerRate.deinit();
 
         var configRate = Config.default();
-        configRate.sampling = .{ .enabled = true, .strategy = .rate_limit };
+        configRate.sampling = .{ .enabled = true, .strategy = .{ .rate_limit = .{ .max_records = 100, .window_ms = 1000 } } };
         configRate.auto_sink = false;
         loggerRate.configure(configRate);
 
@@ -785,7 +809,7 @@ pub fn main() !void {
         defer loggerAdapt.deinit();
 
         var configAdapt = Config.default();
-        configAdapt.sampling = .{ .enabled = true, .strategy = .adaptive, .rate = 0.8 };
+        configAdapt.sampling = .{ .enabled = true, .strategy = .{ .adaptive = .{ .target_rate = 1000 } } };
         configAdapt.auto_sink = false;
         loggerAdapt.configure(configAdapt);
 
@@ -801,7 +825,7 @@ pub fn main() !void {
         defer loggerN.deinit();
 
         var configN = Config.default();
-        configN.sampling = .{ .enabled = true, .strategy = .every_n };
+        configN.sampling = .{ .enabled = true, .strategy = .{ .every_n = 100 } };
         configN.auto_sink = false;
         loggerN.configure(configN);
 
@@ -841,6 +865,52 @@ pub fn main() !void {
 
         const ctxRedact = BenchContext{ .logger = loggerRedact, .allocator = allocator };
         try results.append(allocator, runBenchmark("With redaction enabled", benchSimpleLog, &ctxRedact, "Sensitive data masking", "Sampling & Rate Limiting"));
+    }
+
+    // ============================================
+    // CATEGORY: Filtering
+    // ============================================
+    {
+        std.debug.print("Running: Filtering benchmarks...\n", .{});
+
+        const loggerFilter = try Logger.init(allocator);
+        defer loggerFilter.deinit();
+
+        var configFilter = Config.default();
+        configFilter.auto_sink = false;
+        loggerFilter.configure(configFilter);
+
+        // Setup filter
+        var filter = logly.Filter.init(allocator);
+        defer filter.deinit();
+        try filter.addMinLevel(.info); // Allow INFO and above
+        loggerFilter.setFilter(&filter);
+
+        _ = try loggerFilter.addSink(.{ .path = NULL_PATH });
+
+        const ctxFilter = BenchContext{ .logger = loggerFilter, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Filter (allowed)", benchFilterAllowed, &ctxFilter, "Message passes filter", "Filtering"));
+        try results.append(allocator, runBenchmark("Filter (rejected)", benchFilterRejected, &ctxFilter, "Message blocked by filter", "Filtering"));
+    }
+
+    // ============================================
+    // CATEGORY: System Diagnostics
+    // ============================================
+    {
+        std.debug.print("Running: System Diagnostics benchmarks...\n", .{});
+
+        const loggerDiag = try Logger.init(allocator);
+        defer loggerDiag.deinit();
+
+        var configDiag = Config.default();
+        configDiag.auto_sink = false;
+        configDiag.include_drive_diagnostics = false; // Keep it faster
+        loggerDiag.configure(configDiag);
+
+        _ = try loggerDiag.addSink(.{ .path = NULL_PATH });
+
+        const ctxDiag = BenchContext{ .logger = loggerDiag, .allocator = allocator };
+        try results.append(allocator, runBenchmark("System Diagnostics (basic)", benchDiagnostics, &ctxDiag, "OS/CPU/Mem info", "System Diagnostics"));
     }
 
     // ============================================

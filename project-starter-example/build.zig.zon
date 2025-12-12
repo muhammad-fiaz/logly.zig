@@ -4,10 +4,8 @@
     .fingerprint = 0x5cdb49617137be96,
     .dependencies = .{
         .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.4.tar.gz",
-            .hash = "logly-0.0.4-kZjLe5iFBAB_xl_-FMAMyWflQ4Y00ZQ7ANmlcpAeVI6H",
-            // To regenerate the hash after changing the version, run: zig fetch <url>
-            // Replace <url> with the URL above, then update this hash value
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz",
+            .hash = "...", // Run `zig fetch --save <url>` to update this
         },
     },
     .paths = .{

@@ -49,27 +49,27 @@ jobs:
       - name: Zig format check
         run: zig fmt --check src/ examples/
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
+          bun-version: latest
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      - name: Clean npm state
+      - name: Clean state
         working-directory: ./docs
         run: |
-          rm -f package-lock.json
+          rm -f package-lock.json bun.lockb
           rm -rf node_modules
 
       - name: Install dependencies
         working-directory: ./docs
-        run: npm install
+        run: bun install
 
       - name: Build with VitePress
         working-directory: ./docs
-        run: npm run docs:build
+        run: bun run docs:build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

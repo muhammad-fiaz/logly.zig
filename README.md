@@ -608,136 +608,155 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <details>
 <summary><strong>Basic Logging</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| Simple log (no color) | 15,557 | 64,280 | Plain text output |
-| Formatted log (no color) | 15,083 | 66,300 | Printf-style formatting |
-| Simple log (with color) | 15,744 | 63,515 | ANSI color codes |
-| Formatted log (with color) | 14,428 | 69,311 | Colored + formatting |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Simple log (no color) | 117,334 | 8,523 | Plain text output |
+| Formatted log (no color) | 37,341 | 26,781 | Printf-style formatting |
+| Simple log (with color) | 116,864 | 8,557 | ANSI color codes |
+| Formatted log (with color) | 34,903 | 28,651 | Colored + formatting |
 
 </details>
 
 <details>
 <summary><strong>JSON Logging</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| JSON compact | 19,705 | 50,748 | Compact JSON output |
-| JSON formatted | 13,654 | 73,239 | JSON with formatting |
-| JSON pretty | 14,879 | 67,209 | Indented JSON output |
-| JSON with color | 19,929 | 50,179 | JSON with ANSI colors |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| JSON compact | 53,149 | 18,815 | Compact JSON output |
+| JSON formatted | 30,426 | 32,867 | JSON with formatting |
+| JSON pretty | 15,963 | 62,643 | Indented JSON output |
+| JSON with color | 29,633 | 33,746 | JSON with ANSI colors |
 
 </details>
 
 <details>
 <summary><strong>Log Levels</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| TRACE level | 19,460 | 51,387 | Lowest priority level |
-| DEBUG level | 20,867 | 47,922 | Debug information |
-| INFO level | 16,436 | 60,844 | General information |
-| SUCCESS level | 20,706 | 48,296 | Success messages |
-| WARNING level | 19,587 | 51,054 | Warning messages |
-| ERROR level | 20,513 | 48,750 | Error messages |
-| FAIL level | 16,222 | 61,645 | Failure messages |
-| CRITICAL level | 19,574 | 51,087 | Critical messages |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| TRACE level | 54,073 | 18,494 | Lowest priority level |
+| DEBUG level | 28,247 | 35,402 | Debug information |
+| INFO level | 62,796 | 15,925 | General information |
+| SUCCESS level | 45,301 | 22,074 | Success messages |
+| WARNING level | 49,987 | 20,005 | Warning messages |
+| ERROR level | 48,143 | 20,771 | Error messages |
+| FAIL level | 48,729 | 20,522 | Failure messages |
+| CRITICAL level | 49,209 | 20,322 | Critical messages |
 
 </details>
 
 <details>
 <summary><strong>Custom Features</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| Custom level (AUDIT) | 16,592 | 60,269 | User-defined log level |
-| Custom log format | 16,136 | 61,975 | `{time} \| {level} \| {message}` |
-| Custom time format | 15,432 | 64,801 | DD/MM/YYYY HH:mm:ss |
-| ISO8601 time format | 14,644 | 68,287 | ISO 8601 standard format |
-| Unix timestamp (ms) | 15,922 | 62,806 | Millisecond Unix timestamp |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Custom level (AUDIT) | 56,116 | 17,820 | User-defined log level |
+| Custom log format | 56,488 | 17,703 | `{time} \| {level} \| {message}` |
+| Custom time format | 52,964 | 18,881 | DD/MM/YYYY HH:mm:ss |
+| ISO8601 time format | 47,387 | 21,103 | ISO 8601 standard format |
+| Unix timestamp (ms) | 58,943 | 16,966 | Millisecond Unix timestamp |
 
 </details>
 
 <details>
 <summary><strong>Configuration Presets</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| Full metadata config | 15,798 | 63,301 | Time + module + file + line |
-| Minimal config | 16,536 | 60,474 | No timestamp or module |
-| Production preset | 18,204 | 54,934 | JSON + sampling + metrics |
-| Development preset | 15,807 | 63,263 | Debug + source location |
-| High throughput preset | 26,364,355 | 38 | Async + thread pool + sampling |
-| Secure preset | 15,643 | 63,927 | Redaction enabled |
-| Multiple sinks (3) | 13,221 | 75,635 | Text + JSON + Pretty |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Full metadata config | 57,684 | 17,336 | Time + module + file + line |
+| Minimal config | 114,176 | 8,758 | No timestamp or module |
+| Production preset | 35,363 | 28,278 | JSON + sampling + metrics |
+| Development preset | 52,771 | 18,950 | Debug + source location |
+| High throughput preset | 36,483,035 | 27 | Async + thread pool + sampling |
+| Secure preset | 54,322 | 18,409 | Redaction enabled |
+| Multiple sinks (3) | 62,815 | 15,920 | Text + JSON + Pretty |
 
 </details>
 
 <details>
 <summary><strong>Allocator Comparison</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| Standard allocator (GPA) | 15,274 | 65,469 | Default allocation |
-| Standard allocator (formatted) | 14,085 | 70,996 | GPA with formatting |
-| Arena allocator | 15,731 | 63,568 | Reduced alloc overhead |
-| Arena allocator (formatted) | 13,344 | 74,940 | Arena with formatting |
-| Page allocator | 20,907 | 47,830 | System page allocator |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Standard allocator (GPA) | 55,929 | 17,880 | Default allocation |
+| Standard allocator (formatted) | 32,885 | 30,409 | GPA with formatting |
+| Arena allocator | 92,368 | 10,826 | Reduced alloc overhead |
+| Arena allocator (formatted) | 34,596 | 28,905 | Arena with formatting |
+| Page allocator | 69,599 | 14,368 | System page allocator |
 
 </details>
 
 <details>
 <summary><strong>Enterprise Features</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| With context (3 fields) | 14,338 | 69,743 | Bound context data |
-| With trace context | 15,201 | 65,786 | Trace ID + Span ID |
-| With metrics enabled | 15,932 | 62,765 | Performance monitoring |
-| Structured logging | 19,372 | 51,621 | JSON structured output |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| With context (3 fields) | 59,076 | 16,927 | Bound context data |
+| With trace context | 46,864 | 21,338 | Trace ID + Span ID |
+| With metrics enabled | 55,463 | 18,030 | Performance monitoring |
+| Structured logging | 38,205 | 26,174 | JSON structured output |
 
 </details>
 
 <details>
 <summary><strong>Sampling & Rate Limiting</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| Sampling (50% probability) | 15,325 | 65,253 | Probability sampling |
-| Sampling (rate limit) | 16,597 | 60,253 | Rate-based sampling |
-| Sampling (adaptive) | 16,231 | 61,609 | Adaptive sampling |
-| Sampling (every-N) | 16,235 | 61,595 | Every-N message sampling |
-| Rate limiting (10K/sec) | 14,951 | 66,883 | Max 10K logs per second |
-| With redaction enabled | 15,834 | 63,156 | Sensitive data masking |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Sampling (50% probability) | 54,118 | 18,478 | Probability sampling |
+| Sampling (rate limit) | 53,695 | 18,624 | Rate-based sampling |
+| Sampling (adaptive) | 44,584 | 22,429 | Adaptive sampling |
+| Sampling (every-N) | 54,704 | 18,280 | Every-N message sampling |
+| Rate limiting (10K/sec) | 44,143 | 22,654 | Max 10K logs per second |
+| With redaction enabled | 53,361 | 18,740 | Sensitive data masking |
+
+</details>
+
+<details>
+<summary><strong>Filtering</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Filter (allowed) | 40,731 | 24,552 | Message passes filter |
+| Filter (rejected) | 23,304,591 | 43 | Message blocked by filter |
+
+</details>
+
+<details>
+<summary><strong>System Diagnostics</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| System Diagnostics (basic) | 24,566 | 40,706 | OS/CPU/Mem info |
 
 </details>
 
 <details>
 <summary><strong>Multi-Threading</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| Single thread baseline | 18,151 | 55,094 | 1 thread sequential |
-| 2 threads concurrent | 16,896 | 59,186 | 2 threads parallel |
-| 4 threads concurrent | 16,275 | 61,443 | 4 threads parallel |
-| 8 threads concurrent | 16,122 | 62,026 | 8 threads parallel |
-| 16 threads concurrent | 15,816 | 63,227 | 16 threads parallel |
-| 4 threads JSON | 17,967 | 55,659 | Parallel JSON logging |
-| 4 threads colored | 16,880 | 59,243 | Parallel colored logging |
-| 4 threads formatted | 13,402 | 74,618 | Parallel formatted logging |
-| 4 threads arena allocator | 16,684 | 59,938 | Parallel with arena alloc |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Single thread baseline | 63,592 | 15,725 | 1 thread sequential |
+| 2 threads concurrent | 55,268 | 18,094 | 2 threads parallel |
+| 4 threads concurrent | 51,211 | 19,527 | 4 threads parallel |
+| 8 threads concurrent | 43,571 | 22,951 | 8 threads parallel |
+| 16 threads concurrent | 48,274 | 20,715 | 16 threads parallel |
+| 4 threads JSON | 37,412 | 26,730 | Parallel JSON logging |
+| 4 threads colored | 54,558 | 18,329 | Parallel colored logging |
+| 4 threads formatted | 51,787 | 19,310 | Parallel formatted logging |
+| 4 threads arena allocator | 51,039 | 19,593 | Parallel with arena alloc |
 
 </details>
 
 <details>
 <summary><strong>Performance Comparison</strong></summary>
 
-| Benchmark | Ops/sec | Avg Latency (ns) | Notes |
-|-----------|---------|------------------|-------|
-| File output (plain) | 16,413 | 60,926 | Null device output |
-| File output (error) | 20,503 | 48,773 | Error to file |
-| No sampling (baseline) | 15,816 | 63,228 | Sampling disabled |
-| Compression enabled (fast) | 15,881 | 62,968 | Deflate compression |
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| File output (plain) | 83,878 | 11,922 | Null device output |
+| File output (error) | 39,494 | 25,321 | Error to file |
+| No sampling (baseline) | 62,077 | 16,109 | Sampling disabled |
+| Compression enabled (fast) | 43,747 | 22,859 | Deflate compression |
 
 </details>
 
@@ -745,11 +764,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Metric | Value |
 |--------|-------|
-| **Total Benchmarks** | 56 |
-| **Average Throughput** | ~487,000 ops/sec |
-| **Maximum Throughput** | 26,364,355 ops/sec (High throughput preset) |
-| **Minimum Throughput** | 13,221 ops/sec (Multiple sinks) |
-| **Average Latency** | ~2 μs |
+| **Total Benchmarks** | 59 |
+| **Average Throughput** | ~1,064,399 ops/sec |
+| **Maximum Throughput** | 36,483,035 ops/sec (High throughput preset) |
+| **Minimum Throughput** | 15,963 ops/sec (JSON pretty) |
+| **Average Latency** | ~939 ns |
 
 > **Note:** Benchmark results may vary based on operating system, environment, Zig version, hardware specifications, and software configurations.
 
