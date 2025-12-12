@@ -75,7 +75,7 @@ const SystemLog = struct {
         const LOG_INFO = 6;
 
         extern "c" fn openlog(ident: ?[*:0]const u8, option: c_int, facility: c_int) void;
-        extern "c" fn syslog(priority: c_int, message: [*:0]const u8) void;
+        extern "c" fn syslog(priority: c_int, format: [*:0]const u8, ...) void;
         extern "c" fn closelog() void;
     } else struct {};
 
