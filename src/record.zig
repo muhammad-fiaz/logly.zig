@@ -5,6 +5,15 @@ const Level = @import("level.zig").Level;
 ///
 /// Contains all the metadata associated with a log message, including
 /// timestamp, level, message content, source location, and tracing information.
+///
+/// Usage:
+/// ```zig
+/// var record = Record.init(allocator, .info, "Log message");
+/// defer record.deinit();
+///
+/// try record.addContext("user_id", "12345");
+/// record.trace_id = "trace-abc-123";
+/// ```
 pub const Record = struct {
     /// Unix timestamp in milliseconds.
     timestamp: i64,
@@ -47,7 +56,8 @@ pub const Record = struct {
 
     /// Parent span ID for nested spans.
     parent_span_id: ?[]const u8 = null,
-
+    /// Stack trace (optional).
+    stack_trace: ?*std.builtin.StackTrace = null,
     /// Correlation ID for grouping related log entries.
     correlation_id: ?[]const u8 = null,
 
@@ -77,6 +87,9 @@ pub const Record = struct {
 
     /// Owned strings that need to be freed.
     owned_strings: std.ArrayList([]const u8),
+
+    /// Owned stack trace that needs to be freed.
+    owned_stack_trace: ?*std.builtin.StackTrace = null,
 
     /// Error information structure.
     pub const ErrorInfo = struct {
@@ -183,6 +196,11 @@ pub const Record = struct {
             self.allocator.free(s);
         }
         self.owned_strings.deinit(self.allocator);
+
+        if (self.owned_stack_trace) |st| {
+            self.allocator.free(st.instruction_addresses);
+            self.allocator.destroy(st);
+        }
     }
 
     /// Sets the trace ID for distributed tracing.
@@ -356,6 +374,17 @@ pub const Record = struct {
         if (self.trace_id) |tid| try new_record.setTraceId(tid);
         if (self.span_id) |sid| try new_record.setSpanId(sid);
         if (self.correlation_id) |cid| try new_record.setCorrelationId(cid);
+
+        if (self.stack_trace) |st| {
+            const new_st = try allocator.create(std.builtin.StackTrace);
+            const new_addresses = try allocator.dupe(usize, st.instruction_addresses);
+            new_st.* = .{
+                .index = st.index,
+                .instruction_addresses = new_addresses,
+            };
+            new_record.owned_stack_trace = new_st;
+            new_record.stack_trace = new_st;
+        }
 
         var it = self.context.iterator();
         while (it.next()) |entry| {

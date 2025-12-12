@@ -17,6 +17,8 @@ pub fn main() !void {
     config.json = true;
     config.pretty_json = true;
     config.color = true; // Enable colors for JSON output
+    config.capture_stack_trace = true;
+    config.symbolize_stack_trace = true;
     logger.configure(config);
 
     // Bind context that will appear in all logs
@@ -38,6 +40,9 @@ pub fn main() !void {
     logger.unbind("user_id");
 
     try logger.info("Request completed", @src());
+
+    // Demonstrate stack trace in JSON
+    try logger.err("Something went wrong!", @src());
 
     std.debug.print("\nJSON logging example completed!\n", .{});
 }

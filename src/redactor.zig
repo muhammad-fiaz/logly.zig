@@ -161,6 +161,13 @@ pub const Redactor = struct {
     }
 
     /// Sets the callback for redaction applied events.
+    pub fn setCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_redaction_applied = callback;
+    }
+
+    /// Sets the callback for redaction applied events.
     pub fn setRedactionAppliedCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -220,6 +227,9 @@ pub const Redactor = struct {
         pattern: []const u8,
         replacement: []const u8,
     ) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         try self.patterns.append(self.allocator, .{
             .name = try self.allocator.dupe(u8, name),
             .pattern_type = pattern_type,

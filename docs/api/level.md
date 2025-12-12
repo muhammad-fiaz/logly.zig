@@ -46,16 +46,16 @@ Returns the uppercase string representation of the level.
 
 ```zig
 const level = Level.err;
-const name = level.asString(); // Returns "ERR"
+const name = level.asString(); // Returns "ERROR"
 ```
 
-### `color() []const u8`
+### `defaultColor() []const u8`
 
-Returns the ANSI color code for the level.
+Returns the default ANSI color code for the level.
 
 ```zig
 const level = Level.warning;
-const c = level.color(); // Returns "33"
+const c = level.defaultColor(); // Returns "33"
 ```
 
 ## Custom Levels

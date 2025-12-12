@@ -48,6 +48,64 @@ _ = try logger.addSink(.{
 });
 ```
 
+## Network Sinks
+
+Logly supports sending logs over the network via TCP or UDP. This is useful for centralized logging, log aggregation services (like Logstash, Fluentd), or remote debugging.
+
+### TCP Sink
+
+TCP sinks provide reliable, connection-oriented logging. If the connection is lost, the sink will attempt to reconnect.
+
+```zig
+// TCP Sink with standard text format
+_ = try logger.addSink(.{
+    .path = "tcp://localhost:8080",
+});
+
+// TCP Sink with JSON format (recommended for aggregators)
+_ = try logger.addSink(.{
+    .path = "tcp://localhost:8080",
+    .json = true,
+});
+```
+
+### UDP Sink
+
+UDP sinks provide "fire-and-forget" logging. They are faster and have less overhead but do not guarantee delivery.
+
+```zig
+// UDP Sink
+_ = try logger.addSink(.{
+    .path = "udp://localhost:9090",
+    .json = true,
+});
+```
+
+### Network Compression
+
+You can enable compression for network sinks to reduce bandwidth usage. This uses the DEFLATE algorithm to compress log batches before sending.
+
+```zig
+var sink_config = logly.SinkConfig.network("tcp://localhost:8080");
+sink_config.compression = .{
+    .enabled = true,
+    .algorithm = .deflate,
+    .level = .best_compression,
+};
+_ = try logger.addSink(sink_config);
+```
+
+## System Event Log
+
+You can enable logging to the system event log (Windows Event Log or Syslog).
+
+```zig
+_ = try logger.addSink(.{
+    .event_log = true,
+    .level = .err, // Typically used for critical errors
+});
+```
+
 ## Multiple Sinks
 
 You can add as many sinks as you need.

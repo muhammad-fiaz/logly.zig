@@ -17,7 +17,7 @@ pub fn main() !void {
     std.debug.print("   ------------------------\n", .{});
 
     const pool = try logly.ThreadPool.initWithConfig(allocator, .{
-        .num_threads = 4,
+        .thread_count = 4,
         .queue_size = 1024,
         .work_stealing = true,
     });
@@ -33,7 +33,7 @@ pub fn main() !void {
 
     const single = logly.ThreadPoolPresets.singleThread();
     std.debug.print("   Single thread - threads: {d}, stealing: {s}\n", .{
-        single.num_threads,
+        single.thread_count,
         if (single.work_stealing) "yes" else "no",
     });
 
@@ -45,7 +45,7 @@ pub fn main() !void {
 
     const io_bound = logly.ThreadPoolPresets.ioBound();
     std.debug.print("   I/O bound - threads: {d}, queue: {d}\n", .{
-        io_bound.num_threads,
+        io_bound.thread_count,
         io_bound.queue_size,
     });
 

@@ -28,6 +28,21 @@ const Diagnostics = @import("diagnostics.zig");
 /// - Metrics collection
 /// - Arena allocator support for improved performance
 ///
+/// Usage:
+/// ```zig
+/// var logger = try logly.Logger.init(allocator);
+/// defer logger.deinit();
+///
+/// // Configure
+/// var config = logly.Config.default();
+/// config.level = .debug;
+/// logger.configure(config);
+///
+/// // Log
+/// try logger.info("Application started", .{});
+/// try logger.err("An error occurred", .{});
+/// ```
+///
 /// Callbacks:
 /// - `on_record_logged`: Called when a record is successfully logged
 /// - `on_record_filtered`: Called when a record is filtered/dropped before output
@@ -80,6 +95,7 @@ pub const Logger = struct {
     custom_levels: std.StringHashMap(CustomLevel),
     module_levels: std.StringHashMap(Level),
     enabled: bool = true,
+    atomic_level: std.atomic.Value(u8) = std.atomic.Value(u8).init(@intFromEnum(Level.info)),
     mutex: std.Thread.Mutex = .{},
     log_callback: ?*const fn (*const Record) anyerror!void = null,
     color_callback: ?*const fn (Level, []const u8) []const u8 = null,
@@ -169,6 +185,7 @@ pub const Logger = struct {
             .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
             .module_levels = std.StringHashMap(Level).init(allocator),
             .init_timestamp = std.time.timestamp(),
+            .atomic_level = std.atomic.Value(u8).init(@intFromEnum(Config.default().level)),
         };
 
         if (logger.config.auto_sink) {
@@ -204,6 +221,7 @@ pub const Logger = struct {
             .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
             .module_levels = std.StringHashMap(Level).init(allocator),
             .init_timestamp = std.time.timestamp(),
+            .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
         };
 
         // Initialize arena allocator if configured
@@ -227,7 +245,7 @@ pub const Logger = struct {
         }
 
         if (config.thread_pool.enabled) {
-            const tp = try ThreadPool.initWithConfig(allocator, ThreadPool.ThreadPoolConfig.fromCentralized(config.thread_pool));
+            const tp = try ThreadPool.initWithConfig(allocator, config.thread_pool);
             try tp.start();
             logger.thread_pool = tp;
         }
@@ -302,6 +320,7 @@ pub const Logger = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.config = config;
+        self.atomic_level.store(@intFromEnum(config.level), .monotonic);
     }
 
     /// Sets the filter for this logger.
@@ -714,19 +733,29 @@ pub const Logger = struct {
         return ScopedLogger{ .logger = self, .module = module };
     }
 
+    pub fn ctx(self: *Logger) ContextLogger {
+        return ContextLogger.init(self);
+    }
+
+    /// Returns a persistent context logger that maintains context across calls.
+    /// The returned logger must be manually deinited.
+    pub fn with(self: *Logger) PersistentContextLogger {
+        return PersistentContextLogger.init(self);
+    }
+
     const LogTaskContext = struct {
         logger: *Logger,
         record: Record,
     };
 
     fn processLogTask(ctx_ptr: *anyopaque, allocator: ?std.mem.Allocator) void {
-        const ctx = @as(*LogTaskContext, @ptrCast(@alignCast(ctx_ptr)));
+        const task_ctx = @as(*LogTaskContext, @ptrCast(@alignCast(ctx_ptr)));
         defer {
-            ctx.record.deinit();
-            ctx.logger.allocator.destroy(ctx);
+            task_ctx.record.deinit();
+            task_ctx.logger.allocator.destroy(task_ctx);
         }
 
-        const logger = ctx.logger;
+        const logger = task_ctx.logger;
 
         // Snapshot sinks to avoid holding lock during write
         logger.mutex.lock();
@@ -737,7 +766,7 @@ pub const Logger = struct {
 
         for (sinks_snapshot.items) |sink| {
             // Use the worker's arena allocator if available for formatting
-            sink.writeWithAllocator(&ctx.record, logger.config, allocator) catch |write_err| {
+            sink.writeWithAllocator(&task_ctx.record, logger.config, allocator) catch |write_err| {
                 if (logger.config.debug_mode) {
                     std.debug.print("Async sink write error: {}\n", .{write_err});
                 }
@@ -745,7 +774,19 @@ pub const Logger = struct {
         }
     }
     fn log(self: *Logger, level: Level, message: []const u8, module: ?[]const u8, src: ?std.builtin.SourceLocation) !void {
+        return self.logWithContext(level, message, module, src, null);
+    }
+
+    pub fn logWithContext(self: *Logger, level: Level, message: []const u8, module: ?[]const u8, src: ?std.builtin.SourceLocation, extra_context: ?*std.StringHashMap(std.json.Value)) !void {
         if (!self.enabled) return;
+
+        // Fast path: check global level if no module is specified
+        if (module == null) {
+            const min_val = self.atomic_level.load(.monotonic);
+            if (@intFromEnum(level) < min_val) {
+                return;
+            }
+        }
 
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -786,6 +827,31 @@ pub const Logger = struct {
             record.module = m;
         }
 
+        // Capture stack trace for Error/Fatal levels if configured
+        // We check if the config explicitly enables it, OR if it's an error/critical level
+        // and the user hasn't explicitly disabled it (assuming default behavior was implicit).
+        // However, to respect the new config strictly:
+        if ((level == .err or level == .critical) and self.config.capture_stack_trace) {
+            // Use the logger's main allocator for the stack trace so Record can safely free it
+            const allocator = self.allocator;
+            // We use catch here to avoid failing the log if allocation fails
+            if (allocator.create(std.builtin.StackTrace)) |st| {
+                // Allocate a larger buffer to be safe
+                if (allocator.alloc(usize, 64)) |addresses| {
+                    st.* = .{
+                        .instruction_addresses = addresses,
+                        .index = 0,
+                    };
+                    std.debug.captureStackTrace(null, st);
+
+                    record.stack_trace = st;
+                    record.owned_stack_trace = st;
+                } else |_| {
+                    allocator.destroy(st);
+                }
+            } else |_| {}
+        }
+
         // Add source location if available and configured
         if (src) |s| {
             if (self.config.show_filename) {
@@ -824,6 +890,14 @@ pub const Logger = struct {
             try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
         }
 
+        // Copy extra context
+        if (extra_context) |ec| {
+            var extra_it = ec.iterator();
+            while (extra_it.next()) |entry| {
+                try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+            }
+        }
+
         // Update metrics
         if (self.metrics) |m| {
             m.recordLog(level, final_message.len);
@@ -844,18 +918,18 @@ pub const Logger = struct {
             var cloned_rec = try record.clone(self.allocator);
             errdefer cloned_rec.deinit();
 
-            const ctx = try self.allocator.create(LogTaskContext);
-            ctx.* = .{
+            const task_ctx = try self.allocator.create(LogTaskContext);
+            task_ctx.* = .{
                 .logger = self,
                 .record = cloned_rec,
             };
 
-            if (tp.submitCallback(processLogTask, ctx)) {
+            if (tp.submitCallback(processLogTask, task_ctx)) {
                 return;
             }
 
             // Fallback if submission fails (e.g. queue full)
-            self.allocator.destroy(ctx);
+            self.allocator.destroy(task_ctx);
             cloned_rec.deinit();
         }
 
@@ -1200,18 +1274,18 @@ pub const Logger = struct {
             var cloned_rec = try record.clone(self.allocator);
             errdefer cloned_rec.deinit();
 
-            const ctx = try self.allocator.create(LogTaskContext);
-            ctx.* = .{
+            const task_ctx = try self.allocator.create(LogTaskContext);
+            task_ctx.* = .{
                 .logger = self,
                 .record = cloned_rec,
             };
 
-            if (tp.submitCallback(processLogTask, ctx)) {
+            if (tp.submitCallback(processLogTask, task_ctx)) {
                 return;
             }
 
             // Fallback if submission fails
-            self.allocator.destroy(ctx);
+            self.allocator.destroy(task_ctx);
             cloned_rec.deinit();
         }
 
@@ -1470,6 +1544,137 @@ pub const ScopedLogger = struct {
 
     /// Alias for criticalf() - shorter form.
     pub const critf = criticalf;
+};
+
+pub const ContextLogger = struct {
+    logger: *Logger,
+    context: std.StringHashMap(std.json.Value),
+
+    pub fn init(logger: *Logger) ContextLogger {
+        return .{
+            .logger = logger,
+            .context = std.StringHashMap(std.json.Value).init(logger.allocator),
+        };
+    }
+
+    pub fn deinit(self: *ContextLogger) void {
+        self.context.deinit();
+    }
+
+    pub fn str(self: *ContextLogger, key: []const u8, value: []const u8) *ContextLogger {
+        self.context.put(key, .{ .string = value }) catch {};
+        return self;
+    }
+
+    pub fn int(self: *ContextLogger, key: []const u8, value: i64) *ContextLogger {
+        self.context.put(key, .{ .integer = value }) catch {};
+        return self;
+    }
+
+    pub fn float(self: *ContextLogger, key: []const u8, value: f64) *ContextLogger {
+        self.context.put(key, .{ .float = value }) catch {};
+        return self;
+    }
+
+    pub fn boolean(self: *ContextLogger, key: []const u8, value: bool) *ContextLogger {
+        self.context.put(key, .{ .boolean = value }) catch {};
+        return self;
+    }
+
+    pub fn log(self: *ContextLogger, level: Level, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        defer self.deinit();
+        try self.logger.logWithContext(level, message, null, src, &self.context);
+    }
+
+    pub fn trace(self: *ContextLogger, message: []const u8) !void {
+        try self.log(.trace, message, null);
+    }
+
+    pub fn debug(self: *ContextLogger, message: []const u8) !void {
+        try self.log(.debug, message, null);
+    }
+
+    pub fn info(self: *ContextLogger, message: []const u8) !void {
+        try self.log(.info, message, null);
+    }
+
+    pub fn warn(self: *ContextLogger, message: []const u8) !void {
+        try self.log(.warning, message, null);
+    }
+
+    pub fn err(self: *ContextLogger, message: []const u8) !void {
+        try self.log(.err, message, null);
+    }
+
+    pub fn critical(self: *ContextLogger, message: []const u8) !void {
+        try self.log(.critical, message, null);
+    }
+};
+
+/// A logger that maintains a persistent context across multiple log calls.
+/// Unlike ContextLogger, this struct must be manually deinited.
+pub const PersistentContextLogger = struct {
+    logger: *Logger,
+    context: std.StringHashMap(std.json.Value),
+
+    pub fn init(logger: *Logger) PersistentContextLogger {
+        return .{
+            .logger = logger,
+            .context = std.StringHashMap(std.json.Value).init(logger.allocator),
+        };
+    }
+
+    pub fn deinit(self: *PersistentContextLogger) void {
+        self.context.deinit();
+    }
+
+    pub fn str(self: *PersistentContextLogger, key: []const u8, value: []const u8) *PersistentContextLogger {
+        self.context.put(key, .{ .string = value }) catch {};
+        return self;
+    }
+
+    pub fn int(self: *PersistentContextLogger, key: []const u8, value: i64) *PersistentContextLogger {
+        self.context.put(key, .{ .integer = value }) catch {};
+        return self;
+    }
+
+    pub fn float(self: *PersistentContextLogger, key: []const u8, value: f64) *PersistentContextLogger {
+        self.context.put(key, .{ .float = value }) catch {};
+        return self;
+    }
+
+    pub fn boolean(self: *PersistentContextLogger, key: []const u8, value: bool) *PersistentContextLogger {
+        self.context.put(key, .{ .boolean = value }) catch {};
+        return self;
+    }
+
+    pub fn log(self: *PersistentContextLogger, level: Level, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.logWithContext(level, message, null, src, &self.context);
+    }
+
+    pub fn trace(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.trace, message, src);
+    }
+
+    pub fn debug(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.debug, message, src);
+    }
+
+    pub fn info(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.info, message, src);
+    }
+
+    pub fn warn(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.warning, message, src);
+    }
+
+    pub fn err(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.err, message, src);
+    }
+
+    pub fn critical(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.critical, message, src);
+    }
 };
 
 test "logger basic" {

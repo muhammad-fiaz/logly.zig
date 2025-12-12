@@ -45,6 +45,25 @@ fn handleRequest(logger: *logly.Logger, req: Request) !void {
 }
 ```
 
+## Scoped Context
+
+For temporary context that should only apply to a specific scope or chain of operations, you can use `logger.with()`. This creates a lightweight `PersistentContextLogger` that inherits the parent logger's configuration but maintains its own context.
+
+```zig
+// Create a scoped logger with specific context
+var req_logger = logger.with();
+defer req_logger.deinit();
+
+// Chain context methods
+_ = req_logger.str("request_id", "req-123")
+              .str("user_id", "user-456")
+              .boolean("is_admin", true);
+
+// Log using the scoped logger
+try req_logger.info("Processing request", @src());
+try req_logger.warn("Resource usage high", @src());
+```
+
 ## JSON Output
 
 When using JSON logging, context values are grouped under the `context` object.
@@ -57,4 +76,23 @@ When using JSON logging, context values are grouped under the `context` object.
     "method": "GET"
   }
 }
+```
+
+## Scoped Context
+
+For temporary context that should only apply to a specific scope or set of operations, you can use `logger.with()`. This creates a lightweight logger wrapper that maintains its own context without modifying the global logger.
+
+```zig
+{
+    var scoped = logger.with();
+    defer scoped.deinit();
+    
+    _ = scoped.str("request_id", "req-123")
+              .int("attempt", 1);
+              
+    try scoped.info("Processing request"); // Includes request_id and attempt
+    try scoped.warn("Retrying...");        // Includes request_id and attempt
+}
+
+try logger.info("Back to global context"); // Does NOT include request_id
 ```

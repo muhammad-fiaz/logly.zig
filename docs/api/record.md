@@ -14,7 +14,7 @@ The log message content.
 
 ### `timestamp: i64`
 
-Unix timestamp in nanoseconds when the log was created.
+Unix timestamp in milliseconds when the log was created.
 
 ## Location Fields
 
@@ -37,6 +37,26 @@ The line number where the log occurred. Default: `null`.
 ### `column: ?u32`
 
 The column number where the log occurred. Default: `null`.
+
+### `thread_id: ?u64`
+
+Thread ID for concurrent logging identification. Default: `null`.
+
+### `request_id: ?[]const u8`
+
+Request ID for HTTP request tracking. Default: `null`.
+
+### `session_id: ?[]const u8`
+
+Session ID for user session tracking. Default: `null`.
+
+### `user_id: ?[]const u8`
+
+User ID for audit logging. Default: `null`.
+
+### `tags: ?[]const []const u8`
+
+Tags for categorization and filtering. Default: `null`.
 
 ## Tracing Fields
 
@@ -68,6 +88,10 @@ record.correlation_id = "request-789";
 
 Parent span ID for hierarchical tracing. Default: `null`.
 
+### `stack_trace: ?*std.builtin.StackTrace`
+
+Captured stack trace for the log event. Automatically populated for `Error` and `Critical` levels. Default: `null`.
+
 ## Error Fields
 
 ### `error_info: ?ErrorInfo`
@@ -76,8 +100,8 @@ Structured error information. Default: `null`.
 
 ```zig
 pub const ErrorInfo = struct {
-    name: ?[]const u8 = null,
-    message: ?[]const u8 = null,
+    name: []const u8,
+    message: []const u8,
     stack_trace: ?[]const u8 = null,
     code: ?i32 = null,
 };

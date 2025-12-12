@@ -53,43 +53,13 @@ pub const Sampler = struct {
     };
 
     /// Sampling strategy configuration.
-    pub const Strategy = union(enum) {
-        /// Allow all records through (no sampling).
-        none: void,
-
-        /// Random probability-based sampling.
-        /// Value is the probability (0.0 to 1.0) of allowing a record.
-        probability: f64,
-
-        /// Rate limiting: allow N records per time window.
-        rate_limit: RateLimitConfig,
-
-        /// Sample 1 out of every N records.
-        every_n: u32,
-
-        /// Adaptive sampling based on throughput.
-        adaptive: AdaptiveConfig,
-    };
+    pub const Strategy = Config.SamplingConfig.Strategy;
 
     /// Configuration for rate limiting strategy
-    pub const RateLimitConfig = struct {
-        /// Maximum records allowed per window
-        max_records: u32,
-        /// Time window in milliseconds
-        window_ms: u64,
-    };
+    pub const RateLimitConfig = Config.SamplingConfig.SamplingRateLimitConfig;
 
     /// Configuration for adaptive sampling strategy
-    pub const AdaptiveConfig = struct {
-        /// Target records per second
-        target_rate: u32,
-        /// Minimum sample rate (don't drop below this)
-        min_sample_rate: f64 = 0.01,
-        /// Maximum sample rate (don't go above this)
-        max_sample_rate: f64 = 1.0,
-        /// How often to adjust rate (milliseconds)
-        adjustment_interval_ms: u64 = 1000,
-    };
+    pub const AdaptiveConfig = Config.SamplingConfig.AdaptiveConfig;
 
     const SamplerState = struct {
         counter: u64 = 0,
@@ -190,64 +160,125 @@ pub const Sampler = struct {
     ///     Typical: O(1) - fast path without mutex
     ///     Worst case: O(1) - short-lived lock for adaptive strategy
     pub fn shouldSample(self: *Sampler) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        _ = self.state.stats.total_records_sampled.fetchAdd(1, .monotonic);
 
-        return switch (self.strategy) {
-            .none => true,
-            .probability => |prob| blk: {
-                const random = self.state.rng.random().float(f64);
-                break :blk random < prob;
-            },
-            .rate_limit => |config| blk: {
-                const now = std.time.milliTimestamp();
-                const window_ms: i64 = @intCast(config.window_ms);
+        var current_rate: f64 = 0;
+        var reject_reason: ?SampleRejectReason = null;
+        var rate_exceeded_info: ?struct { count: u32, max: u32 } = null;
+        var adjustment_info: ?struct { old: f64, new: f64 } = null;
 
-                if (now - self.state.window_start >= window_ms) {
-                    self.state.window_start = now;
-                    self.state.window_count = 0;
-                }
+        const result = blk: {
+            self.mutex.lock();
+            defer self.mutex.unlock();
 
-                if (self.state.window_count < config.max_records) {
-                    self.state.window_count += 1;
+            switch (self.strategy) {
+                .none => {
+                    current_rate = 1.0;
                     break :blk true;
-                }
-                break :blk false;
-            },
-            .every_n => |n| blk: {
-                self.state.counter += 1;
-                break :blk (self.state.counter % n) == 0;
-            },
-            .adaptive => |config| blk: {
-                const now = std.time.milliTimestamp();
-                const interval: i64 = @intCast(config.adjustment_interval_ms);
-
-                if (now - self.state.last_adjustment >= interval) {
-                    const actual_rate: f64 = @as(f64, @floatFromInt(self.state.window_count)) /
-                        (@as(f64, @floatFromInt(config.adjustment_interval_ms)) / 1000.0);
-
-                    const target: f64 = @floatFromInt(config.target_rate);
-                    if (actual_rate > target) {
-                        self.state.current_rate = @max(
-                            config.min_sample_rate,
-                            self.state.current_rate * 0.9,
-                        );
+                },
+                .probability => |prob| {
+                    current_rate = prob;
+                    const random = self.state.rng.random().float(f64);
+                    if (random < prob) {
+                        break :blk true;
                     } else {
-                        self.state.current_rate = @min(
-                            config.max_sample_rate,
-                            self.state.current_rate * 1.1,
-                        );
+                        reject_reason = .probability_filter;
+                        break :blk false;
+                    }
+                },
+                .rate_limit => |config| {
+                    current_rate = 1.0; // Rate limit doesn't have a probability rate
+                    const now = std.time.milliTimestamp();
+                    const window_ms: i64 = @intCast(config.window_ms);
+
+                    if (now - self.state.window_start >= window_ms) {
+                        self.state.window_start = now;
+                        self.state.window_count = 0;
                     }
 
-                    self.state.window_count = 0;
-                    self.state.last_adjustment = now;
-                }
+                    if (self.state.window_count < config.max_records) {
+                        self.state.window_count += 1;
+                        break :blk true;
+                    }
 
-                self.state.window_count += 1;
-                const random = self.state.rng.random().float(f64);
-                break :blk random < self.state.current_rate;
-            },
+                    _ = self.state.stats.rate_limit_exceeded.fetchAdd(1, .monotonic);
+                    rate_exceeded_info = .{ .count = self.state.window_count, .max = config.max_records };
+                    reject_reason = .rate_limit_exceeded;
+                    break :blk false;
+                },
+                .every_n => |n| {
+                    current_rate = 1.0 / @as(f64, @floatFromInt(n));
+                    self.state.counter += 1;
+                    if ((self.state.counter % n) == 0) {
+                        break :blk true;
+                    } else {
+                        reject_reason = .every_n_filter;
+                        break :blk false;
+                    }
+                },
+                .adaptive => |config| {
+                    const now = std.time.milliTimestamp();
+                    const interval: i64 = @intCast(config.adjustment_interval_ms);
+
+                    if (now - self.state.last_adjustment >= interval) {
+                        const actual_rate: f64 = @as(f64, @floatFromInt(self.state.window_count)) /
+                            (@as(f64, @floatFromInt(config.adjustment_interval_ms)) / 1000.0);
+
+                        const old_rate = self.state.current_rate;
+                        const target: f64 = @floatFromInt(config.target_rate);
+
+                        if (actual_rate > target) {
+                            self.state.current_rate = @max(
+                                config.min_sample_rate,
+                                self.state.current_rate * 0.9,
+                            );
+                        } else {
+                            self.state.current_rate = @min(
+                                config.max_sample_rate,
+                                self.state.current_rate * 1.1,
+                            );
+                        }
+
+                        if (self.state.current_rate != old_rate) {
+                            _ = self.state.stats.rate_adjustments.fetchAdd(1, .monotonic);
+                            adjustment_info = .{ .old = old_rate, .new = self.state.current_rate };
+                        }
+
+                        self.state.window_count = 0;
+                        self.state.last_adjustment = now;
+                    }
+
+                    self.state.window_count += 1;
+                    current_rate = self.state.current_rate;
+                    const random = self.state.rng.random().float(f64);
+                    if (random < self.state.current_rate) {
+                        break :blk true;
+                    } else {
+                        reject_reason = .adaptive_rate_exceeded;
+                        break :blk false;
+                    }
+                },
+            }
         };
+
+        // Callbacks and stats updates outside the lock
+        if (adjustment_info) |info| {
+            if (self.on_rate_adjustment) |cb| cb(info.old, info.new, "throughput adjustment");
+        }
+
+        if (rate_exceeded_info) |info| {
+            if (self.on_rate_exceeded) |cb| cb(info.count, info.max);
+        }
+
+        if (result) {
+            _ = self.state.stats.records_accepted.fetchAdd(1, .monotonic);
+            if (self.on_sample_accept) |cb| cb(current_rate);
+        } else {
+            _ = self.state.stats.records_rejected.fetchAdd(1, .monotonic);
+            if (self.on_sample_reject) |cb| cb(current_rate, reject_reason.?);
+        }
+
+        return result;
     }
 
     /// Resets the sampler state.
@@ -274,15 +305,17 @@ pub const Sampler = struct {
 
     /// Returns statistics about the sampler.
     pub fn getStats(self: *Sampler) SamplerStats {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        // Stats are atomic, so we don't need the mutex for reading them individually.
+        // However, to get a consistent snapshot, we might want to lock, but SamplerStats
+        // fields are atomic values, so we can't just copy them easily without loading.
+        // We return a new SamplerStats struct with the current values.
 
         return .{
-            .total_records_sampled = std.atomic.Value(u64).init(self.state.counter),
-            .records_accepted = std.atomic.Value(u64).init(self.state.window_count),
-            .records_rejected = std.atomic.Value(u64).init(0),
-            .rate_limit_exceeded = std.atomic.Value(u64).init(0),
-            .rate_adjustments = std.atomic.Value(u64).init(0),
+            .total_records_sampled = std.atomic.Value(u64).init(self.state.stats.total_records_sampled.load(.monotonic)),
+            .records_accepted = std.atomic.Value(u64).init(self.state.stats.records_accepted.load(.monotonic)),
+            .records_rejected = std.atomic.Value(u64).init(self.state.stats.records_rejected.load(.monotonic)),
+            .rate_limit_exceeded = std.atomic.Value(u64).init(self.state.stats.rate_limit_exceeded.load(.monotonic)),
+            .rate_adjustments = std.atomic.Value(u64).init(self.state.stats.rate_adjustments.load(.monotonic)),
         };
     }
 };
@@ -351,4 +384,25 @@ test "sampler rate limit" {
     }
 
     try std.testing.expectEqual(@as(u32, 10), sampled);
+}
+
+test "sampler stats and callbacks" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .rate_limit = .{
+        .max_records = 5,
+        .window_ms = 1000,
+    } });
+    defer sampler.deinit();
+
+    // We can't easily capture context in function pointers without global state or more complex setup.
+    // For this test, we'll just verify stats are updated.
+
+    for (0..10) |_| {
+        _ = sampler.shouldSample();
+    }
+
+    const stats = sampler.getStats();
+    try std.testing.expectEqual(@as(u64, 10), stats.total_records_sampled.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 5), stats.records_accepted.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 5), stats.records_rejected.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 5), stats.rate_limit_exceeded.load(.monotonic));
 }

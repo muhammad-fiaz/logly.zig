@@ -6,6 +6,22 @@ const Config = @import("config.zig").Config;
 /// Provides concurrent execution of logging tasks with configurable
 /// thread count, work stealing, load balancing, and comprehensive monitoring.
 ///
+/// Usage:
+/// ```zig
+/// var pool = try ThreadPool.init(allocator, .{ .thread_count = 4 });
+/// defer pool.deinit();
+///
+/// try pool.start();
+///
+/// // Submit a task
+/// const MyTask = struct {
+///     fn run(ctx: *anyopaque, allocator: ?std.mem.Allocator) void {
+///         // ... work ...
+///     }
+/// };
+/// _ = pool.submitCallback(MyTask.run, context_ptr);
+/// ```
+///
 /// Features:
 /// - Auto CPU count detection
 /// - Work stealing for load balancing
@@ -24,7 +40,7 @@ const Config = @import("config.zig").Config;
 /// - `on_queue_overflow`: Called when queue reaches capacity
 ///
 /// Performance:
-/// - ~1% overhead for typical workloads
+/// - Low overhead for typical workloads
 /// - Lock-free fast path for task submission
 /// - Cache-aware work stealing algorithm
 /// - Minimal context switching
@@ -67,35 +83,7 @@ pub const ThreadPool = struct {
 
     /// Configuration for the thread pool.
     /// Uses centralized config as base with extended options.
-    pub const ThreadPoolConfig = struct {
-        /// Number of worker threads (0 = auto-detect CPU count)
-        num_threads: usize = 0,
-        /// Maximum queue size per worker
-        queue_size: usize = 1024,
-        /// Enable work stealing between threads
-        work_stealing: bool = true,
-        /// Thread naming prefix
-        thread_name_prefix: []const u8 = "logly-worker",
-        /// Stack size for worker threads (0 = default)
-        stack_size: usize = 0,
-        /// Keep alive time for idle threads (milliseconds)
-        keep_alive_ms: u64 = 60000,
-        /// Enable thread affinity (pin threads to CPUs)
-        thread_affinity: bool = false,
-        /// Enable per-worker arena allocator for temporary allocations
-        enable_arena: bool = false,
-
-        /// Create from centralized Config.ThreadPoolConfig.
-        pub fn fromCentralized(cfg: Config.ThreadPoolConfig) ThreadPoolConfig {
-            return .{
-                .num_threads = cfg.thread_count,
-                .queue_size = cfg.queue_size,
-                .work_stealing = cfg.work_stealing,
-                .stack_size = cfg.stack_size,
-                .enable_arena = cfg.enable_arena,
-            };
-        }
-    };
+    pub const ThreadPoolConfig = Config.ThreadPoolConfig;
 
     /// Presets for common thread pool configurations.
     pub const ThreadPoolPresets = struct {
@@ -109,7 +97,7 @@ pub const ThreadPool = struct {
         /// Optimized for sustained high volume workloads.
         pub fn highThroughput() ThreadPoolConfig {
             return .{
-                .num_threads = 0, // Auto-detect
+                .thread_count = 0, // Auto-detect
                 .queue_size = 10000,
                 .work_stealing = true,
                 .stack_size = 2 * 1024 * 1024, // 2MB stack
@@ -120,7 +108,7 @@ pub const ThreadPool = struct {
         /// For embedded systems or resource-constrained environments.
         pub fn lowResource() ThreadPoolConfig {
             return .{
-                .num_threads = 2,
+                .thread_count = 2,
                 .queue_size = 128,
                 .work_stealing = false,
                 .stack_size = 512 * 1024, // 512KB stack
@@ -326,10 +314,10 @@ pub const ThreadPool = struct {
         errdefer allocator.destroy(self);
 
         // Determine thread count
-        const num_threads = if (config.num_threads == 0)
+        const num_threads = if (config.thread_count == 0)
             std.Thread.getCpuCount() catch 4
         else
-            config.num_threads;
+            config.thread_count;
 
         // Create workers
         const workers = try allocator.alloc(Worker, num_threads);
@@ -563,11 +551,49 @@ pub const ParallelSinkWriter = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        const WriteContext = struct {
+            allocator: std.mem.Allocator,
+            write_fn: *const fn (data: []const u8) void,
+            data: []const u8,
+        };
+
+        const task_fn = struct {
+            fn run(ctx_ptr: *anyopaque, _: ?std.mem.Allocator) void {
+                const ctx = @as(*WriteContext, @ptrCast(@alignCast(ctx_ptr)));
+                defer {
+                    ctx.allocator.free(ctx.data);
+                    ctx.allocator.destroy(ctx);
+                }
+                ctx.write_fn(ctx.data);
+            }
+        }.run;
+
         // Submit write task to each sink in parallel
         for (self.sinks.items) |sink| {
-            // Note: In a real implementation, we'd need to properly manage
-            // the lifetime of context and data across threads
-            sink.write_fn(data);
+            // Create context for this task
+            if (self.allocator.create(WriteContext)) |ctx| {
+                if (self.allocator.dupe(u8, data)) |data_copy| {
+                    ctx.* = .{
+                        .allocator = self.allocator,
+                        .write_fn = sink.write_fn,
+                        .data = data_copy,
+                    };
+
+                    if (!self.pool.submitCallback(task_fn, ctx)) {
+                        // Fallback: execute synchronously if pool is full
+                        sink.write_fn(data);
+                        self.allocator.free(data_copy);
+                        self.allocator.destroy(ctx);
+                    }
+                } else |_| {
+                    // Allocation failed, fallback to sync write
+                    sink.write_fn(data);
+                    self.allocator.destroy(ctx);
+                }
+            } else |_| {
+                // Allocation failed, fallback to sync write
+                sink.write_fn(data);
+            }
         }
     }
 };
@@ -577,7 +603,7 @@ pub const ThreadPoolPresets = struct {
     /// Single-threaded pool (for sequential processing).
     pub fn singleThread() ThreadPool.ThreadPoolConfig {
         return .{
-            .num_threads = 1,
+            .thread_count = 1,
             .work_stealing = false,
         };
     }
@@ -585,7 +611,7 @@ pub const ThreadPoolPresets = struct {
     /// CPU-bound workload (one thread per core).
     pub fn cpuBound() ThreadPool.ThreadPoolConfig {
         return .{
-            .num_threads = 0, // Auto-detect
+            .thread_count = 0, // Auto-detect
             .work_stealing = true,
         };
     }
@@ -594,7 +620,7 @@ pub const ThreadPoolPresets = struct {
     pub fn ioBound() ThreadPool.ThreadPoolConfig {
         const cpu_count = std.Thread.getCpuCount() catch 4;
         return .{
-            .num_threads = cpu_count * 2,
+            .thread_count = cpu_count * 2,
             .work_stealing = true,
             .queue_size = 2048,
         };
@@ -604,7 +630,7 @@ pub const ThreadPoolPresets = struct {
     pub fn highThroughput() ThreadPool.ThreadPoolConfig {
         const cpu_count = std.Thread.getCpuCount() catch 4;
         return .{
-            .num_threads = cpu_count,
+            .thread_count = cpu_count,
             .queue_size = 4096,
             .work_stealing = true,
         };
@@ -613,7 +639,7 @@ pub const ThreadPoolPresets = struct {
     /// Low-latency logging.
     pub fn lowLatency() ThreadPool.ThreadPoolConfig {
         return .{
-            .num_threads = 2,
+            .thread_count = 2,
             .queue_size = 256,
             .work_stealing = false,
         };
@@ -624,7 +650,7 @@ test "thread pool basic" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .num_threads = 2,
+        .thread_count = 2,
         .queue_size = 16,
     });
     defer pool.deinit();

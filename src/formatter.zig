@@ -8,6 +8,17 @@ const Level = @import("level.zig").Level;
 /// The Formatter is responsible for taking a `Record` and converting it into a final
 /// output string based on the configuration (e.g., JSON, plain text, custom patterns).
 ///
+/// Usage:
+/// ```zig
+/// var formatter = Formatter.init(allocator);
+/// defer formatter.deinit();
+///
+/// var buf = std.ArrayList(u8).init(allocator);
+/// defer buf.deinit();
+///
+/// try formatter.formatToWriter(buf.writer(), &record, config);
+/// ```
+///
 /// Callbacks:
 /// - `on_format_complete`: Called after a record is formatted
 /// - `on_json_format`: Called when formatting as JSON
@@ -64,6 +75,34 @@ pub const Formatter = struct {
     /// Parameters: (error_msg: []const u8)
     on_format_error: ?*const fn ([]const u8) void = null,
 
+    /// Custom color theme for log levels.
+    theme: ?Theme = null,
+
+    /// Defines a color theme for log levels.
+    pub const Theme = struct {
+        trace: []const u8 = "36", // Cyan
+        debug: []const u8 = "34", // Blue
+        info: []const u8 = "37", // White
+        success: []const u8 = "32", // Green
+        warning: []const u8 = "33", // Yellow
+        err: []const u8 = "31", // Red
+        fail: []const u8 = "35", // Magenta
+        critical: []const u8 = "91", // Bright Red
+
+        pub fn getColor(self: Theme, level: Level) []const u8 {
+            return switch (level) {
+                .trace => self.trace,
+                .debug => self.debug,
+                .info => self.info,
+                .success => self.success,
+                .warning => self.warning,
+                .err => self.err,
+                .fail => self.fail,
+                .critical => self.critical,
+            };
+        }
+    };
+
     /// Initializes a new Formatter.
     ///
     /// Arguments:
@@ -106,6 +145,13 @@ pub const Formatter = struct {
         self.on_format_error = callback;
     }
 
+    /// Sets a custom color theme.
+    pub fn setTheme(self: *Formatter, theme: Theme) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.theme = theme;
+    }
+
     /// Returns formatter statistics.
     pub fn getStats(self: *Formatter) FormatterStats {
         self.mutex.lock();
@@ -131,10 +177,23 @@ pub const Formatter = struct {
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(self.allocator);
         const writer = buf.writer(self.allocator);
+        try self.formatToWriter(writer, record, config);
+        return buf.toOwnedSlice(self.allocator);
+    }
 
+    /// Formats a log record directly to a writer.
+    ///
+    /// This avoids intermediate allocations when writing directly to a sink.
+    pub fn formatToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
         const use_color = config.color and config.global_color_display;
-        // Use custom color if available, otherwise use standard level color
-        const color_code = record.levelColor();
+        // Use custom color if available, otherwise use standard level color or theme
+        var color_code = record.levelColor();
+        if (self.theme) |t| {
+            // Only override if record doesn't have a custom color
+            if (record.custom_level_color == null) {
+                color_code = t.getColor(record.level);
+            }
+        }
 
         // Check for custom log format
         if (config.log_format) |fmt_str| {
@@ -232,13 +291,50 @@ pub const Formatter = struct {
             // Message
             try writer.writeAll(record.message);
 
+            // Stack Trace (if present)
+            if (record.stack_trace) |st| {
+                try writer.writeAll("\nStack Trace:\n");
+
+                // Check for symbolization config
+                const symbolize = if (@hasField(@TypeOf(config), "symbolize_stack_trace")) config.symbolize_stack_trace else false;
+
+                if (symbolize) {
+                    const debug_info = std.debug.getSelfDebugInfo() catch null;
+                    const count = @min(st.index, st.instruction_addresses.len);
+
+                    for (st.instruction_addresses[0..count]) |addr| {
+                        if (debug_info) |di| {
+                            if (di.*.getModuleForAddress(addr) catch null) |module| {
+                                if (module.getSymbolAtAddress(di.allocator, addr) catch null) |symbol| {
+                                    if (symbol.source_location) |sl| {
+                                        try writer.print("  {s} ({s}:{d})\n", .{ symbol.name, sl.file_name, sl.line });
+                                    } else {
+                                        try writer.print("  {s}\n", .{symbol.name});
+                                    }
+                                } else {
+                                    try writer.print("  0x{x}\n", .{addr});
+                                }
+                            } else {
+                                try writer.print("  0x{x}\n", .{addr});
+                            }
+                        } else {
+                            try writer.print("  0x{x}\n", .{addr});
+                        }
+                    }
+                } else {
+                    // Default: print raw addresses
+                    const count = @min(st.index, st.instruction_addresses.len);
+                    for (st.instruction_addresses[0..count]) |addr| {
+                        try writer.print("  0x{x}\n", .{addr});
+                    }
+                }
+            }
+
             // Reset color at end of entire line
             if (use_color) {
                 try writer.writeAll("\x1b[0m");
             }
         }
-
-        return buf.toOwnedSlice(self.allocator);
     }
 
     fn writeTimestamp(self: *Formatter, writer: anytype, timestamp_ms: i64, config: anytype) !void {
@@ -426,7 +522,11 @@ pub const Formatter = struct {
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(self.allocator);
         const writer = buf.writer(self.allocator);
+        try self.formatJsonToWriter(writer, record, config);
+        return buf.toOwnedSlice(self.allocator);
+    }
 
+    pub fn formatJsonToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
         const pretty = if (@hasField(@TypeOf(config), "pretty_json")) config.pretty_json else false;
         const indent = if (pretty) "  " else "";
         const newline = if (pretty) "\n" else "";
@@ -520,6 +620,56 @@ pub const Formatter = struct {
             try writer.print("{s}\"pid\"{s}{d}", .{ indent, sep, pid });
         }
 
+        // Stack Trace
+        if (record.stack_trace) |st| {
+            try writer.writeAll(comma);
+            try writer.print("{s}\"stack_trace\"{s}[", .{ indent, sep });
+
+            // We can't easily symbolize here without debug info, but we can print addresses
+            var first_addr = true;
+            const count = @min(st.index, st.instruction_addresses.len);
+
+            // If symbolization is enabled in config (passed via config param)
+            // Note: config is 'anytype' here, so we check if it has the field
+            const symbolize = if (@hasField(@TypeOf(config), "symbolize_stack_trace")) config.symbolize_stack_trace else false;
+
+            if (symbolize) {
+                // Attempt to symbolize using std.debug.getStackTrace
+                // This is a best-effort approach and might be slow
+                const debug_info = std.debug.getSelfDebugInfo() catch null;
+
+                for (st.instruction_addresses[0..count]) |addr| {
+                    if (!first_addr) try writer.writeAll(", ");
+
+                    if (debug_info) |di| {
+                        if (di.*.getModuleForAddress(addr) catch null) |module| {
+                            if (module.getSymbolAtAddress(di.allocator, addr) catch null) |symbol| {
+                                if (symbol.source_location) |sl| {
+                                    try writer.print("\"{s} ({s}:{d})\"", .{ symbol.name, sl.file_name, sl.line });
+                                } else {
+                                    try writer.print("\"{s}\"", .{symbol.name});
+                                }
+                            } else {
+                                try writer.print("\"{x}\"", .{addr});
+                            }
+                        } else {
+                            try writer.print("\"{x}\"", .{addr});
+                        }
+                    } else {
+                        try writer.print("\"{x}\"", .{addr});
+                    }
+                    first_addr = false;
+                }
+            } else {
+                for (st.instruction_addresses[0..count]) |addr| {
+                    if (!first_addr) try writer.writeAll(", ");
+                    try writer.print("\"{x}\"", .{addr});
+                    first_addr = false;
+                }
+            }
+            try writer.writeAll("]");
+        }
+
         // Context fields
         var it = record.context.iterator();
         while (it.next()) |entry| {
@@ -547,7 +697,5 @@ pub const Formatter = struct {
         if (use_color) {
             try writer.writeAll("\x1b[0m");
         }
-
-        return buf.toOwnedSlice(self.allocator);
     }
 };

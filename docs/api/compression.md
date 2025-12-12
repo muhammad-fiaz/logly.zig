@@ -58,30 +58,34 @@ pub const Compression = struct {
 
 ### CompressionConfig
 
-Comprehensive configuration for compression behavior.
+Comprehensive configuration for compression behavior. Available as `Config.CompressionConfig`.
 
 ```zig
 pub const CompressionConfig = struct {
+    /// Enable compression.
+    enabled: bool = false,
     /// Compression algorithm to use
     algorithm: Algorithm = .deflate,
     /// Compression level (0-9)
     level: Level = .default,
+    /// Compress on rotation.
+    on_rotation: bool = true,
+    /// Keep original file after compression.
+    keep_original: bool = false,
     /// When to trigger compression
     mode: Mode = .on_rotation,
     /// Size threshold for on_size_threshold mode (bytes)
     size_threshold: u64 = 10 * 1024 * 1024, // 10MB
+    /// Buffer size for streaming compression.
+    buffer_size: usize = 32 * 1024,
+    /// Compression strategy.
+    strategy: Strategy = .default,
     /// File extension for compressed files
     extension: []const u8 = ".gz",
-    /// Keep original file after compression
-    keep_original: bool = false,
     /// Delete files older than this after compression (seconds, 0 = never)
     delete_after: u64 = 0,
-    /// Buffer size for compression operations (bytes)
-    buffer_size: usize = 32 * 1024, // 32KB
     /// Enable CRC32 checksum validation
     checksum: bool = true,
-    /// Compression strategy
-    strategy: Strategy = .adaptive,
     /// Enable streaming compression
     streaming: bool = false,
     /// Use background thread for compression
@@ -92,8 +96,6 @@ pub const CompressionConfig = struct {
     parallel: bool = false,
     /// Memory limit for compression (bytes, 0 = unlimited)
     memory_limit: usize = 0,
-    
-    pub fn fromCentralized(cfg: Config.CompressionConfig) CompressionConfig;
 };
 ```
 

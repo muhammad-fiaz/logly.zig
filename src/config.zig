@@ -9,6 +9,17 @@ const Level = @import("level.zig").Level;
 ///   - Display options (colors, timestamps, file info).
 ///   - Feature toggles (callbacks, exception handling).
 ///   - Enterprise features (sampling, rate limiting, redaction).
+///
+/// Usage:
+/// ```zig
+/// const config = logly.Config{
+///     .level = .debug,
+///     .json = true,
+///     .include_hostname = true,
+///     .time_format = "YYYY-MM-DD HH:mm:ss",
+/// };
+/// var logger = try logly.Logger.init(allocator, config);
+/// ```
 pub const Config = struct {
     /// Minimum log level. Only logs at this level or higher will be processed.
     level: Level = .info,
@@ -89,6 +100,15 @@ pub const Config = struct {
     /// Include process ID in logs.
     include_pid: bool = false,
 
+    /// Capture stack traces for Error and Critical log levels.
+    /// If false, stack traces will not be collected or displayed.
+    capture_stack_trace: bool = false,
+
+    /// Resolve memory addresses in stack traces to function names and file locations.
+    /// Requires `capture_stack_trace` to be true (or implicit capture for Error/Critical).
+    /// This provides human-readable stack traces but has a performance cost.
+    symbolize_stack_trace: bool = false,
+
     /// Automatically add a console sink on logger initialization.
     auto_sink: bool = true,
 
@@ -137,6 +157,9 @@ pub const Config = struct {
     /// Environment identifier (e.g., "production", "staging", "development").
     environment: ?[]const u8 = null,
 
+    /// Stack size for capturing stack traces (default 1MB).
+    stack_size: usize = 1024 * 1024,
+
     /// Enable distributed tracing support.
     enable_tracing: bool = false,
 
@@ -149,6 +172,9 @@ pub const Config = struct {
     /// Buffer configuration for async operations.
     buffer_config: BufferConfig = .{},
 
+    /// Async logging configuration.
+    async_config: AsyncConfig = .{},
+
     /// Thread pool configuration.
     thread_pool: ThreadPoolConfig = .{},
 
@@ -157,9 +183,6 @@ pub const Config = struct {
 
     /// Compression configuration.
     compression: CompressionConfig = .{},
-
-    /// Async logging configuration.
-    async_config: AsyncConfig = .{},
 
     /// Use arena allocator for internal temporary allocations.
     /// Improves performance by batching allocations and reducing malloc overhead.
@@ -318,14 +341,45 @@ pub const Config = struct {
     /// Sampling configuration.
     pub const SamplingConfig = struct {
         enabled: bool = false,
-        rate: f64 = 1.0,
-        strategy: SamplingStrategy = .probability,
+        strategy: Strategy = .{ .probability = 1.0 },
 
-        pub const SamplingStrategy = enum {
-            probability,
-            rate_limit,
-            adaptive,
-            every_n,
+        /// Sampling strategy configuration.
+        pub const Strategy = union(enum) {
+            /// Allow all records through (no sampling).
+            none: void,
+
+            /// Random probability-based sampling.
+            /// Value is the probability (0.0 to 1.0) of allowing a record.
+            probability: f64,
+
+            /// Rate limiting: allow N records per time window.
+            rate_limit: SamplingRateLimitConfig,
+
+            /// Sample 1 out of every N records.
+            every_n: u32,
+
+            /// Adaptive sampling based on throughput.
+            adaptive: AdaptiveConfig,
+        };
+
+        /// Configuration for rate limiting strategy
+        pub const SamplingRateLimitConfig = struct {
+            /// Maximum records allowed per window
+            max_records: u32,
+            /// Time window in milliseconds
+            window_ms: u64,
+        };
+
+        /// Configuration for adaptive sampling strategy
+        pub const AdaptiveConfig = struct {
+            /// Target records per second
+            target_rate: u32,
+            /// Minimum sample rate (don't drop below this)
+            min_sample_rate: f64 = 0.01,
+            /// Maximum sample rate (don't go above this)
+            max_sample_rate: f64 = 1.0,
+            /// How often to adjust rate (milliseconds)
+            adjustment_interval_ms: u64 = 1000,
         };
     };
 
@@ -387,6 +441,12 @@ pub const Config = struct {
         work_stealing: bool = true,
         /// Enable per-worker arena allocator for temporary allocations.
         enable_arena: bool = false,
+        /// Thread naming prefix.
+        thread_name_prefix: []const u8 = "logly-worker",
+        /// Keep alive time for idle threads (milliseconds).
+        keep_alive_ms: u64 = 60000,
+        /// Enable thread affinity (pin threads to CPUs).
+        thread_affinity: bool = false,
     };
 
     /// Scheduler configuration.
@@ -415,8 +475,30 @@ pub const Config = struct {
         on_rotation: bool = true,
         /// Keep original file after compression.
         keep_original: bool = false,
+        /// Compression mode.
+        mode: Mode = .on_rotation,
+        /// Size threshold in bytes for on_size_threshold mode.
+        size_threshold: u64 = 10 * 1024 * 1024,
+        /// Buffer size for streaming compression.
+        buffer_size: usize = 32 * 1024,
+        /// Compression strategy.
+        strategy: Strategy = .default,
         /// File extension for compressed files.
         extension: []const u8 = ".gz",
+        /// Delete files older than this after compression (in seconds, 0 = never).
+        delete_after: u64 = 0,
+        /// Enable checksum validation.
+        checksum: bool = true,
+        /// Enable streaming compression (compress while writing).
+        streaming: bool = false,
+        /// Use background thread for compression.
+        background: bool = false,
+        /// Dictionary for compression (pre-trained patterns).
+        dictionary: ?[]const u8 = null,
+        /// Enable multi-threaded compression (for large files).
+        parallel: bool = false,
+        /// Memory limit for compression (bytes, 0 = unlimited).
+        memory_limit: usize = 0,
 
         pub const CompressionAlgorithm = enum {
             none,
@@ -425,15 +507,39 @@ pub const Config = struct {
             raw_deflate,
         };
 
-        pub const CompressionLevel = enum(u4) {
-            none = 0,
-            fast = 1,
-            default = 6,
-            best = 9,
+        pub const CompressionLevel = enum {
+            none,
+            fastest,
+            fast,
+            default,
+            best,
 
             pub fn toInt(self: CompressionLevel) u4 {
-                return @intFromEnum(self);
+                return switch (self) {
+                    .none => 0,
+                    .fastest => 1,
+                    .fast => 3,
+                    .default => 6,
+                    .best => 9,
+                };
             }
+        };
+
+        pub const Mode = enum {
+            disabled,
+            on_rotation,
+            on_size_threshold,
+            scheduled,
+            streaming,
+        };
+
+        pub const Strategy = enum {
+            default,
+            text,
+            binary,
+            huffman_only,
+            rle_only,
+            adaptive,
         };
     };
 
@@ -447,10 +553,14 @@ pub const Config = struct {
         batch_size: usize = 100,
         /// Flush interval in milliseconds.
         flush_interval_ms: u64 = 100,
+        /// Minimum time between flushes to avoid thrashing.
+        min_flush_interval_ms: u64 = 0,
+        /// Maximum latency before forcing a flush.
+        max_latency_ms: u64 = 5000,
         /// What to do when buffer is full.
         overflow_policy: OverflowPolicy = .drop_oldest,
         /// Auto-start worker thread.
-        auto_start: bool = true,
+        background_worker: bool = true,
 
         pub const OverflowPolicy = enum {
             drop_oldest,
@@ -486,7 +596,7 @@ pub const Config = struct {
             .json = true,
             .color = false,
             .global_color_display = false,
-            .sampling = .{ .enabled = true, .rate = 0.1 },
+            .sampling = .{ .enabled = true, .strategy = .{ .probability = 0.1 } },
             .enable_metrics = true,
             .structured = true,
             .compression = .{
@@ -532,7 +642,7 @@ pub const Config = struct {
     pub fn highThroughput() Config {
         return .{
             .level = .warning,
-            .sampling = .{ .enabled = true, .strategy = .adaptive, .rate = 0.5 },
+            .sampling = .{ .enabled = true, .strategy = .{ .adaptive = .{ .target_rate = 1000 } } },
             .rate_limit = .{ .enabled = true, .max_per_second = 10000 },
             .buffer_config = .{
                 .size = 65536,
@@ -598,30 +708,34 @@ pub const Config = struct {
     }
 
     /// Returns a configuration with async logging enabled.
-    pub fn withAsync(self: Config) Config {
+    pub fn withAsync(self: Config, config: AsyncConfig) Config {
         var result = self;
-        result.async_config = .{ .enabled = true };
+        result.async_config = config;
+        result.async_config.enabled = true;
         return result;
     }
 
     /// Returns a configuration with compression enabled.
-    pub fn withCompression(self: Config) Config {
+    pub fn withCompression(self: Config, config: CompressionConfig) Config {
         var result = self;
-        result.compression = .{ .enabled = true };
+        result.compression = config;
+        result.compression.enabled = true;
         return result;
     }
 
     /// Returns a configuration with thread pool enabled.
-    pub fn withThreadPool(self: Config, thread_count: usize) Config {
+    pub fn withThreadPool(self: Config, config: ThreadPoolConfig) Config {
         var result = self;
-        result.thread_pool = .{ .enabled = true, .thread_count = thread_count };
+        result.thread_pool = config;
+        result.thread_pool.enabled = true;
         return result;
     }
 
     /// Returns a configuration with scheduler enabled.
-    pub fn withScheduler(self: Config) Config {
+    pub fn withScheduler(self: Config, config: SchedulerConfig) Config {
         var result = self;
-        result.scheduler = .{ .enabled = true };
+        result.scheduler = config;
+        result.scheduler.enabled = true;
         return result;
     }
 

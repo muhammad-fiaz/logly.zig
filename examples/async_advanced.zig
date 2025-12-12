@@ -21,20 +21,29 @@ pub fn main() !void {
     std.debug.print("   High Throughput:\n", .{});
     std.debug.print("     Buffer size: {d}\n", .{high_throughput.buffer_size});
     std.debug.print("     Flush interval: {d}ms\n", .{high_throughput.flush_interval_ms});
+    std.debug.print("     Min flush interval: {d}ms\n", .{high_throughput.min_flush_interval_ms});
+    std.debug.print("     Max latency: {d}ms\n", .{high_throughput.max_latency_ms});
     std.debug.print("     Batch size: {d}\n", .{high_throughput.batch_size});
-    std.debug.print("     Overflow policy: {s}\n\n", .{@tagName(high_throughput.overflow_policy)});
+    std.debug.print("     Overflow policy: {s}\n", .{@tagName(high_throughput.overflow_policy)});
+    std.debug.print("     Background worker: {s}\n\n", .{if (high_throughput.background_worker) "yes" else "no"});
 
     const low_latency = logly.AsyncPresets.lowLatency();
     std.debug.print("   Low Latency:\n", .{});
     std.debug.print("     Buffer size: {d}\n", .{low_latency.buffer_size});
     std.debug.print("     Flush interval: {d}ms\n", .{low_latency.flush_interval_ms});
-    std.debug.print("     Batch size: {d}\n\n", .{low_latency.batch_size});
+    std.debug.print("     Min flush interval: {d}ms\n", .{low_latency.min_flush_interval_ms});
+    std.debug.print("     Max latency: {d}ms\n", .{low_latency.max_latency_ms});
+    std.debug.print("     Batch size: {d}\n", .{low_latency.batch_size});
+    std.debug.print("     Background worker: {s}\n\n", .{if (low_latency.background_worker) "yes" else "no"});
 
     const balanced = logly.AsyncPresets.balanced();
     std.debug.print("   Balanced:\n", .{});
     std.debug.print("     Buffer size: {d}\n", .{balanced.buffer_size});
     std.debug.print("     Flush interval: {d}ms\n", .{balanced.flush_interval_ms});
-    std.debug.print("     Batch size: {d}\n\n", .{balanced.batch_size});
+    std.debug.print("     Min flush interval: {d}ms\n", .{balanced.min_flush_interval_ms});
+    std.debug.print("     Max latency: {d}ms\n", .{balanced.max_latency_ms});
+    std.debug.print("     Batch size: {d}\n", .{balanced.batch_size});
+    std.debug.print("     Background worker: {s}\n\n", .{if (balanced.background_worker) "yes" else "no"});
 
     const no_drop = logly.AsyncPresets.noDrop();
     std.debug.print("   No-Drop:\n", .{});

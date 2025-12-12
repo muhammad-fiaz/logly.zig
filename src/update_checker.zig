@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const http = std.http;
 const SemanticVersion = std.SemanticVersion;
 const version_info = @import("version.zig");
+const Network = @import("network.zig");
 
 const REPO_OWNER = "muhammad-fiaz";
 const REPO_NAME = "logly.zig";
@@ -41,47 +42,12 @@ fn compareVersions(latest_raw: []const u8) VersionRelation {
 }
 
 fn fetchLatestTag(allocator: std.mem.Allocator) ![]const u8 {
-    var client = http.Client{ .allocator = allocator };
-    defer client.deinit();
-
     const url = std.fmt.comptimePrint("https://api.github.com/repos/{s}/{s}/releases/latest", .{ REPO_OWNER, REPO_NAME });
     const extra_headers = [_]http.Header{
         .{ .name = "Accept", .value = "application/vnd.github+json" },
     };
 
-    var req = try client.request(.GET, try std.Uri.parse(url), .{
-        .headers = .{ .user_agent = .{ .override = std.fmt.comptimePrint("logly.zig/{s}", .{builtin.zig_version_string}) } },
-        .extra_headers = &extra_headers,
-    });
-    defer req.deinit();
-
-    try req.sendBodiless();
-
-    const redirect_buffer = try allocator.alloc(u8, 8 * 1024);
-    defer allocator.free(redirect_buffer);
-
-    var response = try req.receiveHead(redirect_buffer);
-    if (response.head.status != .ok) return error.TagMissing;
-
-    const decompress_buffer: []u8 = switch (response.head.content_encoding) {
-        .identity => &.{},
-        .zstd => try allocator.alloc(u8, std.compress.zstd.default_window_len),
-        .deflate, .gzip => try allocator.alloc(u8, std.compress.flate.max_window_len),
-        .compress => return error.TagMissing,
-    };
-    defer if (decompress_buffer.len != 0) allocator.free(decompress_buffer);
-
-    var transfer_buffer: [64]u8 = undefined;
-    var decompress: http.Decompress = undefined;
-    const reader = response.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
-
-    var accumulator: std.Io.Writer.Allocating = .init(allocator);
-    defer accumulator.deinit();
-
-    _ = reader.streamRemaining(&accumulator.writer) catch return error.TagMissing;
-
-    const body_slice = accumulator.writer.buffer[0..accumulator.writer.end];
-    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, body_slice, .{});
+    const parsed = Network.fetchJson(allocator, url, &extra_headers) catch return error.TagMissing;
     defer parsed.deinit();
 
     return switch (parsed.value) {

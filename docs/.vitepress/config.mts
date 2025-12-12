@@ -47,7 +47,8 @@ export default defineConfig({
           { text: 'JSON Logging', link: '/guide/json' },
           { text: 'Context Binding', link: '/guide/context' },
           { text: 'Callbacks', link: '/guide/callbacks' },
-          { text: 'Source Location', link: '/guide/source-location' }
+          { text: 'Source Location', link: '/guide/source-location' },
+          { text: 'Stack Traces', link: '/guide/stack-traces' }
         ]
       },
       {
@@ -57,7 +58,8 @@ export default defineConfig({
           { text: 'Compression', link: '/guide/compression' },
           { text: 'Thread Pool', link: '/guide/thread-pool' },
           { text: 'Scheduler', link: '/guide/scheduler' },
-          { text: 'Arena Allocation', link: '/guide/arena-allocation' }
+          { text: 'Arena Allocation', link: '/guide/arena-allocation' },
+          { text: 'Network Logging', link: '/guide/network-logging' }
         ]
       },
       {
@@ -85,6 +87,14 @@ export default defineConfig({
           { text: 'Config', link: '/api/config' },
           { text: 'Level', link: '/api/level' },
           { text: 'Sink', link: '/api/sink' },
+          { text: 'Formatter', link: '/api/formatter' },
+          { text: 'Rotation', link: '/api/rotation' },
+          { text: 'Filter', link: '/api/filter' },
+          { text: 'Sampler', link: '/api/sampler' },
+          { text: 'Redactor', link: '/api/redactor' },
+          { text: 'Metrics', link: '/api/metrics' },
+          { text: 'Network', link: '/api/network' },
+          { text: 'Update Checker', link: '/api/update-checker' },
           { text: 'Record', link: '/api/record' },
           { text: 'Async Queue', link: '/api/async' },
           { text: 'Compression', link: '/api/compression' },
@@ -103,10 +113,12 @@ export default defineConfig({
           { text: 'JSON Logging', link: '/examples/json' },
           { text: 'JSON Extended', link: '/examples/json-extended' },
           { text: 'Custom Colors', link: '/examples/custom-colors' },
+          { text: 'Custom Theme', link: '/examples/custom-theme' },
           { text: 'Color Control', link: '/examples/color-control' },
           { text: 'Context', link: '/examples/context' },
           { text: 'Callbacks', link: '/examples/callbacks' },
           { text: 'Async Logging', link: '/examples/async-logging' },
+          { text: 'Network Logging', link: '/examples/network-logging' },
           { text: 'Advanced Config', link: '/examples/advanced-config' },
           { text: 'Module Levels', link: '/examples/module-levels' },
           { text: 'Custom Levels Full', link: '/examples/custom-levels-full' },
@@ -121,10 +133,6 @@ export default defineConfig({
           { text: 'Compression', link: '/examples/compression' },
           { text: 'Thread Pool', link: '/examples/thread-pool' },
           { text: 'Scheduler', link: '/examples/scheduler' },
-          { text: 'Scheduler Demo', link: '/examples/scheduler-demo' },
-          { text: 'Thread Pool Arena', link: '/examples/thread-pool-arena' },
-          { text: 'Async Advanced', link: '/examples/async-advanced' },
-          { text: 'Compression Demo', link: '/examples/compression-demo' },
           { text: 'Dynamic Path', link: '/examples/dynamic-path' },
           { text: 'Sink Write Modes', link: '/examples/write-modes' },
           { text: 'Production Config', link: '/examples/production-config' },

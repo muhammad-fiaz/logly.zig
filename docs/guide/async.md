@@ -92,11 +92,13 @@ config.async_config = .{
     .batch_size = 100,            // Messages per batch
     .flush_interval_ms = 100,     // Auto-flush interval
     .overflow_policy = .drop_oldest, // On buffer overflow
-    .auto_start = true,           // Auto-start worker thread
+    .background_worker = true,    // Auto-start worker thread
 };
 
 // Or use helper method
-var config2 = logly.Config.default().withAsync();
+var config2 = logly.Config.default().withAsync(.{
+    .buffer_size = 16384,
+});
 ```
 
 ### Basic Configuration
@@ -118,11 +120,11 @@ const config = logly.AsyncLogger.AsyncConfig{
 |--------|---------|-------------|
 | `buffer_size` | 8192 | Ring buffer capacity |
 | `flush_interval_ms` | 100 | Auto-flush interval in ms |
+| `min_flush_interval_ms` | 0 | Minimum time between flushes |
+| `max_latency_ms` | 5000 | Maximum latency before forcing flush |
 | `batch_size` | 64 | Messages written per batch |
 | `overflow_policy` | `.drop_oldest` | Behavior when buffer full |
 | `background_worker` | true | Enable background thread |
-| `shutdown_timeout_ms` | 5000 | Graceful shutdown timeout |
-| `max_message_size` | 4096 | Maximum message size |
 
 ## Overflow Policies
 
@@ -133,7 +135,6 @@ pub const OverflowPolicy = enum {
     drop_oldest,  // Remove oldest to make room (default)
     drop_newest,  // Drop new messages
     block,        // Block until space available
-    expand,       // Grow buffer dynamically
 };
 ```
 
@@ -142,7 +143,41 @@ pub const OverflowPolicy = enum {
 - **`drop_oldest`**: Best for most applications, ensures recent logs
 - **`drop_newest`**: Use when historical logs are more important
 - **`block`**: When you can't afford to lose any logs
-- **`expand`**: For bursty workloads with variable volume
+
+## Callbacks
+
+AsyncLogger supports various callbacks for monitoring and customization:
+
+```zig
+// Define callbacks
+fn onOverflow(dropped: u64) void {
+    std.debug.print("Dropped {d} records\n", .{dropped});
+}
+
+fn onFlush(count: u64, bytes: u64, elapsed_ms: u64) void {
+    std.debug.print("Flushed {d} records ({d} bytes) in {d}ms\n", .{count, bytes, elapsed_ms});
+}
+
+// Register callbacks
+async_logger.setOverflowCallback(onOverflow);
+async_logger.setFlushCallback(onFlush);
+async_logger.setFullCallback(onFull);
+async_logger.setEmptyCallback(onEmpty);
+async_logger.setWorkerStartCallback(onStart);
+async_logger.setWorkerStopCallback(onStop);
+async_logger.setErrorCallback(onError);
+```
+
+Available callbacks:
+- `on_overflow`: Buffer overflow occurred
+- `on_full`: Buffer became full
+- `on_empty`: Buffer became empty
+- `on_flush`: Flush operation completed
+- `on_worker_start`: Worker thread started
+- `on_worker_stop`: Worker thread stopped (provides uptime)
+- `on_batch_processed`: Batch processed (provides processing time)
+- `on_latency_threshold_exceeded`: Latency exceeded threshold
+- `on_error`: Error occurred during write
 
 ## Presets
 

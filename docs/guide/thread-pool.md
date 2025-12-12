@@ -23,7 +23,7 @@ config.thread_pool = .{
 };
 
 // Or use helper method
-var config2 = logly.Config.default().withThreadPool(4); // 4 worker threads
+var config2 = logly.Config.default().withThreadPool(.{ .thread_count = 4 });
 ```
 
 ## Quick Start

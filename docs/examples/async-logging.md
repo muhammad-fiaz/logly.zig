@@ -11,17 +11,14 @@ var config = logly.Config.default();
 config.async_config = logly.AsyncConfig{
     .buffer_size = 8192,           // Ring buffer size
     .flush_interval_ms = 100,      // Auto-flush interval
-    .max_pending = 10000,          // Max queued messages
-    .overflow_strategy = .drop_oldest,
-    .enable_batching = true,
+    .min_flush_interval_ms = 10,   // Min interval
+    .max_latency_ms = 5000,        // Max latency
+    .overflow_policy = .drop_oldest,
     .batch_size = 64,
 };
 
 // Or use helper method
-var config2 = logly.Config.default().withAsync(.{
-    .buffer_size = 4096,
-    .flush_interval_ms = 50,
-});
+var config2 = logly.Config.default().withAsync();
 ```
 
 ## Code Example

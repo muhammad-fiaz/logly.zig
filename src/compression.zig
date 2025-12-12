@@ -9,7 +9,8 @@ const Config = @import("config.zig").Config;
 ///
 /// Algorithms:
 /// - deflate: DEFLATE compression (standard gzip)
-/// - zstd: Zstandard (better compression ratio, faster)
+/// - zlib: ZLIB compression (RFC 1950)
+/// - raw_deflate: Raw DEFLATE without headers (RFC 1951)
 ///
 /// Callbacks:
 /// - `on_compression_start`: Called before compression begins
@@ -59,80 +60,14 @@ pub const Compression = struct {
     pub const Level = Config.CompressionConfig.CompressionLevel;
 
     /// Compression strategy for different data types
-    pub const Strategy = enum {
-        /// Default strategy (balanced)
-        default,
-        /// Optimized for text/logs with repeated patterns
-        text,
-        /// Optimized for binary data
-        binary,
-        /// Huffman-only compression (no LZ77)
-        huffman_only,
-        /// RLE-only compression for highly repetitive data
-        rle_only,
-        /// Adaptive strategy (auto-detect best approach)
-        adaptive,
-    };
+    pub const Strategy = Config.CompressionConfig.Strategy;
 
     /// Compression mode for automatic triggers.
-    pub const Mode = enum {
-        /// No automatic compression
-        disabled,
-        /// Compress on file rotation
-        on_rotation,
-        /// Compress when file reaches size threshold
-        on_size_threshold,
-        /// Compress on schedule (e.g., daily)
-        scheduled,
-        /// Always compress output (streaming compression)
-        streaming,
-    };
+    pub const Mode = Config.CompressionConfig.Mode;
 
     /// Configuration for compression behavior.
     /// Uses centralized config as base with extended options.
-    pub const CompressionConfig = struct {
-        /// Compression algorithm to use
-        algorithm: Algorithm = .deflate,
-        /// Compression level
-        level: Level = .default,
-        /// When to trigger compression
-        mode: Mode = .on_rotation,
-        /// Size threshold in bytes for on_size_threshold mode
-        size_threshold: u64 = 10 * 1024 * 1024, // 10MB default
-        /// File extension for compressed files
-        extension: []const u8 = ".gz",
-        /// Keep original file after compression
-        keep_original: bool = false,
-        /// Delete files older than this after compression (in seconds, 0 = never)
-        delete_after: u64 = 0,
-        /// Buffer size for compression operations
-        buffer_size: usize = 32 * 1024, // 32KB
-        /// Enable checksum validation
-        checksum: bool = true,
-        /// Compression strategy
-        strategy: Strategy = .adaptive,
-        /// Enable streaming compression (compress while writing)
-        streaming: bool = false,
-        /// Use background thread for compression
-        background: bool = false,
-        /// Dictionary for compression (pre-trained patterns)
-        dictionary: ?[]const u8 = null,
-        /// Enable multi-threaded compression (for large files)
-        parallel: bool = false,
-        /// Memory limit for compression (bytes, 0 = unlimited)
-        memory_limit: usize = 0,
-
-        /// Create from centralized Config.CompressionConfig.
-        pub fn fromCentralized(cfg: Config.CompressionConfig) CompressionConfig {
-            return .{
-                .algorithm = cfg.algorithm,
-                .level = cfg.level,
-                .mode = if (cfg.on_rotation) .on_rotation else .disabled,
-                .extension = cfg.extension,
-                .keep_original = cfg.keep_original,
-            };
-        }
-    };
+    pub const CompressionConfig = Config.CompressionConfig;
 
     /// Statistics for compression operations with detailed tracking.
     pub const CompressionStats = struct {

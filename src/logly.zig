@@ -45,6 +45,8 @@
 //! try logger.info("Request processed");
 //! ```
 
+pub const version = @import("version.zig").version;
+
 const std = @import("std");
 
 // Core components
@@ -95,6 +97,7 @@ pub const Scheduler = @import("scheduler.zig").Scheduler;
 pub const SchedulerPresets = @import("scheduler.zig").SchedulerPresets;
 pub const ThreadPool = @import("thread_pool.zig").ThreadPool;
 pub const ThreadPoolPresets = @import("thread_pool.zig").ThreadPoolPresets;
+pub const Network = @import("network.zig");
 
 // Configuration presets
 pub const ConfigPresets = struct {

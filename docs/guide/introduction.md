@@ -17,6 +17,10 @@ Logly-Zig is a high-performance, structured logging library for Zig, engineered 
 - **Multi-Sink Support**: Simultaneously output to console, files, and custom destinations.
 - **Custom Formatting**: Flexible template strings and full printf-style formatting support.
 - **Rich Context**: Structured logging with JSON support and context binding.
+- **Network Logging**: Send logs via TCP or UDP to remote servers or aggregators.
+- **Custom Themes**: Define custom color themes for log levels.
+- **Advanced Redaction**: Custom patterns and callbacks for sensitive data.
+- **Persistent Context**: Scoped loggers with persistent fields.
 - **Whole-Line Coloring**: ANSI colors wrap the entire log line (timestamp, level, message) for better visual scanning.
 - **Custom Levels**: Define your own log levels with custom names, priorities, and colors.
 - **Cross-Platform Colors**: Works on Linux, macOS, Windows 10+, and popular terminals.

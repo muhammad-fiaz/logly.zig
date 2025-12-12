@@ -23,7 +23,7 @@ config.scheduler = .{
 };
 
 // Or use helper method
-var config2 = logly.Config.default().withScheduler();
+var config2 = logly.Config.default().withScheduler(.{ .cleanup_max_age_days = 7 });
 ```
 
 ## Quick Start

@@ -49,6 +49,14 @@ features:
     title: Multiple Sinks
     details: Log to console, files, or custom destinations simultaneously
 
+  - icon: 🌐
+    title: Network Logging
+    details: Send logs over TCP/UDP with JSON support and automatic reconnection
+
+  - icon: 🎭
+    title: Custom Themes
+    details: Fully customizable color themes for different log levels
+
   - icon: 🎭
     title: Custom Levels
     details: Define your own log levels with custom priorities and colors
@@ -56,6 +64,30 @@ features:
   - icon: 🩺
     title: System Diagnostics
     details: Emit OS/CPU/memory (and drives) on startup or on-demand for quick host visibility
+
+  - icon: 🛡️
+    title: Redaction
+    details: Automatically mask sensitive data like passwords and API keys
+
+  - icon: 🔍
+    title: Scoped Logging
+    details: Create child loggers with bound context that persists across calls
+
+  - icon: 🔄
+    title: Update Checker
+    details: Automatically check for new versions of Logly
+
+  - icon: 🐛
+    title: Stack Traces
+    details: Automatic stack trace capture for errors and critical logs
+
+  - icon: 📦
+    title: Compression
+    details: Built-in support for GZIP, ZLIB, and DEFLATE compression
+
+  - icon: 📈
+    title: Metrics
+    details: Track logger performance, throughput, and error rates
 ---
 
 ## Quick Example

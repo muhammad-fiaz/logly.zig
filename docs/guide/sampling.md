@@ -16,6 +16,7 @@ The `Sampler` module helps you:
 const std = @import("std");
 const logly = @import("logly");
 const Sampler = logly.Sampler;
+const Config = logly.Config;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -123,9 +124,26 @@ var sampler = Sampler.init(allocator, .{ .adaptive = .{
 defer sampler.deinit();
 ```
 
+## Monitoring and Callbacks
+
+You can register callbacks to monitor sampling decisions and rate adjustments:
+
+```zig
+fn onReject(rate: f64, reason: Sampler.SampleRejectReason) void {
+    // Log rejection or update metrics
+}
+
+fn onRateExceeded(count: u32, max: u32) void {
+    // Handle rate limit exceeded
+}
+
+sampler.setRejectCallback(onReject);
+sampler.setRateLimitCallback(onRateExceeded);
+```
+
 ## Sampler Statistics
 
-Track sampling performance:
+Track sampling performance using thread-safe statistics:
 
 ```zig
 var sampler = Sampler.init(allocator, .{ .probability = 0.5 });
@@ -138,13 +156,14 @@ for (0..100) |_| {
 
 // Get statistics
 const stats = sampler.getStats();
-std.debug.print("Total records: {d}\n", .{stats.total_records});
-std.debug.print("Current rate: {d:.2}\n", .{stats.current_rate});
-std.debug.print("Window count: {d}\n", .{stats.window_count});
+std.debug.print("Total records: {d}\n", .{stats.total_records_sampled.load(.monotonic)});
+std.debug.print("Accepted: {d}\n", .{stats.records_accepted.load(.monotonic)});
+std.debug.print("Rejected: {d}\n", .{stats.records_rejected.load(.monotonic)});
+std.debug.print("Accept Rate: {d:.2}%\n", .{stats.getAcceptRate() * 100});
 
 // Get current sampling rate
 const rate = sampler.getCurrentRate();
-std.debug.print("Sampling rate: {d:.2}%\n", .{rate * 100});
+std.debug.print("Current Sampling Probability: {d:.2}%\n", .{rate * 100});
 
 // Reset statistics
 sampler.reset();

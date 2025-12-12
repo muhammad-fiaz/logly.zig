@@ -28,7 +28,7 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 Or use the fluent API:
 
 ```zig
-const config = logly.Config.default().withThreadPool(4);
+const config = logly.Config.default().withThreadPool(.{ .thread_count = 4 });
 ```
 
 ## Types
@@ -56,7 +56,7 @@ pub const ThreadPool = struct {
 };
 ```
 
-### ThreadPoolConfig (Centralized)
+### ThreadPoolConfig
 
 Configuration available through `Config.ThreadPoolConfig`. This struct controls the initialization and behavior of the thread pool.
 
@@ -66,6 +66,9 @@ Configuration available through `Config.ThreadPoolConfig`. This struct controls 
 - `queue_size`: Capacity of the global task queue. If the queue is full, submission may block or fail depending on policy.
 - `stack_size`: Stack size allocated for each worker thread (in bytes). Default is 1MB.
 - `work_stealing`: Enables the work-stealing algorithm, allowing idle workers to take tasks from busy workers' local queues.
+- `thread_name_prefix`: Prefix for worker thread names (default: "logly-worker").
+- `keep_alive_ms`: Keep-alive time for idle threads in milliseconds.
+- `thread_affinity`: Enable thread affinity (pin threads to CPUs).
 
 ```zig
 pub const ThreadPoolConfig = struct {
@@ -81,29 +84,14 @@ pub const ThreadPoolConfig = struct {
     work_stealing: bool = true,
     /// Enable per-worker arena allocator.
     enable_arena: bool = false,
+    /// Thread naming prefix.
+    thread_name_prefix: []const u8 = "logly-worker",
+    /// Keep alive time for idle threads (milliseconds).
+    keep_alive_ms: u64 = 60000,
+    /// Enable thread affinity (pin threads to CPUs).
+    thread_affinity: bool = false,
 };
 ```
-
-### Module-specific ThreadPoolConfig
-
-The `ThreadPool` module has its own detailed config:
-
-```zig
-pub const ThreadPoolConfig = struct {
-    /// Number of worker threads (0 = auto-detect CPU cores)
-    num_threads: usize = 0,
-    /// Maximum queue size per worker
-    queue_size: usize = 1024,
-    /// Enable work stealing between threads
-    work_stealing: bool = true,
-    /// Thread naming prefix
-    thread_name_prefix: []const u8 = "logly-worker",
-    /// Stack size for worker threads (0 = default)
-    stack_size: usize = 0,
-    /// Keep alive time for idle threads (milliseconds)
-    keep_alive_ms: u64 = 60000,
-    /// Enable thread affinity (pin threads to CPUs)
-    thread_affinity: bool = false,
     /// Enable per-worker arena allocator for temporary allocations
     enable_arena: bool = false,
 };

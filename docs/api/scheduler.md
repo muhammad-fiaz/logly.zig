@@ -29,7 +29,7 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 Or use the fluent API:
 
 ```zig
-const config = logly.Config.default().withScheduler();
+const config = logly.Config.default().withScheduler(.{});
 ```
 
 ## Types

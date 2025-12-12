@@ -51,6 +51,10 @@ pub fn build(b: *std.Build) void {
         .{ .name = "dynamic_path", .path = "examples/dynamic_path.zig" },
         .{ .name = "customizations", .path = "examples/customizations.zig" },
         .{ .name = "sink_write_modes", .path = "examples/sink_write_modes.zig" },
+        .{ .name = "network_logging", .path = "examples/network_logging.zig" },
+        .{ .name = "update_check", .path = "examples/update_check.zig" },
+        .{ .name = "advanced_features", .path = "examples/advanced_features.zig" },
+        .{ .name = "custom_theme", .path = "examples/custom_theme.zig" },
     };
 
     inline for (examples) |example| {
@@ -63,6 +67,9 @@ pub fn build(b: *std.Build) void {
             }),
         });
         exe.root_module.addImport("logly", logly_module);
+        if (std.mem.eql(u8, example.name, "network_logging")) {
+            exe.linkLibC();
+        }
 
         const install_exe = b.addInstallArtifact(exe, .{});
         const example_step = b.step("example-" ++ example.name, "Build " ++ example.name ++ " example");
@@ -77,6 +84,8 @@ pub fn build(b: *std.Build) void {
 
     // Create run-all-examples step that runs all examples sequentially
     const run_all_examples = b.step("run-all-examples", "Run all examples sequentially");
+    var previous_step: ?*std.Build.Step = null;
+
     inline for (examples) |example| {
         const exe = b.addExecutable(.{
             .name = "run-all-" ++ example.name,
@@ -87,12 +96,22 @@ pub fn build(b: *std.Build) void {
             }),
         });
         exe.root_module.addImport("logly", logly_module);
+        if (std.mem.eql(u8, example.name, "network_logging")) {
+            exe.linkLibC();
+        }
 
         const install_exe = b.addInstallArtifact(exe, .{});
         const run_exe = b.addRunArtifact(exe);
         run_exe.step.dependOn(&install_exe.step);
 
-        run_all_examples.dependOn(&run_exe.step);
+        if (previous_step) |prev| {
+            run_exe.step.dependOn(prev);
+        }
+        previous_step = &run_exe.step;
+    }
+
+    if (previous_step) |last| {
+        run_all_examples.dependOn(last);
     }
 
     // Unit tests

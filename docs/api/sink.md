@@ -10,9 +10,10 @@ Configuration for a sink.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `path` | `?[]const u8` | `null` | Path to log file (null for console). Supports dynamic placeholders like `{date}`, `{time}`. |
-| `name` | `?[]const u8` | `null` | Sink identifier for metrics/debugging |
+| `path` | `?[]const u8` | `null` | Path to log file (null for console). Supports dynamic placeholders like `{date}`, `{time}`. Also supports network schemes `tcp://host:port` and `udp://host:port`. |
+| `name` | `?[]const u8` | `null` | Sink identifier for metrics and debugging |
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
+| `event_log` | `bool` | `false` | Enable system event log output (Windows Event Log / Syslog) |
 
 ### Dynamic Path Formatting
 
@@ -37,6 +38,7 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 | `color` | `?bool` | `null` | Enable/disable colors (null = auto-detect) |
 | `log_format` | `?[]const u8` | `null` | Custom log format string |
 | `time_format` | `?[]const u8` | `null` | Custom time format for this sink |
+| `theme` | `?Formatter.Theme` | `null` | Custom color theme for this sink |
 
 ### Field Inclusion
 
@@ -52,6 +54,7 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `overwrite_mode` | `bool` | `false` | **Append mode (default)**: logs appended to existing files. **Overwrite mode**: logs overwrite files on each write (truncate at initialization). |
+| `file_mode` | `?u32` | `null` | File permissions for created log files (Unix only). |
 
 ### File Rotation
 
@@ -62,18 +65,26 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 | `size_limit_str` | `?[]const u8` | `null` | Max file size as string (e.g., "10MB", "1GB") |
 | `retention` | `?usize` | `null` | Number of rotated files to keep |
 
-### Async Writing
+### Async Writing & Buffering
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `async_write` | `bool` | `true` | Enable async writing with buffering |
 | `buffer_size` | `usize` | `8192` | Buffer size for async writing in bytes |
+| `max_buffer_records` | `usize` | `1000` | Maximum records to buffer before forcing a flush |
+| `flush_interval_ms` | `u64` | `1000` | Flush interval in milliseconds |
+
+### Error Handling
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `on_error` | `ErrorBehavior` | `.log_stderr` | Error handling behavior: `.silent`, `.log_stderr`, `.disable_sink`, `.propagate` |
 
 ### Advanced Options
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `compression` | `CompressionConfig` | `{}` | Compression settings for file sinks |
+| `compression` | `CompressionConfig` | `{}` | Compression settings for file and network sinks |
 | `filter` | `FilterConfig` | `{}` | Per-sink filter configuration |
 
 ## Write Mode Examples

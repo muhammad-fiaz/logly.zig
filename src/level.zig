@@ -11,6 +11,17 @@ const std = @import("std");
 /// *   `err` (40): Error conditions.
 /// *   `fail` (45): Failure conditions (often red).
 /// *   `critical` (50): Critical failures (often bold red/background).
+///
+/// Usage:
+/// ```zig
+/// // Check if a level is enabled
+/// if (level.priority() >= config.level.priority()) {
+///     // Log message
+/// }
+///
+/// // Convert to string
+/// const str = level.asString();
+/// ```
 pub const Level = enum(u8) {
     // 🔍 Detailed tracing information
     trace = 5,

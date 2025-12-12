@@ -28,3 +28,6 @@ NUL
 *.txt
 *.log
 /logs_dynamic
+*.exe
+*.lib
+*.a

@@ -48,6 +48,14 @@ A production-grade, high-performance structured logging library for Zig, designe
 | 🎨 **Whole-Line Colors** | ANSI colors wrap entire log lines for better visual scanning |
 | 📊 **JSON Logging** | Structured JSON output with valid array format for file storage |
 | 📝 **Custom Formats** | Customizable log message and timestamp formats |
+| 🌐 **Network Logging** | Send logs over TCP/UDP with JSON support and automatic reconnection |
+| 🐛 **Stack Traces** | Automatic stack trace capture for errors and critical logs |
+| 📦 **Compression** | Built-in support for GZIP, ZLIB, and DEFLATE compression |
+| 📈 **Metrics** | Track logger performance, throughput, and error rates |
+| 🩺 **System Diagnostics** | Emit OS/CPU/memory (and drives) on startup or on-demand |
+| 🔍 **Scoped Logging** | Create child loggers with bound context that persists across calls |
+| 🛡️ **Redaction** | Automatically mask sensitive data like passwords and API keys |
+| 🔄 **Update Checker** | Automatically check for new versions of Logly |
 | 🔗 **Context Binding** | Attach persistent key-value pairs to logs |
 | ⚡ **Async I/O** | Non-blocking writes with configurable buffering |
 | 🔒 **Thread-Safe** | Safe concurrent logging from multiple threads |
@@ -71,6 +79,11 @@ A production-grade, high-performance structured logging library for Zig, designe
 | 🧵 **Thread Pool** | Parallel log processing with work stealing |
 | ⏰ **Scheduler** | Automatic log cleanup, compression, and maintenance |
 | 🖥️ **System Diagnostics** | Automatic OS, CPU, memory, and drive information collection |
+| 🌐 **Network Logging** | Send logs via TCP/UDP with JSON support and compression |
+| 🎨 **Custom Themes** | Define custom color themes for log levels |
+| 🔐 **Advanced Redaction** | Custom patterns and callbacks for sensitive data |
+| 🔗 **Persistent Context** | Scoped loggers with persistent fields via `logger.with()` |
+| 🔍 **Advanced Filtering** | Fluent API for complex filter rules |
 
 </details>
 
@@ -222,7 +235,8 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Log at different levels - entire line is colored!
-    try logger.trace("Detailed trace information", @src());   // Cyan
+    try logger.trace("Detailed trace information", @src());   // Cyan with source location, make sure to enable show_filename/show_lineno in config
+    try logger.trace("Detailed trace information", null);   // Cyan with no source location
     try logger.debug("Debug information", @src());            // Blue
     try logger.info("Application started", @src());           // White
     try logger.success("Operation completed!", @src());       // Green
@@ -507,8 +521,10 @@ config.async_config = .{
     .buffer_size = 8192,
     .batch_size = 100,
     .flush_interval_ms = 100,
+    .min_flush_interval_ms = 10,
+    .max_latency_ms = 5000,
     .overflow_policy = .drop_oldest,
-    .auto_start = true,
+    .background_worker = true,
 };
 
 // Compression for log files
@@ -779,12 +795,19 @@ zig build example-basic
 zig build example-file_logging
 zig build example-rotation
 zig build example-json_logging
+zig build example-json_extended
 zig build example-callbacks
 zig build example-context
 zig build example-advanced_config
 zig build example-module_levels
 zig build example-sink_formats
 zig build example-formatted_logging
+zig build example-time
+zig build example-custom_colors
+zig build example-custom_levels_full
+zig build example-dynamic_path
+zig build example-customizations
+zig build example-sink_write_modes
 
 # Enterprise feature examples
 zig build example-filtering
@@ -794,12 +817,17 @@ zig build example-metrics
 zig build example-tracing
 zig build example-color_options
 zig build example-production_config
+zig build example-diagnostics
 
 # Advanced feature examples
 zig build example-compression
 zig build example-thread_pool
 zig build example-scheduler
+zig build example-async_logging
 zig build example-async_advanced
+zig build example-compression_demo
+zig build example-scheduler_demo
+zig build example-thread_pool_arena
 
 # Run an example
 ./zig-out/bin/basic
@@ -808,28 +836,6 @@ zig build example-async_advanced
 ## Documentation
 
 Full documentation is available at: https://muhammad-fiaz.github.io/logly.zig
-
-## Comparison with Logly Other Variants
-
-| Feature        | Python Logly            | Rust Logly           | Logly-Zig             |
-| -------------- | ----------------------- | -------------------- | --------------------- |
-| Performance    | Maturin-Bindings (Fast) | Native Rust (Faster) | Native Zig (Fastest)  |
-| Memory Safety  | Runtime                 | Compile-time         | Compile-time          |
-| Async Support  | ✓                       | ✓                    | ✓                     |
-| File Rotation  | ✓                       | ✓                    | ✓                     |
-| JSON Logging   | ✓                       | ✓                    | ✓                     |
-| Custom Colors  | ✓                       | ✓                    | ✓                     |
-| Simplified API | ✓                       | ✓                    | ✓                     |
-| Filtering      | ✓                       | ✓                    | ✓ (v0.0.3+)           |
-| Sampling       | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
-| Redaction      | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
-| Metrics        | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
-| Tracing        | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.3+)           |
-| Compression    | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
-| Thread Pool    | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
-| Scheduler      | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
-| Async Logger   | - (Coming soon!)        | - (Coming soon!)     | ✓ (v0.0.4+)           |
-| Custom Formats | ✓          | ✓                    | ✓ (v0.0.4+)           |
 
 ## Contributing
 

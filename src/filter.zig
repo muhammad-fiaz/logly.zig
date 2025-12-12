@@ -114,6 +114,24 @@ pub const Filter = struct {
         self.rules.deinit(self.allocator);
     }
 
+    /// Adds a new filter rule.
+    pub fn addRule(self: *Filter, rule: FilterRule) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        // Deep copy pattern if present
+        var new_rule = rule;
+        if (rule.pattern) |p| {
+            new_rule.pattern = try self.allocator.dupe(u8, p);
+        }
+
+        try self.rules.append(new_rule);
+
+        if (self.on_rule_added) |cb| {
+            cb(@intFromEnum(rule.rule_type), @intCast(self.rules.items.len));
+        }
+    }
+
     /// Sets the callback for record allowed events.
     pub fn setAllowedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
         self.mutex.lock();

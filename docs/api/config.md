@@ -54,6 +54,18 @@ Use compact log format. Default: `false`.
 
 Enable arena allocator for the main logger instance. When enabled, the logger uses an arena allocator for creating log records, which can improve performance by reducing memory fragmentation and allocation overhead. Default: `false`.
 
+#### `arena_reset_threshold: usize`
+
+Arena reset threshold in bytes. When arena reaches this size, it resets. Default: `64 * 1024`.
+
+#### `logs_root_path: ?[]const u8`
+
+Optional global root path for all log files. If set, file sinks will be stored relative to this path. Default: `null`.
+
+#### `diagnostics_output_path: ?[]const u8`
+
+If set, system diagnostics will be stored at this path. Default: `null`.
+
 ### Display Options
 
 #### `show_time: bool`
@@ -92,6 +104,14 @@ Include hostname in logs (for distributed systems). Default: `false`.
 
 Include process ID in logs. Default: `false`.
 
+#### `capture_stack_trace: bool`
+
+Capture stack traces for Error and Critical log levels. If false, stack traces will not be collected or displayed. Default: `false`.
+
+#### `symbolize_stack_trace: bool`
+
+Resolve memory addresses in stack traces to function names and file locations. This provides human-readable stack traces but has a performance cost. Default: `false`.
+
 ### Format Settings
 
 #### `log_format: ?[]const u8`
@@ -104,12 +124,9 @@ Custom format string for log messages. Available placeholders:
 - `{function}` - Function name
 - `{file}` - Filename
 - `{line}` - Line number
-- `{trace_id}` - Trace ID
-- `{span_id}` - Span ID
-- `{caller}` - Caller info
-- `{thread}` - Thread ID
-
-Default: `null` (uses default format).
+- `{thread_id}` - Thread ID
+- `{pid}` - Process ID
+- `{host}` - Hostname
 
 #### `time_format: []const u8`
 
@@ -123,17 +140,280 @@ Time format string. Supported formats:
 - `"unix"` - Unix timestamp in seconds
 - `"unix_ms"` - Unix timestamp in milliseconds
 
-Default: `"YYYY-MM-DD HH:mm:ss"`.
+Default: `"YYYY-MM-DD HH:mm:ss.SSS"`.
 
 #### `timezone: Timezone`
 
 Timezone for timestamps. Options: `.local`, `.utc`. Default: `.local`.
 
-### Sink Settings
+#### `format_structure: FormatStructureConfig`
+
+Custom format structure configuration.
+- `message_prefix`: Prefix to add before each log message.
+- `message_suffix`: Suffix to add after each log message.
+- `field_separator`: Separator between log fields/components.
+- `enable_nesting`: Enable nested/hierarchical formatting for structured logs.
+- `nesting_indent`: Indentation for nested fields.
+- `field_order`: Custom field order.
+- `include_empty_fields`: Whether to include empty/null fields in output.
+- `placeholder_open`: Custom placeholder prefix.
+- `placeholder_close`: Custom placeholder suffix.
+
+#### `level_colors: LevelColorConfig`
+
+Level-specific color customization.
+- `trace_color`, `debug_color`, `info_color`, `success_color`, `warning_color`, `error_color`, `fail_color`, `critical_color`: Custom ANSI color codes.
+- `use_rgb`: Use RGB color mode.
+- `support_background`: Background color support.
+- `reset_code`: Reset code at end of each log.
+
+#### `highlighters: HighlighterConfig`
+
+Highlighter patterns and alert configuration.
+- `enabled`: Enable highlighter system.
+- `patterns`: Pattern-based highlighters.
+- `alert_on_match`: Alert callbacks for matched patterns.
+- `alert_min_severity`: Severity level that triggers alerts.
+- `alert_callback`: Custom callback function name for alerts.
+- `max_matches_per_message`: Maximum number of highlighter matches to track per message.
+- `log_matches`: Whether to log highlighter matches as separate records.
+
+### Feature Toggles
 
 #### `auto_sink: bool`
 
 Automatically add a console sink on init. Default: `true`.
+
+#### `enable_callbacks: bool`
+
+Enable callback invocation for log events. Default: `true`.
+
+#### `enable_exception_handling: bool`
+
+Enable exception/error handling within the logger. Default: `true`.
+
+#### `enable_version_check: bool`
+
+Enable version checking (for update notifications). Default: `false`.
+
+#### `debug_mode: bool`
+
+Debug mode for internal logger diagnostics. Default: `false`.
+
+#### `debug_log_file: ?[]const u8`
+
+Path for internal debug log file. Default: `null`.
+
+#### `enable_tracing: bool`
+
+Enable distributed tracing support. Default: `false`.
+
+#### `trace_header: []const u8`
+
+Trace ID header name for distributed tracing. Default: `X-Trace-ID`.
+
+#### `enable_metrics: bool`
+
+Enable metrics collection. Default: `false`.
+
+### Enterprise Features
+
+#### `sampling: SamplingConfig`
+
+Sampling configuration for high-throughput scenarios.
+- `enabled`: Enable sampling.
+- `strategy`: Sampling strategy (`.none`, `.probability`, `.rate_limit`, `.every_n`, `.adaptive`).
+
+#### `rate_limit: RateLimitConfig`
+
+Rate limiting configuration to prevent log flooding.
+- `enabled`: Enable rate limiting.
+- `max_per_second`: Maximum records per second.
+- `burst_size`: Burst size.
+- `per_level`: Apply rate limiting per log level.
+
+#### `redaction: RedactionConfig`
+
+Redaction settings for sensitive data.
+- `enabled`: Enable redaction.
+- `fields`: Fields to redact.
+- `patterns`: Regex patterns to redact.
+- `replacement`: Replacement string.
+
+#### `error_handling: ErrorHandling`
+
+Error handling behavior. Options: `.silent`, `.log_and_continue`, `.fail_fast`, `.callback`. Default: `.log_and_continue`.
+
+#### `max_message_length: ?usize`
+
+Maximum message length (truncate if exceeded). Default: `null`.
+
+#### `structured: bool`
+
+Enable structured logging with automatic context propagation. Default: `false`.
+
+#### `default_fields: ?[]const DefaultField`
+
+Default context fields to include with every log.
+
+#### `app_name: ?[]const u8`
+
+Application name for identification in distributed systems.
+
+#### `app_version: ?[]const u8`
+
+Application version for tracing.
+
+#### `environment: ?[]const u8`
+
+Environment identifier (e.g., "production", "staging", "development").
+
+#### `stack_size: usize`
+
+Stack size for capturing stack traces. Default: `1MB`.
+
+### Advanced Configuration
+
+#### `buffer_config: BufferConfig`
+
+Buffer configuration for async operations.
+- `size`: Buffer size.
+- `flush_interval_ms`: Flush interval.
+- `max_pending`: Max pending records.
+- `overflow_strategy`: Overflow strategy (`.drop_oldest`, `.drop_newest`, `.block`).
+
+#### `async_config: AsyncConfig`
+
+Async logging configuration.
+- `enabled`: Enable async logging.
+- `buffer_size`: Buffer size for async queue.
+- `batch_size`: Batch size for flushing.
+- `flush_interval_ms`: Flush interval.
+- `min_flush_interval_ms`: Minimum time between flushes.
+- `max_latency_ms`: Maximum latency before forcing a flush.
+- `overflow_policy`: Overflow policy (`.drop_oldest`, `.drop_newest`, `.block`).
+- `background_worker`: Auto-start worker thread.
+
+#### `thread_pool: ThreadPoolConfig`
+
+Thread pool configuration.
+- `enabled`: Enable thread pool.
+- `thread_count`: Number of worker threads.
+- `queue_size`: Maximum queue size.
+- `stack_size`: Stack size per thread.
+- `work_stealing`: Enable work stealing.
+- `enable_arena`: Enable per-worker arena allocator.
+- `thread_name_prefix`: Thread naming prefix.
+- `keep_alive_ms`: Keep alive time for idle threads.
+- `thread_affinity`: Enable thread affinity.
+
+#### `scheduler: SchedulerConfig`
+
+Scheduler configuration.
+- `enabled`: Enable scheduler.
+- `cleanup_max_age_days`: Default cleanup max age.
+- `max_files`: Default max files to keep.
+- `compress_before_cleanup`: Enable compression before cleanup.
+- `file_pattern`: Default file pattern for cleanup.
+
+#### `compression: CompressionConfig`
+
+Compression configuration.
+- `enabled`: Enable compression.
+- `algorithm`: Compression algorithm (`.none`, `.deflate`, `.zlib`, `.raw_deflate`).
+- `level`: Compression level (`.none`, `.fastest`, `.fast`, `.default`, `.best`).
+- `on_rotation`: Compress on rotation.
+- `keep_original`: Keep original file after compression.
+- `mode`: Compression mode (`.disabled`, `.on_rotation`, `.on_size_threshold`, `.scheduled`, `.streaming`).
+- `size_threshold`: Size threshold for on_size_threshold mode.
+- `buffer_size`: Buffer size for streaming compression.
+- `strategy`: Compression strategy.
+- `extension`: File extension for compressed files.
+- `delete_after`: Delete files older than this after compression.
+- `checksum`: Enable checksum validation.
+- `streaming`: Enable streaming compression.
+- `background`: Use background thread for compression.
+- `dictionary`: Dictionary for compression.
+- `parallel`: Enable multi-threaded compression.
+- `memory_limit`: Memory limit for compression.
+
+## Presets
+
+Logly provides several configuration presets for common scenarios.
+
+### `Config.default()`
+
+Returns the default configuration.
+- Level: `.info`
+- Colors: Enabled
+- Output: Console and File enabled
+
+### `Config.production()`
+
+Optimized for production environments.
+- Level: `.info`
+- Colors: Disabled (for cleaner logs)
+- JSON: Enabled (for parsing)
+- Async: Enabled (for performance)
+- Metrics: Enabled
+- Structured: Enabled
+- Compression: Enabled (on rotation)
+- Scheduler: Enabled (cleanup old logs)
+
+### `Config.development()`
+
+Optimized for development environments.
+- Level: `.debug`
+- Colors: Enabled
+- Source Info: Function, File, Line enabled
+- Debug Mode: Enabled
+
+### `Config.highThroughput()`
+
+Optimized for high-volume logging.
+- Level: `.warning`
+- Sampling: Adaptive (target 1000/sec)
+- Rate Limit: 10000/sec
+- Buffer: 64KB
+- Thread Pool: Enabled (auto-detect threads)
+- Async: Enabled (aggressive batching)
+
+### `Config.secure()`
+
+Compliant with security standards.
+- Redaction: Enabled
+- Structured: Enabled
+- Hostname/PID: Disabled (minimize info leakage)
+
+## Builder Methods
+
+Helper methods to modify configuration fluently.
+
+### `withAsync(config: AsyncConfig) Config`
+
+Enables async logging with the provided configuration.
+
+### `withCompression(config: CompressionConfig) Config`
+
+Enables compression with the provided configuration.
+
+### `withThreadPool(config: ThreadPoolConfig) Config`
+
+Enables thread pool with the provided configuration.
+
+### `withScheduler(config: SchedulerConfig) Config`
+
+Enables scheduler with the provided configuration.
+
+### `withArenaAllocation() Config`
+
+Enables arena allocator for internal temporary allocations to improve performance.
+
+### `merge(other: Config) Config`
+
+Merges another configuration into the current one. Non-default values from `other` override the current values.
+
+
 
 #### `enable_callbacks: bool`
 
@@ -312,10 +592,14 @@ pub const AsyncConfig = struct {
     batch_size: usize = 100,
     /// Flush interval in milliseconds.
     flush_interval_ms: u64 = 100,
+    /// Minimum time between flushes to avoid thrashing.
+    min_flush_interval_ms: u64 = 0,
+    /// Maximum latency before forcing a flush.
+    max_latency_ms: u64 = 5000,
     /// What to do when buffer is full.
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
-    auto_start: bool = true,
+    background_worker: bool = true,
 
     pub const OverflowPolicy = enum {
         drop_oldest,
@@ -388,36 +672,44 @@ Returns a security-focused configuration:
 const config = logly.Config.secure();
 ```
 
-### `withAsync() Config`
+### `withAsync(config) Config`
 
 Returns a configuration with async logging enabled.
 
 ```zig
-const config = logly.Config.default().withAsync();
+const config = logly.Config.default().withAsync(.{
+    .buffer_size = 16384,
+});
 ```
 
-### `withCompression() Config`
+### `withCompression(config) Config`
 
 Returns a configuration with compression enabled.
 
 ```zig
-const config = logly.Config.default().withCompression();
+const config = logly.Config.default().withCompression(.{
+    .algorithm = .deflate,
+});
 ```
 
-### `withThreadPool(thread_count) Config`
+### `withThreadPool(config) Config`
 
 Returns a configuration with thread pool enabled.
 
 ```zig
-const config = logly.Config.default().withThreadPool(4);
+const config = logly.Config.default().withThreadPool(.{
+    .thread_count = 4,
+});
 ```
 
-### `withScheduler() Config`
+### `withScheduler(config) Config`
 
 Returns a configuration with scheduler enabled.
 
 ```zig
-const config = logly.Config.default().withScheduler();
+const config = logly.Config.default().withScheduler(.{
+    .cleanup_max_age_days = 7,
+});
 ```
 
 ### `merge(other) Config`

@@ -56,6 +56,8 @@ logger.configure(config);
 | `show_lineno`            | `bool`        | `false`                 | Include the source line number.                      |
 | `include_hostname`       | `bool`        | `false`                 | Include the system hostname.                         |
 | `include_pid`            | `bool`        | `false`                 | Include the process ID.                              |
+| `capture_stack_trace`    | `bool`        | `false`                 | Capture stack traces for Error/Critical logs.        |
+| `symbolize_stack_trace`  | `bool`        | `false`                 | Resolve stack trace addresses to symbols.            |
 | `show_lineno`            | `bool`        | `false`                 | Show line number                                     |
 | `auto_sink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
 | `check_for_updates`      | `bool`        | `true`                  | Check for updates on startup                         |
@@ -117,8 +119,10 @@ config.async_config = .{
     .buffer_size = 8192,          // Ring buffer size
     .batch_size = 100,            // Messages per batch
     .flush_interval_ms = 100,     // Auto-flush interval
+    .min_flush_interval_ms = 10,  // Min interval between flushes
+    .max_latency_ms = 5000,       // Max latency before forced flush
     .overflow_policy = .drop_oldest, // On buffer overflow
-    .auto_start = true,           // Auto-start worker thread
+    .background_worker = true,    // Auto-start worker thread
 };
 ```
 
@@ -540,3 +544,14 @@ try logger.addCustomLevel("audit", 35, "35");
 try logger.custom("audit", "Security event");
 // Output: {"timestamp":"...","level":"AUDIT","message":"Security event"}
 ```
+
+## Advanced Features
+
+For more advanced customizations like custom themes, scoped context, and advanced redaction, check out the [Advanced Features Example](../../examples/advanced_features.zig) and the [Context Guide](./context.md).
+
+## See Also
+
+- [Sinks](./sinks.md) - Configure output destinations (Console, File, Network)
+- [Network Logging](../examples/network-logging.md) - Detailed guide on TCP/UDP logging
+- [Compression](./compression.md) - Configure log compression
+

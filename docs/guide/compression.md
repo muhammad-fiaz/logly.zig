@@ -58,7 +58,7 @@ config.compression = .{
 };
 
 // Or use helper method
-var config2 = logly.Config.default().withCompression();
+var config2 = logly.Config.default().withCompression(.{ .algorithm = .deflate });
 ```
 
 ## Compression Algorithms
@@ -99,6 +99,24 @@ config.compression.strategy = .binary;
 - Focuses on byte-level patterns
 - Typical ratio: **2-3x**
 - Best for: Binary protocols, structured logs
+
+## Network Compression
+
+Compression can be enabled specifically for network sinks (TCP/UDP) to reduce bandwidth usage. This is particularly useful when shipping logs to a remote aggregator over a slow or metered connection.
+
+When enabled, the sink buffers logs up to `buffer_size` (default 4KB) and then compresses the entire buffer using the configured algorithm (default DEFLATE) before sending it over the network.
+
+```zig
+var sink = logly.SinkConfig.network("tcp://logs.example.com:5000");
+sink.compression = .{
+    .enabled = true,
+    .algorithm = .deflate, // or .gzip, .zlib
+    .level = .best_speed,  // Optimize for low latency
+};
+_ = try logger.addSink(sink);
+```
+
+> **Note:** The receiving end must be able to decompress the stream. For TCP, it receives a stream of compressed blocks. For UDP, each packet payload is compressed.
 
 ### RLE-Only Strategy
 

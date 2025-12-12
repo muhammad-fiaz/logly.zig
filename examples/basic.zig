@@ -18,6 +18,8 @@ pub fn main() !void {
     var config = logly.Config.default();
     config.show_filename = true;
     config.show_lineno = true;
+    config.capture_stack_trace = true; // Enable stack trace capture
+    config.symbolize_stack_trace = true; // Enable symbolization
     logger.configure(config);
 
     // Log at different levels - entire line is colored!

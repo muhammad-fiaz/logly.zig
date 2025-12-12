@@ -41,6 +41,39 @@ Deinitializes the logger, freeing all allocated resources including sinks, conte
 
 Updates the global configuration of the logger in a thread-safe manner.
 
+## Callbacks
+
+The `Logger` supports several callbacks for monitoring and extending behavior. These are set directly on the `Logger` instance fields.
+
+### `on_record_logged: ?*const fn (Level, []const u8, *const Record) void`
+
+Invoked when a record is successfully logged.
+- **Parameters**: `level`, `message`, `record`
+
+### `on_record_filtered: ?*const fn ([]const u8, *const Record) void`
+
+Invoked when a record is filtered/dropped before output (e.g., by level or filter).
+- **Parameters**: `reason`, `record`
+
+### `on_sink_error: ?*const fn ([]const u8, []const u8) void`
+
+Invoked when a sink encounters an error.
+- **Parameters**: `sink_name`, `error_msg`
+
+### `on_logger_initialized: ?*const fn (*const LoggerStats) void`
+
+Invoked when the logger is initialized.
+- **Parameters**: `logger_stats`
+
+### `on_logger_destroyed: ?*const fn (*const LoggerStats) void`
+
+Invoked when the logger is destroyed.
+- **Parameters**: `final_stats`
+
+### `log_callback: ?*const fn (*const Record) anyerror!void`
+
+A generic callback invoked for every log record. Can be used for custom processing or integration with other systems.
+
 ## Sink Management
 
 ### `addSink(config: SinkConfig) !usize`

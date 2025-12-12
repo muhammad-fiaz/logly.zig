@@ -1,14 +1,170 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
 const Formatter = @import("formatter.zig").Formatter;
 const Rotation = @import("rotation.zig").Rotation;
+const Network = @import("network.zig");
+
+// Helper writer for compression that adapts ArrayList to std.io.Writer interface
+const SinkWriter = struct {
+    writer: std.io.Writer,
+    list: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+
+    fn drain(writer: *std.io.Writer, iovecs: []const []const u8, len: usize) error{WriteFailed}!usize {
+        const self: *SinkWriter = @fieldParentPtr("writer", writer);
+        var total: usize = 0;
+        for (iovecs[0..len]) |iov| {
+            self.list.appendSlice(self.allocator, iov) catch return error.WriteFailed;
+            total += iov.len;
+        }
+        return total;
+    }
+
+    const vtable = std.io.Writer.VTable{ .drain = drain };
+
+    pub fn init(list: *std.ArrayList(u8), allocator: std.mem.Allocator, buffer: []u8) SinkWriter {
+        return .{
+            .writer = .{
+                .vtable = &vtable,
+                .buffer = buffer,
+                .end = 0,
+            },
+            .list = list,
+            .allocator = allocator,
+        };
+    }
+};
+
+/// Abstraction for system-level logging (Event Log on Windows, Syslog on POSIX).
+const SystemLog = struct {
+    const Platform = enum { windows, posix, other };
+    const platform: Platform = if (builtin.os.tag == .windows) .windows else if (builtin.os.tag == .linux or builtin.os.tag == .macos or builtin.os.tag == .freebsd or builtin.os.tag == .openbsd or builtin.os.tag == .netbsd or builtin.os.tag == .dragonfly or builtin.os.tag == .solaris) .posix else .other;
+
+    // Windows specific definitions
+    const windows = if (platform == .windows) struct {
+        // Define WINAPI calling convention based on architecture
+        const WINAPI: std.builtin.CallingConvention = if (builtin.cpu.arch == .x86) .stdcall else .c;
+
+        const HANDLE = std.os.windows.HANDLE;
+        const LPCSTR = [*:0]const u8;
+        const WORD = u16;
+        const DWORD = u32;
+        const PSID = ?*anyopaque;
+
+        const EVENTLOG_SUCCESS: WORD = 0x0000;
+        const EVENTLOG_ERROR_TYPE: WORD = 0x0001;
+        const EVENTLOG_WARNING_TYPE: WORD = 0x0002;
+        const EVENTLOG_INFORMATION_TYPE: WORD = 0x0004;
+
+        extern "advapi32" fn RegisterEventSourceA(lpUNCServerName: ?LPCSTR, lpSourceName: LPCSTR) callconv(WINAPI) ?HANDLE;
+        extern "advapi32" fn ReportEventA(hEventLog: HANDLE, wType: WORD, wCategory: WORD, dwEventID: DWORD, lpUserSid: PSID, wNumStrings: WORD, dwDataSize: DWORD, lpStrings: ?[*]const LPCSTR, lpRawData: ?*anyopaque) callconv(WINAPI) bool;
+        extern "advapi32" fn DeregisterEventSource(hEventLog: HANDLE) callconv(WINAPI) bool;
+    } else struct {};
+
+    // POSIX specific definitions
+    const posix = if (platform == .posix) struct {
+        const LOG_PID = 0x01;
+        const LOG_CONS = 0x02;
+        const LOG_USER = 3 << 3;
+
+        const LOG_ERR = 3;
+        const LOG_WARNING = 4;
+        const LOG_INFO = 6;
+
+        extern "c" fn openlog(ident: ?[*:0]const u8, option: c_int, facility: c_int) void;
+        extern "c" fn syslog(priority: c_int, format: [*:0]const u8, ...) void;
+        extern "c" fn closelog() void;
+    } else struct {};
+
+    handle: ?*anyopaque = null,
+    ident: ?[:0]const u8 = null,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, name: ?[]const u8) !SystemLog {
+        var self = SystemLog{ .allocator = allocator };
+        const safe_name = name orelse "Logly";
+
+        switch (platform) {
+            .windows => {
+                const name_z = try allocator.dupeZ(u8, safe_name);
+                errdefer allocator.free(name_z);
+                self.ident = name_z;
+                if (windows.RegisterEventSourceA(null, name_z)) |h| {
+                    self.handle = @ptrCast(h);
+                }
+            },
+            .posix => {
+                const name_z = try allocator.dupeZ(u8, safe_name);
+                self.ident = name_z;
+                posix.openlog(name_z, posix.LOG_PID | posix.LOG_CONS, posix.LOG_USER);
+            },
+            .other => {},
+        }
+        return self;
+    }
+
+    pub fn deinit(self: *SystemLog) void {
+        switch (platform) {
+            .windows => {
+                if (self.handle) |h| {
+                    _ = windows.DeregisterEventSource(@ptrCast(h));
+                }
+                if (self.ident) |id| self.allocator.free(id);
+            },
+            .posix => {
+                posix.closelog();
+                if (self.ident) |id| self.allocator.free(id);
+            },
+            .other => {},
+        }
+    }
+
+    pub fn log(self: *SystemLog, level: Level, message: []const u8) !void {
+        switch (platform) {
+            .windows => {
+                if (self.handle) |h| {
+                    const msg_z = try self.allocator.dupeZ(u8, message);
+                    defer self.allocator.free(msg_z);
+                    const strings = [_]windows.LPCSTR{msg_z};
+                    const wType = switch (level) {
+                        .err, .critical, .fail => windows.EVENTLOG_ERROR_TYPE,
+                        .warning => windows.EVENTLOG_WARNING_TYPE,
+                        else => windows.EVENTLOG_INFORMATION_TYPE,
+                    };
+                    _ = windows.ReportEventA(@ptrCast(h), wType, 0, 0, null, 1, 0, &strings, null);
+                }
+            },
+            .posix => {
+                const msg_z = try self.allocator.dupeZ(u8, message);
+                defer self.allocator.free(msg_z);
+                const priority = switch (level) {
+                    .err, .critical, .fail => posix.LOG_ERR,
+                    .warning => posix.LOG_WARNING,
+                    else => posix.LOG_INFO,
+                };
+                posix.syslog(priority, "%s", msg_z);
+            },
+            .other => {
+                // Fallback for baremetal or unsupported OS
+            },
+        }
+    }
+};
 
 /// Configuration for a specific log sink.
 ///
-/// Sinks are destinations where logs are written (e.g., console, file).
+/// Sinks are destinations where logs are written (e.g., console, file, network).
 /// Each sink can have its own configuration, overriding global settings.
+///
+/// Supported Sink Types:
+/// - Console (Standard Output)
+/// - File (Text or JSON)
+/// - Rotating File (Size or Time-based)
+/// - Network (TCP/UDP)
+/// - System Event Log (Windows Event Log / Syslog - *Experimental*)
 pub const SinkConfig = struct {
     /// File path for the sink. If null, defaults to console output.
     path: ?[]const u8 = null,
@@ -94,13 +250,15 @@ pub const SinkConfig = struct {
     /// File permissions for created log files (Unix only).
     file_mode: ?u32 = null,
 
+    /// Enable system event log output (Windows Event Log / Syslog).
+    event_log: bool = false,
+
+    /// Custom color theme for this sink.
+    theme: ?Formatter.Theme = null,
+
     /// Compression configuration for sink.
     /// Re-exports centralized config for convenience.
-    pub const CompressionConfig = struct {
-        enabled: bool = false,
-        algorithm: Config.CompressionConfig.CompressionAlgorithm = .deflate,
-        level: Config.CompressionConfig.CompressionLevel = .default,
-    };
+    pub const CompressionConfig = Config.CompressionConfig;
 
     /// Filter configuration for sink-level filtering.
     pub const FilterConfig = struct {
@@ -198,6 +356,21 @@ pub const SinkConfig = struct {
             .color = false,
         };
     }
+
+    /// Returns a network sink configuration.
+    ///
+    /// Arguments:
+    ///     uri: Network URI (e.g., "tcp://127.0.0.1:8080", "udp://127.0.0.1:514").
+    ///
+    /// Returns:
+    ///     A SinkConfig configured for network output.
+    pub fn network(uri: []const u8) SinkConfig {
+        return .{
+            .path = uri,
+            .color = false,
+            .async_write = true, // Network I/O should default to async
+        };
+    }
 };
 
 fn parseSize(s: []const u8) ?u64 {
@@ -262,6 +435,10 @@ pub const Sink = struct {
     allocator: std.mem.Allocator,
     config: SinkConfig,
     file: ?std.fs.File = null,
+    stream: ?std.net.Stream = null,
+    udp_socket: ?std.posix.socket_t = null,
+    udp_addr: ?std.net.Address = null,
+    system_log: ?SystemLog = null,
     formatter: Formatter,
     rotation: ?Rotation = null,
     buffer: std.ArrayList(u8),
@@ -302,44 +479,60 @@ pub const Sink = struct {
         };
         errdefer sink.deinit();
 
-        if (config.path) |path_pattern| {
-            // Resolve dynamic path patterns (e.g. {date}, {YYYY-MM-DD})
-            const path = try resolvePath(allocator, path_pattern);
-            defer allocator.free(path);
+        if (config.theme) |t| {
+            sink.formatter.setTheme(t);
+        }
 
-            const dir = std.fs.path.dirname(path);
-            if (dir) |d| {
-                std.fs.cwd().makePath(d) catch {
-                    // Failed to create directory - continue anyway
-                };
-            }
+        if (config.event_log) {
+            sink.system_log = try SystemLog.init(allocator, config.name);
+        } else if (config.path) |path_pattern| {
+            // Check for network schemes
+            if (std.mem.startsWith(u8, path_pattern, "tcp://")) {
+                sink.stream = try Network.connectTcp(allocator, path_pattern);
+            } else if (std.mem.startsWith(u8, path_pattern, "udp://")) {
+                const result = try Network.createUdpSocket(allocator, path_pattern);
+                sink.udp_socket = result.socket;
+                sink.udp_addr = result.address;
+            } else {
+                // File path
+                // Resolve dynamic path patterns (e.g. {date}, {YYYY-MM-DD})
+                const path = try resolvePath(allocator, path_pattern);
+                defer allocator.free(path);
 
-            // Use overwrite_mode to determine file truncation behavior
-            sink.file = try std.fs.cwd().createFile(path, .{
-                .read = true,
-                .truncate = config.overwrite_mode,
-            });
-
-            // Write opening bracket for JSON array files
-            if (config.json) {
-                if (sink.file) |file| {
-                    try file.writeAll("[\n");
+                const dir = std.fs.path.dirname(path);
+                if (dir) |d| {
+                    std.fs.cwd().makePath(d) catch {
+                        // Failed to create directory - continue anyway
+                    };
                 }
-            }
 
-            var size_limit = config.size_limit;
-            if (size_limit == null and config.size_limit_str != null) {
-                size_limit = parseSize(config.size_limit_str.?);
-            }
+                // Use overwrite_mode to determine file truncation behavior
+                sink.file = try std.fs.cwd().createFile(path, .{
+                    .read = true,
+                    .truncate = config.overwrite_mode,
+                });
 
-            if (config.rotation != null or size_limit != null) {
-                sink.rotation = try Rotation.init(
-                    allocator,
-                    path,
-                    config.rotation,
-                    size_limit,
-                    config.retention,
-                );
+                // Write opening bracket for JSON array files
+                if (config.json) {
+                    if (sink.file) |file| {
+                        try file.writeAll("[\n");
+                    }
+                }
+
+                var size_limit = config.size_limit;
+                if (size_limit == null and config.size_limit_str != null) {
+                    size_limit = parseSize(config.size_limit_str.?);
+                }
+
+                if (config.rotation != null or size_limit != null) {
+                    sink.rotation = try Rotation.init(
+                        allocator,
+                        path,
+                        config.rotation,
+                        size_limit,
+                        config.retention,
+                    );
+                }
             }
         }
 
@@ -425,6 +618,11 @@ pub const Sink = struct {
 
     pub fn deinit(self: *Sink) void {
         self.flush() catch {};
+
+        if (self.system_log) |*syslog| {
+            syslog.deinit();
+        }
+
         // Write closing bracket for JSON array files
         if (self.config.json and self.file != null) {
             if (self.file) |file| {
@@ -432,6 +630,9 @@ pub const Sink = struct {
             }
         }
         if (self.file) |f| f.close();
+        if (self.stream) |s| s.close();
+        if (self.udp_socket) |s| std.posix.close(s);
+
         if (self.rotation) |*r| r.deinit();
         self.buffer.deinit(self.allocator);
         self.formatter.deinit();
@@ -533,12 +734,11 @@ pub const Sink = struct {
         // If sink is a file, default color to false unless explicitly enabled
         if (self.config.color) |c| {
             effective_config.global_color_display = c;
-        } else if (self.file != null) {
-            // Default to no color for files
+        } else if (self.file != null or self.stream != null or self.udp_socket != null) {
+            // Default to no color for files/network
             effective_config.global_color_display = false;
         }
 
-        // Format the message
         // Use scratch allocator if provided, otherwise use sink's allocator
         const fmt_allocator = scratch_allocator orelse self.allocator;
 
@@ -547,54 +747,70 @@ pub const Sink = struct {
         // If we created a temp formatter, we don't need to deinit it as it doesn't hold resources,
         // but we should be aware of it.
 
-        const formatted = if (effective_config.json)
-            try formatter.formatJson(record, effective_config)
-        else
-            try formatter.format(record, effective_config);
-        defer fmt_allocator.free(formatted);
+        // Check global switches
+        if (self.file != null) {
+            if (!global_config.global_file_storage) return;
+        } else if (self.stream == null and self.udp_socket == null and self.system_log == null) {
+            // Console
+            if (!global_config.global_console_display) return;
+        }
 
-        // Write to console or file
-        if (self.file) |file| {
-            if (global_config.global_file_storage) {
-                // For JSON file output, add comma separator between entries
-                const is_json_file = effective_config.json;
+        // Handle SystemLog separately to preserve log level
+        if (self.system_log) |*syslog| {
+            // Clear buffer to ensure we only send the current message
+            self.buffer.clearRetainingCapacity();
+            const writer = self.buffer.writer(self.allocator);
 
-                if (self.config.async_write) {
-                    // Buffered async write
-                    if (is_json_file) {
-                        if (!self.json_first_entry) {
-                            try self.buffer.appendSlice(self.allocator, ",\n");
-                        }
-                        try self.buffer.appendSlice(self.allocator, formatted);
-                        self.json_first_entry = false;
-                    } else {
-                        try self.buffer.appendSlice(self.allocator, formatted);
-                        try self.buffer.append(self.allocator, '\n');
-                    }
-                    // Flush when buffer exceeds threshold
-                    if (self.buffer.items.len >= self.config.buffer_size) {
-                        try self.flush();
-                    }
-                } else {
-                    // Direct synchronous write
-                    if (is_json_file) {
-                        if (!self.json_first_entry) {
-                            try file.writeAll(",\n");
-                        }
-                        try file.writeAll(formatted);
-                        self.json_first_entry = false;
-                    } else {
-                        try file.writeAll(formatted);
-                        try file.writeAll("\n");
-                    }
+            // Format message
+            if (effective_config.json) {
+                try formatter.formatJsonToWriter(writer, record, effective_config);
+            } else {
+                try formatter.formatToWriter(writer, record, effective_config);
+            }
+
+            // Send to system log
+            if (self.buffer.items.len > 0) {
+                try syslog.log(record.level, self.buffer.items);
+
+                // Update stats
+                _ = self.stats.total_written.fetchAdd(1, .monotonic);
+                _ = self.stats.bytes_written.fetchAdd(self.buffer.items.len, .monotonic);
+
+                if (self.on_write) |cb| {
+                    cb(1, self.buffer.items.len);
                 }
             }
+
+            self.buffer.clearRetainingCapacity();
+            return;
+        }
+
+        // Write to buffer
+        const writer = self.buffer.writer(self.allocator);
+        const is_file = self.file != null;
+        const use_json_array = is_file and effective_config.json;
+
+        if (use_json_array) {
+            if (!self.json_first_entry) {
+                try writer.writeAll(",\n");
+            }
+            try formatter.formatJsonToWriter(writer, record, effective_config);
+            self.json_first_entry = false;
         } else {
-            // Console output - direct write for best performance
-            if (global_config.global_console_display) {
-                const stdout_file = std.fs.File.stdout();
-                try stdout_file.writeAll(formatted);
-                try stdout_file.writeAll("\n");
+            if (effective_config.json) {
+                try formatter.formatJsonToWriter(writer, record, effective_config);
+            } else {
+                try formatter.formatToWriter(writer, record, effective_config);
+            }
+            try writer.writeByte('\n');
+        }
+
+        // Flush logic
+        if (!self.config.async_write) {
+            try self.flush();
+        } else {
+            if (self.buffer.items.len >= self.config.buffer_size) {
+                try self.flush();
             }
         }
     }
@@ -616,6 +832,13 @@ pub const Sink = struct {
                 try file.writeAll(data);
                 try file.writeAll("\n");
             }
+        } else if (self.stream) |stream| {
+            try stream.writeAll(data);
+            try stream.writeAll("\n");
+        } else if (self.system_log) |*syslog| {
+            // For raw writes, we assume INFO level if not specified, but Sink.write doesn't take a level.
+            // We'll default to INFO.
+            try syslog.log(.info, data);
         } else {
             const stdout_file = std.fs.File.stdout();
             try stdout_file.writeAll(data);
@@ -623,12 +846,75 @@ pub const Sink = struct {
         }
     }
 
+    fn reconnect(self: *Sink) bool {
+        if (self.stream) |s| s.close();
+        self.stream = null;
+
+        if (self.config.path) |uri| {
+            if (std.mem.startsWith(u8, uri, "tcp://")) {
+                self.stream = Network.connectTcp(self.allocator, uri) catch return false;
+                return true;
+            }
+        }
+        return false;
+    }
+
     pub fn flush(self: *Sink) !void {
         if (self.buffer.items.len == 0) return;
+
+        // Compression for Network Sinks
+        var data_to_write: []const u8 = self.buffer.items;
+        var compressed_data: ?[]u8 = null;
+
+        if (self.config.compression.enabled and (self.stream != null or self.udp_socket != null)) {
+            var list = try std.ArrayList(u8).initCapacity(self.allocator, 4096);
+            errdefer list.deinit(self.allocator);
+
+            var compress_buffer: [4096]u8 = undefined;
+            var sink_writer_buffer: [4096]u8 = undefined;
+            var sink_writer = SinkWriter.init(&list, self.allocator, &sink_writer_buffer);
+
+            var compressor = std.compress.flate.Compress.init(&sink_writer.writer, &compress_buffer, .{});
+
+            try compressor.writer.writeAll(self.buffer.items);
+            try compressor.end();
+
+            compressed_data = try list.toOwnedSlice(self.allocator);
+            data_to_write = compressed_data.?;
+        }
+        defer if (compressed_data) |d| self.allocator.free(d);
+
         if (self.file) |file| {
             try file.writeAll(self.buffer.items);
-            self.buffer.clearRetainingCapacity();
+        } else if (self.stream) |stream| {
+            stream.writeAll(data_to_write) catch |err| {
+                if (self.reconnect()) {
+                    if (self.stream) |new_stream| {
+                        try new_stream.writeAll(data_to_write);
+                    } else {
+                        return err;
+                    }
+                } else {
+                    return err;
+                }
+            };
+        } else if (self.udp_socket) |sock| {
+            if (self.udp_addr) |addr| {
+                _ = try std.posix.sendto(sock, data_to_write, 0, &addr.any, addr.getOsSockLen());
+            }
+        } else if (self.system_log) |*syslog| {
+            const msg = self.buffer.items;
+            if (msg.len > 0) {
+                // Use info level as default for flushed buffers where we lost the record context
+                try syslog.log(.info, msg);
+            }
+        } else {
+            // Console
+            const stdout_file = std.fs.File.stdout();
+            try stdout_file.writeAll(self.buffer.items);
         }
+
+        self.buffer.clearRetainingCapacity();
     }
 
     /// Applies per-sink filter configuration to determine if the record should be logged.

@@ -35,6 +35,26 @@ This makes it easier to scan logs visually.
 | FAIL | 35 | Magenta |
 | CRITICAL | 91 | Bright Red |
 
+## Custom Themes
+
+You can override the default colors for each log level by creating a custom `Theme`.
+
+```zig
+const neon_theme = logly.Formatter.Theme{
+    .trace = "90", // Bright Black
+    .debug = "35", // Magenta
+    .info = "36", // Cyan
+    .success = "92", // Bright Green
+    .warning = "93", // Bright Yellow
+    .err = "91", // Bright Red
+    .fail = "31;1", // Red Bold
+    .critical = "41;37;1", // White on Red Background
+};
+
+// Apply to a specific sink (e.g., the console sink)
+logger.sinks.items[0].formatter.setTheme(neon_theme);
+```
+
 ## Enabling Colors on Windows
 
 Windows requires enabling Virtual Terminal Processing:

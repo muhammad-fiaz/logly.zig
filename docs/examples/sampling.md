@@ -8,6 +8,7 @@ Control log throughput using sampling strategies for high-volume applications.
 const std = @import("std");
 const logly = @import("logly");
 const Sampler = logly.Sampler;
+const Config = logly.Config;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -49,6 +50,52 @@ for (0..200) |i| {
     if (sampler.shouldSample()) {
         try logger.infof("Message {d}", .{i}, @src());
     }
+}
+```
+
+## Callbacks and Statistics
+
+You can monitor sampling behavior using callbacks and statistics.
+
+```zig
+const std = @import("std");
+const logly = @import("logly");
+const Sampler = logly.Sampler;
+const Config = logly.Config;
+
+fn onReject(rate: f64, reason: Sampler.SampleRejectReason) void {
+    std.debug.print("Sample rejected (rate: {d:.2}, reason: {s})\n", .{ rate, @tagName(reason) });
+}
+
+fn onRateExceeded(count: u32, max: u32) void {
+    std.debug.print("Rate limit exceeded: {d}/{d}\n", .{ count, max });
+}
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    var sampler = Sampler.init(allocator, .{ .rate_limit = .{
+        .max_records = 5,
+        .window_ms = 1000,
+    }});
+    defer sampler.deinit();
+
+    sampler.setRejectCallback(onReject);
+    sampler.setRateLimitCallback(onRateExceeded);
+
+    for (0..10) |i| {
+        if (sampler.shouldSample()) {
+            std.debug.print("Log {d} accepted\n", .{i});
+        }
+    }
+
+    const stats = sampler.getStats();
+    std.debug.print("Stats: Total={d}, Accepted={d}, Rejected={d}\n", .{
+        stats.total_records_sampled.load(.monotonic),
+        stats.records_accepted.load(.monotonic),
+        stats.records_rejected.load(.monotonic),
+    });
 }
 ```
 

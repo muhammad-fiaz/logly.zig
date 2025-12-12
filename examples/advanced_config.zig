@@ -26,6 +26,10 @@ pub fn main() !void {
     // 3. Timezone (Local or UTC)
     config.timezone = .utc;
 
+    // 4. Stack Trace Configuration
+    config.capture_stack_trace = true;
+    config.symbolize_stack_trace = true;
+
     logger.configure(config);
 
     // Log some messages

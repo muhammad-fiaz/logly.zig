@@ -48,7 +48,7 @@ pub const AsyncLogger = struct {
 };
 ```
 
-### AsyncConfig (Centralized)
+### AsyncConfig
 
 Configuration available through `Config.AsyncConfig`:
 
@@ -62,45 +62,20 @@ pub const AsyncConfig = struct {
     batch_size: usize = 100,
     /// Flush interval in milliseconds.
     flush_interval_ms: u64 = 100,
+    /// Minimum time between flushes to avoid thrashing.
+    min_flush_interval_ms: u64 = 0,
+    /// Maximum latency before forcing a flush.
+    max_latency_ms: u64 = 5000,
     /// What to do when buffer is full.
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
-    auto_start: bool = true,
+    background_worker: bool = true,
 
     pub const OverflowPolicy = enum {
         drop_oldest,
         drop_newest,
         block,
     };
-};
-```
-
-### Module-specific AsyncConfig
-
-The `AsyncLogger` module also has its own detailed config:
-
-```zig
-pub const AsyncConfig = struct {
-    /// Size of the ring buffer in number of entries
-    buffer_size: usize = 8192,
-    /// Maximum time to wait before flushing (in milliseconds)
-    flush_interval_ms: u64 = 100,
-    /// Batch size for writing to sinks
-    batch_size: usize = 64,
-    /// Behavior when buffer is full
-    overflow_policy: OverflowPolicy = .drop_oldest,
-    /// Enable background worker thread
-    background_worker: bool = true,
-    /// Worker thread priority (if supported)
-    worker_priority: WorkerPriority = .normal,
-    /// Shutdown timeout in milliseconds
-    shutdown_timeout_ms: u64 = 5000,
-    /// Enable metrics collection
-    enable_metrics: bool = true,
-    /// Pre-allocate formatted message buffers
-    preallocate_buffers: bool = true,
-    /// Maximum message size
-    max_message_size: usize = 4096,
 };
 ```
 
