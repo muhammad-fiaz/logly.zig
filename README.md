@@ -142,7 +142,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.5.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
@@ -179,7 +179,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.5.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

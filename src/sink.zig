@@ -140,7 +140,7 @@ const SystemLog = struct {
             .posix => {
                 const msg_z = try self.allocator.dupeZ(u8, message);
                 defer self.allocator.free(msg_z);
-                const priority = switch (level) {
+                const priority: c_int = switch (level) {
                     .err, .critical, .fail => posix.LOG_ERR,
                     .warning => posix.LOG_WARNING,
                     else => posix.LOG_INFO,
