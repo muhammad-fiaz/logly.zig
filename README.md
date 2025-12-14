@@ -151,7 +151,8 @@ This automatically adds the dependency with the correct hash to your `build.zig.
 
 Get started quickly with a pre-configured project template:
 
-📦 **[Download Project Starter Example](https://github.com/muhammad-fiaz/logly.zig/releases/latest/download/project-starter-example.zip)**
+📦 **[Download Project Starter Example](https://download-directory.github.io/?url=https://github.com/muhammad-fiaz/logly.zig/tree/main/project-starter-example
+)**
 
 Or clone directly:
 ```bash

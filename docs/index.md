@@ -130,7 +130,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-    .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.5.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.6.tar.gz",
         .hash = "...",
     },
 },
