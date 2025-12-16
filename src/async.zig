@@ -2,6 +2,7 @@ const std = @import("std");
 const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
 const Sink = @import("sink.zig").Sink;
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 /// Asynchronous logging infrastructure for non-blocking operations.
 ///
@@ -291,6 +292,18 @@ pub const AsyncLogger = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         try self.sinks.append(self.allocator, sink);
+    }
+
+    /// Adds a sink using SinkConfig for convenience.
+    pub fn addSinkConfig(self: *AsyncLogger, config: SinkConfig) !*Sink {
+        const sink = try Sink.init(self.allocator, config);
+        try self.addSink(sink);
+        return sink;
+    }
+
+    /// Adds a console sink with default settings.
+    pub fn addConsoleSink(self: *AsyncLogger) !*Sink {
+        return self.addSinkConfig(SinkConfig.console());
     }
 
     /// Queues a log record for async processing.

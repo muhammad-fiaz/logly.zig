@@ -280,7 +280,7 @@ fn healthCheck(logger: *logly.Logger) !HealthStatus {
             const avail_percent = (@as(f64, @floatFromInt(avail)) / @as(f64, @floatFromInt(total))) * 100.0;
             if (avail_percent < 10.0) {
                 status.healthy = false;
-                try logger.warning("Low memory: {d:.1}% available", @src());
+                try logger.warningf("Low memory: {d:.1}% available", .{avail_percent}, @src());
             }
         }
     }
@@ -290,7 +290,7 @@ fn healthCheck(logger: *logly.Logger) !HealthStatus {
         const free_percent = (@as(f64, @floatFromInt(drive.free_bytes)) / @as(f64, @floatFromInt(drive.total_bytes))) * 100.0;
         if (free_percent < 5.0) {
             status.healthy = false;
-            try logger.warning("Low disk space on {s}: {d:.1}% free", @src());
+            try logger.warningf("Low disk space on {s}: {d:.1}% free", .{drive.name, free_percent}, @src());
         }
     }
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 /// Sampler for controlling log throughput with comprehensive monitoring.
 ///
@@ -350,6 +351,14 @@ pub const SamplerPresets = struct {
         return Sampler.init(allocator, .{ .adaptive = .{
             .target_rate = 1000,
         } });
+    }
+
+    /// Creates a sampled sink configuration.
+    pub fn createSampledSink(file_path: []const u8) SinkConfig {
+        return SinkConfig{
+            .path = file_path,
+            .color = false,
+        };
     }
 };
 

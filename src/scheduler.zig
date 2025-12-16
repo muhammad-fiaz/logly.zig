@@ -1,6 +1,7 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Compression = @import("compression.zig").Compression;
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 /// Scheduler for automated log maintenance tasks.
 ///
@@ -843,6 +844,16 @@ pub const SchedulerPresets = struct {
     /// Daily at specific time.
     pub fn dailyAt(hour: u8, minute: u8) Scheduler.Schedule {
         return .{ .daily = .{ .hour = hour, .minute = minute } };
+    }
+
+    /// Creates a scheduled log sink configuration.
+    pub fn createScheduledSink(file_path: []const u8, rotation: []const u8) SinkConfig {
+        return SinkConfig{
+            .path = file_path,
+            .rotation = rotation,
+            .retention = 7,
+            .color = false,
+        };
     }
 };
 

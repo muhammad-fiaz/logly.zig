@@ -87,9 +87,9 @@ _ = try logger.addSink(.{
     .pretty_json = true,
 });
 
-try logger.info("First message");
-try logger.warning("Second message");
-try logger.err("Third message");
+try logger.info("First message", @src());
+try logger.warning("Second message", @src());
+try logger.err("Third message", @src());
 ```
 
 **File output (`logs/app.json`):**
@@ -141,7 +141,7 @@ Custom levels display their actual names and colors in JSON:
 
 ```zig
 try logger.addCustomLevel("AUDIT", 35, "35");  // Magenta
-try logger.custom("AUDIT", "User login event");
+try logger.custom("AUDIT", "User login event", @src());
 ```
 
 Output (colored in magenta):

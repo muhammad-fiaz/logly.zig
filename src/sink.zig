@@ -314,6 +314,16 @@ pub const SinkConfig = struct {
         return .{};
     }
 
+    /// Returns a console sink configuration with default settings.
+    pub fn console() SinkConfig {
+        return .{
+            .path = null, // Console output
+            .color = null, // Auto-detect
+            .async_write = true,
+            .enabled = true,
+        };
+    }
+
     /// Returns a file sink configuration.
     ///
     /// Arguments:
@@ -766,13 +776,15 @@ pub const Sink = struct {
         // If we created a temp formatter, we don't need to deinit it as it doesn't hold resources,
         // but we should be aware of it.
 
-        // Check global switches
+        // Check global switches - early exit if globally disabled
         if (self.file != null) {
+            // File sink - check global file storage setting
             if (!global_config.global_file_storage) return;
         } else if (self.stream == null and self.udp_socket == null and self.system_log == null) {
-            // Console
+            // Console sink - check global console display setting
             if (!global_config.global_console_display) return;
         }
+        // Network and system log sinks are not affected by global console/file settings
 
         // Handle SystemLog separately to preserve log level
         if (self.system_log) |*syslog| {

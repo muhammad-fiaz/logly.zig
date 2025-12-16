@@ -14,7 +14,7 @@ Get started with Logly-Zig in minutes.
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz
 ```
 
 This command automatically:
@@ -32,7 +32,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
     .version = "0.1.0",
     .dependencies = .{
         .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz",
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz",
             .hash = "1220...", // Run: zig fetch <url> to get this hash
         },
     },
@@ -41,7 +41,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
 
 To get the hash manually, run:
 ```bash
-zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz
 ```
 
 Copy the output hash (e.g., `1220abcd23f9f0c8...`) into your `build.zig.zon`.
@@ -143,9 +143,9 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Entire log lines are colored by level!
-    try logger.info("Logly-Zig is working!");      // White line
-    try logger.success("Installation complete!");  // Green line
-    try logger.warning("Ready for production!");   // Yellow line
+    try logger.info("Logly-Zig is working!", @src());      // White line
+    try logger.success("Installation complete!", @src());  // Green line
+    try logger.warning("Ready for production!", @src());   // Yellow line
 }
 ```
 
@@ -226,7 +226,7 @@ _ = try logger.addSink(.{
 
 If you see a hash mismatch error, run:
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.4.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz
 ```
 
 ### Colors Not Displaying on Windows

@@ -354,62 +354,62 @@ The `src` parameter is **optional** (type `?std.builtin.SourceLocation`):
 
 ```zig
 // With source location - recommended for debugging
-try logger.info(@src(), "Application started", .{});
+try logger.info("Application started", @src());
 
 // Without source location - useful for high-volume logging
-try logger.debug(null, "Processing item", .{});
+try logger.debug("Processing item", null);
 ```
 
-### `trace(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `trace(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **TRACE** level (Priority 5).
 
 ```zig
-try logger.trace(@src(), "Detailed trace info", .{});  // With source location
-try logger.trace(null, "Trace without location", .{}); // Without source location
+try logger.trace("Detailed trace info", @src());  // With source location
+try logger.trace("Trace without location", null); // Without source location
 ```
 
-### `debug(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `debug(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **DEBUG** level (Priority 10).
 
-### `info(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `info(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **INFO** level (Priority 20).
 
-### `success(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `success(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **SUCCESS** level (Priority 25).
 
-### `warning(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `warning(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **WARNING** level (Priority 30).
 
 - **Alias**: `warn()`
 
-### `err(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `err(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **ERROR** level (Priority 40).
 
 - **Alias**: `@"error"()` (Zig keyword escape)
 
-### `fail(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `fail(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **FAIL** level (Priority 45).
 
-### `critical(src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `critical(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **CRITICAL** level (Priority 50).
 
 - **Alias**: `crit()`
 
-### `custom(level_name: []const u8, src: ?std.builtin.SourceLocation, message: []const u8, args: anytype) !void`
+### `custom(level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message using a user-defined custom level. The level must be registered first.
 
 ```zig
 try logger.addCustomLevel("audit", 35, "35;1");
-try logger.custom("audit", @src(), "User login detected", .{});
+try logger.custom("audit", "User login detected", @src());
 ```
 
 ## Formatted Logging
@@ -420,9 +420,9 @@ All logging methods accept a format string and arguments in the same call:
 
 ```zig
 // Recommended: Use main method with format string
-try logger.info(@src(), "User {s} connected from {s}", .{ "alice", "10.0.0.1" });
-try logger.warn(@src(), "Request took {d}ms", .{elapsed_ms});
-try logger.crit(@src(), "Failed after {d} retries: {s}", .{ retry_count, error_msg });
+try logger.info("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src());
+try logger.warn("Request took {d}ms", .{elapsed_ms}, @src());
+try logger.crit("Failed after {d} retries: {s}", .{ retry_count, error_msg }, @src());
 ```
 
 ### Legacy Format Methods (f-suffix)

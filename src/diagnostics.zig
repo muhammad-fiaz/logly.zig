@@ -9,6 +9,7 @@
 /// All collected data is owned by the caller and must be freed with deinit().
 const std = @import("std");
 const builtin = @import("builtin");
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 /// Windows kernel32 API bindings for system diagnostics.
 /// Provides access to memory status and drive enumeration functions.
@@ -206,4 +207,15 @@ fn collectWindowsDrives(allocator: std.mem.Allocator, list: *std.ArrayList(Drive
 
         try list.append(allocator, .{ .name = name, .total_bytes = total_bytes, .free_bytes = free_bytes });
     }
+}
+
+/// Creates a diagnostics-specific file sink configuration.
+pub fn createDiagnosticsSink(file_path: []const u8) SinkConfig {
+    return SinkConfig{
+        .path = file_path,
+        .json = true,
+        .pretty_json = true,
+        .color = false,
+        .include_timestamp = true,
+    };
 }

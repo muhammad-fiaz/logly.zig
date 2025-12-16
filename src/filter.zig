@@ -2,6 +2,7 @@ const std = @import("std");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 /// Filter for conditionally processing log records.
 ///
@@ -328,6 +329,15 @@ pub const FilterPresets = struct {
         var filter = Filter.init(allocator);
         try filter.addModulePrefix(module);
         return filter;
+    }
+
+    /// Creates a filtered sink configuration.
+    pub fn createFilteredSink(file_path: []const u8, min_level: Level) SinkConfig {
+        return SinkConfig{
+            .path = file_path,
+            .level = min_level,
+            .color = false,
+        };
     }
 };
 

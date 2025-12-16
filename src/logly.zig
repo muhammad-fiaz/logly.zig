@@ -38,6 +38,18 @@
 //! const logger = try logly.Logger.initWithConfig(allocator, config);
 //! ```
 //!
+//! ## Log-Only and Display-Only Modes
+//!
+//! ```zig
+//! // Log-only mode (files only, no console)
+//! const log_config = logly.Config.logOnly();
+//! const log_logger = try logly.Logger.initWithConfig(allocator, log_config);
+//!
+//! // Display-only mode (console only, no files)
+//! const display_config = logly.Config.displayOnly();
+//! const display_logger = try logly.Logger.initWithConfig(allocator, display_config);
+//! ```
+//!
 //! ## Distributed Tracing
 //!
 //! ```zig
@@ -116,12 +128,27 @@ pub const ConfigPresets = struct {
     pub fn secure() Config {
         return Config.secure();
     }
+
+    /// Log-only mode (no console display, only file storage)
+    pub fn logOnly() Config {
+        return Config.logOnly();
+    }
+
+    /// Display-only mode (console display, no file storage)
+    pub fn displayOnly() Config {
+        return Config.displayOnly();
+    }
+
+    /// Custom display and storage settings
+    pub fn withDisplayStorage(console: bool, file: bool, auto_sink: bool) Config {
+        return Config.withDisplayStorage(console, file, auto_sink);
+    }
 };
 
 // Sink configuration helpers
 pub const SinkPresets = struct {
     pub fn console() SinkConfig {
-        return SinkConfig.default();
+        return SinkConfig.console();
     }
 
     pub fn file(path: []const u8) SinkConfig {
@@ -138,6 +165,10 @@ pub const SinkPresets = struct {
 
     pub fn errorOnly(path: []const u8) SinkConfig {
         return SinkConfig.errorOnly(path);
+    }
+
+    pub fn network(uri: []const u8) SinkConfig {
+        return SinkConfig.network(uri);
     }
 };
 

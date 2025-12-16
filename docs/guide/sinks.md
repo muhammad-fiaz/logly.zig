@@ -166,6 +166,9 @@ _ = logger.clear();  // or logger.removeAll() or logger.removeAllSinks()
 | `include_level` | `bool` | `true` | Include log level in output |
 | `include_source` | `bool` | `false` | Include source location |
 | `include_trace_id` | `bool` | `false` | Include trace IDs (distributed tracing) |
+| `event_log` | `bool` | `false` | Enable system event log (Windows Event Log/Syslog) |
+| `compression` | `?CompressionConfig` | `null` | Network compression settings |
+| `write_mode` | `enum` | `.append` | File write mode (`.append`, `.overwrite`, `.create_new`) |
 
 ## Color Control
 

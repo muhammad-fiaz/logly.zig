@@ -56,9 +56,9 @@ try logger.addCustomLevel("notice", 22, "36;1");   // Bold cyan (between INFO an
 try logger.addCustomLevel("alert", 48, "91;1");    // Bold bright red (between FAIL and CRITICAL)
 
 // Use custom levels
-try logger.custom("audit", "Security event detected");
-try logger.custom("notice", "Important notice");
-try logger.customf("alert", "High CPU usage: {d}%", .{95});
+try logger.custom("audit", "Security event detected", @src());
+try logger.custom("notice", "Important notice", @src());
+try logger.customf("alert", "High CPU usage: {d}%", .{95}, @src());
 ```
 
 ## Level Filtering
@@ -85,7 +85,7 @@ try logger.setModuleLevel("network", .debug);
 
 // Create a scoped logger
 const net_logger = logger.scoped("network");
-try net_logger.debug("This will be logged");
+try net_logger.debug("This will be logged", @src());
 ```
 
 To use module-specific logging, use the `scoped()` method to create a logger instance for that module.

@@ -84,6 +84,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | 🔐 **Advanced Redaction** | Custom patterns and callbacks for sensitive data |
 | 🔗 **Persistent Context** | Scoped loggers with persistent fields via `logger.with()` |
 | 🔍 **Advanced Filtering** | Fluent API for complex filter rules |
+| 🎛️ **Configuration Modes** | Log-only, display-only, and custom display/storage modes |
 
 </details>
 
@@ -142,7 +143,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
@@ -179,7 +180,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/v0.0.6.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -463,6 +464,36 @@ if (logger.getMetrics()) |snapshot| {
 }
 ```
 
+### Log-Only and Display-Only Modes
+
+```zig
+// Log-only mode (files only, no console output)
+const log_config = logly.Config.logOnly();
+const log_logger = try logly.Logger.initWithConfig(allocator, log_config);
+defer log_logger.deinit();
+
+// Add file sinks manually
+_ = try log_logger.addSink(logly.SinkConfig.file("app.log"));
+try log_logger.info("This goes to file only", @src());
+
+// Display-only mode (console only, no files)
+const display_config = logly.Config.displayOnly();
+const display_logger = try logly.Logger.initWithConfig(allocator, display_config);
+defer display_logger.deinit();
+
+try display_logger.info("This appears in console only", @src());
+
+// Custom display/storage settings
+const custom_config = logly.Config.withDisplayStorage(true, true, true); // console, file, auto_sink
+const custom_logger = try logly.Logger.initWithConfig(allocator, custom_config);
+defer custom_logger.deinit();
+
+// Silent mode (no output anywhere)
+const silent_config = logly.Config.withDisplayStorage(false, false, false);
+const silent_logger = try logly.Logger.initWithConfig(allocator, silent_config);
+defer silent_logger.deinit();
+```
+
 ### Production Configuration
 
 ```zig
@@ -486,6 +517,16 @@ var config = logly.Config.default();
 config.global_color_display = true;
 config.global_console_display = true;
 config.global_file_storage = true;
+
+// Or use convenience presets:
+// Log-only mode (no console, only files)
+const log_only_config = logly.Config.logOnly();
+
+// Display-only mode (console only, no files)
+const display_only_config = logly.Config.displayOnly();
+
+// Custom display/storage settings
+const custom_config = logly.Config.withDisplayStorage(true, true, true);
 
 // Log level
 config.level = .debug;

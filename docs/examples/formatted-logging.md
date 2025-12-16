@@ -71,9 +71,9 @@ config.log_format = "{time} | {level} | {message}";
 config.color = true;  // Colors apply to entire formatted line
 logger.configure(config);
 
-try logger.info("Application started");
-try logger.warning("High memory usage");
-try logger.err("Connection failed");
+try logger.info("Application started", @src());
+try logger.warning("High memory usage", @src());
+try logger.err("Connection failed", @src());
 ```
 
 Output (each line colored by level):
