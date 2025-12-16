@@ -31,7 +31,7 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Log messages - temporary allocations use arena
-    try logger.info(@src(), "High-throughput logging enabled", .{});
+    try logger.info("High-throughput logging enabled", @src());
 }
 ```
 
@@ -92,7 +92,7 @@ pub fn main() !void {
     // High-throughput logging loop
     var i: usize = 0;
     while (i < 10000) : (i += 1) {
-        try logger.info(@src(), "Processing item {d}", .{i});
+        try logger.infof("Processing item {d}", .{i}, @src());
 
         // Periodically reset arena to prevent memory growth
         if (i % 1000 == 0) {
@@ -102,7 +102,7 @@ pub fn main() !void {
 
     // Final reset
     logger.resetArena();
-    try logger.info(@src(), "Batch processing complete", .{});
+    try logger.info("Batch processing complete", @src());
 }
 ```
 
@@ -153,17 +153,17 @@ pub fn main() !void {
     // Simulate high-throughput server logs
     var request_count: u64 = 0;
     while (request_count < 100000) : (request_count += 1) {
-        try logger.info(@src(), "Request {d} processed", .{request_count});
-        try logger.debug(@src(), "Response time: {d}ms", .{request_count % 100});
+        try logger.infof("Request {d} processed", .{request_count}, @src());
+        try logger.debugf("Response time: {d}ms", .{request_count % 100}, @src());
 
         // Reset arena every 500 requests
         if (request_count % 500 == 0) {
             logger.resetArena();
-            try logger.debug(@src(), "Arena reset at request {d}", .{request_count});
+            try logger.debugf("Arena reset at request {d}", .{request_count}, @src());
         }
     }
 
-    try logger.success(@src(), "Processed {d} requests", .{request_count});
+    try logger.successf("Processed {d} requests", .{request_count}, @src());
 }
 ```
 
@@ -235,22 +235,22 @@ pub fn main() !void {
     try logger.bind("app", .{ .string = "my-service" });
     try logger.bind("version", .{ .string = "1.0.0" });
 
-    try logger.info(@src(), "Application starting with arena allocation", .{});
+    try logger.info("Application starting with arena allocation", @src());
 
     // Simulate workload
     var batch: usize = 0;
     while (batch < 10) : (batch += 1) {
         var i: usize = 0;
         while (i < 1000) : (i += 1) {
-            try logger.debug(@src(), "Processing batch {d}, item {d}", .{ batch, i });
+            try logger.debugf("Processing batch {d}, item {d}", .{ batch, i }, @src());
         }
 
         // Reset arena after each batch
         logger.resetArena();
-        try logger.info(@src(), "Completed batch {d}", .{batch});
+        try logger.infof("Completed batch {d}", .{batch}, @src());
     }
 
-    try logger.success(@src(), "All batches processed successfully", .{});
+    try logger.success("All batches processed successfully", @src());
 }
 ```
 

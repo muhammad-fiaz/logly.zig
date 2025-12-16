@@ -110,6 +110,7 @@ pub const Config = struct {
     symbolize_stack_trace: bool = false,
 
     /// Automatically add a console sink on logger initialization.
+    /// Only creates sink when both auto_sink=true and global_console_display=true.
     auto_sink: bool = true,
 
     /// Enable callback invocation for log events.
@@ -745,6 +746,43 @@ pub const Config = struct {
     pub fn withArenaAllocation(self: Config) Config {
         var result = self;
         result.use_arena_allocator = true;
+        return result;
+    }
+
+    /// Returns a configuration for log-only mode (no console display, only file storage).
+    /// Disables console output while keeping file storage enabled.
+    /// Useful for production environments where logs should only be written to files.
+    pub fn logOnly() Config {
+        var result = Config.default();
+        result.global_console_display = false;
+        result.global_file_storage = true;
+        result.auto_sink = false; // Disable auto console sink
+        return result;
+    }
+
+    /// Returns a configuration for display-only mode (console display, no file storage).
+    /// Enables console output while disabling file storage.
+    /// Useful for development or debugging where you only want to see logs in the console.
+    pub fn displayOnly() Config {
+        var result = Config.default();
+        result.global_console_display = true;
+        result.global_file_storage = false;
+        result.auto_sink = true; // Enable auto console sink
+        return result;
+    }
+
+    /// Returns a configuration with custom display and storage settings.
+    /// Allows fine-grained control over console display and file storage.
+    ///
+    /// Arguments:
+    ///     console: Enable/disable console display
+    ///     file: Enable/disable file storage
+    ///     auto_sink: Enable/disable automatic console sink creation
+    pub fn withDisplayStorage(console: bool, file: bool, auto_sink: bool) Config {
+        var result = Config.default();
+        result.global_console_display = console;
+        result.global_file_storage = file;
+        result.auto_sink = auto_sink;
         return result;
     }
 };

@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const http = std.http;
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 pub const NetworkError = error{
     InvalidUri,
@@ -188,3 +189,23 @@ pub const LogServer = struct {
         }
     }
 };
+
+/// Creates a TCP network sink configuration.
+pub fn createTcpSink(host: []const u8, port: u16) !SinkConfig {
+    const uri = try std.fmt.allocPrint(std.heap.page_allocator, "tcp://{s}:{d}", .{ host, port });
+    return SinkConfig{
+        .path = uri,
+        .color = false,
+        .async_write = true,
+    };
+}
+
+/// Creates a UDP network sink configuration.
+pub fn createUdpSink(host: []const u8, port: u16) !SinkConfig {
+    const uri = try std.fmt.allocPrint(std.heap.page_allocator, "udp://{s}:{d}", .{ host, port });
+    return SinkConfig{
+        .path = uri,
+        .color = false,
+        .async_write = true,
+    };
+}

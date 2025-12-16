@@ -1,5 +1,6 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 /// Handles log file rotation logic with comprehensive callback support.
 ///
@@ -230,5 +231,25 @@ pub const Rotation = struct {
                 try std.fs.cwd().deleteFile(full_path);
             }
         }
+    }
+
+    /// Creates a rotating sink configuration.
+    pub fn createRotatingSink(file_path: []const u8, interval: []const u8, retention: usize) SinkConfig {
+        return SinkConfig{
+            .path = file_path,
+            .rotation = interval,
+            .retention = retention,
+            .color = false,
+        };
+    }
+
+    /// Creates a size-based rotating sink configuration.
+    pub fn createSizeRotatingSink(file_path: []const u8, size_limit: u64, retention: usize) SinkConfig {
+        return SinkConfig{
+            .path = file_path,
+            .size_limit = size_limit,
+            .retention = retention,
+            .color = false,
+        };
     }
 };

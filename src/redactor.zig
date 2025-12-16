@@ -1,5 +1,6 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
+const SinkConfig = @import("sink.zig").SinkConfig;
 
 /// Redaction utilities for masking sensitive data in logs.
 ///
@@ -469,6 +470,15 @@ pub const RedactionPresets = struct {
         try redactor.addField("medical_record", .hash);
 
         return redactor;
+    }
+
+    /// Creates a secure sink configuration with redaction enabled.
+    pub fn createSecureSink(file_path: []const u8) SinkConfig {
+        return SinkConfig{
+            .path = file_path,
+            .json = true,
+            .color = false,
+        };
     }
 };
 

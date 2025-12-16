@@ -27,10 +27,10 @@ pub fn main() !void {
     try logger.addCustomLevel("SECURITY", 45, "31;7"); // Red Reverse
     try logger.addCustomLevel("METRIC", 15, "36");      // Cyan
 
-    try logger.info("Standard INFO message");
-    try logger.custom("AUDIT", "User login recorded");
-    try logger.custom("SECURITY", "Access control check passed");
-    try logger.custom("METRIC", "Response time: 42ms");
+    try logger.info("Standard INFO message", @src());
+    try logger.custom("AUDIT", "User login recorded", @src());
+    try logger.custom("SECURITY", "Access control check passed", @src());
+    try logger.custom("METRIC", "Response time: 42ms", @src());
 
     // ========================================
     // Test 2: File Output
@@ -48,7 +48,7 @@ pub fn main() !void {
     });
 
     try file_logger.addCustomLevel("AUDIT", 25, "35");
-    try file_logger.custom("AUDIT", "This goes to the file");
+    try file_logger.custom("AUDIT", "This goes to the file", @src());
     try file_logger.flush();
 
     // ========================================
@@ -64,7 +64,7 @@ pub fn main() !void {
     json_logger.configure(json_config);
 
     try json_logger.addCustomLevel("AUDIT", 25, "35");
-    try json_logger.custom("AUDIT", "Custom level in JSON format");
+    try json_logger.custom("AUDIT", "Custom level in JSON format", @src());
 
     // ========================================
     // Test 4: JSON with Context
@@ -72,15 +72,15 @@ pub fn main() !void {
     
     try json_logger.bind("service", .{ .string = "auth-service" });
     try json_logger.bind("user_id", .{ .string = "user-12345" });
-    try json_logger.custom("AUDIT", "User authentication successful");
+    try json_logger.custom("AUDIT", "User authentication successful", @src());
 
     // ========================================
     // Test 5: Formatted Messages
     // ========================================
     
     try logger.addCustomLevel("PERF", 12, "36;1");
-    try logger.customf("PERF", "Request processed in {d}ms", .{42});
-    try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" });
+    try logger.customf("PERF", "Request processed in {d}ms", .{42}, @src());
+    try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" }, @src());
 }
 ```
 

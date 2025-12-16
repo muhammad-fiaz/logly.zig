@@ -188,8 +188,8 @@ pub const Logger = struct {
             .atomic_level = std.atomic.Value(u8).init(@intFromEnum(Config.default().level)),
         };
 
-        if (logger.config.auto_sink) {
-            _ = try logger.addSink(SinkConfig.default());
+        if (logger.config.auto_sink and logger.config.global_console_display) {
+            _ = try logger.addSink(SinkConfig.console());
         }
 
         if (logger.config.emit_system_diagnostics_on_init) {
@@ -230,8 +230,8 @@ pub const Logger = struct {
             logger.parent_allocator = allocator;
         }
 
-        if (config.auto_sink) {
-            _ = try logger.addSink(SinkConfig.default());
+        if (config.auto_sink and config.global_console_display) {
+            _ = try logger.addSink(SinkConfig.console());
         }
 
         if (config.emit_system_diagnostics_on_init) {

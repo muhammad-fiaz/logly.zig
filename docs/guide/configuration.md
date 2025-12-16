@@ -65,6 +65,12 @@ logger.configure(config);
 | `log_format`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
 | `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss"` | Timestamp format                                     |
 | `timezone`               | `enum`        | `.local`                | Timezone for timestamps (`.local` or `.utc`)         |
+| `use_arena_allocator`    | `bool`        | `false`                 | Enable arena allocator for temporary allocations     |
+| `emit_system_diagnostics_on_init` | `bool` | `false`           | Emit system diagnostics on logger initialization     |
+| `include_drive_diagnostics` | `bool`     | `true`                  | Include drive information in diagnostics             |
+| `logs_root_path`         | `?[]const u8` | `null`                  | Root directory for log files                        |
+| `debug_mode`             | `bool`        | `false`                 | Enable debug output for troubleshooting             |
+| `error_handling`         | `enum`        | `.log_and_continue`     | Error handling strategy (`.silent`, `.log_and_continue`, `.fail_fast`, `.callback`) |
 
 ## Module Configuration
 
@@ -131,8 +137,6 @@ config.async_config = .{
 Use helper methods for cleaner configuration:
 
 ```zig
-var config = logly.Config.default()
-```zig
 // Enable async logging
 var config = logly.Config.default().withAsync();
 
@@ -144,6 +148,16 @@ var config3 = logly.Config.default().withThreadPool(4);
 
 // Enable scheduler
 var config4 = logly.Config.default().withScheduler();
+
+// Enable arena allocation
+var config5 = logly.Config.default().withArenaAllocation();
+
+// Chain multiple features
+var config6 = logly.Config.default()
+    .withAsync()
+    .withCompression()
+    .withThreadPool(0)  // Auto-detect CPU cores
+    .withArenaAllocation();
 ```
 
 ## Configuration Presets
@@ -152,22 +166,31 @@ Logly provides pre-configured presets for common scenarios:
 
 ```zig
 // Production: JSON output, sampling, compression, scheduler enabled
-const prod_config = logly.Config.production();
+const prod_config = logly.ConfigPresets.production();
 
 // Development: DEBUG level, colors, source location shown
-const dev_config = logly.Config.development();
+const dev_config = logly.ConfigPresets.development();
 
 // High Throughput: Async, thread pool, rate limiting enabled
-const perf_config = logly.Config.highThroughput();
+const perf_config = logly.ConfigPresets.highThroughput();
 
 // Secure: Redaction enabled, no hostname/PID in output
-const secure_config = logly.Config.secure();
+const secure_config = logly.ConfigPresets.secure();
+
+// Log-only mode (no console output)
+const log_only = logly.Config.logOnly();
+
+// Display-only mode (console only, no files)
+const display_only = logly.Config.displayOnly();
+
+// Custom display/storage settings
+const custom = logly.Config.withDisplayStorage(true, true, true);
 ```
 
 ### Using Presets
 
 ```zig
-var logger = try logly.Logger.initWithConfig(allocator, logly.Config.production());
+var logger = try logly.Logger.initWithConfig(allocator, logly.ConfigPresets.production());
 ```
 
 ## Advanced Configuration
