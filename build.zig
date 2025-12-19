@@ -83,8 +83,7 @@ pub fn build(b: *std.Build) void {
 
     // Create run-all-examples step that runs all examples sequentially
     const run_all_examples = b.step("run-all-examples", "Run all examples sequentially");
-    var previous_step: ?*std.Build.Step = null;
-    var previous_install: ?*std.Build.Step = null;
+    var previous_run_step: ?*std.Build.Step = null;
 
     inline for (examples) |example| {
         const exe = b.addExecutable(.{
@@ -99,24 +98,17 @@ pub fn build(b: *std.Build) void {
         exe.linkLibC();
 
         const install_exe = b.addInstallArtifact(exe, .{});
-        // Ensure installs (compilation) happen sequentially to avoid
-        // cache rename collisions on Windows when multiple compiler
-        // invocations write into the same `.zig-cache` concurrently.
-        if (previous_install) |prev_install| {
-            install_exe.step.dependOn(prev_install);
-        }
-        previous_install = &install_exe.step;
-
         const run_exe = b.addRunArtifact(exe);
         run_exe.step.dependOn(&install_exe.step);
 
-        if (previous_step) |prev| {
+        // Make each run step depend on the previous run step to ensure sequential execution
+        if (previous_run_step) |prev| {
             run_exe.step.dependOn(prev);
         }
-        previous_step = &run_exe.step;
+        previous_run_step = &run_exe.step;
     }
 
-    if (previous_step) |last| {
+    if (previous_run_step) |last| {
         run_all_examples.dependOn(last);
     }
 
@@ -152,6 +144,18 @@ pub fn build(b: *std.Build) void {
 
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // Create comprehensive test-all step that runs everything sequentially
+    const test_all_step = b.step("test-all", "Run all tests, benchmarks, and examples sequentially");
+
+    // First run unit tests
+    test_all_step.dependOn(test_step);
+
+    // Then run benchmarks
+    test_all_step.dependOn(bench_step);
+
+    // Finally run all examples
+    test_all_step.dependOn(run_all_examples);
 
     // Install step for library
     const lib = b.addLibrary(.{
