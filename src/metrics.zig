@@ -1,6 +1,7 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
+const Constants = @import("constants.zig");
 
 /// Metrics collection for logging system observability and performance monitoring.
 ///
@@ -25,15 +26,15 @@ const Level = @import("level.zig").Level;
 pub const Metrics = struct {
     mutex: std.Thread.Mutex = .{},
 
-    total_records: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-    total_bytes: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-    dropped_records: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-    error_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    total_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    total_bytes: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    dropped_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    error_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
-    level_counts: [8]std.atomic.Value(u64) = [_]std.atomic.Value(u64){std.atomic.Value(u64).init(0)} ** 8,
+    level_counts: [8]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 8,
 
     start_time: i64,
-    last_record_time: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+    last_record_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
     sink_metrics: std.ArrayList(SinkMetrics),
     allocator: std.mem.Allocator,
@@ -75,16 +76,16 @@ pub const Metrics = struct {
     /// Per-sink metrics for fine-grained observability.
     pub const SinkMetrics = struct {
         name: []const u8,
-        records_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        write_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        flush_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        records_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        write_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Get write error rate for this sink
         pub fn getErrorRate(self: *const SinkMetrics) f64 {
-            const written = self.records_written.load(.monotonic);
+            const written = @as(u64, self.records_written.load(.monotonic));
             if (written == 0) return 0;
-            const errors = self.write_errors.load(.monotonic);
+            const errors = @as(u64, self.write_errors.load(.monotonic));
             return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(written));
         }
     };
@@ -218,8 +219,8 @@ pub const Metrics = struct {
     ///     bytes: The number of bytes written.
     pub fn recordSinkWrite(self: *Metrics, sink_index: usize, bytes: u64) void {
         if (sink_index < self.sink_metrics.items.len) {
-            _ = self.sink_metrics.items[sink_index].records_written.fetchAdd(1, .monotonic);
-            _ = self.sink_metrics.items[sink_index].bytes_written.fetchAdd(bytes, .monotonic);
+            _ = self.sink_metrics.items[sink_index].records_written.fetchAdd(@as(Constants.AtomicUnsigned, 1), .monotonic);
+            _ = self.sink_metrics.items[sink_index].bytes_written.fetchAdd(@as(Constants.AtomicUnsigned, bytes), .monotonic);
         }
     }
 
@@ -229,7 +230,7 @@ pub const Metrics = struct {
     ///     sink_index: The index of the sink.
     pub fn recordSinkError(self: *Metrics, sink_index: usize) void {
         if (sink_index < self.sink_metrics.items.len) {
-            _ = self.sink_metrics.items[sink_index].write_errors.fetchAdd(1, .monotonic);
+            _ = self.sink_metrics.items[sink_index].write_errors.fetchAdd(@as(Constants.AtomicUnsigned, 1), .monotonic);
         }
     }
 
@@ -242,19 +243,19 @@ pub const Metrics = struct {
         const uptime_ms = now - self.start_time;
         const uptime_sec = @as(f64, @floatFromInt(uptime_ms)) / 1000.0;
 
-        const total_records = self.total_records.load(.monotonic);
-        const total_bytes = self.total_bytes.load(.monotonic);
+        const total_records = @as(u64, self.total_records.load(.monotonic));
+        const total_bytes = @as(u64, self.total_bytes.load(.monotonic));
 
         var level_counts: [8]u64 = undefined;
         for (0..8) |i| {
-            level_counts[i] = self.level_counts[i].load(.monotonic);
+            level_counts[i] = @as(u64, self.level_counts[i].load(.monotonic));
         }
 
         return .{
             .total_records = total_records,
             .total_bytes = total_bytes,
-            .dropped_records = self.dropped_records.load(.monotonic),
-            .error_count = self.error_count.load(.monotonic),
+            .dropped_records = @as(u64, self.dropped_records.load(.monotonic)),
+            .error_count = @as(u64, self.error_count.load(.monotonic)),
             .uptime_ms = uptime_ms,
             .records_per_second = if (uptime_sec > 0) @as(f64, @floatFromInt(total_records)) / uptime_sec else 0,
             .bytes_per_second = if (uptime_sec > 0) @as(f64, @floatFromInt(total_bytes)) / uptime_sec else 0,
@@ -264,21 +265,21 @@ pub const Metrics = struct {
 
     /// Resets all metrics to zero.
     pub fn reset(self: *Metrics) void {
-        self.total_records.store(0, .monotonic);
-        self.total_bytes.store(0, .monotonic);
-        self.dropped_records.store(0, .monotonic);
-        self.error_count.store(0, .monotonic);
+        self.total_records.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.total_bytes.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.dropped_records.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.error_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         self.start_time = std.time.milliTimestamp();
 
         for (0..8) |i| {
-            self.level_counts[i].store(0, .monotonic);
+            self.level_counts[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
 
         for (self.sink_metrics.items) |*metric| {
-            metric.records_written.store(0, .monotonic);
-            metric.bytes_written.store(0, .monotonic);
-            metric.write_errors.store(0, .monotonic);
-            metric.flush_count.store(0, .monotonic);
+            metric.records_written.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            metric.bytes_written.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            metric.write_errors.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            metric.flush_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
     }
 

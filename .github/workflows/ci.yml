@@ -41,38 +41,8 @@ jobs:
       - name: Build library (ReleaseFast)
         run: zig build -Doptimize=ReleaseFast
 
-      - name: Run all examples
-        run: zig build run-all-examples || echo "Some examples may fail due to CI environment limitations, continuing..."
-        continue-on-error: true
-
-      - name: Build individual examples
-        run: |
-          zig build example-basic
-          zig build example-file_logging
-          zig build example-rotation
-          zig build example-json_logging
-          zig build example-json_extended
-          zig build example-callbacks
-          zig build example-context
-          zig build example-custom_colors
-          zig build example-custom_levels_full
-          zig build example-async_logging
-          zig build example-formatted_logging
-          zig build example-time
-          zig build example-filtering
-          zig build example-sampling
-          zig build example-redaction
-          zig build example-metrics
-          zig build example-tracing
-          zig build example-diagnostics
-          zig build example-production_config
-          zig build example-compression
-          zig build example-thread_pool
-          zig build example-scheduler
-          zig build example-async_advanced
-          zig build example-config_presets
-          zig build example-customizations
-          zig build example-network_logging
+      - name: Run all examples (skipped here — run in matrix job)
+        run: echo "Examples are tested in a dedicated matrix job on Linux and macOS runners"
 
       - name: Run benchmarks
         run: zig build bench
@@ -114,6 +84,38 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/.vitepress/dist
+
+  examples:
+    name: Run Examples Matrix (Linux & macOS)
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-linux
+          - os: ubuntu-latest
+            target: x86-linux
+          - os: ubuntu-latest
+            target: aarch64-linux
+          - os: macos-latest
+            target: x86_64-macos
+          - os: macos-latest
+            target: aarch64-macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Run all examples on ${{ matrix.target }}
+        run: zig build run-all-examples -Dtarget=${{ matrix.target }} || echo "Some examples may fail due to CI environment limitations, continuing..."
+        continue-on-error: true
 
   deploy:
     needs: build

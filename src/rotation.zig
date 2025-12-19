@@ -1,6 +1,7 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
+const Constants = @import("constants.zig");
 
 /// Handles log file rotation logic with comprehensive callback support.
 ///
@@ -44,11 +45,11 @@ pub const Rotation = struct {
 
     /// Rotation statistics for monitoring.
     pub const RotationStats = struct {
-        total_rotations: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        files_archived: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        files_deleted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        last_rotation_time_ms: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        rotation_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_rotations: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        files_archived: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        files_deleted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        last_rotation_time_ms: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        rotation_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     };
 
     allocator: std.mem.Allocator,

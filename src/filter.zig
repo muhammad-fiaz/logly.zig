@@ -3,6 +3,7 @@ const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
 const SinkConfig = @import("sink.zig").SinkConfig;
+const Constants = @import("constants.zig");
 
 /// Filter for conditionally processing log records.
 ///
@@ -23,25 +24,25 @@ const SinkConfig = @import("sink.zig").SinkConfig;
 pub const Filter = struct {
     /// Filter statistics for monitoring and diagnostics.
     pub const FilterStats = struct {
-        total_records_evaluated: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        records_allowed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        records_denied: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        rules_added: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        evaluation_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_records_evaluated: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        records_allowed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        records_denied: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        rules_added: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        evaluation_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate allow rate (0.0 - 1.0)
         pub fn allowRate(self: *const FilterStats) f64 {
-            const total = self.total_records_evaluated.load(.monotonic);
+            const total = @as(u64, self.total_records_evaluated.load(.monotonic));
             if (total == 0) return 0;
-            const allowed = self.records_allowed.load(.monotonic);
+            const allowed = @as(u64, self.records_allowed.load(.monotonic));
             return @as(f64, @floatFromInt(allowed)) / @as(f64, @floatFromInt(total));
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const FilterStats) f64 {
-            const total = self.total_records_evaluated.load(.monotonic);
+            const total = @as(u64, self.total_records_evaluated.load(.monotonic));
             if (total == 0) return 0;
-            const errors = self.evaluation_errors.load(.monotonic);
+            const errors = @as(u64, self.evaluation_errors.load(.monotonic));
             return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
         }
     };

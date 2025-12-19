@@ -84,6 +84,7 @@ pub fn build(b: *std.Build) void {
     // Create run-all-examples step that runs all examples sequentially
     const run_all_examples = b.step("run-all-examples", "Run all examples sequentially");
     var previous_step: ?*std.Build.Step = null;
+    var previous_install: ?*std.Build.Step = null;
 
     inline for (examples) |example| {
         const exe = b.addExecutable(.{
@@ -98,6 +99,14 @@ pub fn build(b: *std.Build) void {
         exe.linkLibC();
 
         const install_exe = b.addInstallArtifact(exe, .{});
+        // Ensure installs (compilation) happen sequentially to avoid
+        // cache rename collisions on Windows when multiple compiler
+        // invocations write into the same `.zig-cache` concurrently.
+        if (previous_install) |prev_install| {
+            install_exe.step.dependOn(prev_install);
+        }
+        previous_install = &install_exe.step;
+
         const run_exe = b.addRunArtifact(exe);
         run_exe.step.dependOn(&install_exe.step);
 

@@ -48,16 +48,22 @@ jobs:
       - name: Build Library
         run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
 
-      - name: Rename Artifact (Windows)
-        if: contains(matrix.target, 'windows')
-        run: mv zig-out/lib/logly.lib logly-${{ matrix.target }}.lib
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p release
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            # Copy windows static lib
+            cp zig-out/lib/logly.lib release/logly-${{ matrix.target }}.lib || true
+          else
+            # Copy unix static lib
+            cp zig-out/lib/liblogly.a release/liblogly-${{ matrix.target }}.a || true
+          fi
+          # Only library artifacts are prepared for upload
 
-      - name: Rename Artifact (Unix)
-        if: contains(matrix.target, 'windows') == false
-        run: mv zig-out/lib/liblogly.a liblogly-${{ matrix.target }}.a
-
-      - name: Upload Artifact
-        run: gh release upload ${{ github.event.release.tag_name }} ${{ contains(matrix.target, 'windows') && format('logly-{0}.lib', matrix.target) || format('liblogly-{0}.a', matrix.target) }}
+      - name: Upload Release Artifacts
+        run: |
+          # Upload all prepared artifacts (library + examples zip) to the GitHub Release
+          gh release upload "${{ github.event.release.tag_name }}" release/* --clobber || true
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 

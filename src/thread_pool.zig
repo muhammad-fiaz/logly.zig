@@ -1,5 +1,6 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
+const Constants = @import("constants.zig");
 
 /// Thread pool for parallel log processing with full callback support.
 ///
@@ -118,35 +119,37 @@ pub const ThreadPool = struct {
 
     /// Statistics for thread pool operations with detailed tracking.
     pub const ThreadPoolStats = struct {
-        tasks_submitted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        tasks_completed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        tasks_stolen: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        tasks_dropped: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        total_wait_time_ns: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        total_exec_time_ns: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        tasks_submitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasks_completed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasks_stolen: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasks_dropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        total_wait_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        total_exec_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         active_threads: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
 
         /// Calculate average wait time in nanoseconds
         /// Performance: O(1) - atomic loads
         pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64 {
-            const completed = self.tasks_completed.load(.monotonic);
+            const completed = @as(u64, self.tasks_completed.load(.monotonic));
             if (completed == 0) return 0;
-            return self.total_wait_time_ns.load(.monotonic) / completed;
+            const total_wait = @as(u64, self.total_wait_time_ns.load(.monotonic));
+            return total_wait / completed;
         }
 
         /// Calculate average execution time in nanoseconds
         /// Performance: O(1) - atomic loads
         pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64 {
-            const completed = self.tasks_completed.load(.monotonic);
+            const completed = @as(u64, self.tasks_completed.load(.monotonic));
             if (completed == 0) return 0;
-            return self.total_exec_time_ns.load(.monotonic) / completed;
+            const total_exec = @as(u64, self.total_exec_time_ns.load(.monotonic));
+            return total_exec / completed;
         }
 
         /// Calculate throughput (tasks per second)
         /// Performance: O(1) - atomic loads
         pub fn throughput(self: *const ThreadPoolStats) f64 {
-            const completed = self.tasks_completed.load(.monotonic);
-            const exec_time = self.total_exec_time_ns.load(.monotonic);
+            const completed = @as(u64, self.tasks_completed.load(.monotonic));
+            const exec_time = @as(u64, self.total_exec_time_ns.load(.monotonic));
             if (exec_time == 0) return 0;
             return @as(f64, @floatFromInt(completed)) / (@as(f64, @floatFromInt(exec_time)) / 1e9);
         }
@@ -286,7 +289,7 @@ pub const ThreadPool = struct {
         local_queue: WorkQueue,
         pool: *ThreadPool,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-        tasks_processed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        tasks_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         arena: ?std.heap.ArenaAllocator = null,
     };
 

@@ -131,7 +131,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-    .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz",
         .hash = "...",
     },
 },

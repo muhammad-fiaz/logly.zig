@@ -149,6 +149,8 @@ pub const Task = union(enum) {
 
 Statistics for the thread pool.
 
+> Note: Atomic counters are architecture-dependent. On 64-bit targets these use 64-bit atomics (u64); on 32-bit targets they use 32-bit atomics (u32).
+
 ```zig
 pub const ThreadPoolStats = struct {
     tasks_submitted: std.atomic.Value(u64),

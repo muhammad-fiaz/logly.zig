@@ -1,6 +1,7 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
+const Constants = @import("constants.zig");
 
 /// Sampler for controlling log throughput with comprehensive monitoring.
 ///
@@ -29,17 +30,17 @@ const SinkConfig = @import("sink.zig").SinkConfig;
 pub const Sampler = struct {
     /// Sampling statistics for monitoring and diagnostics.
     pub const SamplerStats = struct {
-        total_records_sampled: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        records_accepted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        records_rejected: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        rate_limit_exceeded: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        rate_adjustments: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_records_sampled: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        records_accepted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        records_rejected: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        rate_limit_exceeded: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        rate_adjustments: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate current accept rate (0.0 - 1.0)
         pub fn getAcceptRate(self: *const SamplerStats) f64 {
-            const total = self.total_records_sampled.load(.monotonic);
+            const total = @as(u64, self.total_records_sampled.load(.monotonic));
             if (total == 0) return 0;
-            const accepted = self.records_accepted.load(.monotonic);
+            const accepted = @as(u64, self.records_accepted.load(.monotonic));
             return @as(f64, @floatFromInt(accepted)) / @as(f64, @floatFromInt(total));
         }
     };
@@ -312,11 +313,11 @@ pub const Sampler = struct {
         // We return a new SamplerStats struct with the current values.
 
         return .{
-            .total_records_sampled = std.atomic.Value(u64).init(self.state.stats.total_records_sampled.load(.monotonic)),
-            .records_accepted = std.atomic.Value(u64).init(self.state.stats.records_accepted.load(.monotonic)),
-            .records_rejected = std.atomic.Value(u64).init(self.state.stats.records_rejected.load(.monotonic)),
-            .rate_limit_exceeded = std.atomic.Value(u64).init(self.state.stats.rate_limit_exceeded.load(.monotonic)),
-            .rate_adjustments = std.atomic.Value(u64).init(self.state.stats.rate_adjustments.load(.monotonic)),
+            .total_records_sampled = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.total_records_sampled.load(.monotonic))),
+            .records_accepted = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.records_accepted.load(.monotonic))),
+            .records_rejected = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.records_rejected.load(.monotonic))),
+            .rate_limit_exceeded = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.rate_limit_exceeded.load(.monotonic))),
+            .rate_adjustments = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.rate_adjustments.load(.monotonic))),
         };
     }
 };

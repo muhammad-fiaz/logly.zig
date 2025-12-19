@@ -2,6 +2,7 @@ const std = @import("std");
 const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
 const Level = @import("level.zig").Level;
+const Constants = @import("constants.zig");
 
 /// Handles the formatting of log records into strings or JSON.
 ///
@@ -32,25 +33,25 @@ const Level = @import("level.zig").Level;
 pub const Formatter = struct {
     /// Formatter statistics for monitoring and diagnostics.
     pub const FormatterStats = struct {
-        total_records_formatted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        json_formats: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        custom_formats: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        format_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        total_bytes_formatted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_records_formatted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        json_formats: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        custom_formats: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        format_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        total_bytes_formatted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate average format size
         pub fn avgFormatSize(self: *const FormatterStats) f64 {
-            const total = self.total_records_formatted.load(.monotonic);
+            const total = @as(u64, self.total_records_formatted.load(.monotonic));
             if (total == 0) return 0;
-            const bytes = self.total_bytes_formatted.load(.monotonic);
+            const bytes = @as(u64, self.total_bytes_formatted.load(.monotonic));
             return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const FormatterStats) f64 {
-            const total = self.total_records_formatted.load(.monotonic);
+            const total = @as(u64, self.total_records_formatted.load(.monotonic));
             if (total == 0) return 0;
-            const errors = self.format_errors.load(.monotonic);
+            const errors = @as(u64, self.format_errors.load(.monotonic));
             return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
         }
     };

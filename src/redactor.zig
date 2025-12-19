@@ -1,6 +1,7 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
+const Constants = @import("constants.zig");
 
 /// Redaction utilities for masking sensitive data in logs.
 ///
@@ -20,25 +21,25 @@ const SinkConfig = @import("sink.zig").SinkConfig;
 pub const Redactor = struct {
     /// Redactor statistics for monitoring and diagnostics.
     pub const RedactorStats = struct {
-        total_values_processed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        values_redacted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        patterns_matched: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        fields_redacted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        redaction_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_values_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        values_redacted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        patterns_matched: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        fields_redacted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        redaction_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate redaction rate (0.0 - 1.0)
         pub fn redactionRate(self: *const RedactorStats) f64 {
-            const total = self.total_values_processed.load(.monotonic);
+            const total = @as(u64, self.total_values_processed.load(.monotonic));
             if (total == 0) return 0;
-            const redacted = self.values_redacted.load(.monotonic);
+            const redacted = @as(u64, self.values_redacted.load(.monotonic));
             return @as(f64, @floatFromInt(redacted)) / @as(f64, @floatFromInt(total));
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const RedactorStats) f64 {
-            const total = self.total_values_processed.load(.monotonic);
+            const total = @as(u64, self.total_values_processed.load(.monotonic));
             if (total == 0) return 0;
-            const errors = self.redaction_errors.load(.monotonic);
+            const errors = @as(u64, self.redaction_errors.load(.monotonic));
             return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
         }
     };

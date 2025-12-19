@@ -138,12 +138,24 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Installation
 
+**Note:** Version `0.0.8` fixes x86 (32-bit) build compatibility (see issue: https://github.com/muhammad-fiaz/logly.zig/issues/11).
+
 ### Method 1: Zig Fetch (Recommended)
 
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz
+```
+This automatically adds the dependency with the correct hash to your `build.zig.zon`.
+
+or
+
+For Nightly builds, you can use the Git URL directly:
+
+```bash
+zig build --save git+https://github.com/muhammad-fiaz/logly.zig.git
+
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
@@ -181,7 +193,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.7.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

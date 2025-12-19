@@ -1,6 +1,6 @@
 .{
     .name = .logly,
-    .version = "0.0.7",
+    .version = "0.0.8",
     .fingerprint = 0x54acba927bcb9891,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{},

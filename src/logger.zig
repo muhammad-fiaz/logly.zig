@@ -13,6 +13,7 @@ const Metrics = @import("metrics.zig").Metrics;
 const ThreadPool = @import("thread_pool.zig").ThreadPool;
 const UpdateChecker = @import("update_checker.zig");
 const Diagnostics = @import("diagnostics.zig");
+const Constants = @import("constants.zig");
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
 ///
@@ -57,31 +58,31 @@ const Diagnostics = @import("diagnostics.zig");
 pub const Logger = struct {
     /// Logger statistics for monitoring and diagnostics.
     pub const LoggerStats = struct {
-        total_records_logged: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        records_filtered: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        sink_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_records_logged: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        records_filtered: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        sink_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         active_sinks: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-        bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate records per second (requires timestamp delta from caller)
         pub fn recordsPerSecond(self: *const LoggerStats, elapsed_seconds: f64) f64 {
-            const total = self.total_records_logged.load(.monotonic);
+            const total = @as(u64, self.total_records_logged.load(.monotonic));
             if (elapsed_seconds == 0) return 0;
             return @as(f64, @floatFromInt(total)) / elapsed_seconds;
         }
 
         /// Calculate average bytes per record
         pub fn avgBytesPerRecord(self: *const LoggerStats) f64 {
-            const total = self.total_records_logged.load(.monotonic);
+            const total = @as(u64, self.total_records_logged.load(.monotonic));
             if (total == 0) return 0;
-            const bytes = self.bytes_written.load(.monotonic);
+            const bytes = @as(u64, self.bytes_written.load(.monotonic));
             return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
         }
 
         /// Calculate filter rate (0.0 - 1.0)
         pub fn filterRate(self: *const LoggerStats) f64 {
-            const total = self.total_records_logged.load(.monotonic);
-            const filtered = self.records_filtered.load(.monotonic);
+            const total = @as(u64, self.total_records_logged.load(.monotonic));
+            const filtered = @as(u64, self.records_filtered.load(.monotonic));
             const total_seen = total + filtered;
             if (total_seen == 0) return 0;
             return @as(f64, @floatFromInt(filtered)) / @as(f64, @floatFromInt(total_seen));
@@ -140,7 +141,7 @@ pub const Logger = struct {
     stats: LoggerStats = .{},
 
     /// Total records processed counter.
-    record_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    record_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     /// Arena allocator for temporary allocations (optional).
     /// When enabled, reduces allocation overhead for formatting operations.
@@ -1024,7 +1025,7 @@ pub const Logger = struct {
 
     /// Returns the total number of records logged.
     pub fn getRecordCount(self: *Logger) u64 {
-        return self.record_count.load(.monotonic);
+        return @as(u64, self.record_count.load(.monotonic));
     }
 
     /// Returns uptime in seconds since logger initialization.

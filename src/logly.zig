@@ -2,6 +2,8 @@
 //!
 //! A high-performance, enterprise-grade structured logging library for Zig.
 //!
+//! Fixes https://github.com/muhammad-fiaz/logly.zig/issues/11
+//!
 //! Logly provides a clean, intuitive API for logging with support for:
 //! - Colored console output with customizable themes
 //! - JSON and structured log formatting

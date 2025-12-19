@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
+const Constants = @import("constants.zig");
 const Record = @import("record.zig").Record;
 const Formatter = @import("formatter.zig").Formatter;
 const Rotation = @import("rotation.zig").Rotation;
@@ -430,23 +431,23 @@ fn parseSize(s: []const u8) ?u64 {
 pub const Sink = struct {
     /// Sink statistics for monitoring and diagnostics.
     pub const SinkStats = struct {
-        total_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        write_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        flush_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        rotation_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        total_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        write_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        rotation_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate throughput (bytes per second)
         pub fn throughputBytesPerSecond(self: *const SinkStats, elapsed_seconds: f64) f64 {
             if (elapsed_seconds == 0) return 0;
-            const bytes = self.bytes_written.load(.monotonic);
+            const bytes = @as(u64, self.bytes_written.load(.monotonic));
             return @as(f64, @floatFromInt(bytes)) / elapsed_seconds;
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const SinkStats) f64 {
-            const total = self.total_written.load(.monotonic);
-            const errors = self.write_errors.load(.monotonic);
+            const total = @as(u64, self.total_written.load(.monotonic));
+            const errors = @as(u64, self.write_errors.load(.monotonic));
             const total_ops = total + errors;
             if (total_ops == 0) return 0;
             return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total_ops));
@@ -454,9 +455,9 @@ pub const Sink = struct {
 
         /// Calculate average bytes per write
         pub fn avgBytesPerWrite(self: *const SinkStats) f64 {
-            const total = self.total_written.load(.monotonic);
+            const total = @as(u64, self.total_written.load(.monotonic));
             if (total == 0) return 0;
-            const bytes = self.bytes_written.load(.monotonic);
+            const bytes = @as(u64, self.bytes_written.load(.monotonic));
             return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
         }
     };

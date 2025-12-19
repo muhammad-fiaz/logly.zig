@@ -1,6 +1,7 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
+const Constants = @import("constants.zig");
 
 /// Log compression utilities with callback support and comprehensive monitoring.
 ///
@@ -72,23 +73,23 @@ pub const Compression = struct {
 
     /// Statistics for compression operations with detailed tracking.
     pub const CompressionStats = struct {
-        files_compressed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        files_decompressed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        bytes_before: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        bytes_after: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        compression_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        decompression_errors: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        last_compression_time: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
-        total_compression_time_ns: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        total_decompression_time_ns: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        background_tasks_queued: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        background_tasks_completed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        files_compressed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        files_decompressed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytes_before: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytes_after: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        compression_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        decompression_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        last_compression_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+        total_compression_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        total_decompression_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        background_tasks_queued: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        background_tasks_completed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate compression ratio (original size / compressed size)
         /// Performance: O(1) - atomic loads
         pub fn compressionRatio(self: *const CompressionStats) f64 {
-            const before = self.bytes_before.load(.monotonic);
-            const after = self.bytes_after.load(.monotonic);
+            const before = @as(u64, self.bytes_before.load(.monotonic));
+            const after = @as(u64, self.bytes_after.load(.monotonic));
             if (after == 0) return 0;
             return @as(f64, @floatFromInt(before)) / @as(f64, @floatFromInt(after));
         }
@@ -96,18 +97,18 @@ pub const Compression = struct {
         /// Calculate space savings percentage
         /// Performance: O(1) - atomic loads
         pub fn spaceSavingsPercent(self: *const CompressionStats) f64 {
-            const before = self.bytes_before.load(.monotonic);
+            const before = @as(u64, self.bytes_before.load(.monotonic));
             if (before == 0) return 0;
-            const after = self.bytes_after.load(.monotonic);
+            const after = @as(u64, self.bytes_after.load(.monotonic));
             return (1.0 - @as(f64, @floatFromInt(after)) / @as(f64, @floatFromInt(before))) * 100.0;
         }
 
         /// Calculate average compression speed (MB/s)
         /// Performance: O(1) - atomic loads
         pub fn avgCompressionSpeedMBps(self: *const CompressionStats) f64 {
-            const time_ns = self.total_compression_time_ns.load(.monotonic);
+            const time_ns = @as(u64, self.total_compression_time_ns.load(.monotonic));
             if (time_ns == 0) return 0;
-            const bytes = self.bytes_before.load(.monotonic);
+            const bytes = @as(u64, self.bytes_before.load(.monotonic));
             const time_s = @as(f64, @floatFromInt(time_ns)) / 1_000_000_000.0;
             const mb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0);
             return mb / time_s;
@@ -116,9 +117,9 @@ pub const Compression = struct {
         /// Calculate average decompression speed (MB/s)
         /// Performance: O(1) - atomic loads
         pub fn avgDecompressionSpeedMBps(self: *const CompressionStats) f64 {
-            const time_ns = self.total_decompression_time_ns.load(.monotonic);
+            const time_ns = @as(u64, self.total_decompression_time_ns.load(.monotonic));
             if (time_ns == 0) return 0;
-            const bytes = self.bytes_after.load(.monotonic);
+            const bytes = @as(u64, self.bytes_after.load(.monotonic));
             const time_s = @as(f64, @floatFromInt(time_ns)) / 1_000_000_000.0;
             const mb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0);
             return mb / time_s;
@@ -127,9 +128,9 @@ pub const Compression = struct {
         /// Calculate error rate (0.0 - 1.0)
         /// Performance: O(1) - atomic loads
         pub fn errorRate(self: *const CompressionStats) f64 {
-            const total = self.files_compressed.load(.monotonic) + self.files_decompressed.load(.monotonic);
+            const total = @as(u64, self.files_compressed.load(.monotonic)) + @as(u64, self.files_decompressed.load(.monotonic));
             if (total == 0) return 0;
-            const errors = self.compression_errors.load(.monotonic) + self.decompression_errors.load(.monotonic);
+            const errors = @as(u64, self.compression_errors.load(.monotonic)) + @as(u64, self.decompression_errors.load(.monotonic));
             return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
         }
     };

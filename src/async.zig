@@ -3,6 +3,7 @@ const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
 const Sink = @import("sink.zig").Sink;
 const SinkConfig = @import("sink.zig").SinkConfig;
+const Constants = @import("constants.zig");
 
 /// Asynchronous logging infrastructure for non-blocking operations.
 ///
@@ -102,29 +103,30 @@ pub const AsyncLogger = struct {
 
     /// Statistics for async operations with comprehensive metrics.
     pub const AsyncStats = struct {
-        records_queued: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        records_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        records_dropped: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        buffer_overflows: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        flush_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        total_latency_ns: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        max_queue_depth: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        last_flush_timestamp: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+        records_queued: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        records_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        records_dropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        buffer_overflows: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        total_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        max_queue_depth: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        last_flush_timestamp: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
         /// Calculate average latency in nanoseconds
         /// Performance: O(1) - atomic load
         pub fn averageLatencyNs(self: *const AsyncStats) u64 {
-            const written = self.records_written.load(.monotonic);
+            const written = @as(u64, self.records_written.load(.monotonic));
             if (written == 0) return 0;
-            return self.total_latency_ns.load(.monotonic) / written;
+            const total = @as(u64, self.total_latency_ns.load(.monotonic));
+            return total / written;
         }
 
         /// Calculate drop rate (0.0 - 1.0)
         /// Performance: O(1) - atomic loads
         pub fn dropRate(self: *const AsyncStats) f64 {
-            const total = self.records_queued.load(.monotonic);
+            const total = @as(u64, self.records_queued.load(.monotonic));
             if (total == 0) return 0;
-            const dropped = self.records_dropped.load(.monotonic);
+            const dropped = @as(u64, self.records_dropped.load(.monotonic));
             return @as(f64, @floatFromInt(dropped)) / @as(f64, @floatFromInt(total));
         }
     };
@@ -630,8 +632,8 @@ pub const AsyncFileWriter = struct {
     mutex: std.Thread.Mutex = .{},
     flush_thread: ?std.Thread = null,
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-    last_flush: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+    bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    last_flush: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
     pub const FileConfig = struct {
         buffer_size: usize = 64 * 1024, // 64KB
@@ -740,7 +742,7 @@ pub const AsyncFileWriter = struct {
     }
 
     pub fn bytesWritten(self: *const AsyncFileWriter) u64 {
-        return self.bytes_written.load(.monotonic);
+        return @as(u64, self.bytes_written.load(.monotonic));
     }
 };
 

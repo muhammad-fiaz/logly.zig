@@ -218,13 +218,14 @@ Statistics for scheduled operations.
 
 ```zig
 pub const SchedulerStats = struct {
-    tasks_executed: std.atomic.Value(u64),
-    tasks_failed: std.atomic.Value(u64),
-    files_cleaned: std.atomic.Value(u64),
-    files_compressed: std.atomic.Value(u64),
-    bytes_freed: std.atomic.Value(u64),
-    last_run_timestamp: std.atomic.Value(i64),
-    total_runtime_ns: std.atomic.Value(u64),
+    // Note: Atomic counters are architecture-dependent (u64 on 64-bit targets, u32 on 32-bit targets)
+    tasks_executed: std.atomic.Value(/* architecture-dependent */),
+    tasks_failed: std.atomic.Value(/* architecture-dependent */),
+    files_cleaned: std.atomic.Value(/* architecture-dependent */),
+    files_compressed: std.atomic.Value(/* architecture-dependent */),
+    bytes_freed: std.atomic.Value(/* architecture-dependent */),
+    last_run_timestamp: std.atomic.Value(/* signed architecture-dependent */),
+    total_runtime_ns: std.atomic.Value(/* architecture-dependent */),
 };
 ```
 
