@@ -1,6 +1,10 @@
 import { defineConfig } from "vitepress";
 import llmstxt from "vitepress-plugin-llms";
 
+// Google Analytics and Google Tag Manager IDs
+export const GA_ID = "G-6BVYCRK57P";
+export const GTM_ID = "GTM-P4M9T8ZR";
+
 export default defineConfig({
   lang: "en-US",
   title: "Logly.Zig",
@@ -11,7 +15,7 @@ export default defineConfig({
     plugins: [llmstxt()],
   },
   head: [
-    ["link", { rel: "icon", href: "/logly.zig/favicon.ico" }],
+    ["link", { rel: "icon", href: "/logly.zig/favicon.ico" }, ""],
     [
       "link",
       {
@@ -20,6 +24,7 @@ export default defineConfig({
         sizes: "16x16",
         href: "/logly.zig/favicon-16x16.png",
       },
+      "",
     ],
     [
       "link",
@@ -29,6 +34,7 @@ export default defineConfig({
         sizes: "32x32",
         href: "/logly.zig/favicon-32x32.png",
       },
+      "",
     ],
     [
       "link",
@@ -37,6 +43,7 @@ export default defineConfig({
         sizes: "180x180",
         href: "/logly.zig/apple-touch-icon.png",
       },
+      "",
     ],
     [
       "link",
@@ -46,6 +53,7 @@ export default defineConfig({
         sizes: "192x192",
         href: "/logly.zig/android-chrome-192x192.png",
       },
+      "",
     ],
     [
       "link",
@@ -55,7 +63,42 @@ export default defineConfig({
         sizes: "512x512",
         href: "/logly.zig/android-chrome-512x512.png",
       },
+      "",
     ],
+
+    // Google Analytics (gtag.js) - loads on every page
+    [
+      "script",
+      {
+        async: "",
+        src: `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`,
+      },
+      "",
+    ],
+    [
+      "script",
+      {},
+      `window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`,
+    ],
+
+    // Google Tag Manager (head snippet + noscript fallback) - included only when GTM_ID is set
+    ...(GTM_ID
+      ? ([
+          [
+            "script",
+            {},
+            `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start': new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0], j=d.createElement(s), dl=l!='dataLayer'?'&l='+l:''; j.async=true; j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl; f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${GTM_ID}');`,
+          ],
+          [
+            "noscript",
+            {},
+            `<iframe src="https://www.googletagmanager.com/ns.html?id=${GTM_ID}" height="0" width="0" style="display:none;visibility:hidden"></iframe>`,
+          ],
+        ] as [string, Record<string, string>, string][])
+      : []),
   ],
   ignoreDeadLinks: [
     // Allow links to source files outside docs directory
