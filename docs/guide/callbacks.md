@@ -18,6 +18,7 @@ Logly provides comprehensive callback support across all major components:
 - **Metrics Callbacks**: Metrics snapshots, threshold violations
 - **Thread Pool Callbacks**: Task lifecycle, work stealing
 - **Scheduler Callbacks**: Scheduled task execution
+- **Rules Callbacks**: Rule matching, evaluation, diagnostic messages
 
 ## Logger Callbacks
 
@@ -332,6 +333,85 @@ scheduler.setTaskStartedCallback(&onTaskStarted);
 scheduler.setTaskCompletedCallback(&onTaskCompleted);
 scheduler.setTaskErrorCallback(&onTaskError);
 ```
+
+## Rules System Callbacks
+
+The Rules engine provides callbacks for monitoring rule evaluations and diagnostic message generation:
+
+### Rule Matched Callback
+
+Called when a rule matches a log record:
+
+```zig
+fn onRuleMatched(rule: *const logly.Rules.Rule, record: *const logly.Record) void {
+    std.debug.print("Rule '{s}' matched for level {s}\n", .{
+        rule.name,
+        @tagName(record.level),
+    });
+}
+
+rules.on_rule_matched = &onRuleMatched;
+```
+
+### Rule Evaluated Callback
+
+Called for every rule evaluation (matched or not):
+
+```zig
+fn onRuleEvaluated(rule: *const logly.Rules.Rule, record: *const logly.Record, matched: bool) void {
+    if (matched) {
+        metrics.increment("rules.matched", 1);
+    } else {
+        metrics.increment("rules.not_matched", 1);
+    }
+}
+
+rules.on_rule_evaluated = &onRuleEvaluated;
+```
+
+### Messages Attached Callback
+
+Called when diagnostic messages are attached to a record:
+
+```zig
+fn onMessagesAttached(record: *const logly.Record, message_count: usize) void {
+    std.debug.print("Attached {d} diagnostic messages to record\n", .{message_count});
+}
+
+rules.on_messages_attached = &onMessagesAttached;
+```
+
+### Evaluation Lifecycle Callbacks
+
+```zig
+fn onBeforeEvaluate(record: *const logly.Record) void {
+    // Called before rule evaluation starts
+}
+
+fn onAfterEvaluate(record: *const logly.Record, matched_count: usize) void {
+    // Called after all rules have been evaluated
+    std.debug.print("{d} rules matched for this record\n", .{matched_count});
+}
+
+fn onEvaluationError(error_msg: []const u8) void {
+    std.debug.print("Rules evaluation error: {s}\n", .{error_msg});
+}
+
+rules.on_before_evaluate = &onBeforeEvaluate;
+rules.on_after_evaluate = &onAfterEvaluate;
+rules.on_evaluation_error = &onEvaluationError;
+```
+
+### Available Rules Callbacks
+
+| Callback | Parameters | Description |
+|----------|-----------|-------------|
+| `on_rule_matched` | `(rule, record)` | Rule matched a log record |
+| `on_rule_evaluated` | `(rule, record, matched)` | Rule evaluation completed |
+| `on_messages_attached` | `(record, count)` | Messages attached to record |
+| `on_before_evaluate` | `(record)` | Before evaluation starts |
+| `on_after_evaluate` | `(record, count)` | After evaluation completes |
+| `on_evaluation_error` | `(error_msg)` | Evaluation error occurred |
 
 ## Best Practices
 

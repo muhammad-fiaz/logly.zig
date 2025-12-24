@@ -363,4 +363,29 @@ pub const RotationPresets = struct {
     pub fn size100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         return Rotation.bySize(allocator, path, 100 * 1024 * 1024, 10);
     }
+
+    /// 1GB size-based rotation with 5 file retention (high-volume).
+    pub fn size1GB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.bySize(allocator, path, 1024 * 1024 * 1024, 5);
+    }
+
+    /// Daily rotation with 90 day retention (compliance).
+    pub fn daily90Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.daily(allocator, path, 90);
+    }
+
+    /// Hourly rotation with 48 hour retention.
+    pub fn hourly48Hours(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.hourly(allocator, path, 48);
+    }
+
+    /// Creates a daily rotation sink config.
+    pub fn dailySink(file_path: []const u8, retention_days: usize) SinkConfig {
+        return Rotation.createRotatingSink(file_path, "daily", retention_days);
+    }
+
+    /// Creates an hourly rotation sink config.
+    pub fn hourlySink(file_path: []const u8, retention_hours: usize) SinkConfig {
+        return Rotation.createRotatingSink(file_path, "hourly", retention_hours);
+    }
 };

@@ -398,3 +398,44 @@ pub fn main() !void {
 - [Async Logging Guide](../guide/async.md) - In-depth async logging guide
 - [Thread Pool API](thread-pool.md) - Parallel logging
 - [Configuration Guide](../guide/configuration.md) - Full configuration options
+
+## Aliases
+
+The AsyncLogger provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `enqueue` | `queue` |
+| `push` | `queue` |
+| `logMsg` | `queue` |
+| `statistics` | `getStats` |
+| `depth` | `queueDepth` |
+| `pending` | `queueDepth` |
+| `begin` | `startWorker` |
+| `halt` | `stop` |
+| `end` | `stop` |
+
+## Additional Methods
+
+- `isRunning() bool` - Returns true if the async logger worker is running
+- `bufferCapacity() usize` - Returns the buffer capacity
+- `isFull() bool` - Returns true if the buffer is at capacity
+- `queueDepth() usize` - Returns current queue depth
+- `isQueueEmpty() bool` - Returns true if queue is empty
+- `resetStats() void` - Resets all statistics
+
+## Callbacks
+
+```zig
+// Set callbacks for various events
+logger.setOverflowCallback(onOverflow);
+logger.setFlushCallback(onFlush);
+logger.setWorkerStartCallback(onWorkerStart);
+logger.setWorkerStopCallback(onWorkerStop);
+logger.setBatchProcessedCallback(onBatchProcessed);
+logger.setLatencyThresholdExceededCallback(onLatencyExceeded);
+logger.setFullCallback(onBufferFull);
+logger.setEmptyCallback(onBufferEmpty);
+logger.setErrorCallback(onError);
+```
+

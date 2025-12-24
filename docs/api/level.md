@@ -156,3 +156,39 @@ pub fn main() !void {
     try logger.fatal("Fatal message", @src());
 }
 ```
+
+## Aliases
+
+The Level module provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `value` | `priority` |
+| `severity` | `priority` |
+| `toString` | `asString` |
+| `str` | `asString` |
+| `color` | `defaultColor` |
+| `parse` | `fromString` |
+
+## Additional Methods
+
+- `isAtLeast(other: Level) bool` - Returns true if this level is at least as severe as other
+- `isMoreSevereThan(other: Level) bool` - Returns true if this level is more severe than other
+- `isError() bool` - Returns true if level is err, fail, critical, or fatal
+- `isWarning() bool` - Returns true if level is warning or above
+- `isDebug() bool` - Returns true if level is debug or trace
+
+### CustomLevel Methods
+
+- `init(name, priority, color) CustomLevel` - Create a new custom level
+- `isAtLeast(other: Level) bool` - Compare with standard level
+- `isError() bool` - Check if error-level severity
+- `asString() []const u8` - Get level name
+
+## See Also
+
+- [Custom Levels Guide](../guide/custom-levels.md) - Custom level configuration
+- [Logger API](logger.md) - Logger logging methods
+- [Record API](record.md) - Log record structure
+- [Configuration Guide](../guide/configuration.md) - Level configuration
+

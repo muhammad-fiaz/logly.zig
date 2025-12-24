@@ -1,6 +1,6 @@
 # Sampling
 
-Logly-Zig v0.0.3+ provides a sophisticated sampling system for controlling log volume in high-throughput scenarios. Sample logs by probability, rate limits, or every-Nth message.
+Logly-Zig v0.0.9 provides a sophisticated sampling system for controlling log volume in high-throughput scenarios. Sample logs by probability, rate limits, or every-Nth message.
 
 ## Overview
 
@@ -216,3 +216,36 @@ pub fn main() !void {
 - [Filtering](/guide/filtering) - Rule-based log filtering
 - [Metrics](/guide/metrics) - Logging metrics collection
 - [Configuration](/guide/configuration) - Global configuration options
+
+## New Presets (v0.0.9)
+
+```zig
+const SamplerPresets = logly.SamplerPresets;
+
+// Additional probability presets
+var sample_50 = SamplerPresets.sample50Percent(allocator);
+var sample_1 = SamplerPresets.sample1Percent(allocator);
+
+// Additional rate limit presets
+var limit_10 = SamplerPresets.limit10PerSecond(allocator);
+var limit_1000 = SamplerPresets.limit1000PerSecond(allocator);
+
+// Additional every-n presets
+var every_5 = SamplerPresets.every5th(allocator);
+var every_100 = SamplerPresets.every100th(allocator);
+
+// Adaptive sampling presets
+var adaptive_100 = SamplerPresets.adaptive100PerSecond(allocator);
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `sample` | `shouldSample` |
+| `check` | `shouldSample` |
+| `allow` | `shouldSample` |
+| `statistics` | `getStats` |
+| `stats_` | `getStats` |
+| `rate` | `getCurrentRate` |
+

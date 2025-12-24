@@ -43,7 +43,6 @@ pub const NativeInt = switch (builtin.target.cpu.arch) {
     else => i32,
 };
 
-// ==================== Buffer Constants ====================
 
 /// Default buffer sizes for various operations.
 pub const BufferSizes = struct {
@@ -61,7 +60,6 @@ pub const BufferSizes = struct {
     pub const max_message: usize = 1024 * 1024; // 1MB
 };
 
-// ==================== Thread Pool Constants ====================
 
 /// Default thread pool settings.
 pub const ThreadDefaults = struct {
@@ -92,7 +90,6 @@ pub const ThreadDefaults = struct {
     }
 };
 
-// ==================== Level Constants ====================
 
 /// Log level count and priorities.
 pub const LevelConstants = struct {
@@ -106,7 +103,6 @@ pub const LevelConstants = struct {
     pub const default_priority: u8 = 20; // INFO
 };
 
-// ==================== Time Constants ====================
 
 /// Time-related constants.
 pub const TimeConstants = struct {
@@ -122,7 +118,6 @@ pub const TimeConstants = struct {
     pub const rotation_check_interval_ms: u64 = 60_000; // 1 minute
 };
 
-// ==================== Rotation Constants ====================
 
 /// File rotation constants.
 pub const RotationConstants = struct {
@@ -134,7 +129,6 @@ pub const RotationConstants = struct {
     pub const compressed_ext: []const u8 = ".gz";
 };
 
-// ==================== Network Constants ====================
 
 /// Network logging constants.
 pub const NetworkConstants = struct {

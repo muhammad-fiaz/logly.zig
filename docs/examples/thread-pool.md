@@ -156,3 +156,32 @@ std.debug.print("Throughput: {d:.2}/sec\n", .{stats.throughput()});
 - [Thread Pool API](../api/thread-pool.md)
 - [Thread Pool Guide](../guide/thread-pool.md)
 - [Async Logging Example](async-logging.md)
+
+## New Methods (v0.0.9)
+
+```zig
+var pool = try logly.ThreadPool.init(allocator, config);
+defer pool.deinit();
+
+// State methods
+const empty = pool.isEmpty();
+const full = pool.isFull();
+
+// Performance metrics
+const util = pool.utilization();  // 0.0 - 1.0
+
+// Reset statistics
+pool.resetStats();
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `flush` | `clear` |
+| `statistics` | `getStats` |
+| `stop` | `shutdown` |
+| `halt` | `shutdown` |
+| `begin` | `start` |
+| `add` | `submit` |
+

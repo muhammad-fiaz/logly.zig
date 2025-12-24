@@ -88,6 +88,34 @@ features:
   - icon: 📈
     title: Metrics
     details: Track logger performance, throughput, and error rates
+
+  - icon: 🔍
+    title: Filtering
+    details: Rule-based log filtering by level, module, and content
+
+  - icon: 📉
+    title: Sampling
+    details: Control log throughput with probability and rate-limiting
+
+  - icon: ⏰
+    title: Scheduler
+    details: Automatic log cleanup, compression, and maintenance
+
+  - icon: 🧵
+    title: Thread Pool
+    details: Parallel log processing with work stealing
+
+  - icon: ⚡
+    title: Async Logger
+    details: Ring buffer-based async logging with background workers
+
+  - icon: 🏗️
+    title: Arena Allocation
+    details: Optional arena allocator for reduced memory fragmentation
+
+  - icon: 🔧
+    title: Method Aliases
+    details: Convenience aliases for common APIs (add/remove, warn/crit, etc.)
 ---
 
 ## Quick Example
@@ -131,7 +159,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-    .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz",
         .hash = "...",
     },
 },

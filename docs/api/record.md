@@ -247,3 +247,42 @@ defer audit_record.deinit();
 // The formatter uses levelName() and levelColor() automatically
 // Output: [2024-01-15 10:30:45] [AUDIT] Security event (in bold magenta)
 ```
+
+## Aliases
+
+The Record module provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `setField` | `addField` |
+| `put` | `addField` |
+| `tag` | `addTag` |
+| `labelAs` | `addTag` |
+| `withTraceId` | `setTraceId` |
+| `withSpanId` | `setSpanId` |
+| `withCorrelationId` | `setCorrelationId` |
+| `withDuration` | `setDuration` |
+| `duplicate` | `clone` |
+| `copy` | `clone` |
+| `name` | `levelName` |
+| `color` | `levelColor` |
+
+## Additional Methods
+
+- `addField(key: []const u8, value: json.Value) !void` - Add a context field
+- `addTag(tag: []const u8) !void` - Add a tag to the record
+- `setTraceId(trace_id: []const u8) void` - Set trace ID
+- `setSpanId(span_id: []const u8) void` - Set span ID
+- `setCorrelationId(correlation_id: []const u8) void` - Set correlation ID
+- `setDuration(duration_ns: u64) void` - Set operation duration
+- `hasTraceId() bool` - Check if trace ID is set
+- `hasSpanId() bool` - Check if span ID is set
+- `hasCorrelationId() bool` - Check if correlation ID is set
+
+## See Also
+
+- [Logger API](logger.md) - Logger methods for creating records
+- [Level API](level.md) - Log level definitions
+- [Tracing Guide](../guide/tracing.md) - Distributed tracing
+- [Context Guide](../guide/context.md) - Context binding
+

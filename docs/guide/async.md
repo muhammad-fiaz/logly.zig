@@ -335,3 +335,35 @@ var async_logger = try logly.AsyncLogger.init(allocator, .{
 - [Async API Reference](../api/async.md)
 - [Thread Pool Guide](thread-pool.md)
 - [Configuration Guide](configuration.md)
+
+## New Methods (v0.0.9)
+
+```zig
+var async_logger = try logly.AsyncLogger.init(allocator, config);
+defer async_logger.deinit();
+
+// State methods
+const running = async_logger.isRunning();
+const capacity = async_logger.bufferCapacity();
+const full = async_logger.isFull();
+const depth = async_logger.queueDepth();
+const empty = async_logger.isQueueEmpty();
+
+// Reset statistics
+async_logger.resetStats();
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `enqueue` | `log` |
+| `push` | `log` |
+| `logMsg` | `log` |
+| `statistics` | `getStats` |
+| `depth` | `queueDepth` |
+| `pending` | `queueDepth` |
+| `begin` | `startWorker` |
+| `halt` | `stop` |
+| `end` | `stop` |
+

@@ -1281,6 +1281,15 @@ pub const Logger = struct {
         try self.log(.fatal, message, null, src);
     }
 
+    /// Alias for notice() - alternative name.
+    pub const note = notice;
+
+    /// Alias for fatal() - equivalent to panic-level.
+    pub const panic = fatal;
+
+    /// Alias for fail() - shorter form.
+    pub const failure = fail;
+
     pub fn custom(self: *Logger, level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         const level_info = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
         const mapped_level = Level.fromPriority(level_info.priority) orelse .info;
@@ -1513,6 +1522,15 @@ pub const Logger = struct {
         defer self.allocator.free(message);
         try self.log(.fatal, message, null, src);
     }
+
+    /// Alias for noticef() - alternative name.
+    pub const notef = noticef;
+
+    /// Alias for fatalf() - equivalent to panicf.
+    pub const panicf = fatalf;
+
+    /// Alias for failf() - shorter form.
+    pub const failuref = failf;
 
     /// Logs a message with a custom level name and format arguments.
     ///

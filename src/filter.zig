@@ -355,7 +355,6 @@ pub const Filter = struct {
 
     /// Alias for addMessageFilter
     pub const messageFilter = addMessageFilter;
-    pub const contains = addMessageFilter;
 
     /// Returns the number of filter rules.
     pub fn count(self: *const Filter) usize {
@@ -364,7 +363,7 @@ pub const Filter = struct {
 
     /// Alias for count
     pub const ruleCount = count;
-    pub const size = count;
+    pub const length = count;
 
     /// Returns true if the filter has any rules.
     pub fn hasRules(self: *const Filter) bool {
@@ -390,6 +389,42 @@ pub const Filter = struct {
         try filter.addMinLevel(config.level);
 
         return filter;
+    }
+
+    /// Batch filter evaluation - returns array of booleans for each record.
+    /// More efficient for processing multiple records at once.
+    /// Performance: O(n * m) where n = records, m = rules.
+    pub fn shouldLogBatch(self: *Filter, records: []const *const Record, results: []bool) void {
+        std.debug.assert(records.len == results.len);
+        for (records, 0..) |record, i| {
+            results[i] = self.shouldLog(record);
+        }
+    }
+
+    /// Fast path check - returns true if filter is empty (allow all).
+    /// Use before shouldLog() to skip evaluation when possible.
+    pub inline fn allowsAll(self: *const Filter) bool {
+        return self.rules.items.len == 0;
+    }
+
+    /// Returns the allowed records count from stats.
+    pub fn allowedCount(self: *const Filter) u64 {
+        return @as(u64, self.stats.records_allowed.load(.monotonic));
+    }
+
+    /// Returns the denied records count from stats.
+    pub fn deniedCount(self: *const Filter) u64 {
+        return @as(u64, self.stats.records_denied.load(.monotonic));
+    }
+
+    /// Returns the total processed records count.
+    pub fn totalProcessed(self: *const Filter) u64 {
+        return self.allowedCount() + self.deniedCount();
+    }
+
+    /// Resets all statistics.
+    pub fn resetStats(self: *Filter) void {
+        self.stats = .{};
     }
 };
 

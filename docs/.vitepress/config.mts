@@ -25,6 +25,7 @@ export default defineConfig({
         text: 'Introduction',
         items: [
           { text: 'What is Logly?', link: '/guide/introduction' },
+          { text: 'Installation', link: '/guide/installation' },
           { text: 'Getting Started', link: '/guide/getting-started' },
           { text: 'Quick Start', link: '/guide/quick-start' }
         ]

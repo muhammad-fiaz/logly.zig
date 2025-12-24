@@ -782,9 +782,30 @@ Typical compression ratios:
 - Text data (logs): 3-5x compression (66-80% space savings)
 - Already compressed data: No benefit
 
+## Aliases
+
+The Compression module provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `encode` | `compress` |
+| `deflate` | `compress` |
+| `decode` | `decompress` |
+| `inflate` | `decompress` |
+| `packFile` | `compressFile` |
+| `unpackFile` | `decompressFile` |
+| `statistics` | `getStats` |
+| `needsCompression` | `shouldCompress` |
+
+## Additional Methods
+
+- `isEnabled() bool` - Returns true if compression is enabled
+- `ratio() f64` - Returns current compression ratio
+
 ## See Also
 
 - [Compression Guide](../guide/compression.md) - Detailed compression guide
 - [Rotation Guide](../guide/rotation.md) - Log rotation with compression
 - [Callbacks Guide](../guide/callbacks.md) - Callback patterns
 - [Configuration](../guide/configuration.md) - Centralized config setup
+

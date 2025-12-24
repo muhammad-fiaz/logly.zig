@@ -219,3 +219,33 @@ pub fn createDiagnosticsSink(file_path: []const u8) SinkConfig {
         .include_timestamp = true,
     };
 }
+
+/// Alias for collect
+pub const gather = collect;
+pub const snapshot = collect;
+
+/// Returns a quick system summary string.
+pub fn summary(allocator: std.mem.Allocator) ![]u8 {
+    const diag = try collect(allocator, false);
+    defer @constCast(&diag).deinit(allocator);
+
+    return std.fmt.allocPrint(allocator, "{s}/{s} - {s} ({d} cores)", .{
+        diag.os_tag,
+        diag.arch,
+        diag.cpu_model,
+        diag.logical_cores,
+    });
+}
+
+/// Diagnostics presets for common scenarios.
+pub const DiagnosticsPresets = struct {
+    /// Minimal diagnostics (no drive info).
+    pub fn minimal(allocator: std.mem.Allocator) !Diagnostics {
+        return collect(allocator, false);
+    }
+
+    /// Full diagnostics (includes drive info).
+    pub fn full(allocator: std.mem.Allocator) !Diagnostics {
+        return collect(allocator, true);
+    }
+};

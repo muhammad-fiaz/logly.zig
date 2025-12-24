@@ -1,6 +1,6 @@
 # Metrics
 
-Logly-Zig v0.0.3+ provides built-in metrics collection for monitoring logging performance and behavior. Track record counts, error rates, throughput, and more.
+Logly-Zig v0.0.9 provides built-in metrics collection for monitoring logging performance and behavior. Track record counts, error rates, throughput, and more.
 
 ## Overview
 
@@ -232,9 +232,90 @@ pub fn main() !void {
 4. **Track dropped records**: Monitor how many records are sampled/filtered out
 5. **Reset periodically**: Use `reset()` for time-windowed metrics
 
+## New Methods (v0.0.9)
+
+### Direct Statistics Access
+
+```zig
+var metrics = Metrics.init(allocator);
+defer metrics.deinit();
+
+// Record some logs
+metrics.recordLog(.info, 100);
+metrics.recordError();
+metrics.recordDrop();
+
+// Direct access methods
+const total = metrics.totalRecordCount();
+const bytes = metrics.totalBytesLogged();
+const errors = metrics.errorCount();
+const drops = metrics.droppedCount();
+
+// Rate calculations
+const err_rate = metrics.errorRate();   // 0.0 - 1.0
+const drop_rate = metrics.dropRate();   // 0.0 - 1.0
+const rps = metrics.rate();             // records per second
+
+// Uptime
+const uptime_ms = metrics.uptime();
+const uptime_sec = metrics.uptimeSeconds();
+
+// Level-specific counts
+const info_count = metrics.levelCount(.info);
+const err_count = metrics.levelCount(.err);
+
+// Sink count
+const sinks = metrics.sinkCount();
+```
+
+### Threshold Checks
+
+```zig
+// Check for high error rate
+if (metrics.hasHighErrorRate(0.01)) {
+    std.debug.print("Warning: Error rate exceeds 1%!\n", .{});
+}
+
+// Check for high drop rate
+if (metrics.hasHighDropRate(0.05)) {
+    std.debug.print("Warning: Drop rate exceeds 5%!\n", .{});
+}
+```
+
+### State and Control
+
+```zig
+// Check if any records have been logged
+if (metrics.hasRecords()) {
+    // Export metrics
+}
+
+// Reset all statistics
+metrics.reset();
+// Or use alias
+metrics.clear();
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `record` | `recordLog` |
+| `log` | `recordLog` |
+| `drop` | `recordDrop` |
+| `dropped` | `recordDrop` |
+| `recordErr` | `recordError` |
+| `metricsSnapshot` | `getSnapshot` |
+| `levels` | `formatLevelBreakdown` |
+| `breakdown` | `formatLevelBreakdown` |
+| `clear` | `reset` |
+| `uptimeSec` | `uptimeSeconds` |
+
 ## See Also
 
+- [Metrics API Reference](/api/metrics) - Full API documentation
 - [Filtering](/guide/filtering) - Rule-based log filtering
 - [Sampling](/guide/sampling) - Log volume control
 - [Tracing](/guide/tracing) - Distributed tracing
 - [Configuration](/guide/configuration) - Global configuration options
+

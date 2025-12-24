@@ -510,3 +510,68 @@ pub fn main() !void {
 - [Compression API](compression.md) - Log compression
 - [Rotation Guide](../guide/rotation.md) - Log rotation
 - [Configuration Guide](../guide/configuration.md) - Full configuration options
+
+## Aliases
+
+The Scheduler provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `begin` | `start` |
+| `end` | `stop` |
+| `halt` | `stop` |
+| `statistics` | `getStats` |
+
+## Additional State Methods
+
+- `taskCount() usize` - Returns number of scheduled tasks
+- `isRunning() bool` - Returns true if scheduler is running
+- `hasTasks() bool` - Returns true if any tasks are scheduled
+
+## Extended Presets
+
+### SchedulerPresets
+
+```zig
+pub const SchedulerPresets = struct {
+    /// Every 5 minutes
+    pub fn every5Minutes() Schedule;
+    
+    /// Every 15 minutes
+    pub fn every15Minutes() Schedule;
+    
+    /// Every 30 minutes
+    pub fn every30Minutes() Schedule;
+    
+    /// Every 6 hours
+    pub fn every6Hours() Schedule;
+    
+    /// Every 12 hours
+    pub fn every12Hours() Schedule;
+    
+    /// Every hour
+    pub fn everyHour() Schedule;
+    
+    /// Daily at midnight
+    pub fn dailyMidnight() Schedule;
+    
+    /// Daily at 2 AM (maintenance window)
+    pub fn dailyMaintenance() Schedule;
+    
+    /// Daily at specific time
+    pub fn dailyAt(hour: u8, minute: u8) Schedule;
+    
+    /// Daily cleanup with custom config
+    pub fn dailyCleanup(path: []const u8, max_age_days: u64) TaskConfig;
+    
+    /// Hourly compression
+    pub fn hourlyCompression(path: []const u8) TaskConfig;
+    
+    /// Creates a scheduled log sink configuration
+    pub fn createScheduledSink(file_path: []const u8, rotation: []const u8) SinkConfig;
+    
+    /// Weekly cleanup config
+    pub fn weeklyCleanupConfig(path: []const u8, max_age_days: u64) TaskConfig;
+};
+```
+

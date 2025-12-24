@@ -477,3 +477,32 @@ const total = pool.threadCount();
 - [Async Logging Guide](async.md)
 - [Configuration Guide](configuration.md)
 
+## New Methods (v0.0.9)
+
+```zig
+var pool = try logly.ThreadPool.init(allocator, config);
+defer pool.deinit();
+
+// State methods
+const empty = pool.isEmpty();
+const full = pool.isFull();
+
+// Performance metrics
+const util = pool.utilization();  // 0.0 - 1.0
+
+// Reset statistics
+pool.resetStats();
+```
+
+## Additional Aliases
+
+| Alias | Method |
+|-------|--------|
+| `flush` | `clear` |
+| `statistics` | `getStats` |
+| `stop` | `shutdown` |
+| `halt` | `shutdown` |
+| `begin` | `start` |
+| `add` | `submit` |
+
+

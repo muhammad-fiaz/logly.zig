@@ -122,3 +122,62 @@ logger.setFilter(&filter);
 - **Production**: Filter to warnings and above
 - **Debugging**: Enable debug for specific modules only
 - **Security**: Filter out PII-containing messages
+
+## New Methods (v0.0.9)
+
+```zig
+var filter = logly.Filter.init(allocator);
+defer filter.deinit();
+
+// Add rules
+try filter.addMinLevel(.warning);
+try filter.addModulePrefix("database.", .allow);
+try filter.addMessageFilter("password", .deny);
+
+// Batch evaluation (more efficient for multiple records)
+var results: [100]bool = undefined;
+filter.shouldLogBatch(&records, &results);
+
+// Fast path check
+if (filter.allowsAll()) {
+    // No rules, skip evaluation
+}
+
+// Statistics
+const allowed = filter.allowedCount();
+const denied = filter.deniedCount();
+const total = filter.totalProcessed();
+filter.resetStats();
+
+// State
+const count = filter.count();  // Number of rules
+const has = filter.hasRules();
+const empty = filter.isEmpty();
+
+// Disable filter
+filter.disable();
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `check` | `shouldLog` |
+| `evaluate` | `shouldLog` |
+| `minLevel` | `addMinLevel` |
+| `min` | `addMinLevel` |
+| `maxLevel` | `addMaxLevel` |
+| `max` | `addMaxLevel` |
+| `moduleFilter` | `addModulePrefix` |
+| `addPrefix` | `addModulePrefix` |
+| `messageFilter` | `addMessageFilter` |
+| `reset` | `clear` |
+| `removeAll` | `clear` |
+| `ruleCount` | `count` |
+| `length` | `count` |
+
+## See Also
+
+- [Filtering Guide](/guide/filtering) - Detailed filtering documentation
+- [Filter API](/api/filter) - Full API reference
+

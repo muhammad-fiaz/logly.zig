@@ -403,4 +403,51 @@ pub const Record = struct {
 
         return new_record;
     }
+
+    /// Returns true if this record has a custom level.
+    pub fn hasCustomLevel(self: *const Record) bool {
+        return self.custom_level_name != null;
+    }
+
+    /// Returns true if this record has context fields.
+    pub fn hasContext(self: *const Record) bool {
+        return self.context.count() > 0;
+    }
+
+    /// Returns the number of context fields.
+    pub fn contextCount(self: *const Record) usize {
+        return self.context.count();
+    }
+
+    /// Returns true if this record has a stack trace.
+    pub fn hasStackTrace(self: *const Record) bool {
+        return self.stack_trace != null;
+    }
+
+    /// Returns true if this record has error info.
+    pub fn hasError(self: *const Record) bool {
+        return self.error_info != null;
+    }
+
+    /// Returns true if this record has tracing info.
+    pub fn hasTracing(self: *const Record) bool {
+        return self.trace_id != null or self.span_id != null;
+    }
+
+    /// Alias for addField
+    pub const setField = addField;
+    pub const put = addField;
+
+    /// Alias for setTraceId
+    pub const trace = setTraceId;
+
+    /// Alias for setSpanId
+    pub const span = setSpanId;
+
+    /// Alias for setCorrelationId
+    pub const correlate = setCorrelationId;
+
+    /// Alias for clone
+    pub const copy = clone;
+    pub const duplicate = clone;
 };

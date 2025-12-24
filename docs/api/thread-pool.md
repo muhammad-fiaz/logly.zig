@@ -465,8 +465,30 @@ fn incrementTask(ctx: *anyopaque) void {
 }
 ```
 
+## Aliases
+
+The ThreadPool module provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `flush` | `clear` |
+| `statistics` | `getStats` |
+| `stop` | `shutdown` |
+| `halt` | `shutdown` |
+| `begin` | `start` |
+| `add` | `submit` |
+
+## Additional Methods
+
+- `isEmpty() bool` - Returns true if no pending tasks
+- `isFull() bool` - Returns true if queue is at capacity
+- `utilization() f64` - Returns thread pool utilization ratio (0.0 - 1.0)
+- `resetStats() void` - Resets all statistics
+
 ## See Also
 
+- [Thread Pool Guide](../guide/thread-pool.md) - Usage patterns
 - [Async API](async.md) - Async logging with ring buffers
 - [Scheduler API](scheduler.md) - Scheduled tasks
 - [Configuration Guide](../guide/configuration.md) - Full configuration options
+

@@ -377,10 +377,36 @@ pub const SamplerPresets = struct {
         return Sampler.init(allocator, .{ .probability = 0.1 });
     }
 
+    /// Sample approximately 50% of records.
+    pub fn sample50Percent(allocator: std.mem.Allocator) Sampler {
+        return Sampler.init(allocator, .{ .probability = 0.5 });
+    }
+
+    /// Sample approximately 1% of records (high-volume production).
+    pub fn sample1Percent(allocator: std.mem.Allocator) Sampler {
+        return Sampler.init(allocator, .{ .probability = 0.01 });
+    }
+
     /// Limit to 100 records per second.
     pub fn limit100PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .rate_limit = .{
             .max_records = 100,
+            .window_ms = 1000,
+        } });
+    }
+
+    /// Limit to 1000 records per second.
+    pub fn limit1000PerSecond(allocator: std.mem.Allocator) Sampler {
+        return Sampler.init(allocator, .{ .rate_limit = .{
+            .max_records = 1000,
+            .window_ms = 1000,
+        } });
+    }
+
+    /// Limit to 10 records per second (debug/low-volume).
+    pub fn limit10PerSecond(allocator: std.mem.Allocator) Sampler {
+        return Sampler.init(allocator, .{ .rate_limit = .{
+            .max_records = 10,
             .window_ms = 1000,
         } });
     }
@@ -390,10 +416,27 @@ pub const SamplerPresets = struct {
         return Sampler.init(allocator, .{ .every_n = 10 });
     }
 
+    /// Sample every 100th record (high-volume production).
+    pub fn every100th(allocator: std.mem.Allocator) Sampler {
+        return Sampler.init(allocator, .{ .every_n = 100 });
+    }
+
+    /// Sample every 5th record.
+    pub fn every5th(allocator: std.mem.Allocator) Sampler {
+        return Sampler.init(allocator, .{ .every_n = 5 });
+    }
+
     /// Adaptive sampling targeting 1000 records per second.
     pub fn adaptive1000PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .adaptive = .{
             .target_rate = 1000,
+        } });
+    }
+
+    /// Adaptive sampling targeting 100 records per second.
+    pub fn adaptive100PerSecond(allocator: std.mem.Allocator) Sampler {
+        return Sampler.init(allocator, .{ .adaptive = .{
+            .target_rate = 100,
         } });
     }
 

@@ -749,6 +749,36 @@ pub const Compression = struct {
             .color = false,
         };
     }
+
+    /// Returns true if compression is enabled.
+    pub fn isEnabled(self: *const Compression) bool {
+        return self.config.algorithm != .none and self.config.mode != .disabled;
+    }
+
+    /// Returns the compression ratio.
+    pub fn ratio(self: *const Compression) f64 {
+        return self.stats.compressionRatio();
+    }
+
+    /// Alias for compress
+    pub const encode = compress;
+    pub const deflate = compress;
+
+    /// Alias for decompress
+    pub const decode = decompress;
+    pub const inflate = decompress;
+
+    /// Alias for compressFile
+    pub const packFile = compressFile;
+
+    /// Alias for decompressFile
+    pub const unpackFile = decompressFile;
+
+    /// Alias for getStats
+    pub const statistics = getStats;
+
+    /// Alias for shouldCompress
+    pub const needsCompression = shouldCompress;
 };
 
 /// Preset compression configurations.

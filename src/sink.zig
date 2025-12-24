@@ -88,8 +88,9 @@ const SystemLog = struct {
 
             // Map level to syslog priority
             const priority: c_int = switch (level) {
-                .err, .critical, .fail => posix.LOG_ERR,
+                .err, .critical, .fail, .fatal => posix.LOG_ERR,
                 .warning => posix.LOG_WARNING,
+                .notice => posix.LOG_INFO, // Notice maps to INFO (syslog has LOG_NOTICE but we use LOG_INFO)
                 else => posix.LOG_INFO,
             };
 
@@ -158,8 +159,9 @@ const SystemLog = struct {
             defer self.allocator.free(msg_z);
             const strings = [_]windows.LPCSTR{msg_z};
             const wType = switch (level) {
-                .err, .critical, .fail => windows.EVENTLOG_ERROR_TYPE,
+                .err, .critical, .fail, .fatal => windows.EVENTLOG_ERROR_TYPE,
                 .warning => windows.EVENTLOG_WARNING_TYPE,
+                .notice, .info, .success => windows.EVENTLOG_INFORMATION_TYPE,
                 else => windows.EVENTLOG_INFORMATION_TYPE,
             };
             _ = windows.ReportEventA(@ptrCast(h), wType, 0, 0, null, 1, 0, &strings, null);
@@ -711,6 +713,57 @@ pub const Sink = struct {
 
         return self.stats;
     }
+
+    /// Alias for getStats() - shorter form.
+    pub const statistics = getStats;
+    pub const stats_ = getStats;
+
+    /// Clears the internal buffer.
+    pub fn clearBuffer(self: *Sink) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.buffer.clearRetainingCapacity();
+    }
+
+    /// Alias for clearBuffer() - shorter form.
+    pub const clear = clearBuffer;
+
+    /// Synchronizes buffer to storage (calls flush).
+    pub const sync = flush;
+
+    /// Alias for deinit() - alternative name.
+    pub const close = deinit;
+
+    /// Returns true if sink is enabled.
+    pub fn isEnabled(self: *Sink) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.enabled;
+    }
+
+    /// Enables the sink.
+    pub fn enable(self: *Sink) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.enabled = true;
+        if (self.on_state_change) |cb| cb(true);
+    }
+
+    /// Disables the sink.
+    pub fn disable(self: *Sink) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.enabled = false;
+        if (self.on_state_change) |cb| cb(false);
+    }
+
+    /// Returns the sink's name, if set.
+    pub fn getName(self: *Sink) ?[]const u8 {
+        return self.config.name;
+    }
+
+    /// Alias for getName() - shorter form.
+    pub const name = getName;
 
     pub fn write(self: *Sink, record: *const Record, global_config: anytype) !void {
         return self.writeWithAllocator(record, global_config, null);

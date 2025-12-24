@@ -1,6 +1,6 @@
 # Filtering
 
-Logly-Zig v0.0.3+ provides a powerful filtering system for rule-based log filtering. Filter logs by level, message patterns, modules, and more. Filters work with all sink types: console, file, and JSON.
+Logly-Zig v0.0.9 provides a powerful filtering system for rule-based log filtering. Filter logs by level, message patterns, modules, and more. Filters work with all sink types: console, file, and JSON.
 
 ## Overview
 
@@ -406,8 +406,64 @@ pub fn main() !void {
 3. **Test your filters**: Verify filtering works at different levels
 4. **Document filter rules**: Add comments explaining why each rule exists
 
+## New Features (v0.0.9)
+
+### Batch Evaluation
+
+```zig
+var filter = Filter.init(allocator);
+defer filter.deinit();
+
+try filter.addMinLevel(.warning);
+
+// Evaluate multiple records at once (more efficient)
+var results: [100]bool = undefined;
+filter.shouldLogBatch(&records, &results);
+```
+
+### Additional Methods
+
+```zig
+// Fast path - check if all logs are allowed
+if (filter.allowsAll()) {
+    // No rules, skip evaluation
+}
+
+// Statistics
+const allowed = filter.allowedCount();
+const denied = filter.deniedCount();
+const total = filter.totalProcessed();
+filter.resetStats();
+
+// State checks
+const count = filter.count();
+const has = filter.hasRules();
+const empty = filter.isEmpty();
+```
+
+### Aliases
+
+| Alias | Method |
+|-------|--------|
+| `check` | `shouldLog` |
+| `evaluate` | `shouldLog` |
+| `minLevel` | `addMinLevel` |
+| `min` | `addMinLevel` |
+| `maxLevel` | `addMaxLevel` |
+| `max` | `addMaxLevel` |
+| `moduleFilter` | `addModulePrefix` |
+| `addPrefix` | `addModulePrefix` |
+| `messageFilter` | `addMessageFilter` |
+| `reset` | `clear` |
+| `removeAll` | `clear` |
+| `ruleCount` | `count` |
+| `length` | `count` |
+
 ## See Also
 
+- [Filter API](/api/filter) - Full API reference
+- [Filtering Example](/examples/filtering) - Code examples
 - [Sampling](/guide/sampling) - Rate limiting and probability-based filtering
 - [Redaction](/guide/redaction) - Sensitive data masking
 - [Configuration](/guide/configuration) - Global configuration options
+

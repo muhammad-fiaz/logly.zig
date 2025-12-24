@@ -374,6 +374,7 @@ pub const Metrics = struct {
 
     /// Alias for formatLevelBreakdown
     pub const levels = formatLevelBreakdown;
+    pub const breakdown = formatLevelBreakdown;
 
     /// Returns true if any records have been logged.
     pub fn hasRecords(self: *const Metrics) bool {
@@ -400,6 +401,81 @@ pub const Metrics = struct {
         const snapshot_data = self.getSnapshot();
         return snapshot_data.records_per_second;
     }
+
+    /// Returns the error count.
+    pub fn errorCount(self: *const Metrics) u64 {
+        return @as(u64, self.error_count.load(.monotonic));
+    }
+
+    /// Returns the dropped records count.
+    pub fn droppedCount(self: *const Metrics) u64 {
+        return @as(u64, self.dropped_records.load(.monotonic));
+    }
+
+    /// Returns the error rate (0.0 - 1.0).
+    pub fn errorRate(self: *const Metrics) f64 {
+        const total = self.totalRecordCount();
+        if (total == 0) return 0;
+        const errors = self.errorCount();
+        return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+    }
+
+    /// Returns the drop rate (0.0 - 1.0).
+    pub fn dropRate(self: *const Metrics) f64 {
+        const total = self.totalRecordCount();
+        if (total == 0) return 0;
+        const drops = self.droppedCount();
+        return @as(f64, @floatFromInt(drops)) / @as(f64, @floatFromInt(total));
+    }
+
+    /// Returns true if error rate exceeds threshold.
+    pub fn hasHighErrorRate(self: *const Metrics, threshold: f64) bool {
+        return self.errorRate() > threshold;
+    }
+
+    /// Returns true if drop rate exceeds threshold.
+    pub fn hasHighDropRate(self: *const Metrics, threshold: f64) bool {
+        return self.dropRate() > threshold;
+    }
+
+    /// Returns count for specific level.
+    pub fn levelCount(self: *const Metrics, level: Level) u64 {
+        const idx = levelToIndex(level);
+        return @as(u64, self.level_counts[idx].load(.monotonic));
+    }
+
+    /// Returns the number of sinks being tracked.
+    pub fn sinkCount(self: *const Metrics) usize {
+        return self.sink_metrics.items.len;
+    }
+
+    /// Returns uptime in seconds.
+    pub fn uptimeSeconds(self: *const Metrics) f64 {
+        return @as(f64, @floatFromInt(self.uptime())) / 1000.0;
+    }
+
+    /// Alias for reset
+    pub const clear = reset;
+
+    /// Alias for uptimeSeconds
+    pub const uptimeSec = uptimeSeconds;
+};
+
+/// Pre-built metrics configurations.
+pub const MetricsPresets = struct {
+    /// Creates a basic metrics instance.
+    pub fn basic(allocator: std.mem.Allocator) Metrics {
+        return Metrics.init(allocator);
+    }
+
+    /// Creates a metrics sink configuration.
+    pub fn createMetricsSink(file_path: []const u8) @import("sink.zig").SinkConfig {
+        return .{
+            .path = file_path,
+            .json = true,
+            .color = false,
+        };
+    }
 };
 
 test "metrics basic" {
@@ -410,8 +486,43 @@ test "metrics basic" {
     metrics.recordLog(.info, 150);
     metrics.recordError();
 
-    const snapshot = metrics.getSnapshot();
-    try std.testing.expectEqual(@as(u64, 2), snapshot.total_records);
-    try std.testing.expectEqual(@as(u64, 250), snapshot.total_bytes);
-    try std.testing.expectEqual(@as(u64, 1), snapshot.error_count);
+    const snapshot_data = metrics.getSnapshot();
+    try std.testing.expectEqual(@as(u64, 2), snapshot_data.total_records);
+    try std.testing.expectEqual(@as(u64, 250), snapshot_data.total_bytes);
+    try std.testing.expectEqual(@as(u64, 1), snapshot_data.error_count);
+}
+
+test "metrics rates" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    metrics.recordLog(.info, 100);
+    metrics.recordError();
+    metrics.recordDrop();
+
+    try std.testing.expect(metrics.errorRate() > 0);
+    try std.testing.expect(metrics.dropRate() > 0);
+}
+
+test "metrics level count" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    metrics.recordLog(.info, 50);
+    metrics.recordLog(.info, 50);
+    metrics.recordLog(.err, 100);
+
+    try std.testing.expectEqual(@as(u64, 2), metrics.levelCount(.info));
+    try std.testing.expectEqual(@as(u64, 1), metrics.levelCount(.err));
+}
+
+test "metrics reset" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    metrics.recordLog(.info, 100);
+    try std.testing.expect(metrics.hasRecords());
+
+    metrics.reset();
+    try std.testing.expect(!metrics.hasRecords());
 }

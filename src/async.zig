@@ -621,6 +621,42 @@ pub const AsyncLogger = struct {
     pub fn setErrorCallback(self: *AsyncLogger, callback: *const fn (anyerror) void) void {
         self.on_error = callback;
     }
+
+    /// Returns true if the async logger is running.
+    pub fn isRunning(self: *const AsyncLogger) bool {
+        return self.worker_thread != null;
+    }
+
+    /// Returns the buffer capacity.
+    pub fn bufferCapacity(self: *const AsyncLogger) usize {
+        return self.buffer.capacity;
+    }
+
+    /// Returns true if the buffer is full.
+    pub fn isFull(self: *AsyncLogger) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.buffer.isFull();
+    }
+
+    /// Alias for queue
+    pub const enqueue = queue;
+    pub const push = queue;
+    pub const logMsg = queue;
+
+    /// Alias for getStats
+    pub const statistics = getStats;
+
+    /// Alias for queueDepth
+    pub const depth = queueDepth;
+    pub const pending = queueDepth;
+
+    /// Alias for startWorker
+    pub const begin = startWorker;
+
+    /// Alias for stop
+    pub const halt = stop;
+    pub const end = stop;
 };
 
 /// Async file writer for high-performance file logging.

@@ -1,4 +1,4 @@
-﻿# Diagnostics API Reference
+# Diagnostics API Reference
 
 The `Diagnostics` module collects comprehensive host information including OS, CPU, memory, and storage details for logging and monitoring.
 
@@ -355,6 +355,37 @@ pub fn main() !void {
 }
 ```
 
+## Aliases
+
+The Diagnostics module provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `gather` | `collect` |
+| `snapshot` | `collect` |
+
+## Additional Methods
+
+- `summary() []const u8` - Returns a compact summary string of system info
+
+## DiagnosticsPresets
+
+Pre-configured diagnostic collection options:
+
+```zig
+pub const DiagnosticsPresets = struct {
+    /// Minimal diagnostics (no drives).
+    pub fn minimal() DiagnosticsConfig {
+        return .{ .include_drives = false };
+    }
+    
+    /// Full diagnostics with all information.
+    pub fn full() DiagnosticsConfig {
+        return .{ .include_drives = true };
+    }
+};
+```
+
 ## See Also
 
 - [Diagnostics Guide](../guide/diagnostics.md) - Usage patterns and best practices
@@ -362,3 +393,4 @@ pub fn main() !void {
 - [Logger API](logger.md) - Logger methods and usage
 - [Formatting Guide](../guide/formatting.md) - Custom format strings
 - [Example Code](../../examples/diagnostics.zig) - Complete working example
+

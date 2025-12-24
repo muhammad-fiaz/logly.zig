@@ -1,15 +1,13 @@
-# Getting Started
+# Installation
 
-Get started with Logly-Zig in minutes.
+This guide covers all available methods to install Logly-Zig in your project.
 
 ## Prerequisites
 
-- Zig 0.15.0 or higher
+- **Zig 0.15.0** or higher
 - Basic familiarity with Zig
 
-## Installation
-
-### Method 1: Using Zig Fetch (Recommended)
+## Method 1: Using Zig Fetch (Recommended)
 
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
@@ -17,9 +15,7 @@ The easiest way to install Logly-Zig is using the `zig fetch` command:
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
 ```
 
-or
-
-For Nightly/PreRelease, use this command:
+**Or for Nightly/PreRelease:**
 
 ```bash
 zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
@@ -30,7 +26,7 @@ This command automatically:
 2. Calculates the hash
 3. Adds it to your `build.zig.zon`
 
-### Method 2: Manual Installation
+## Method 2: Manual Installation
 
 If you prefer manual installation, add to your `build.zig.zon`:
 
@@ -48,17 +44,18 @@ If you prefer manual installation, add to your `build.zig.zon`:
 ```
 
 To get the hash manually, run:
+
 ```bash
 zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
 ```
 
 Copy the output hash (e.g., `1220abcd23f9f0c8...`) into your `build.zig.zon`.
 
-### Method 3: Prebuilt Libraries
+## Method 3: Prebuilt Libraries
 
 While we recommend using the Zig Package Manager, we also provide prebuilt static libraries for each release on the [Releases](https://github.com/muhammad-fiaz/logly.zig/releases) page. These can be useful for integration with other build systems or languages.
 
-**Available Prebuilt Libraries:**
+### Available Prebuilt Libraries
 
 | Platform | Architecture | File |
 |----------|-------------|------|
@@ -74,7 +71,7 @@ While we recommend using the Zig Package Manager, we also provide prebuilt stati
 | **Bare Metal** | RISC-V 64 | `liblogly-riscv64-freestanding.a` |
 | **Bare Metal** | ARM | `liblogly-arm-freestanding.a` |
 
-**Using Prebuilt Libraries:**
+### Using Prebuilt Libraries
 
 1. Download the appropriate library from the [Releases](https://github.com/muhammad-fiaz/logly.zig/releases) page
 2. Place it in your project (e.g., `libs/` folder)
@@ -86,9 +83,9 @@ exe.addLibraryPath(b.path("libs"));
 exe.linkSystemLibrary("logly");
 ```
 
-### Update build.zig
+## Configuring build.zig
 
-Add the dependency to your `build.zig`:
+After adding the dependency, update your `build.zig` to use Logly:
 
 ```zig
 const std = @import("std");
@@ -121,17 +118,7 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-### Build & Run
-
-```bash
-# Build the project
-zig build
-
-# Run the application
-zig build run
-```
-
-## Verify Installation
+## Verifying Installation
 
 Create a simple test file `src/main.zig`:
 
@@ -144,16 +131,10 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Enable ANSI colors on Windows (no-op on Linux/macOS)
-    _ = logly.Terminal.enableAnsiColors();
-
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // Entire log lines are colored by level!
-    try logger.info("Logly-Zig is working!", @src());      // White line
-    try logger.success("Installation complete!", @src());  // Green line
-    try logger.warning("Ready for production!", @src());   // Yellow line
+    try logger.info("Logly installed successfully!", @src());
 }
 ```
 
@@ -166,97 +147,91 @@ zig build run
 You should see colored output:
 
 ```
-[2024-01-15 10:30:45] [INFO] Logly-Zig is working!
-[2024-01-15 10:30:45] [SUCCESS] Installation complete!
-[2024-01-15 10:30:45] [WARNING] Ready for production!
+2024-12-24 12:00:00.000 | INFO  | Logly installed successfully!
 ```
 
-## Color Support
+## Build Options
 
-Logly-Zig provides **whole-line coloring** where the entire log line (timestamp, level, message) is colored based on the log level.
-
-### Built-in Level Colors
-
-| Level | Color | ANSI Code |
-|-------|-------|-----------|
-| TRACE | Cyan | 36 |
-| DEBUG | Blue | 34 |
-| INFO | White | 37 |
-| NOTICE | Bright Cyan | 96 |
-| SUCCESS | Green | 32 |
-| WARNING | Yellow | 33 |
-| ERROR | Red | 31 |
-| FAIL | Magenta | 35 |
-| CRITICAL | Bright Red | 91 |
-| FATAL | White on Red | 97;41 |
-
-### Custom Colors
-
-You can create custom log levels with any ANSI color code:
+Logly supports several build options that can be passed to the dependency:
 
 ```zig
-// Add custom level with cyan bold color
-try logger.addCustomLevel("NOTICE", 35, "36;1");
-
-// Use the custom level
-try logger.custom("NOTICE", "Custom notice message");
-```
-
-**Common ANSI color codes:**
-- `30` - Black
-- `31` - Red
-- `32` - Green
-- `33` - Yellow
-- `34` - Blue
-- `35` - Magenta
-- `36` - Cyan
-- `37` - White
-- `90-97` - Bright variants
-- Add `;1` for bold (e.g., `36;1` for cyan bold)
-- Add `;4` for underline (e.g., `31;4` for red underline)
-
-### Disabling Colors
-
-```zig
-// Global color disable
-var config = logly.Config.default();
-config.global_color_display = false;
-logger.configure(config);
-
-// Per-sink color disable
-_ = try logger.addSink(.{
-    .path = "logs/app.log",
-    .color = false,  // No colors in file
+const logly_dep = b.dependency("logly", .{
+    .target = target,
+    .optimize = optimize,
+    // Optional build options can be added here
 });
 ```
+
+### Available Build Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `Debug` | Full debug info, no optimization | Development |
+| `ReleaseSafe` | Optimized with safety checks | Testing |
+| `ReleaseFast` | Maximum optimization | Production |
+| `ReleaseSmall` | Size optimization | Embedded |
 
 ## Troubleshooting
 
 ### Hash Mismatch Error
 
-If you see a hash mismatch error, run:
+If you get a hash mismatch error:
+
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
+error: hash mismatch
 ```
 
-### Colors Not Displaying on Windows
+Update the hash in your `build.zig.zon` by running:
 
-Make sure to call `Terminal.enableAnsiColors()` before logging:
-```zig
-_ = logly.Terminal.enableAnsiColors();
+```bash
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
 ```
 
 ### Module Not Found
 
-Ensure your `build.zig` includes:
-```zig
-exe.root_module.addImport("logly", logly_dep.module("logly"));
+If you get "module 'logly' not found":
+
+1. Ensure the dependency is correctly added to `build.zig.zon`
+2. Verify `build.zig` has the correct import line:
+   ```zig
+   exe.root_module.addImport("logly", logly_dep.module("logly"));
+   ```
+
+### Network Issues
+
+If you're behind a firewall or have network issues:
+
+1. Download the tarball manually from GitHub
+2. Use local path in `build.zig.zon`:
+   ```zig
+   .logly = .{
+       .path = "../logly.zig",
+   },
+   ```
+
+## Updating Logly
+
+To update to a newer version:
+
+1. Update the URL in `build.zig.zon` to the new version tag
+2. Run `zig fetch` to get the new hash
+3. Update the hash in `build.zig.zon`
+4. Rebuild your project
+
+Or simply run:
+
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/NEW_VERSION.tar.gz
 ```
 
 ## Next Steps
 
-- [Quick Start](/guide/quick-start) - Learn the basics
-- [Configuration](/guide/configuration) - Configure your logger
-- [Custom Levels](/guide/custom-levels) - Create custom log levels with colors
-- [Formatting](/guide/formatting) - Customize log output format
-- [Examples](/examples/basic) - See more examples
+- [Quick Start Guide](quick-start.md) - Get logging in 5 minutes
+- [Configuration Guide](configuration.md) - Customize your logger
+- [API Reference](../api/logger.md) - Full API documentation
+
+## See Also
+
+- [GitHub Repository](https://github.com/muhammad-fiaz/logly.zig)
+- [Releases Page](https://github.com/muhammad-fiaz/logly.zig/releases)
+- [Zig Package Manager Documentation](https://ziglang.org/documentation/master/#Package-Management)

@@ -138,9 +138,22 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-**Version 0.0.9 🚀**
-- New Notice(), FATAL() Log Levels
-- New rules-based template system for custom messages
+### Version 0.0.9 🚀
+
+**New Features:**
+- 🆕 **Log Levels**: `notice()` / `note()` and `fatal()` / `panic()` with formatted variants
+- 🔧 **100+ Method Aliases**: Convenience shortcuts across all modules (Logger, Sink, Filter, Sampler, Metrics, etc.)
+- ⚡ **Production Presets**: Ready-to-use configurations for sampling, redaction (GDPR, API secrets), rotation, and scheduling
+- 📊 **Enhanced Metrics**: Error/drop rates, threshold checks, level-specific counts, uptime tracking
+- 🔗 **Rules Callbacks**: Full lifecycle hooks for rule evaluation and message attachment
+- 🛠️ **Sink Improvements**: `enable()`, `disable()`, `isEnabled()`, `clearBuffer()` methods
+
+**Documentation:**
+- Comprehensive installation guide with multiple methods
+- Updated API reference with complete alias tables
+- All docs updated to v0.0.9
+
+> 📖 See the [full changelog](https://github.com/muhammad-fiaz/logly.zig/releases/tag/0.0.9) for details.
 
 ---
 

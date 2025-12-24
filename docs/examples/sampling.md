@@ -182,3 +182,42 @@ sampler.reset();
 2. **Monitor sample rates** - Ensure you're not missing important logs
 3. **Adjust dynamically** - Use adaptive sampling for variable loads
 4. **Document sampling** - Make sampling configuration visible
+
+## New Presets (v0.0.9)
+
+```zig
+const SamplerPresets = logly.SamplerPresets;
+
+// Additional probability presets
+var sample_50 = SamplerPresets.sample50Percent(allocator);
+var sample_1 = SamplerPresets.sample1Percent(allocator);
+
+// Additional rate limit presets
+var limit_10 = SamplerPresets.limit10PerSecond(allocator);
+var limit_1000 = SamplerPresets.limit1000PerSecond(allocator);
+
+// Additional every-n presets
+var every_5 = SamplerPresets.every5th(allocator);
+var every_100 = SamplerPresets.every100th(allocator);
+
+// Adaptive sampling presets
+var adaptive_100 = SamplerPresets.adaptive100PerSecond(allocator);
+var adaptive_1000 = SamplerPresets.adaptive1000PerSecond(allocator);
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `sample` | `shouldSample` |
+| `check` | `shouldSample` |
+| `allow` | `shouldSample` |
+| `statistics` | `getStats` |
+| `stats_` | `getStats` |
+| `rate` | `getCurrentRate` |
+
+## See Also
+
+- [Sampling Guide](/guide/sampling) - Detailed sampling documentation
+- [Sampler API](/api/sampler) - Full API reference
+

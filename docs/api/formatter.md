@@ -95,3 +95,61 @@ Calculate average format size in bytes.
 #### `errorRate() f64`
 
 Calculate error rate (0.0 - 1.0).
+
+## Aliases
+
+The Formatter module provides convenience aliases:
+
+| Alias | Method |
+|-------|--------|
+| `render` | `format` |
+| `output` | `format` |
+| `renderToWriter` | `formatToWriter` |
+| `writeFormatted` | `formatToWriter` |
+| `json` | `formatJson` |
+| `toJson` | `formatJson` |
+| `jsonToWriter` | `formatJsonToWriter` |
+| `writeJson` | `formatJsonToWriter` |
+| `statistics` | `getStats` |
+| `colors` | `setTheme` |
+
+## Additional Methods
+
+- `hasTheme() bool` - Returns true if a custom theme is set
+- `resetStats() void` - Resets all formatter statistics
+
+## FormatterPresets
+
+Pre-configured formatter options:
+
+```zig
+pub const FormatterPresets = struct {
+    /// Plain formatter (no colors).
+    pub fn plain() FormatterConfig {
+        return .{ .color = false };
+    }
+    
+    /// Dark theme formatter.
+    pub fn dark() FormatterConfig {
+        return .{
+            .color = true,
+            .theme = .dark,
+        };
+    }
+    
+    /// Light theme formatter.
+    pub fn light() FormatterConfig {
+        return .{
+            .color = true,
+            .theme = .light,
+        };
+    }
+};
+```
+
+## See Also
+
+- [Formatting Guide](../guide/formatting.md) - Custom format strings
+- [Colors Guide](../guide/colors.md) - ANSI color configuration
+- [Config API](config.md) - Configuration options
+

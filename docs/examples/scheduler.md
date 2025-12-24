@@ -205,3 +205,39 @@ std.debug.print("Bytes freed: {d}\n", .{
 - [Scheduler API](../api/scheduler.md)
 - [Scheduler Guide](../guide/scheduler.md)
 - [Compression Example](compression.md)
+
+## New Presets (v0.0.9)
+
+```zig
+const SchedulerPresets = logly.SchedulerPresets;
+
+// Every N minutes presets
+var every_5 = SchedulerPresets.every5Minutes();
+var every_15 = SchedulerPresets.every15Minutes();
+var every_30 = SchedulerPresets.every30Minutes();
+
+// Hourly presets
+var every_hour = SchedulerPresets.everyHour();
+var every_6 = SchedulerPresets.every6Hours();
+var every_12 = SchedulerPresets.every12Hours();
+
+// Daily presets
+var midnight = SchedulerPresets.dailyMidnight();
+var maintenance = SchedulerPresets.dailyMaintenance();  // 2 AM
+var at_time = SchedulerPresets.dailyAt(9, 30);  // 9:30 AM
+
+// Task configs
+var cleanup = SchedulerPresets.dailyCleanup("logs", 30);
+var compress = SchedulerPresets.hourlyCompression("logs");
+var weekly = SchedulerPresets.weeklyCleanupConfig("logs", 90);
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `begin` | `start` |
+| `end` | `stop` |
+| `halt` | `stop` |
+| `statistics` | `getStats` |
+

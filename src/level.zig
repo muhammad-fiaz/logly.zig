@@ -109,12 +109,75 @@ pub const Level = enum(u8) {
         if (std.mem.eql(u8, s, "FATAL")) return .fatal;
         return null;
     }
+
+    /// Alias for priority
+    pub const value = priority;
+    pub const severity = priority;
+
+    /// Alias for asString
+    pub const toString = asString;
+    pub const str = asString;
+
+    /// Alias for defaultColor
+    pub const color = defaultColor;
+
+    /// Alias for fromString
+    pub const parse = fromString;
+
+    /// Returns true if this level is at least as severe as the given level.
+    pub fn isAtLeast(self: Level, other: Level) bool {
+        return self.priority() >= other.priority();
+    }
+
+    /// Returns true if this level is more severe than the given level.
+    pub fn isMoreSevereThan(self: Level, other: Level) bool {
+        return self.priority() > other.priority();
+    }
+
+    /// Returns true if this is an error-level or higher.
+    pub fn isError(self: Level) bool {
+        return self.priority() >= Level.err.priority();
+    }
+
+    /// Returns true if this is a warning-level.
+    pub fn isWarning(self: Level) bool {
+        return self == .warning;
+    }
+
+    /// Returns true if this is debug or trace level.
+    pub fn isDebug(self: Level) bool {
+        return self == .debug or self == .trace;
+    }
 };
 
 pub const CustomLevel = struct {
     name: []const u8,
     priority: u8,
     color: []const u8,
+
+    /// Creates a new custom level.
+    pub fn init(level_name: []const u8, level_priority: u8, level_color: []const u8) CustomLevel {
+        return .{
+            .name = level_name,
+            .priority = level_priority,
+            .color = level_color,
+        };
+    }
+
+    /// Returns true if this custom level is at least as severe as standard level.
+    pub fn isAtLeast(self: CustomLevel, level: Level) bool {
+        return self.priority >= level.priority();
+    }
+
+    /// Returns true if this is an error-level or higher.
+    pub fn isError(self: CustomLevel) bool {
+        return self.priority >= Level.err.priority();
+    }
+
+    /// Alias for name
+    pub fn asString(self: CustomLevel) []const u8 {
+        return self.name;
+    }
 };
 
 test "level priority" {

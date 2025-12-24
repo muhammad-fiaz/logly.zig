@@ -1,6 +1,6 @@
 # Redaction
 
-Logly-Zig v0.0.3+ provides automatic sensitive data masking to help maintain security and compliance. Redact passwords, API keys, credit card numbers, and other PII from log messages.
+Logly-Zig v0.0.9 provides automatic sensitive data masking to help maintain security and compliance. Redact passwords, API keys, credit card numbers, and other PII from log messages.
 
 ## Overview
 
@@ -226,3 +226,33 @@ Redaction helps with compliance requirements like:
 - [Filtering](/guide/filtering) - Rule-based log filtering
 - [Configuration](/guide/configuration) - Global configuration options
 - [JSON Logging](/guide/json) - Structured JSON output
+
+## New Compliance Presets (v0.0.9)
+
+```zig
+const RedactionPresets = logly.RedactionPresets;
+
+// GDPR compliance preset
+var gdpr = try RedactionPresets.gdpr(allocator);
+defer gdpr.deinit();
+
+// API secrets preset (API keys, tokens, secrets)
+var api = try RedactionPresets.apiSecrets(allocator);
+defer api.deinit();
+
+// Financial data preset (accounts, routing numbers)
+var fin = try RedactionPresets.financial(allocator);
+defer fin.deinit();
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `addRule` | `addPattern` |
+| `field` | `addField` |
+| `sensitiveField` | `addField` |
+| `mask` | `redact` |
+| `sanitize` | `redact` |
+| `statistics` | `getStats` |
+

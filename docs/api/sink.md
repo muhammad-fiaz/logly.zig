@@ -290,3 +290,93 @@ _ = try logger.addSink(.{
     },
 });
 ```
+
+## Aliases
+
+The Sink module provides convenience aliases:
+
+| Alias | Method | Description |
+|-------|--------|-------------|
+| `statistics` | `getStats()` | Get sink statistics |
+| `stats_` | `getStats()` | Get sink statistics |
+| `clear` | `clearBuffer()` | Clear internal buffer |
+| `sync` | `flush()` | Synchronize buffer to storage |
+| `close` | `deinit()` | Close and cleanup sink |
+| `name` | `getName()` | Get sink name |
+
+## New Methods (v0.0.9)
+
+```zig
+// State management
+const enabled = sink.isEnabled();
+sink.enable();
+sink.disable();
+
+// Buffer management
+sink.clearBuffer();
+
+// Name access
+const name = sink.getName();
+
+// Statistics
+const stats = sink.getStats();  // or sink.statistics()
+```
+
+## SinkPresets
+
+Pre-configured sink options for common use cases:
+
+```zig
+pub const SinkPresets = struct {
+    /// Console sink with default settings.
+    pub fn console() SinkConfig {
+        return .{};
+    }
+    
+    /// JSON file sink.
+    pub fn jsonFile(path: []const u8) SinkConfig {
+        return .{
+            .path = path,
+            .json = true,
+            .color = false,
+        };
+    }
+    
+    /// Rotating file sink.
+    pub fn rotatingFile(path: []const u8, rotation: []const u8, retention: usize) SinkConfig {
+        return .{
+            .path = path,
+            .rotation = rotation,
+            .retention = retention,
+        };
+    }
+    
+    /// Error-only sink.
+    pub fn errorOnly(path: []const u8) SinkConfig {
+        return .{
+            .path = path,
+            .level = .err,
+            .color = false,
+        };
+    }
+    
+    /// High-throughput async sink.
+    pub fn highThroughput(path: []const u8) SinkConfig {
+        return .{
+            .path = path,
+            .async_write = true,
+            .buffer_size = 65536,
+            .flush_interval_ms = 500,
+        };
+    }
+};
+```
+
+## See Also
+
+- [Sinks Guide](../guide/sinks.md) - Detailed sink configuration
+- [Rotation Guide](../guide/rotation.md) - Log file rotation
+- [JSON Guide](../guide/json.md) - JSON output configuration
+- [Compression API](compression.md) - Compression options
+- [Logger API](logger.md) - Logger sink management
+

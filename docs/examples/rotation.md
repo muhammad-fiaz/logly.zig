@@ -60,3 +60,46 @@ Files created in `logs/`:
 - `combined.log`
 
 (When rotation triggers, you will see files like `daily.2024-06-01.log` or `size_based.1.log`)
+
+## New Presets (v0.0.9)
+
+```zig
+const RotationPresets = logly.RotationPresets;
+
+// 1GB size-based rotation
+var rotation = RotationPresets.size1GB();
+
+// 90-day daily rotation
+var rotation = RotationPresets.daily90Days();
+
+// 48-hour hourly rotation
+var rotation = RotationPresets.hourly48Hours();
+
+// Factory methods for sinks
+var sink = RotationPresets.dailySink("logs/app.log", 30);
+var sink = RotationPresets.hourlySink("logs/app.log", 24);
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `check` | `shouldRotate` |
+| `tryRotate` | `rotate` |
+| `rotateNow` | `rotate` |
+| `rotatingSink` | `createSinkWithRotation` |
+| `sizeSink` | `createSinkWithSizeRotation` |
+
+## Best Practices
+
+1. **Set retention** - Always define retention to prevent disk filling
+2. **Use compression** - Enable compression for rotated files
+3. **Monitor disk** - Alert when disk usage is high
+4. **Test rotation** - Verify rotation works in staging
+5. **Combine with scheduler** - Use scheduler for cleanup tasks
+
+## See Also
+
+- [Rotation Guide](/guide/rotation) - Detailed rotation documentation
+- [Rotation API](/api/rotation) - Full API reference
+

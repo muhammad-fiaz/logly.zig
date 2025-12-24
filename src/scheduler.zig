@@ -880,6 +880,36 @@ pub const SchedulerPresets = struct {
             .color = false,
         };
     }
+
+    /// Every 30 minutes.
+    pub fn every30Minutes() Scheduler.Schedule {
+        return .{ .interval = 30 * 60 * 1000 };
+    }
+
+    /// Every 6 hours.
+    pub fn every6Hours() Scheduler.Schedule {
+        return .{ .interval = 6 * 60 * 60 * 1000 };
+    }
+
+    /// Every 12 hours.
+    pub fn every12Hours() Scheduler.Schedule {
+        return .{ .interval = 12 * 60 * 60 * 1000 };
+    }
+
+    /// Daily at midnight.
+    pub fn dailyMidnight() Scheduler.Schedule {
+        return dailyAt(0, 0);
+    }
+
+    /// Daily at 2 AM (maintenance window).
+    pub fn dailyMaintenance() Scheduler.Schedule {
+        return dailyAt(2, 0);
+    }
+
+    /// Creates a weekly cleanup config.
+    pub fn weeklyCleanupConfig(path: []const u8, max_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+        return dailyCleanup(path, max_age_days);
+    }
 };
 
 test "scheduler basic" {

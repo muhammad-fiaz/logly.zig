@@ -217,3 +217,12 @@ config.logs_root_path = "./logs";
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
+
+## See Also
+
+- [Customizations Guide](../guide/customizations.md) - Usage patterns and examples
+- [Configuration Guide](../guide/configuration.md) - Full configuration options
+- [Colors Guide](../guide/colors.md) - Color customization
+- [Formatting Guide](../guide/formatting.md) - Log format customization
+- [Config API](config.md) - Full configuration reference
+

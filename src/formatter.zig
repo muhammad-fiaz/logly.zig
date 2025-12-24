@@ -719,4 +719,60 @@ pub const Formatter = struct {
             try writer.writeAll("\x1b[0m");
         }
     }
+
+    /// Returns true if the formatter has a custom theme.
+    pub fn hasTheme(self: *const Formatter) bool {
+        return self.theme != null;
+    }
+
+    /// Resets statistics.
+    pub fn resetStats(self: *Formatter) void {
+        self.stats = .{};
+    }
+
+    /// Alias for format
+    pub const render = format;
+    pub const output = format;
+
+    /// Alias for formatToWriter
+    pub const renderToWriter = formatToWriter;
+    pub const writeFormatted = formatToWriter;
+
+    /// Alias for formatJson
+    pub const json = formatJson;
+    pub const toJson = formatJson;
+
+    /// Alias for formatJsonToWriter
+    pub const jsonToWriter = formatJsonToWriter;
+    pub const writeJson = formatJsonToWriter;
+
+    /// Alias for getStats
+    pub const statistics = getStats;
+
+    /// Alias for setTheme
+    pub const colors = setTheme;
+};
+
+/// Pre-built formatter configurations.
+pub const FormatterPresets = struct {
+    /// Creates a formatter with no colors.
+    pub fn plain(allocator: std.mem.Allocator) Formatter {
+        var f = Formatter.init(allocator);
+        f.theme = null;
+        return f;
+    }
+
+    /// Creates a formatter with dark theme.
+    pub fn dark(allocator: std.mem.Allocator) Formatter {
+        var f = Formatter.init(allocator);
+        f.theme = Formatter.Theme.dark();
+        return f;
+    }
+
+    /// Creates a formatter with light theme.
+    pub fn light(allocator: std.mem.Allocator) Formatter {
+        var f = Formatter.init(allocator);
+        f.theme = Formatter.Theme.light();
+        return f;
+    }
 };

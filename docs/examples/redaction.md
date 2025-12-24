@@ -151,3 +151,38 @@ defer allocator.free(message);
 3. **Audit regularly** - Review logs for missed PII
 4. **Layer defenses** - Use redaction with encryption and access controls
 5. **Document patterns** - Maintain list of redaction rules for compliance
+
+## New Compliance Presets (v0.0.9)
+
+```zig
+const RedactionPresets = logly.RedactionPresets;
+
+// GDPR compliance preset
+var gdpr_redactor = try RedactionPresets.gdpr(allocator);
+defer gdpr_redactor.deinit();
+
+// API secrets preset (API keys, tokens, secrets)
+var api_redactor = try RedactionPresets.apiSecrets(allocator);
+defer api_redactor.deinit();
+
+// Financial data preset (accounts, routing numbers)
+var fin_redactor = try RedactionPresets.financial(allocator);
+defer fin_redactor.deinit();
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `addRule` | `addPattern` |
+| `field` | `addField` |
+| `sensitiveField` | `addField` |
+| `mask` | `redact` |
+| `sanitize` | `redact` |
+| `statistics` | `getStats` |
+
+## See Also
+
+- [Redaction Guide](/guide/redaction) - Detailed redaction documentation
+- [Redactor API](/api/redactor) - Full API reference
+

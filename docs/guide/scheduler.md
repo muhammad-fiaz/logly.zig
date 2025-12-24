@@ -546,3 +546,42 @@ pub fn main() !void {
 - [Scheduler API Reference](../api/scheduler.md)
 - [Compression Guide](compression.md)
 - [Rotation Guide](rotation.md)
+
+## New Presets (v0.0.9)
+
+```zig
+const SchedulerPresets = logly.SchedulerPresets;
+
+// Every N minutes presets
+var every_5 = SchedulerPresets.every5Minutes();
+var every_15 = SchedulerPresets.every15Minutes();
+var every_30 = SchedulerPresets.every30Minutes();
+
+// Hourly presets
+var every_hour = SchedulerPresets.everyHour();
+var every_6 = SchedulerPresets.every6Hours();
+var every_12 = SchedulerPresets.every12Hours();
+
+// Daily presets
+var midnight = SchedulerPresets.dailyMidnight();
+var maintenance = SchedulerPresets.dailyMaintenance();  // 2 AM
+var at_time = SchedulerPresets.dailyAt(9, 30);  // 9:30 AM
+
+// Task configs
+var cleanup = SchedulerPresets.dailyCleanup("logs", 30);
+var compress = SchedulerPresets.hourlyCompression("logs");
+var weekly = SchedulerPresets.weeklyCleanupConfig("logs", 90);
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `begin` | `start` |
+| `end` | `stop` |
+| `halt` | `stop` |
+| `statistics` | `getStats` |
+| `taskCount` | `count` |
+| `isRunning` | `running` |
+| `hasTasks` | `hasScheduledTasks` |
+

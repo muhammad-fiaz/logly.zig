@@ -4,17 +4,61 @@ The `Logger` struct is the central component of the Logly library, orchestrating
 
 ## Quick Reference: Method Aliases
 
+### Sink Management Aliases
+
 | Full Method | Alias(es) | Description |
 |-------------|-----------|-------------|
 | `addSink()` | `add()` | Add a new sink |
 | `removeSink()` | `remove()` | Remove a sink by ID |
 | `removeAllSinks()` | `removeAll()`, `clear()` | Remove all sinks |
 | `getSinkCount()` | `count()`, `sinkCount()` | Get number of sinks |
-| `warning()` | `warn()` | Log at WARNING level |
+| `enableSink()` | `enable()` | Enable a sink by ID |
+| `disableSink()` | `disable()` | Disable a sink by ID |
+| `getSink()` | `sink()` | Get sink by ID |
+
+### Logging Level Aliases
+
+| Full Method | Alias(es) | Level | Description |
+|-------------|-----------|-------|-------------|
+| `trace()` | - | TRACE | Verbose debugging |
+| `debug()` | - | DEBUG | Debug information |
+| `info()` | - | INFO | General information |
+| `notice()` | `note()` | NOTICE | Important notices |
+| `success()` | - | SUCCESS | Success messages |
+| `warning()` | `warn()` | WARNING | Warning messages |
+| `err()` | `@"error"()` | ERROR | Error messages |
+| `fail()` | `failure()` | FAIL | Failure messages |
+| `critical()` | `crit()` | CRITICAL | Critical errors |
+| `fatal()` | `panic()` | FATAL | Fatal errors |
+
+### Formatted Logging Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `tracef()` | - | Formatted TRACE log |
+| `debugf()` | - | Formatted DEBUG log |
+| `infof()` | - | Formatted INFO log |
+| `noticef()` | `notef()` | Formatted NOTICE log |
+| `successf()` | - | Formatted SUCCESS log |
 | `warningf()` | `warnf()` | Formatted WARNING log |
-| `critical()` | `crit()` | Log at CRITICAL level |
-| `criticalf()` | `critf()` | Formatted CRITICAL log |
 | `errf()` | `errorf()` | Formatted ERROR log |
+| `failf()` | `failuref()` | Formatted FAIL log |
+| `criticalf()` | `critf()` | Formatted CRITICAL log |
+| `fatalf()` | `panicf()` | Formatted FATAL log |
+| `customf()` | - | Formatted custom level log |
+
+### Other Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `getStats()` | `stats()` | Get logger statistics |
+| `getRecordCount()` | `recordCount()` | Get total record count |
+| `getUptime()` | `uptime()` | Get logger uptime in seconds |
+| `scoped()` | - | Create scoped logger |
+| `ctx()` | `context()` | Get context logger |
+| `with()` | - | Get persistent context logger |
+
+
 
 ## Lifecycle Methods
 

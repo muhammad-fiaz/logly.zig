@@ -470,3 +470,11 @@ try rules.add(.{
 ## Complete Example
 
 See [examples/rules.zig](https://github.com/muhammad-fiaz/logly.zig/blob/main/examples/rules.zig) for a comprehensive demonstration of all features.
+
+## See Also
+
+- [Rules Guide](../guide/rules.md) - Usage patterns and best practices
+- [Logger API](logger.md) - Logger setRules method
+- [Filter API](filter.md) - Log filtering options
+- [Configuration Guide](../guide/configuration.md) - RulesConfig options
+

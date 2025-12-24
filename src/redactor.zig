@@ -532,6 +532,52 @@ pub const RedactionPresets = struct {
         return redactor;
     }
 
+    /// Creates a redactor for GDPR compliance.
+    pub fn gdpr(allocator: std.mem.Allocator) !Redactor {
+        var redactor = Redactor.init(allocator);
+        errdefer redactor.deinit();
+
+        try redactor.addField("name", .partial_end);
+        try redactor.addField("email", .partial_start);
+        try redactor.addField("phone", .partial_start);
+        try redactor.addField("address", .full);
+        try redactor.addField("ip", .partial_end);
+        try redactor.addField("ip_address", .partial_end);
+        try redactor.addField("user_id", .hash);
+
+        return redactor;
+    }
+
+    /// Creates a redactor for API keys and secrets.
+    pub fn apiSecrets(allocator: std.mem.Allocator) !Redactor {
+        var redactor = Redactor.init(allocator);
+        errdefer redactor.deinit();
+
+        try redactor.addField("api_key", .mask_middle);
+        try redactor.addField("secret_key", .full);
+        try redactor.addField("access_token", .mask_middle);
+        try redactor.addField("refresh_token", .full);
+        try redactor.addField("bearer_token", .mask_middle);
+        try redactor.addField("authorization", .partial_end);
+
+        return redactor;
+    }
+
+    /// Creates a redactor for financial data.
+    pub fn financial(allocator: std.mem.Allocator) !Redactor {
+        var redactor = Redactor.init(allocator);
+        errdefer redactor.deinit();
+
+        try redactor.addField("account_number", .mask_middle);
+        try redactor.addField("routing_number", .full);
+        try redactor.addField("balance", .full);
+        try redactor.addField("amount", .full);
+        try redactor.addField("iban", .mask_middle);
+        try redactor.addField("swift", .partial_end);
+
+        return redactor;
+    }
+
     /// Creates a secure sink configuration with redaction enabled.
     pub fn createSecureSink(file_path: []const u8) SinkConfig {
         return SinkConfig{

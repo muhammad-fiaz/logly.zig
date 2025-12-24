@@ -181,3 +181,72 @@ pub fn healthCheck(metrics: *Metrics) bool {
 3. **Use dashboards** - Visualize metrics in real-time
 4. **Reset periodically** - Clear metrics for fresh windows
 5. **Export regularly** - Send metrics to monitoring systems
+
+## New Methods (v0.0.9)
+
+```zig
+var metrics = Metrics.init(allocator);
+defer metrics.deinit();
+
+metrics.recordLog(.info, 100);
+metrics.recordError();
+metrics.recordDrop();
+
+// Direct access methods
+const total = metrics.totalRecordCount();
+const bytes = metrics.totalBytesLogged();
+const errors = metrics.errorCount();
+const drops = metrics.droppedCount();
+
+// Rate calculations (0.0 - 1.0)
+const err_rate = metrics.errorRate();
+const drop_rate = metrics.dropRate();
+const rps = metrics.rate();
+
+// Level-specific counts
+const info_count = metrics.levelCount(.info);
+const err_count = metrics.levelCount(.err);
+
+// Uptime
+const uptime_ms = metrics.uptime();
+const uptime_sec = metrics.uptimeSeconds();
+
+// Threshold checks
+if (metrics.hasHighErrorRate(0.01)) {
+    std.debug.print("Warning: High error rate!\n", .{});
+}
+
+if (metrics.hasHighDropRate(0.05)) {
+    std.debug.print("Warning: High drop rate!\n", .{});
+}
+
+// State check
+if (metrics.hasRecords()) {
+    // Export metrics
+}
+
+// Reset
+metrics.reset();
+// Or use alias: metrics.clear();
+```
+
+## Aliases
+
+| Alias | Method |
+|-------|--------|
+| `record` | `recordLog` |
+| `log` | `recordLog` |
+| `drop` | `recordDrop` |
+| `dropped` | `recordDrop` |
+| `recordErr` | `recordError` |
+| `metricsSnapshot` | `getSnapshot` |
+| `levels` | `formatLevelBreakdown` |
+| `breakdown` | `formatLevelBreakdown` |
+| `clear` | `reset` |
+| `uptimeSec` | `uptimeSeconds` |
+
+## See Also
+
+- [Metrics Guide](/guide/metrics) - Detailed metrics documentation
+- [Metrics API](/api/metrics) - Full API reference
+

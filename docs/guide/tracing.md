@@ -1,6 +1,6 @@
 # Distributed Tracing
 
-Logly-Zig v0.0.3+ provides built-in support for distributed tracing, enabling you to correlate logs across microservices and track request flows through your system.
+Logly-Zig v0.0.9 provides built-in support for distributed tracing, enabling you to correlate logs across microservices and track request flows through your system.
 
 ## Overview
 

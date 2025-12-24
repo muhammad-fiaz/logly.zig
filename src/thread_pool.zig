@@ -544,6 +544,7 @@ pub const ThreadPool = struct {
 
     /// Alias for clear() - discard pending tasks.
     pub const discard = clear;
+    pub const flush = clear;
 
     /// Returns true if the pool is running.
     pub fn isRunning(self: *const ThreadPool) bool {
@@ -554,6 +555,42 @@ pub const ThreadPool = struct {
     pub fn threadCount(self: *const ThreadPool) usize {
         return self.workers.len;
     }
+
+    /// Returns true if the pool has no pending tasks.
+    pub fn isEmpty(self: *ThreadPool) bool {
+        return self.pendingTasks() == 0;
+    }
+
+    /// Returns true if the pool is at capacity (queue full).
+    pub fn isFull(self: *ThreadPool) bool {
+        return self.work_queue.isFull();
+    }
+
+    /// Returns the utilization ratio (0.0 - 1.0).
+    pub fn utilization(self: *const ThreadPool) f64 {
+        const active = @as(f64, @floatFromInt(self.activeThreads()));
+        const total = @as(f64, @floatFromInt(self.workers.len));
+        if (total == 0) return 0;
+        return active / total;
+    }
+
+    /// Resets statistics.
+    pub fn resetStats(self: *ThreadPool) void {
+        self.stats = .{};
+    }
+
+    /// Alias for getStats
+    pub const statistics = getStats;
+
+    /// Alias for shutdown
+    pub const stop = shutdown;
+    pub const halt = shutdown;
+
+    /// Alias for start
+    pub const begin = start;
+
+    /// Alias for submit
+    pub const add = submit;
 };
 
 /// Parallel sink writer for distributing writes across threads.
