@@ -142,6 +142,8 @@ Logly.Zig supports a wide range of platforms and architectures:
 - New Notice(), FATAL() Log Levels
 - New rules-based template system for custom messages
 
+---
+
 ## Installation
 
 
