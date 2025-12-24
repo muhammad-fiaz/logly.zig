@@ -136,9 +136,14 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ---
 
+## Recent Changes
+
+**Version 0.0.9 🚀**
+- New Notice(), FATAL() Log Levels
+- New rules-based template system for custom messages
+
 ## Installation
 
-**Note:** Version `0.0.9` includes all 10 built-in log levels (TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL) and enhanced rules system.
 
 ### Method 1: Zig Fetch (Recommended)
 
