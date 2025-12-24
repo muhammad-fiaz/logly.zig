@@ -99,19 +99,25 @@ jobs:
         if: ${{ steps.deployment.outcome == 'success' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           repo="${{ github.repository }}"
           echo "Checking latest release for ${repo}"
-          release_json=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${repo}/releases/latest")
-          tag=$(echo "$release_json" | grep -m1 '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          # Prefer repository secret GITHUB_TOKEN, fall back to GH_TOKEN
+          TOKEN="${GITHUB_TOKEN:-$GH_TOKEN}"
+
+          # Get latest release tag (robust JSON parsing using python)
+          release_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${repo}/releases/latest")
+          tag=$(echo "$release_json" | python -c 'import sys, json; j=json.load(sys.stdin); print(j.get("tag_name","") or "")')
           if [ -z "$tag" ]; then
             echo "No latest release found"
           else
             echo "Latest release: $tag"
           fi
+
           echo "Checking docs workflow run for branch 'main'"
-          runs_json=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${repo}/actions/workflows/docs.yml/runs?branch=main&per_page=1")
-          run_status=$(echo "$runs_json" | grep -m1 '"conclusion":' | sed -E 's/.*"([^"]+)".*/\1/')
+          runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${repo}/actions/workflows/docs.yml/runs?branch=main&per_page=1")
+          run_status=$(echo "$runs_json" | python -c 'import sys, json; j=json.load(sys.stdin); r=j.get("workflow_runs",[]); print((r[0].get("conclusion") or r[0].get("status") or "") if r else "")')
           if [ -z "$run_status" ]; then
             echo "No workflow runs found for docs.yml on branch main"
             exit 1
