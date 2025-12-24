@@ -14,6 +14,7 @@ const ThreadPool = @import("thread_pool.zig").ThreadPool;
 const UpdateChecker = @import("update_checker.zig");
 const Diagnostics = @import("diagnostics.zig");
 const Constants = @import("constants.zig");
+const Rules = @import("rules.zig").Rules;
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
 ///
@@ -133,6 +134,7 @@ pub const Logger = struct {
     metrics: ?*Metrics = null,
     thread_pool: ?*ThreadPool = null,
     update_thread: ?std.Thread = null,
+    rules: ?*Rules = null,
 
     /// Initialization timestamp for uptime tracking.
     init_timestamp: i64 = 0,
@@ -363,6 +365,12 @@ pub const Logger = struct {
         self.redactor = redactor;
     }
 
+    pub fn setRules(self: *Logger, rules: *Rules) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.rules = rules;
+    }
+
     /// Enables metrics collection.
     pub fn enableMetrics(self: *Logger) void {
         self.mutex.lock();
@@ -572,6 +580,54 @@ pub const Logger = struct {
     pub const count = getSinkCount;
     pub const sinkCount = getSinkCount;
 
+    /// Returns a pointer to the sink at the given index.
+    /// Thread-safe: Uses mutex for concurrent access protection.
+    ///
+    /// Arguments:
+    ///     id: The index of the sink.
+    ///
+    /// Returns:
+    ///     A pointer to the Sink, or null if the index is out of bounds.
+    pub fn getSink(self: *Logger, id: usize) ?*Sink {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (id < self.sinks.items.len) {
+            return self.sinks.items[id];
+        }
+        return null;
+    }
+
+    /// Returns the stats for a specific sink.
+    /// Thread-safe: Uses mutex for concurrent access protection.
+    ///
+    /// Arguments:
+    ///     id: The index of the sink.
+    ///
+    /// Returns:
+    ///     The sink stats, or null if the index is out of bounds.
+    pub fn getSinkStats(self: *Logger, id: usize) ?Sink.SinkStats {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (id < self.sinks.items.len) {
+            return self.sinks.items[id].stats;
+        }
+        return null;
+    }
+
+    /// Checks if a sink is enabled by index.
+    /// Thread-safe: Uses mutex for concurrent access protection.
+    pub fn isSinkEnabled(self: *Logger, id: usize) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (id < self.sinks.items.len) {
+            return self.sinks.items[id].enabled;
+        }
+        return false;
+    }
+
     pub fn bind(self: *Logger, key: []const u8, value: std.json.Value) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -604,26 +660,75 @@ pub const Logger = struct {
         self.context.clearRetainingCapacity();
     }
 
+    /// Adds a new custom log level. Returns error if level already exists.
+    /// Use updateCustomLevel() to update an existing level.
+    ///
+    /// Arguments:
+    ///     name: The level name (e.g., "AUDIT").
+    ///     priority: Numeric priority (higher = more severe).
+    ///     color: ANSI color code (e.g., "35" for magenta).
+    ///
+    /// Returns:
+    ///     error.LevelAlreadyExists if level name already exists.
     pub fn addCustomLevel(self: *Logger, name: []const u8, priority: u8, color: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.custom_levels.contains(name)) {
+            return error.LevelAlreadyExists;
+        }
+
+        const owned_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(owned_name);
+        const owned_color = try self.allocator.dupe(u8, color);
+        errdefer self.allocator.free(owned_color);
+
+        try self.custom_levels.put(owned_name, .{
+            .name = owned_name,
+            .priority = priority,
+            .color = owned_color,
+        });
+    }
+
+    /// Updates an existing custom log level, or adds it if it doesn't exist.
+    /// Use this when you want to allow updates.
+    pub fn updateCustomLevel(self: *Logger, name: []const u8, priority: u8, color: []const u8) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
         if (self.custom_levels.getPtr(name)) |level_ptr| {
             // Update existing level
-            self.allocator.free(level_ptr.color); // Free old color
+            self.allocator.free(level_ptr.color);
             const owned_color = try self.allocator.dupe(u8, color);
             level_ptr.priority = priority;
             level_ptr.color = owned_color;
         } else {
             // Add new level
             const owned_name = try self.allocator.dupe(u8, name);
+            errdefer self.allocator.free(owned_name);
             const owned_color = try self.allocator.dupe(u8, color);
+            errdefer self.allocator.free(owned_color);
+
             try self.custom_levels.put(owned_name, .{
                 .name = owned_name,
                 .priority = priority,
                 .color = owned_color,
             });
         }
+    }
+
+    /// Checks if a custom level with the given name exists.
+    pub fn hasCustomLevel(self: *Logger, name: []const u8) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.custom_levels.contains(name);
+    }
+
+    /// Returns the count of custom levels.
+    pub fn getCustomLevelCount(self: *Logger) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.custom_levels.count();
     }
 
     pub fn removeCustomLevel(self: *Logger, name: []const u8) void {
@@ -871,6 +976,13 @@ pub const Logger = struct {
         if (self.filter) |filter| {
             if (!filter.shouldLog(&record)) {
                 return;
+            }
+        }
+
+        // Evaluate rules if configured
+        if (self.config.rules.enabled and self.rules != null) {
+            if (self.rules.?.evaluate(&record)) |messages| {
+                record.rule_messages = messages;
             }
         }
 
@@ -1125,6 +1237,10 @@ pub const Logger = struct {
         try self.log(.info, message, null, src);
     }
 
+    pub fn notice(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.notice, message, null, src);
+    }
+
     pub fn success(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.success, message, null, src);
     }
@@ -1160,6 +1276,10 @@ pub const Logger = struct {
 
     /// Alias for critical() - shorter form.
     pub const crit = critical;
+
+    pub fn fatal(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.fatal, message, null, src);
+    }
 
     pub fn custom(self: *Logger, level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         const level_info = self.custom_levels.get(level_name) orelse return error.InvalidLevel;
@@ -1236,6 +1356,13 @@ pub const Logger = struct {
         if (self.filter) |filter| {
             if (!filter.shouldLog(&record)) {
                 return;
+            }
+        }
+
+        // Evaluate rules if configured
+        if (self.config.rules.enabled and self.rules != null) {
+            if (self.rules.?.evaluate(&record)) |messages| {
+                record.rule_messages = messages;
             }
         }
 
@@ -1329,6 +1456,12 @@ pub const Logger = struct {
         try self.log(.info, message, null, src);
     }
 
+    pub fn noticef(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
+        const message = try std.fmt.allocPrint(self.allocator, fmt, args);
+        defer self.allocator.free(message);
+        try self.log(.notice, message, null, src);
+    }
+
     pub fn successf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(message);
@@ -1374,6 +1507,12 @@ pub const Logger = struct {
 
     /// Alias for criticalf() - shorter form.
     pub const critf = criticalf;
+
+    pub fn fatalf(self: *Logger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
+        const message = try std.fmt.allocPrint(self.allocator, fmt, args);
+        defer self.allocator.free(message);
+        try self.log(.fatal, message, null, src);
+    }
 
     /// Logs a message with a custom level name and format arguments.
     ///
@@ -1450,6 +1589,10 @@ pub const ScopedLogger = struct {
         try self.logger.log(.info, message, self.module, src);
     }
 
+    pub fn notice(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.notice, message, self.module, src);
+    }
+
     pub fn success(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.success, message, self.module, src);
     }
@@ -1484,6 +1627,10 @@ pub const ScopedLogger = struct {
     /// Alias for critical() - shorter form.
     pub const crit = critical;
 
+    pub fn fatal(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.log(.fatal, message, self.module, src);
+    }
+
     pub fn tracef(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
@@ -1500,6 +1647,12 @@ pub const ScopedLogger = struct {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.info, message, self.module, src);
+    }
+
+    pub fn noticef(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
+        const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
+        defer self.logger.allocator.free(message);
+        try self.logger.log(.notice, message, self.module, src);
     }
 
     pub fn successf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
@@ -1545,6 +1698,12 @@ pub const ScopedLogger = struct {
 
     /// Alias for criticalf() - shorter form.
     pub const critf = criticalf;
+
+    pub fn fatalf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
+        const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
+        defer self.logger.allocator.free(message);
+        try self.logger.log(.fatal, message, self.module, src);
+    }
 };
 
 pub const ContextLogger = struct {

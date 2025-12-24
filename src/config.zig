@@ -176,6 +176,9 @@ pub const Config = struct {
     /// Async logging configuration.
     async_config: AsyncConfig = .{},
 
+    /// Rules system configuration.
+    rules: RulesConfig = .{},
+
     /// Thread pool configuration.
     thread_pool: ThreadPoolConfig = .{},
 
@@ -542,6 +545,71 @@ pub const Config = struct {
             rle_only,
             adaptive,
         };
+    };
+
+    /// Rules system configuration for compiler-style guided diagnostics.
+    pub const RulesConfig = struct {
+        /// Master switch for rules system.
+        enabled: bool = false,
+
+        /// Enable/disable client-defined rules.
+        client_rules_enabled: bool = true,
+
+        /// Enable/disable built-in rules (reserved for future use).
+        builtin_rules_enabled: bool = true,
+
+        /// Use Unicode symbols in output (set to false for ASCII-only terminals).
+        use_unicode: bool = true,
+
+        /// Enable ANSI colors in rule message output.
+        enable_colors: bool = true,
+
+        /// Show rule IDs in output (useful for debugging).
+        show_rule_id: bool = false,
+
+        /// Indent string for rule messages.
+        indent: []const u8 = "    ",
+
+        /// Message prefix character/string.
+        message_prefix: []const u8 = "↳",
+
+        /// Include rule messages in JSON output.
+        include_in_json: bool = true,
+
+        /// Maximum number of rules allowed.
+        max_rules: usize = 1000,
+
+        /// Display rule messages on console (respects global_console_display).
+        console_output: bool = true,
+
+        /// Write rule messages to file sinks (respects global_file_storage).
+        file_output: bool = true,
+
+        /// Preset configurations
+        pub fn minimal() RulesConfig {
+            return .{ .enabled = true, .use_unicode = true, .enable_colors = true };
+        }
+
+        pub fn production() RulesConfig {
+            return .{ .enabled = true, .use_unicode = false, .enable_colors = false, .show_rule_id = false };
+        }
+
+        pub fn development() RulesConfig {
+            return .{ .enabled = true, .use_unicode = true, .enable_colors = true, .show_rule_id = true };
+        }
+
+        pub fn ascii() RulesConfig {
+            return .{ .enabled = true, .use_unicode = false, .enable_colors = true };
+        }
+
+        pub fn disabled() RulesConfig {
+            return .{ .enabled = false };
+        }
+
+        /// Silent mode - rules evaluate but don't output
+        pub fn silent() RulesConfig {
+            return .{ .enabled = true, .console_output = false, .file_output = false };
+        }
     };
 
     /// Async logging configuration.

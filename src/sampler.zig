@@ -307,11 +307,6 @@ pub const Sampler = struct {
 
     /// Returns statistics about the sampler.
     pub fn getStats(self: *Sampler) SamplerStats {
-        // Stats are atomic, so we don't need the mutex for reading them individually.
-        // However, to get a consistent snapshot, we might want to lock, but SamplerStats
-        // fields are atomic values, so we can't just copy them easily without loading.
-        // We return a new SamplerStats struct with the current values.
-
         return .{
             .total_records_sampled = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.total_records_sampled.load(.monotonic))),
             .records_accepted = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.records_accepted.load(.monotonic))),
@@ -320,6 +315,54 @@ pub const Sampler = struct {
             .rate_adjustments = std.atomic.Value(Constants.AtomicUnsigned).init(@as(Constants.AtomicUnsigned, self.state.stats.rate_adjustments.load(.monotonic))),
         };
     }
+
+    /// Resets statistics.
+    pub fn resetStats(self: *Sampler) void {
+        self.state.stats = .{};
+    }
+
+    /// Returns true if sampling is enabled.
+    pub fn isEnabled(self: *const Sampler) bool {
+        return self.strategy != .none;
+    }
+
+    /// Returns the strategy name.
+    pub fn strategyName(self: *const Sampler) []const u8 {
+        return switch (self.strategy) {
+            .none => "none",
+            .probability => "probability",
+            .rate_limit => "rate_limit",
+            .every_n => "every_n",
+            .adaptive => "adaptive",
+        };
+    }
+
+    /// Returns total records processed.
+    pub fn totalProcessed(self: *const Sampler) u64 {
+        return @as(u64, self.state.stats.total_records_sampled.load(.monotonic));
+    }
+
+    /// Returns total records accepted.
+    pub fn totalAccepted(self: *const Sampler) u64 {
+        return @as(u64, self.state.stats.records_accepted.load(.monotonic));
+    }
+
+    /// Returns total records rejected.
+    pub fn totalRejected(self: *const Sampler) u64 {
+        return @as(u64, self.state.stats.records_rejected.load(.monotonic));
+    }
+
+    /// Alias for shouldSample
+    pub const sample = shouldSample;
+    pub const check = shouldSample;
+    pub const allow = shouldSample;
+
+    /// Alias for getCurrentRate
+    pub const rate = getCurrentRate;
+
+    /// Alias for getStats
+    pub const statistics = getStats;
+    pub const stats_ = getStats;
 };
 
 /// Pre-built sampler configurations for common use cases.

@@ -345,6 +345,65 @@ pub const Redactor = struct {
     pub fn getFieldRedaction(self: *const Redactor, field_name: []const u8) ?RedactionType {
         return self.fields.get(field_name);
     }
+
+    /// Returns the number of patterns.
+    pub fn patternCount(self: *const Redactor) usize {
+        return self.patterns.items.len;
+    }
+
+    /// Returns the number of fields.
+    pub fn fieldCount(self: *const Redactor) usize {
+        return self.fields.count();
+    }
+
+    /// Returns true if any patterns or fields are configured.
+    pub fn hasRules(self: *const Redactor) bool {
+        return self.patterns.items.len > 0 or self.fields.count() > 0;
+    }
+
+    /// Clears all patterns.
+    pub fn clearPatterns(self: *Redactor) void {
+        for (self.patterns.items) |pattern| {
+            self.allocator.free(pattern.name);
+            self.allocator.free(pattern.pattern);
+            self.allocator.free(pattern.replacement);
+        }
+        self.patterns.clearRetainingCapacity();
+    }
+
+    /// Clears all fields.
+    pub fn clearFields(self: *Redactor) void {
+        var it = self.fields.keyIterator();
+        while (it.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.fields.clearRetainingCapacity();
+    }
+
+    /// Clears all patterns and fields.
+    pub fn clear(self: *Redactor) void {
+        self.clearPatterns();
+        self.clearFields();
+    }
+
+    /// Resets statistics.
+    pub fn resetStats(self: *Redactor) void {
+        self.stats = .{};
+    }
+
+    /// Alias for addPattern
+    pub const addRule = addPattern;
+
+    /// Alias for addField
+    pub const field = addField;
+    pub const sensitiveField = addField;
+
+    /// Alias for redact
+    pub const mask = redact;
+    pub const sanitize = redact;
+
+    /// Alias for getStats
+    pub const statistics = getStats;
 };
 
 /// Simple regex-like pattern matching.

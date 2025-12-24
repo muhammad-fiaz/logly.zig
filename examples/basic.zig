@@ -32,6 +32,8 @@ pub fn main() !void {
     try logger.err("This is an error", @src());
     try logger.fail("Operation failed", @src());
     try logger.critical("Critical system error!", @src());
+    try logger.notice("Notice Message", @src());
+    try logger.fatal("Fatal error encountered!", @src());
 
     // Without @src(), file/line won't be displayed
     std.debug.print("\n--- Logs without @src() (no file:line) ---\n", .{});

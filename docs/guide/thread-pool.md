@@ -434,8 +434,46 @@ pub fn main() !void {
 }
 ```
 
+## Method Aliases
+
+The ThreadPool provides convenient aliases for common operations:
+
+| Method | Alias | Description |
+|--------|-------|-------------|
+| `waitAll()` | `await()`, `join()` | Wait for all tasks to complete |
+| `submit()` | `push()`, `enqueue()` | Submit a task |
+| `submitFn()` | `run()` | Submit a function |
+| `pendingTasks()` | `queueDepth()`, `size()` | Get pending task count |
+| `activeThreads()` | `workerCount()` | Get active thread count |
+| `clear()` | `discard()` | Clear pending tasks |
+
+```zig
+// These are equivalent:
+pool.waitAll();
+pool.await();
+pool.join();
+
+// Submit aliases:
+pool.submit(task, .normal);
+pool.push(task, .normal);
+pool.enqueue(task, .normal);
+
+// Check status:
+const pending = pool.size();  // Same as pendingTasks()
+const workers = pool.workerCount();  // Same as activeThreads()
+
+// Control:
+pool.clear();  // Discard pending tasks
+pool.discard();  // Same as clear()
+
+// Status checks:
+if (pool.isRunning()) { ... }
+const total = pool.threadCount();
+```
+
 ## See Also
 
 - [Thread Pool API Reference](../api/thread-pool.md)
 - [Async Logging Guide](async.md)
 - [Configuration Guide](configuration.md)
+

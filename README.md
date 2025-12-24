@@ -41,7 +41,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | Feature | Description |
 |---------|-------------|
 | ✨ **Simple & Clean API** | Python-like logging interface (`logger.info()`, `logger.err()`, etc.) |
-| 🎯 **8 Log Levels** | TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, FAIL, CRITICAL |
+| 🎯 **10 Log Levels** | TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL |
 | 🚀 **Custom Levels** | Define your own log levels with custom priorities and colors |
 | 📁 **Multiple Sinks** | Console, file, and custom outputs simultaneously |
 | 🔄 **File Rotation** | Time-based (hourly to yearly) and size-based rotation |
@@ -138,14 +138,14 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Installation
 
-**Note:** Version `0.0.8` fixes x86 (32-bit) build compatibility (see issue: https://github.com/muhammad-fiaz/logly.zig/issues/11).
+**Note:** Version `0.0.9` includes all 10 built-in log levels (TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL) and enhanced rules system.
 
 ### Method 1: Zig Fetch (Recommended)
 
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -193,11 +193,12 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
 ```
+
 
 > **Note:** Run `zig fetch --save <url>` to automatically get the correct hash, or run `zig build` and copy the expected hash from the error message.
 
@@ -253,11 +254,13 @@ pub fn main() !void {
     try logger.trace("Detailed trace information", null);   // Cyan with no source location
     try logger.debug("Debug information", @src());            // Blue
     try logger.info("Application started", @src());           // White
+    try logger.notice("Notice message", @src());              // Bright Cyan
     try logger.success("Operation completed!", @src());       // Green
     try logger.warn("Warning message", @src());               // Yellow (alias for .warning())
     try logger.err("Error occurred", @src());                 // Red
     try logger.fail("Operation failed", @src());              // Magenta
     try logger.crit("Critical system error!", @src());        // Bright Red (alias for .critical())
+    try logger.fatal("Fatal system failure!", @src());        // White on Red (highest severity)
 }
 ```
 
@@ -629,11 +632,13 @@ var config = logly.Config.default()
 | TRACE    | 5        | `logger.trace()`    | -              | Very detailed debugging |
 | DEBUG    | 10       | `logger.debug()`    | -              | Debugging information   |
 | INFO     | 20       | `logger.info()`     | -              | General information     |
+| NOTICE   | 22       | `logger.notice()`   | -              | Notice messages         |
 | SUCCESS  | 25       | `logger.success()`  | -              | Successful operations   |
 | WARNING  | 30       | `logger.warning()`  | `warn()`       | Warning messages        |
 | ERROR    | 40       | `logger.err()`      | `error()`      | Error conditions        |
 | FAIL     | 45       | `logger.fail()`     | -              | Operation failures      |
 | CRITICAL | 50       | `logger.critical()` | `crit()`       | Critical system errors  |
+| FATAL    | 55       | `logger.fatal()`    | -              | Fatal system errors     |
 
 ### Sink Management Aliases
 

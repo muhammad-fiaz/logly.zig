@@ -800,6 +800,31 @@ pub const Scheduler = struct {
     pub fn getTasks(self: *const Scheduler) []const ScheduledTask {
         return self.tasks.items;
     }
+
+    /// Returns the number of tasks.
+    pub fn taskCount(self: *const Scheduler) usize {
+        return self.tasks.items.len;
+    }
+
+    /// Returns true if the scheduler is running.
+    pub fn isRunning(self: *const Scheduler) bool {
+        return self.running.load(.acquire);
+    }
+
+    /// Returns true if any tasks are scheduled.
+    pub fn hasTasks(self: *const Scheduler) bool {
+        return self.tasks.items.len > 0;
+    }
+
+    /// Alias for start
+    pub const begin = start;
+
+    /// Alias for stop
+    pub const end = stop;
+    pub const halt = stop;
+
+    /// Alias for getStats
+    pub const statistics = getStats;
 };
 
 fn matchPattern(name: []const u8, pattern: []const u8) bool {

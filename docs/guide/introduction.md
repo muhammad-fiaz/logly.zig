@@ -13,7 +13,7 @@ Logly.Zig is a high-performance, structured logging library for Zig, engineered 
 
 ### 🛠️ Flexibility
 
-- **Comprehensive Log Levels**: 8 distinct levels (TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, FAIL, CRITICAL) for granular control.
+- **Comprehensive Log Levels**: 10 distinct levels (TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL) for granular control.
 - **Multi-Sink Support**: Simultaneously output to console, files, and custom destinations.
 - **Custom Formatting**: Flexible template strings and full printf-style formatting support.
 - **Rich Context**: Structured logging with JSON support and context binding.

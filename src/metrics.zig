@@ -24,37 +24,6 @@ const Constants = @import("constants.zig");
 /// - Batch updates to reduce contention
 /// - Per-level atomic counters avoid false sharing
 pub const Metrics = struct {
-    mutex: std.Thread.Mutex = .{},
-
-    total_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-    total_bytes: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-    dropped_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-    error_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-
-    level_counts: [8]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 8,
-
-    start_time: i64,
-    last_record_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
-
-    sink_metrics: std.ArrayList(SinkMetrics),
-    allocator: std.mem.Allocator,
-
-    /// Callback invoked when a record is logged.
-    /// Parameters: (level: Level, bytes: u64)
-    on_record_logged: ?*const fn (Level, u64) void = null,
-
-    /// Callback invoked when metrics snapshot is taken.
-    /// Parameters: (snapshot: *const Snapshot)
-    on_metrics_snapshot: ?*const fn (*const Snapshot) void = null,
-
-    /// Callback invoked when metrics exceed thresholds.
-    /// Parameters: (metric: MetricType, value: u64, threshold: u64)
-    on_threshold_exceeded: ?*const fn (MetricType, u64, u64) void = null,
-
-    /// Callback invoked when errors or dropped records detected.
-    /// Parameters: (event_type: ErrorEvent, count: u64)
-    on_error_detected: ?*const fn (ErrorEvent, u64) void = null,
-
     /// Metric types for threshold notifications
     pub const MetricType = enum {
         total_records,
@@ -99,7 +68,7 @@ pub const Metrics = struct {
         uptime_ms: i64,
         records_per_second: f64,
         bytes_per_second: f64,
-        level_counts: [8]u64,
+        level_counts: [10]u64,
 
         /// Get drop rate (0.0 - 1.0)
         pub fn getDropRate(self: *const Snapshot) f64 {
@@ -109,29 +78,64 @@ pub const Metrics = struct {
     };
 
     /// Level index mapping for metrics array.
-    pub const LevelIndex = enum(u3) {
+    pub const LevelIndex = enum(u4) {
         trace = 0,
         debug = 1,
         info = 2,
-        success = 3,
-        warning = 4,
-        err = 5,
-        fail = 6,
-        critical = 7,
+        notice = 3,
+        success = 4,
+        warning = 5,
+        err = 6,
+        fail = 7,
+        critical = 8,
+        fatal = 9,
     };
+
+    mutex: std.Thread.Mutex = .{},
+
+    total_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    total_bytes: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    dropped_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    error_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+
+    level_counts: [10]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 10,
+
+    start_time: i64,
+    last_record_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+
+    sink_metrics: std.ArrayList(SinkMetrics),
+    allocator: std.mem.Allocator,
+
+    /// Callback invoked when a record is logged.
+    /// Parameters: (level: Level, bytes: u64)
+    on_record_logged: ?*const fn (Level, u64) void = null,
+
+    /// Callback invoked when metrics snapshot is taken.
+    /// Parameters: (snapshot: *const Snapshot)
+    on_metrics_snapshot: ?*const fn (*const Snapshot) void = null,
+
+    /// Callback invoked when metrics exceed thresholds.
+    /// Parameters: (metric: MetricType, value: u64, threshold: u64)
+    on_threshold_exceeded: ?*const fn (MetricType, u64, u64) void = null,
+
+    /// Callback invoked when errors or dropped records detected.
+    /// Parameters: (event_type: ErrorEvent, count: u64)
+    on_error_detected: ?*const fn (ErrorEvent, u64) void = null,
 
     /// Maps a Level enum value to a LevelIndex for the metrics array.
     /// Performance: O(1) - direct switch without allocations
-    fn levelToIndex(level: Level) u3 {
+    fn levelToIndex(level: Level) u4 {
         return switch (level) {
             .trace => 0,
             .debug => 1,
             .info => 2,
-            .success => 3,
-            .warning => 4,
-            .err => 5,
-            .fail => 6,
-            .critical => 7,
+            .notice => 3,
+            .success => 4,
+            .warning => 5,
+            .err => 6,
+            .fail => 7,
+            .critical => 8,
+            .fatal => 9,
         };
     }
 
@@ -141,11 +145,13 @@ pub const Metrics = struct {
             0 => "TRACE",
             1 => "DEBUG",
             2 => "INFO",
-            3 => "SUCCESS",
-            4 => "WARNING",
-            5 => "ERROR",
-            6 => "FAIL",
-            7 => "CRITICAL",
+            3 => "NOTICE",
+            4 => "SUCCESS",
+            5 => "WARNING",
+            6 => "ERROR",
+            7 => "FAIL",
+            8 => "CRITICAL",
+            9 => "FATAL",
             else => "UNKNOWN",
         };
     }
@@ -246,8 +252,8 @@ pub const Metrics = struct {
         const total_records = @as(u64, self.total_records.load(.monotonic));
         const total_bytes = @as(u64, self.total_bytes.load(.monotonic));
 
-        var level_counts: [8]u64 = undefined;
-        for (0..8) |i| {
+        var level_counts: [10]u64 = undefined;
+        for (0..10) |i| {
             level_counts[i] = @as(u64, self.level_counts[i].load(.monotonic));
         }
 
@@ -271,7 +277,7 @@ pub const Metrics = struct {
         self.error_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         self.start_time = std.time.milliTimestamp();
 
-        for (0..8) |i| {
+        for (0..10) |i| {
             self.level_counts[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
 
@@ -327,7 +333,7 @@ pub const Metrics = struct {
 
         try writer.writeAll("Level Breakdown:");
         var has_levels = false;
-        for (0..8) |i| {
+        for (0..10) |i| {
             const count = snapshot.level_counts[i];
             if (count > 0) {
                 if (has_levels) {
@@ -342,6 +348,57 @@ pub const Metrics = struct {
         }
 
         return buf.toOwnedSlice();
+    }
+
+    /// Records a log for a custom level.
+    /// Custom levels use the same total_records and total_bytes counters.
+    pub fn recordCustomLog(self: *Metrics, bytes: u64) void {
+        _ = self.total_records.fetchAdd(1, .monotonic);
+        _ = self.total_bytes.fetchAdd(@truncate(bytes), .monotonic);
+        self.last_record_time.store(@truncate(std.time.milliTimestamp()), .monotonic);
+    }
+
+    /// Alias for recordLog
+    pub const record = recordLog;
+    pub const log = recordLog;
+
+    /// Alias for recordDrop
+    pub const drop = recordDrop;
+    pub const dropped = recordDrop;
+
+    /// Alias for recordError
+    pub const recordErr = recordError;
+
+    /// Alias for getSnapshot
+    pub const metricsSnapshot = getSnapshot;
+
+    /// Alias for formatLevelBreakdown
+    pub const levels = formatLevelBreakdown;
+
+    /// Returns true if any records have been logged.
+    pub fn hasRecords(self: *const Metrics) bool {
+        return self.total_records.load(.monotonic) > 0;
+    }
+
+    /// Returns the total record count.
+    pub fn totalRecordCount(self: *const Metrics) u64 {
+        return @as(u64, self.total_records.load(.monotonic));
+    }
+
+    /// Returns the total bytes logged.
+    pub fn totalBytesLogged(self: *const Metrics) u64 {
+        return @as(u64, self.total_bytes.load(.monotonic));
+    }
+
+    /// Returns the uptime in milliseconds.
+    pub fn uptime(self: *const Metrics) i64 {
+        return std.time.milliTimestamp() - self.start_time;
+    }
+
+    /// Returns records per second rate.
+    pub fn rate(self: *Metrics) f64 {
+        const snapshot_data = self.getSnapshot();
+        return snapshot_data.records_per_second;
     }
 };
 

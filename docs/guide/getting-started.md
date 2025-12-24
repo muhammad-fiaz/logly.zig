@@ -14,7 +14,7 @@ Get started with Logly-Zig in minutes.
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
 ```
 
 This command automatically:
@@ -32,7 +32,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
     .version = "0.1.0",
     .dependencies = .{
         .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz",
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz",
             .hash = "1220...", // Run: zig fetch <url> to get this hash
         },
     },
@@ -41,7 +41,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
 
 To get the hash manually, run:
 ```bash
-zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
 ```
 
 Copy the output hash (e.g., `1220abcd23f9f0c8...`) into your `build.zig.zon`.
@@ -174,11 +174,13 @@ Logly-Zig provides **whole-line coloring** where the entire log line (timestamp,
 | TRACE | Cyan | 36 |
 | DEBUG | Blue | 34 |
 | INFO | White | 37 |
+| NOTICE | Bright Cyan | 96 |
 | SUCCESS | Green | 32 |
 | WARNING | Yellow | 33 |
 | ERROR | Red | 31 |
 | FAIL | Magenta | 35 |
 | CRITICAL | Bright Red | 91 |
+| FATAL | White on Red | 97;41 |
 
 ### Custom Colors
 
@@ -226,7 +228,7 @@ _ = try logger.addSink(.{
 
 If you see a hash mismatch error, run:
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.8.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
 ```
 
 ### Colors Not Displaying on Windows

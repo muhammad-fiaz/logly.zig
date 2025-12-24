@@ -58,6 +58,7 @@ export default defineConfig({
           { text: 'Compression', link: '/guide/compression' },
           { text: 'Thread Pool', link: '/guide/thread-pool' },
           { text: 'Scheduler', link: '/guide/scheduler' },
+          { text: 'Rules System', link: '/guide/rules' },
           { text: 'Arena Allocation', link: '/guide/arena-allocation' },
           { text: 'Network Logging', link: '/guide/network-logging' }
         ]
@@ -89,6 +90,7 @@ export default defineConfig({
           { text: 'Sink', link: '/api/sink' },
           { text: 'Formatter', link: '/api/formatter' },
           { text: 'Rotation', link: '/api/rotation' },
+          { text: 'Rules', link: '/api/rules' },
           { text: 'Filter', link: '/api/filter' },
           { text: 'Sampler', link: '/api/sampler' },
           { text: 'Redactor', link: '/api/redactor' },
@@ -112,6 +114,7 @@ export default defineConfig({
           { text: 'Rotation', link: '/examples/rotation' },
           { text: 'JSON Logging', link: '/examples/json' },
           { text: 'JSON Extended', link: '/examples/json-extended' },
+          { text: 'Rules System', link: '/examples/rules' },
           { text: 'Custom Colors', link: '/examples/custom-colors' },
           { text: 'Custom Theme', link: '/examples/custom-theme' },
           { text: 'Color Control', link: '/examples/color-control' },

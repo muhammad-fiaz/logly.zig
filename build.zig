@@ -55,6 +55,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "advanced_features", .path = "examples/advanced_features.zig" },
         .{ .name = "custom_theme", .path = "examples/custom_theme.zig" },
         .{ .name = "config_presets", .path = "examples/config_presets.zig" },
+        .{ .name = "rules", .path = "examples/rules.zig" },
     };
 
     inline for (examples) |example| {

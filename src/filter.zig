@@ -286,11 +286,12 @@ pub const Filter = struct {
                 },
                 .message_contains => {
                     if (rule.pattern) |substring| {
-                        const contains = std.mem.indexOf(u8, record.message, substring) != null;
-                        if (contains and rule.action == .deny) return false;
-                        if (!contains and rule.action == .allow) return false;
+                        const has_match = std.mem.indexOf(u8, record.message, substring) != null;
+                        if (has_match and rule.action == .deny) return false;
+                        if (!has_match and rule.action == .allow) return false;
                     }
                 },
+
                 .message_regex, .custom => {},
             }
         }
@@ -306,6 +307,89 @@ pub const Filter = struct {
             }
         }
         self.rules.clearRetainingCapacity();
+    }
+
+    /// Adds a filter for custom levels by priority.
+    /// Only records with custom level priority >= min_priority will pass.
+    pub fn addMinPriority(self: *Filter, min_priority: u8) !void {
+        try self.rules.append(self.allocator, .{
+            .rule_type = .level_min,
+            .level = Level.fromPriority(min_priority) orelse .info,
+            .action = .allow,
+        });
+    }
+
+    /// Adds a filter for custom levels by priority range.
+    pub fn addPriorityRange(self: *Filter, min_priority: u8, max_priority: u8) !void {
+        try self.addMinPriority(min_priority);
+        try self.rules.append(self.allocator, .{
+            .rule_type = .level_max,
+            .level = Level.fromPriority(max_priority) orelse .critical,
+            .action = .allow,
+        });
+    }
+
+    /// Alias for addRule
+    pub const add = addRule;
+
+    /// Alias for shouldLog
+    pub const check = shouldLog;
+    pub const test_ = shouldLog;
+    pub const evaluate = shouldLog;
+
+    /// Alias for clear
+    pub const reset = clear;
+    pub const removeAll = clear;
+
+    /// Alias for addMinLevel
+    pub const minLevel = addMinLevel;
+    pub const min = addMinLevel;
+
+    /// Alias for addMaxLevel
+    pub const maxLevel = addMaxLevel;
+    pub const max = addMaxLevel;
+
+    /// Alias for addModulePrefix
+    pub const moduleFilter = addModulePrefix;
+    pub const addPrefix = addModulePrefix;
+
+    /// Alias for addMessageFilter
+    pub const messageFilter = addMessageFilter;
+    pub const contains = addMessageFilter;
+
+    /// Returns the number of filter rules.
+    pub fn count(self: *const Filter) usize {
+        return self.rules.items.len;
+    }
+
+    /// Alias for count
+    pub const ruleCount = count;
+    pub const size = count;
+
+    /// Returns true if the filter has any rules.
+    pub fn hasRules(self: *const Filter) bool {
+        return self.rules.items.len > 0;
+    }
+
+    /// Returns true if the filter is empty (no rules).
+    pub fn isEmpty(self: *const Filter) bool {
+        return self.rules.items.len == 0;
+    }
+
+    /// Disable the filter (allow all).
+    pub fn disable(self: *Filter) void {
+        self.clear();
+    }
+
+    /// Create a filter from config settings.
+    pub fn fromConfig(allocator: std.mem.Allocator, config: Config) !Filter {
+        var filter = Filter.init(allocator);
+        errdefer filter.deinit();
+
+        // Apply minimum level from config
+        try filter.addMinLevel(config.level);
+
+        return filter;
     }
 };
 

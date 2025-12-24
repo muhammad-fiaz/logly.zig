@@ -258,6 +258,7 @@ try db_logger.info("Connection established");
 ### `addCustomLevel(name: []const u8, priority: u8, color: []const u8) !void`
 
 Registers a custom log level with a name, priority, and ANSI color code.
+**Returns error.LevelAlreadyExists if level name already exists.**
 
 ```zig
 // Color code only (no \x1b[ prefix needed)
@@ -265,6 +266,41 @@ try logger.addCustomLevel("audit", 35, "35");     // Magenta
 try logger.addCustomLevel("security", 55, "91");  // Bright red
 try logger.addCustomLevel("notice", 22, "36;1");  // Bold cyan
 try logger.addCustomLevel("alert", 42, "31;4");   // Underline red
+
+// Handle duplicate error
+logger.addCustomLevel("audit", 40, "31") catch |err| {
+    if (err == error.LevelAlreadyExists) {
+        std.debug.print("Level already exists!\n", .{});
+    }
+};
+```
+
+### `updateCustomLevel(name: []const u8, priority: u8, color: []const u8) !void`
+
+Updates an existing custom level, or creates it if it doesn't exist.
+Use this when you want to allow updates without errors.
+
+```zig
+// This will update if exists, or create if not
+try logger.updateCustomLevel("audit", 40, "91;1");
+```
+
+### `hasCustomLevel(name: []const u8) bool`
+
+Checks if a custom level with the given name exists.
+
+```zig
+if (logger.hasCustomLevel("audit")) {
+    try logger.custom("audit", "User action", @src());
+}
+```
+
+### `getCustomLevelCount() usize`
+
+Returns the count of registered custom levels.
+
+```zig
+std.debug.print("Custom levels: {}\n", .{logger.getCustomLevelCount()});
 ```
 
 **Color Code Reference:**
@@ -302,6 +338,7 @@ Formatted logging with custom levels:
 ```zig
 try logger.customf("audit", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" }, @src());
 ```
+
 
 ## Callbacks
 
@@ -377,6 +414,10 @@ Logs a message at the **DEBUG** level (Priority 10).
 
 Logs a message at the **INFO** level (Priority 20).
 
+### `notice(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+
+Logs a message at the **NOTICE** level (Priority 22).
+
 ### `success(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **SUCCESS** level (Priority 25).
@@ -402,6 +443,16 @@ Logs a message at the **FAIL** level (Priority 45).
 Logs a message at the **CRITICAL** level (Priority 50).
 
 - **Alias**: `crit()`
+
+### `fatal(message: []const u8, src: ?std.builtin.SourceLocation) !void`
+
+Logs a message at the **FATAL** level (Priority 55).
+This is the highest severity level with white text on red background.
+
+```zig
+try logger.fatal("System crash imminent!", @src());
+```
+
 
 ### `custom(level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
 

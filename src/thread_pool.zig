@@ -515,6 +515,45 @@ pub const ThreadPool = struct {
             std.Thread.sleep(1 * std.time.ns_per_ms);
         }
     }
+
+    /// Alias for waitAll() - waits for all tasks to complete.
+    pub const await = waitAll;
+    pub const join = waitAll;
+
+    /// Alias for submit() - submit a task.
+    pub const push = submit;
+    pub const enqueue = submit;
+
+    /// Alias for submitFn() - submit a function.
+    pub const run = submitFn;
+
+    /// Alias for pendingTasks() - get queue depth.
+    pub const queueDepth = pendingTasks;
+    pub const size = pendingTasks;
+
+    /// Alias for activeThreads() - get worker count.
+    pub const workerCount = activeThreads;
+
+    /// Clears all pending tasks without executing them.
+    pub fn clear(self: *ThreadPool) void {
+        self.work_queue.clear();
+        for (self.workers) |*worker| {
+            worker.local_queue.clear();
+        }
+    }
+
+    /// Alias for clear() - discard pending tasks.
+    pub const discard = clear;
+
+    /// Returns true if the pool is running.
+    pub fn isRunning(self: *const ThreadPool) bool {
+        return self.running.load(.acquire);
+    }
+
+    /// Returns the total thread count (including idle).
+    pub fn threadCount(self: *const ThreadPool) usize {
+        return self.workers.len;
+    }
 };
 
 /// Parallel sink writer for distributing writes across threads.

@@ -95,11 +95,13 @@ pub const Formatter = struct {
                 .trace => self.trace,
                 .debug => self.debug,
                 .info => self.info,
+                .notice => "96",
                 .success => self.success,
                 .warning => self.warning,
                 .err => self.err,
                 .fail => self.fail,
                 .critical => self.critical,
+                .fatal => "97;41",
             };
         }
     };
@@ -335,6 +337,14 @@ pub const Formatter = struct {
             if (use_color) {
                 try writer.writeAll("\x1b[0m");
             }
+        }
+
+        // Render rule messages if present
+        if (record.rule_messages) |messages| {
+            const Rules = @import("rules.zig").Rules;
+            var rules_temp = Rules.init(self.allocator);
+            defer rules_temp.deinit();
+            try rules_temp.formatMessages(messages, writer, use_color);
         }
     }
 
@@ -689,6 +699,16 @@ pub const Formatter = struct {
                 .bool => |b| try writer.print("{}", .{b}),
                 else => try writer.writeAll("null"),
             }
+        }
+
+        // Rule messages
+        if (record.rule_messages) |messages| {
+            try writer.writeAll(comma);
+            try writer.print("{s}\"rules\"{s}", .{ indent, sep });
+            const Rules = @import("rules.zig").Rules;
+            var rules_temp = Rules.init(self.allocator);
+            defer rules_temp.deinit();
+            try rules_temp.formatMessagesJson(messages, writer, pretty);
         }
 
         try writer.writeAll(newline);

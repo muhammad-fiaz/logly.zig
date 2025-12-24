@@ -100,6 +100,11 @@ pub const Redactor = @import("redactor.zig").Redactor;
 pub const RedactionPresets = @import("redactor.zig").RedactionPresets;
 pub const Metrics = @import("metrics.zig").Metrics;
 pub const Diagnostics = @import("diagnostics.zig");
+pub const Rules = @import("rules.zig").Rules;
+pub const RulesConfig = Rules.RulesConfig;
+pub const RuleMessage = Rules.RuleMessage;
+pub const RuleMessageBuilder = @import("rules.zig").RuleMessageBuilder;
+pub const LevelMatchBuilder = @import("rules.zig").LevelMatchBuilder;
 
 // Advanced I/O components
 pub const Compression = @import("compression.zig").Compression;

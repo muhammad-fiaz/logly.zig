@@ -1,147 +1,158 @@
 # Level API
 
-The `Level` enum defines the standard log levels with numeric priorities and colors.
+The Level module defines the standard logging levels and their priorities.
 
-## Overview
+## Level Enum
 
-Log levels control which messages are processed and help filter output based on severity. Higher priority numbers indicate more severe conditions. Each level has an associated ANSI color for console output.
+Logly provides **10 built-in log levels** ordered by severity:
 
-## Enum Values with Colors
-
-| Level | Priority | Color Code | Color | Description |
-|-------|----------|------------|-------|-------------|
-| `trace` | 5 | 36 | Cyan | Very detailed debugging information |
-| `debug` | 10 | 34 | Blue | Debugging information for development |
-| `info` | 20 | 37 | White | General informational messages |
-| `success` | 25 | 32 | Green | Successful operation confirmations |
-| `warning` | 30 | 33 | Yellow | Warning messages indicating potential issues |
-| `err` | 40 | 31 | Red | Error conditions that should be addressed |
-| `fail` | 45 | 35 | Magenta | Operation failures that may be recoverable |
-| `critical` | 50 | 91 | Bright Red | Critical system errors requiring immediate attention |
-
-### Whole-Line Coloring
-
-Logly colors the **entire log line** including timestamp, level tag, and message:
-
-```
-\x1b[33m[2024-01-15 10:30:45] [WARNING] Disk space low\x1b[0m
+```zig
+pub const Level = enum(u8) {
+    trace = 5,      // Very detailed tracing
+    debug = 10,     // Debug information
+    info = 20,      // General information
+    notice = 22,    // Important notices
+    success = 25,   // Successful operations
+    warning = 30,   // Warning conditions
+    err = 40,       // Error conditions
+    fail = 45,      // Failure conditions
+    critical = 50,  // Critical failures
+    fatal = 55,     // Fatal system errors
+};
 ```
 
-This provides better visual separation between log levels in console output.
+## Level Table
+
+| Level    | Priority | Color        | ANSI Code | Description              |
+|----------|----------|--------------|-----------|--------------------------|
+| `trace`    | 5        | Cyan         | 36        | Detailed tracing info    |
+| `debug`    | 10       | Blue         | 34        | Debug information        |
+| `info`     | 20       | White        | 37        | General information      |
+| `notice`   | 22       | Bright Cyan  | 96        | Important notices        |
+| `success`  | 25       | Green        | 32        | Successful operations    |
+| `warning`  | 30       | Yellow       | 33        | Warning conditions       |
+| `err`      | 40       | Red          | 31        | Error conditions         |
+| `fail`     | 45       | Magenta      | 35        | Failure conditions       |
+| `critical` | 50       | Bright Red   | 91        | Critical failures        |
+| `fatal`    | 55       | White on Red | 97;41     | Fatal system errors      |
 
 ## Methods
 
-### `priority() u8`
+### priority
 
-Returns the numeric priority of the level.
+Returns the numeric priority value of the level.
 
 ```zig
 const level = Level.warning;
 const p = level.priority(); // Returns 30
 ```
 
-### `asString() []const u8`
+### fromPriority
 
-Returns the uppercase string representation of the level.
+Creates a Level from a numeric priority value.
 
 ```zig
-const level = Level.err;
-const name = level.asString(); // Returns "ERROR"
+const level = Level.fromPriority(20); // Returns .info
+const invalid = Level.fromPriority(99); // Returns null
 ```
 
-### `defaultColor() []const u8`
+### asString
 
-Returns the default ANSI color code for the level.
+Returns the string representation of the level.
 
 ```zig
-const level = Level.warning;
-const c = level.defaultColor(); // Returns "33"
+const level = Level.fatal;
+const s = level.asString(); // Returns "FATAL"
 ```
 
-## Custom Levels
+### fromString
 
-Create custom log levels with their own priority, name, and color:
+Creates a Level from a string representation.
 
 ```zig
-// Add a custom "AUDIT" level with priority 35 and purple color
-try logger.addCustomLevel("audit", 35, "35");  // "35" = magenta
+const level = Level.fromString("NOTICE"); // Returns .notice
+const invalid = Level.fromString("INVALID"); // Returns null
+```
+
+### defaultColor
+
+Returns the ANSI color code for the level.
+
+```zig
+const level = Level.fatal;
+const color = level.defaultColor(); // Returns "97;41" (white on red)
+```
+
+## CustomLevel
+
+For dynamic custom levels, use the CustomLevel struct:
+
+```zig
+pub const CustomLevel = struct {
+    name: []const u8,     // Display name (e.g., "AUDIT")
+    priority: u8,         // Numeric priority
+    color: []const u8,    // ANSI color code
+};
+```
+
+### Usage
+
+```zig
+// Register a custom level
+try logger.addCustomLevel("AUDIT", 35, "35");  // Priority 35, Magenta
 
 // Use the custom level
-try logger.custom("audit", "User login detected");
-// Output: [2024-01-15 10:30:45] [AUDIT] User login detected (in magenta)
+try logger.custom("AUDIT", "User login detected", @src());
+try logger.customf("AUDIT", "User {s} logged in", .{"admin"}, @src());
+
+// Remove a custom level
+logger.removeCustomLevel("AUDIT");
 ```
-
-### Custom Level Colors
-
-You can use any ANSI color code or combination:
-
-| Code | Color | Example |
-|------|-------|---------|
-| `31` | Red | Error messages |
-| `32` | Green | Success indicators |
-| `33` | Yellow | Warnings |
-| `34` | Blue | Debug info |
-| `35` | Magenta | Custom/audit |
-| `36` | Cyan | Trace/verbose |
-| `37` | White | Standard info |
-| `91` | Bright Red | Critical |
-| `92` | Bright Green | Highlights |
-| `93` | Bright Yellow | Important |
-
-### Color Modifiers
-
-Combine colors with modifiers using semicolons:
-
-```zig
-try logger.addCustomLevel("alert", 42, "31;1");     // Bold red
-try logger.addCustomLevel("notice", 22, "36;4");    // Underline cyan
-try logger.addCustomLevel("highlight", 38, "33;7"); // Reverse yellow
-```
-
-| Modifier | Code | Effect |
-|----------|------|--------|
-| Bold | `1` | `31;1` = bold red |
-| Underline | `4` | `34;4` = underline blue |
-| Reverse | `7` | `32;7` = reverse green |
 
 ## Level Filtering
 
-### Global Level Filter
-
-Set the minimum log level globally:
+Set minimum log level in config:
 
 ```zig
-var config = Config.default();
-config.level = .warning; // Only warning and above
+var config = logly.Config.default();
+config.level = .warning;  // Only WARNING and above will be logged
 logger.configure(config);
 ```
 
-### Per-Sink Level Filter
-
-Each sink can have its own level filter:
+## Level Comparison
 
 ```zig
-_ = try logger.addSink(.{
-    .level = .err,      // Minimum level
-    .max_level = .fail, // Maximum level (optional)
-});
+const level1 = Level.warning;
+const level2 = Level.err;
+
+// Compare by priority
+if (level1.priority() < level2.priority()) {
+    // WARNING has lower priority than ERROR
+}
 ```
 
-### Module-Level Filtering
-
-Set different log levels for different modules:
+## Example
 
 ```zig
-try logger.setModuleLevel("database", .debug);
-try logger.setModuleLevel("http", .warning);
+const logly = @import("logly");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    const logger = try logly.Logger.init(allocator);
+    defer logger.deinit();
+
+    // Log at all 10 built-in levels
+    try logger.trace("Trace message", @src());
+    try logger.debug("Debug message", @src());
+    try logger.info("Info message", @src());
+    try logger.notice("Notice message", @src());
+    try logger.success("Success message", @src());
+    try logger.warning("Warning message", @src());
+    try logger.err("Error message", @src());
+    try logger.fail("Fail message", @src());
+    try logger.critical("Critical message", @src());
+    try logger.fatal("Fatal message", @src());
+}
 ```
-
-## Windows Support
-
-On Windows, enable ANSI colors at application startup:
-
-```zig
-_ = logly.Terminal.enableAnsiColors();
-```
-
-This enables Virtual Terminal Processing for proper color display. No-op on Linux/macOS.

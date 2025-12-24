@@ -41,6 +41,34 @@ pub const Rotation = struct {
                 .yearly => 31536000, // 365 days
             };
         }
+
+        /// Returns the duration in milliseconds.
+        pub fn millis(self: RotationInterval) i64 {
+            return self.seconds() * 1000;
+        }
+
+        /// Parse interval from string.
+        pub fn fromString(s: []const u8) ?RotationInterval {
+            if (std.mem.eql(u8, s, "minutely")) return .minutely;
+            if (std.mem.eql(u8, s, "hourly")) return .hourly;
+            if (std.mem.eql(u8, s, "daily")) return .daily;
+            if (std.mem.eql(u8, s, "weekly")) return .weekly;
+            if (std.mem.eql(u8, s, "monthly")) return .monthly;
+            if (std.mem.eql(u8, s, "yearly")) return .yearly;
+            return null;
+        }
+
+        /// Returns human-readable name.
+        pub fn name(self: RotationInterval) []const u8 {
+            return switch (self) {
+                .minutely => "Minutely",
+                .hourly => "Hourly",
+                .daily => "Daily",
+                .weekly => "Weekly",
+                .monthly => "Monthly",
+                .yearly => "Yearly",
+            };
+        }
     };
 
     /// Rotation statistics for monitoring.
@@ -50,6 +78,22 @@ pub const Rotation = struct {
         files_deleted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         last_rotation_time_ms: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         rotation_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+
+        pub fn reset(self: *RotationStats) void {
+            self.total_rotations.store(0, .monotonic);
+            self.files_archived.store(0, .monotonic);
+            self.files_deleted.store(0, .monotonic);
+            self.last_rotation_time_ms.store(0, .monotonic);
+            self.rotation_errors.store(0, .monotonic);
+        }
+
+        pub fn rotationCount(self: *const RotationStats) u64 {
+            return @as(u64, self.total_rotations.load(.monotonic));
+        }
+
+        pub fn errorCount(self: *const RotationStats) u64 {
+            return @as(u64, self.rotation_errors.load(.monotonic));
+        }
     };
 
     allocator: std.mem.Allocator,
@@ -96,15 +140,7 @@ pub const Rotation = struct {
         size_limit: ?u64,
         retention: ?usize,
     ) !Rotation {
-        const interval = if (interval_str) |s| blk: {
-            if (std.mem.eql(u8, s, "minutely")) break :blk RotationInterval.minutely;
-            if (std.mem.eql(u8, s, "hourly")) break :blk RotationInterval.hourly;
-            if (std.mem.eql(u8, s, "daily")) break :blk RotationInterval.daily;
-            if (std.mem.eql(u8, s, "weekly")) break :blk RotationInterval.weekly;
-            if (std.mem.eql(u8, s, "monthly")) break :blk RotationInterval.monthly;
-            if (std.mem.eql(u8, s, "yearly")) break :blk RotationInterval.yearly;
-            break :blk null;
-        } else null;
+        const interval = if (interval_str) |s| RotationInterval.fromString(s) else null;
 
         return .{
             .allocator = allocator,
@@ -116,6 +152,21 @@ pub const Rotation = struct {
         };
     }
 
+    /// Creates a Rotation with daily interval.
+    pub fn daily(allocator: std.mem.Allocator, path: []const u8, retention: ?usize) !Rotation {
+        return init(allocator, path, "daily", null, retention);
+    }
+
+    /// Creates a Rotation with hourly interval.
+    pub fn hourly(allocator: std.mem.Allocator, path: []const u8, retention: ?usize) !Rotation {
+        return init(allocator, path, "hourly", null, retention);
+    }
+
+    /// Creates a size-based Rotation.
+    pub fn bySize(allocator: std.mem.Allocator, path: []const u8, size_limit: u64, retention: ?usize) !Rotation {
+        return init(allocator, path, null, size_limit, retention);
+    }
+
     /// Releases all resources associated with the Rotation instance.
     ///
     /// Must be called when the rotation handler is no longer needed.
@@ -123,26 +174,28 @@ pub const Rotation = struct {
         self.allocator.free(self.base_path);
     }
 
+    /// Returns statistics snapshot.
+    pub fn getStats(self: *const Rotation) RotationStats {
+        return self.stats;
+    }
+
+    /// Resets statistics.
+    pub fn resetStats(self: *Rotation) void {
+        self.stats.reset();
+    }
+
+    /// Returns true if rotation is enabled.
+    pub fn isEnabled(self: *const Rotation) bool {
+        return self.interval != null or self.size_limit != null;
+    }
+
+    /// Returns the current interval name or "none".
+    pub fn intervalName(self: *const Rotation) []const u8 {
+        if (self.interval) |i| return i.name();
+        return "none";
+    }
+
     /// Checks if rotation should occur and performs it if necessary.
-    ///
-    /// Evaluates both time-based and size-based rotation criteria.
-    /// If rotation is needed, closes current file, renames it with timestamp,
-    /// and reopens a fresh log file. Also enforces retention policies.
-    ///
-    /// Arguments:
-    ///     file_ptr: Pointer to the current log file handle.
-    ///              Will be updated with the new file handle after rotation.
-    ///
-    /// Returns:
-    ///     Error if file operations fail.
-    ///
-    /// Performance:
-    ///     Time-based check: O(1) - simple timestamp comparison
-    ///     Size-based check: O(1) - single file stat() call
-    ///     Rotation: O(n) where n = number of files to cleanup for retention
-    ///
-    /// Thread Safety:
-    ///     Not thread-safe. Caller must synchronize access to the file.
     pub fn checkAndRotate(self: *Rotation, file_ptr: *std.fs.File) !void {
         var should_rotate = false;
 
@@ -168,7 +221,21 @@ pub const Rotation = struct {
         }
     }
 
+    /// Alias for checkAndRotate
+    pub const check = checkAndRotate;
+    pub const tryRotate = checkAndRotate;
+
+    /// Force rotation regardless of conditions.
+    pub fn forceRotate(self: *Rotation, file_ptr: *std.fs.File) !void {
+        try self.rotate(file_ptr);
+        self.last_rotation = @divFloor(std.time.milliTimestamp(), 1000);
+    }
+
+    /// Alias for forceRotate
+    pub const rotateNow = forceRotate;
+
     fn rotate(self: *Rotation, file_ptr: *std.fs.File) !void {
+        const start_time = std.time.milliTimestamp();
         file_ptr.close();
 
         // Generate rotated filename with timestamp
@@ -181,13 +248,22 @@ pub const Rotation = struct {
         defer self.allocator.free(rotated_name);
 
         // Rename current file
-        try std.fs.cwd().rename(self.base_path, rotated_name);
+        std.fs.cwd().rename(self.base_path, rotated_name) catch |err| {
+            _ = self.stats.rotation_errors.fetchAdd(1, .monotonic);
+            if (self.on_rotation_error) |cb| cb(self.base_path, err);
+            return err;
+        };
 
         // Re-open original file
         file_ptr.* = try std.fs.cwd().createFile(self.base_path, .{
             .read = true,
             .truncate = true, // Start fresh
         });
+
+        // Update stats
+        _ = self.stats.total_rotations.fetchAdd(1, .monotonic);
+        const elapsed: u64 = @intCast(std.time.milliTimestamp() - start_time);
+        self.stats.last_rotation_time_ms.store(@truncate(elapsed), .monotonic);
 
         // Clean up old files if retention is set
         if (self.retention) |max_files| {
@@ -229,7 +305,9 @@ pub const Rotation = struct {
             for (files.items[0..to_delete]) |filename| {
                 const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, filename });
                 defer self.allocator.free(full_path);
-                try std.fs.cwd().deleteFile(full_path);
+                std.fs.cwd().deleteFile(full_path) catch continue;
+                _ = self.stats.files_deleted.fetchAdd(1, .monotonic);
+                if (self.on_retention_cleanup) |cb| cb(full_path);
             }
         }
     }
@@ -252,5 +330,37 @@ pub const Rotation = struct {
             .retention = retention,
             .color = false,
         };
+    }
+
+    /// Aliases for sink creation
+    pub const rotatingSink = createRotatingSink;
+    pub const sizeSink = createSizeRotatingSink;
+};
+
+/// Preset rotation configurations.
+pub const RotationPresets = struct {
+    /// Daily rotation with 7 day retention.
+    pub fn daily7Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.daily(allocator, path, 7);
+    }
+
+    /// Daily rotation with 30 day retention.
+    pub fn daily30Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.daily(allocator, path, 30);
+    }
+
+    /// Hourly rotation with 24 hour retention.
+    pub fn hourly24Hours(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.hourly(allocator, path, 24);
+    }
+
+    /// 10MB size-based rotation with 5 file retention.
+    pub fn size10MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.bySize(allocator, path, 10 * 1024 * 1024, 5);
+    }
+
+    /// 100MB size-based rotation with 10 file retention.
+    pub fn size100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.bySize(allocator, path, 100 * 1024 * 1024, 10);
     }
 };
