@@ -27,6 +27,8 @@ docs/.vitepress/cache
 docs/.vitepress/dist
 NUL
 *.txt
+!docs/public/robots.txt
+!docs/robots.txt
 *.log
 /logs_dynamic
 *.exe
