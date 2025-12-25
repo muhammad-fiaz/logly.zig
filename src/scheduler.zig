@@ -1095,14 +1095,18 @@ pub const Scheduler = struct {
             if (total_bytes == 0) return 0;
             return @intCast(100 - (free_bytes * 100 / total_bytes));
         } else {
-            const path_c = try std.heap.page_allocator.dupeZ(u8, path);
-            defer std.heap.page_allocator.free(path_c);
+            if (comptime @hasDecl(std.posix, "statvfs")) {
+                const path_c = try std.heap.page_allocator.dupeZ(u8, path);
+                defer std.heap.page_allocator.free(path_c);
 
-            var stat: std.posix.statvfs = undefined;
-            try std.posix.statvfs(path_c, &stat);
+                var stat: std.posix.statvfs = undefined;
+                try std.posix.statvfs(path_c, &stat);
 
-            if (stat.blocks == 0) return 0;
-            return @intCast(100 - (stat.bfree * 100 / stat.blocks));
+                if (stat.blocks == 0) return 0;
+                return @intCast(100 - (stat.bfree * 100 / stat.blocks));
+            } else {
+                return 0; // Fallback for systems where statvfs is not available in std.posix
+            }
         }
     }
 
@@ -1120,13 +1124,17 @@ pub const Scheduler = struct {
             }
             return free_bytes;
         } else {
-            const path_c = try std.heap.page_allocator.dupeZ(u8, path);
-            defer std.heap.page_allocator.free(path_c);
+            if (comptime @hasDecl(std.posix, "statvfs")) {
+                const path_c = try std.heap.page_allocator.dupeZ(u8, path);
+                defer std.heap.page_allocator.free(path_c);
 
-            var stat: std.posix.statvfs = undefined;
-            try std.posix.statvfs(path_c, &stat);
+                var stat: std.posix.statvfs = undefined;
+                try std.posix.statvfs(path_c, &stat);
 
-            return stat.bfree * stat.frsize;
+                return stat.bfree * stat.frsize;
+            } else {
+                return 0; // Fallback for systems where statvfs is not available in std.posix
+            }
         }
     }
 };

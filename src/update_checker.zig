@@ -99,20 +99,30 @@ fn checkWorker(allocator: std.mem.Allocator, global_console_display: bool) void 
 
     switch (compareVersions(latest_tag)) {
         .remote_newer => {
-            std.debug.print("{s}{s} [UPDATE] >> A newer release is available: {s} (current {s}) {s}\n", .{
+            std.debug.print("\n{s}{s} [UPDATE] >> A newer release is available: {s} (current {s}) {s}\n", .{
                 bold_white,
                 green_bg,
                 latest_tag,
                 CURRENT_VERSION,
                 reset,
             });
+            std.debug.print("{s}{s}          To update, run: zig fetch --save https://github.com/muhammad-fiaz/logly.zig/releases       {s}\n\n", .{
+                bold_white,
+                green_bg,
+                reset,
+            });
         },
         .local_newer => {
-            std.debug.print("{s}{s} [NIGHTLY] * Running a dev/nightly build ahead of latest release: current {s}, latest {s} {s}\n", .{
+            std.debug.print("\n{s}{s} [NIGHTLY] * Running a dev/nightly build ahead of latest release: current {s}, latest {s} {s}\n", .{
                 bold_black,
                 cyan_bg,
                 CURRENT_VERSION,
                 latest_tag,
+                reset,
+            });
+            std.debug.print("{s}{s}           This version may contain experimental features and is not for production use.      {s}\n\n", .{
+                bold_black,
+                cyan_bg,
                 reset,
             });
         },

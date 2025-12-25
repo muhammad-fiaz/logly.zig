@@ -1514,5 +1514,5 @@ pub fn main() !void {
         try md_file.writeAll(summary);
     }
 
-    try md_file.writeAll("\n---\n**✅ Benchmarks completed successfully!**\n");
+    try md_file.writeAll("\n---\n");
 }
