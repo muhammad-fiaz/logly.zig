@@ -1,3 +1,18 @@
+---
+title: System Diagnostics
+description: Guide to using system diagnostics in Logly.zig. Collect and log OS, CPU, memory, and drive information automatically at startup or on-demand.
+head:
+  - - meta
+    - name: keywords
+      content: system diagnostics, cpu info, memory stats, drive diagnostics, monitoring, system info, zig diagnostics
+  - - meta
+    - property: og:title
+      content: System Diagnostics | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # System Diagnostics Guide
 
 Logly provides comprehensive system diagnostics with automatic collection of OS, CPU, memory, and drive information. Diagnostics can be emitted at startup or on-demand with full color support and custom formatting.

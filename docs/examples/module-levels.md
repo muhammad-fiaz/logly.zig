@@ -1,3 +1,18 @@
+---
+title: Module Levels Example
+description: Example of module-specific log levels in Logly.zig. Control logging verbosity for different parts of your application with scoped loggers and per-module settings.
+head:
+  - - meta
+    - name: keywords
+      content: module levels, scoped logger, per-module logging, log verbosity, component logging, selective debug
+  - - meta
+    - property: og:title
+      content: Module Levels Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Module Levels
 
 This example demonstrates how to use module-specific log levels to control logging verbosity for different parts of your application. This is incredibly useful for debugging specific components without being overwhelmed by logs from the entire system.

@@ -1,3 +1,15 @@
+---
+title: Filter API Reference
+description: API reference for Logly.zig Filter struct. Create rules to filter logs by level, module, message pattern with allow/deny actions and batch evaluation.
+head:
+  - - meta
+    - name: keywords
+      content: filter api, log filtering, rule-based filter, level filter, module filter, pattern matching
+  - - meta
+    - property: og:title
+      content: Filter API Reference | Logly.zig
+---
+
 # Filter API
 
 The `Filter` struct provides fine-grained control over which log records are processed.

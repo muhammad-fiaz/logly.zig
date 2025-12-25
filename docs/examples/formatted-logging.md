@@ -1,3 +1,18 @@
+---
+title: Formatted Logging Example
+description: Example of printf-style formatted logging in Logly.zig using infof, debugf, warnf methods. Dynamic message construction with format strings and arguments.
+head:
+  - - meta
+    - name: keywords
+      content: formatted logging, printf style, format strings, dynamic messages, infof debugf, string formatting
+  - - meta
+    - property: og:title
+      content: Formatted Logging Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Formatted Logging
 
 This example demonstrates how to use the formatted logging methods (`infof`, `debugf`, etc.) to log messages with arguments, similar to `printf` or `std.log`. This allows for dynamic message construction without manual string concatenation. All formatted output supports colors based on log level.

@@ -234,9 +234,9 @@ pub const ThreadPool = struct {
 
             // Find highest priority item
             var best_idx: usize = 0;
-            var best_priority: u8 = 0;
+            var best_priority: u8 = @intFromEnum(self.items.items[0].priority);
 
-            for (self.items.items, 0..) |item, i| {
+            for (self.items.items[1..], 1..) |item, i| {
                 const p = @intFromEnum(item.priority);
                 if (p > best_priority) {
                     best_priority = p;
@@ -249,23 +249,26 @@ pub const ThreadPool = struct {
 
         pub fn popWait(self: *WorkQueue, timeout_ns: u64) ?WorkItem {
             self.mutex.lock();
-            defer self.mutex.unlock();
-
+            // We need to unlock manually because pop() will lock it again, or we can just implement the wait logic here
             if (self.items.items.len == 0) {
                 self.condition.timedWait(&self.mutex, timeout_ns) catch {};
             }
+            const has_items = self.items.items.len > 0;
+            self.mutex.unlock();
 
-            if (self.items.items.len == 0) return null;
-            return self.items.orderedRemove(0);
+            if (has_items) {
+                return self.pop();
+            }
+            return null;
         }
 
         pub fn steal(self: *WorkQueue) ?WorkItem {
             self.mutex.lock();
             defer self.mutex.unlock();
 
-            if (self.items.items.len < 2) return null;
+            if (self.items.items.len < 1) return null;
 
-            // Steal from the back (oldest items)
+            // Steal from the back
             return self.items.pop();
         }
 
@@ -430,6 +433,102 @@ pub const ThreadPool = struct {
         return self.submit(.{ .callback = .{ .func = func, .context = context } }, .normal);
     }
 
+    /// Submits a callback with high priority for immediate execution.
+    pub fn submitHighPriority(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool {
+        return self.submit(.{ .callback = .{ .func = func, .context = context } }, .high);
+    }
+
+    /// Submits a callback with critical priority (processed first).
+    pub fn submitCritical(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool {
+        return self.submit(.{ .callback = .{ .func = func, .context = context } }, .critical);
+    }
+
+    /// Batch submit multiple tasks for higher throughput.
+    /// Returns the number of successfully submitted tasks.
+    pub fn submitBatch(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority) usize {
+        if (!self.running.load(.acquire)) return 0;
+
+        var submitted: usize = 0;
+        const now = std.time.milliTimestamp();
+
+        self.work_queue.mutex.lock();
+        defer self.work_queue.mutex.unlock();
+
+        for (tasks) |task| {
+            if (self.work_queue.items.items.len >= self.work_queue.capacity) {
+                _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+                continue;
+            }
+
+            self.work_queue.items.append(self.work_queue.allocator, .{
+                .task = task,
+                .submitted_at = now,
+                .priority = priority,
+            }) catch {
+                _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+                continue;
+            };
+
+            submitted += 1;
+            _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
+        }
+
+        if (submitted > 0) {
+            self.work_queue.condition.broadcast();
+        }
+
+        return submitted;
+    }
+
+    /// Try to submit without blocking (fast path for non-contended cases).
+    pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool {
+        if (!self.running.load(.acquire)) return false;
+
+        // Try lock without blocking
+        if (!self.work_queue.mutex.tryLock()) {
+            return false;
+        }
+        defer self.work_queue.mutex.unlock();
+
+        if (self.work_queue.items.items.len >= self.work_queue.capacity) {
+            _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+            return false;
+        }
+
+        self.work_queue.items.append(self.work_queue.allocator, .{
+            .task = task,
+            .submitted_at = std.time.milliTimestamp(),
+            .priority = priority,
+        }) catch {
+            _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+            return false;
+        };
+
+        _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
+        self.work_queue.condition.signal();
+        return true;
+    }
+
+    /// Submit to a specific worker's local queue for better cache locality.
+    pub fn submitToWorker(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) bool {
+        if (!self.running.load(.acquire)) return false;
+        if (worker_id >= self.workers.len) return false;
+
+        const item = WorkItem{
+            .task = task,
+            .submitted_at = std.time.milliTimestamp(),
+            .priority = priority,
+        };
+
+        if (self.workers[worker_id].local_queue.push(item)) {
+            _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
+            return true;
+        }
+
+        _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+        return false;
+    }
+
     fn workerLoop(worker: *Worker) void {
         const pool = worker.pool;
 
@@ -511,7 +610,14 @@ pub const ThreadPool = struct {
 
     /// Waits for all pending tasks to complete.
     pub fn waitAll(self: *ThreadPool) void {
-        while (self.pendingTasks() > 0) {
+        // Wait until all submitted tasks are completed
+        while (true) {
+            const submitted = self.stats.tasks_submitted.load(.monotonic);
+            const completed = self.stats.tasks_completed.load(.monotonic);
+            const dropped = self.stats.tasks_dropped.load(.monotonic);
+
+            if (completed + dropped >= submitted) break;
+
             std.Thread.sleep(1 * std.time.ns_per_ms);
         }
     }
@@ -783,4 +889,207 @@ test "thread pool stats" {
     _ = stats.total_exec_time_ns.fetchAdd(100_000_000, .monotonic); // 0.1 second (fits in u32)
 
     try std.testing.expect(stats.throughput() > 99 and stats.throughput() < 101);
+}
+
+test "thread pool batch submit" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 2,
+        .queue_size = 32,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    const TestTask = struct {
+        fn increment(_: ?std.mem.Allocator) void {
+            // Empty task for testing
+        }
+    };
+
+    // Create batch of tasks
+    var tasks: [5]ThreadPool.Task = undefined;
+    for (&tasks) |*task| {
+        task.* = .{ .function = .{ .func = TestTask.increment } };
+    }
+
+    // Batch submit
+    const submitted = pool.submitBatch(&tasks, .normal);
+    try std.testing.expectEqual(@as(usize, 5), submitted);
+
+    // Wait for completion
+    pool.waitAll();
+
+    const stats = pool.getStats();
+    try std.testing.expectEqual(@as(Constants.AtomicUnsigned, 5), stats.tasks_submitted.load(.monotonic));
+}
+
+test "thread pool priority submission" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 1,
+        .queue_size = 16,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    var counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+
+    const TestTask = struct {
+        fn increment(ctx: *anyopaque, _: ?std.mem.Allocator) void {
+            const c: *std.atomic.Value(u32) = @ptrCast(@alignCast(ctx));
+            _ = c.fetchAdd(1, .monotonic);
+        }
+    };
+
+    // Submit with different priorities
+    _ = pool.submitCallback(TestTask.increment, @ptrCast(&counter));
+    _ = pool.submitHighPriority(TestTask.increment, @ptrCast(&counter));
+    _ = pool.submitCritical(TestTask.increment, @ptrCast(&counter));
+
+    pool.waitAll();
+
+    try std.testing.expectEqual(@as(u32, 3), counter.load(.monotonic));
+}
+
+test "thread pool presets" {
+    // Test preset configurations compile and have sensible values
+    const single = ThreadPoolPresets.singleThread();
+    try std.testing.expectEqual(@as(usize, 1), single.thread_count);
+    try std.testing.expect(!single.work_stealing);
+
+    const cpu = ThreadPoolPresets.cpuBound();
+    try std.testing.expectEqual(@as(usize, 0), cpu.thread_count); // auto-detect
+    try std.testing.expect(cpu.work_stealing);
+
+    const io = ThreadPoolPresets.ioBound();
+    try std.testing.expect(io.thread_count > 0);
+    try std.testing.expect(io.work_stealing);
+
+    const ht = ThreadPoolPresets.highThroughput();
+    try std.testing.expect(ht.queue_size >= 4096);
+
+    const ll = ThreadPoolPresets.lowLatency();
+    try std.testing.expectEqual(@as(usize, 2), ll.thread_count);
+}
+
+test "thread pool try submit" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 1,
+        .queue_size = 4,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    const TestTask = struct {
+        fn noop(_: ?std.mem.Allocator) void {}
+    };
+
+    // Try submit should work when not contended
+    const task = ThreadPool.Task{ .function = .{ .func = TestTask.noop } };
+    const success = pool.trySubmit(task, .normal);
+
+    // May or may not succeed depending on timing, but should not crash
+    _ = success;
+
+    pool.waitAll();
+}
+
+test "thread pool worker affinity" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 2,
+        .queue_size = 8,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    var counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+
+    const TestTask = struct {
+        fn increment(ctx: *anyopaque, _: ?std.mem.Allocator) void {
+            const c: *std.atomic.Value(u32) = @ptrCast(@alignCast(ctx));
+            _ = c.fetchAdd(1, .monotonic);
+        }
+    };
+
+    // Submit to specific worker
+    _ = pool.submitToWorker(0, .{ .callback = .{ .func = TestTask.increment, .context = @ptrCast(&counter) } }, .normal);
+    _ = pool.submitToWorker(1, .{ .callback = .{ .func = TestTask.increment, .context = @ptrCast(&counter) } }, .normal);
+
+    pool.waitAll();
+
+    try std.testing.expectEqual(@as(u32, 2), counter.load(.monotonic));
+}
+
+test "thread pool priority ordering" {
+    const allocator = std.testing.allocator;
+
+    // Use single thread to make ordering deterministic
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 1,
+        .queue_size = 32,
+    });
+    defer pool.deinit();
+
+    // Start the pool first so we can submit tasks
+    try pool.start();
+
+    var order: std.ArrayList(u8) = .{};
+    defer order.deinit(allocator);
+    var mutex = std.Thread.Mutex{};
+
+    const Params = struct { o: *std.ArrayList(u8), m: *std.Thread.Mutex, val: u8, a: std.mem.Allocator };
+    const OrderTask = struct {
+        fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
+            const params: *Params = @ptrCast(@alignCast(ctx));
+            params.m.lock();
+            params.o.append(params.a, params.val) catch {};
+            params.m.unlock();
+        }
+    };
+
+    var p1: Params = .{ .o = &order, .m = &mutex, .val = 1, .a = allocator }; // Normal
+    var p2: Params = .{ .o = &order, .m = &mutex, .val = 2, .a = allocator }; // High
+    var p3: Params = .{ .o = &order, .m = &mutex, .val = 3, .a = allocator }; // Critical
+
+    // Use a primary task to block the single worker thread
+    var block_mutex = std.Thread.Mutex{};
+    block_mutex.lock(); // Worker will block on this
+
+    const BlockTask = struct {
+        fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
+            const m: *std.Thread.Mutex = @ptrCast(@alignCast(ctx));
+            m.lock(); // Wait here
+            m.unlock();
+        }
+    };
+
+    _ = pool.submit(.{ .callback = .{ .func = BlockTask.run, .context = &block_mutex } }, .critical);
+
+    // Give it a moment to pick up the block task
+    std.Thread.sleep(10 * std.time.ns_per_ms);
+
+    // Queue them up - they should be ordered in the queue by priority
+    _ = pool.submit(.{ .callback = .{ .func = OrderTask.run, .context = &p1 } }, .normal);
+    _ = pool.submit(.{ .callback = .{ .func = OrderTask.run, .context = &p2 } }, .high);
+    _ = pool.submit(.{ .callback = .{ .func = OrderTask.run, .context = &p3 } }, .critical);
+
+    // Release the worker
+    block_mutex.unlock();
+    pool.waitAll();
+
+    // Order should be 3, 2, 1
+    try std.testing.expectEqual(@as(usize, 3), order.items.len);
+    try std.testing.expectEqual(@as(u8, 3), order.items[0]);
+    try std.testing.expectEqual(@as(u8, 2), order.items[1]);
+    try std.testing.expectEqual(@as(u8, 1), order.items[2]);
 }

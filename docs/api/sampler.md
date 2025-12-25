@@ -1,3 +1,15 @@
+---
+title: Sampler API Reference
+description: API reference for Logly.zig Sampler struct. Control log volume with probability sampling, rate limiting, every-Nth, and adaptive sampling strategies.
+head:
+  - - meta
+    - name: keywords
+      content: sampler api, log sampling, rate limiting, probability sampling, throughput control, adaptive sampling
+  - - meta
+    - property: og:title
+      content: Sampler API Reference | Logly.zig
+---
+
 # Sampler API
 
 The `Sampler` struct controls log throughput by selectively processing records.

@@ -1,3 +1,12 @@
+---
+title: Async Logging Guide
+description: Master asynchronous logging in Logly.zig with ring buffers, worker threads, batch processing, and non-blocking I/O. Achieve up to 36M ops/sec throughput without blocking your application.
+head:
+  - - meta
+    - name: keywords
+      content: async logging, non-blocking logging, ring buffer, worker threads, high throughput logging, zig async, background logging
+---
+
 # Async Logging
 
 Logly provides comprehensive asynchronous logging capabilities to ensure that logging operations do not block your application's main execution flow. This is particularly important for high-performance applications.

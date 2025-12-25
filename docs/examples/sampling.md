@@ -1,3 +1,15 @@
+---
+title: Log Sampling Example
+description: Example of log sampling with Logly.zig. Control log volume using probability sampling, rate limiting, and every-Nth strategies for high-throughput applications.
+head:
+  - - meta
+    - name: keywords
+      content: sampling example, log sampling, rate limiting, probability sampling, high volume, throughput control
+  - - meta
+    - property: og:title
+      content: Log Sampling Example | Logly.zig
+---
+
 # Sampling Example
 
 Control log throughput using sampling strategies for high-volume applications.

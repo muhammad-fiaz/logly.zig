@@ -1,3 +1,18 @@
+---
+title: Stack Traces
+description: Debug issues faster with automatic stack trace capture in Logly.zig. Pinpoint errors with captured memory addresses and runtime symbolization.
+head:
+  - - meta
+    - name: keywords
+      content: stack trace, error debugging, symbolization, crash reporting, debug info, log tracing, error pinpointing
+  - - meta
+    - property: og:title
+      content: Stack Traces | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Stack Traces
 
 Logly-Zig automatically captures stack traces for `err` and `critical` log levels, helping you debug issues faster by pinpointing exactly where they occurred.

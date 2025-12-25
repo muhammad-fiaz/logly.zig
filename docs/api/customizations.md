@@ -1,3 +1,15 @@
+---
+title: Customization API Reference
+description: API reference for Logly.zig customization options. Configure logs root path, custom levels, color themes, format templates, and extend logger behavior.
+head:
+  - - meta
+    - name: keywords
+      content: customization api, custom levels, color themes, format templates, logger extension, configuration options
+  - - meta
+    - property: og:title
+      content: Customization API Reference | Logly.zig
+---
+
 # Customization API Reference
 
 ## Config.logs_root_path

@@ -1,3 +1,18 @@
+---
+title: Custom Colors Example
+description: Example of defining custom ANSI colors for log levels in Logly.zig. Create bold, underlined, and reverse color effects for custom log levels.
+head:
+  - - meta
+    - name: keywords
+      content: custom colors, ansi codes, log colors, color levels, bold text, underline, color themes
+  - - meta
+    - property: og:title
+      content: Custom Colors Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Custom Colors
 
 This example demonstrates how to define and use custom colors for log levels. Logly colors the **entire log line** (timestamp, level, and message), not just the level tag.

@@ -1,3 +1,15 @@
+---
+title: Thread Pool Example
+description: Example of parallel log processing with Logly.zig thread pool. Configure worker threads, work stealing, batch submission, and priority-based task scheduling.
+head:
+  - - meta
+    - name: keywords
+      content: thread pool example, parallel logging, worker threads, work stealing, batch processing, task scheduling
+  - - meta
+    - property: og:title
+      content: Thread Pool Example | Logly.zig
+---
+
 # Thread Pool Example
 
 This example demonstrates parallel log processing using Logly's thread pool.
@@ -8,17 +20,17 @@ This example demonstrates parallel log processing using Logly's thread pool.
 const logly = @import("logly");
 
 var config = logly.Config.default();
-config.thread_pool = logly.ThreadPoolConfig{
-    .worker_count = 8,
-    .task_queue_size = 2048,
+config.thread_pool = .{
+    .enabled = true,
+    .thread_count = 8,
+    .queue_size = 2048,
     .stack_size = 1024 * 1024,
-    .shutdown_timeout_ms = 10000,
 };
 
 // Or use helper method
 var config2 = logly.Config.default().withThreadPool(.{
-    .worker_count = 4,
-    .task_queue_size = 1024,
+    .thread_count = 4,
+    .queue_size = 1024,
 });
 ```
 
@@ -52,17 +64,22 @@ pub fn main() !void {
     // Submit tasks
     var counter = std.atomic.Value(u32).init(0);
     
-    for (0..100) |_| {
-        try pool.submit(.{
-            .func = incrementCounter,
-            .context = @ptrCast(&counter),
-            .priority = .normal,
-            .submitted_at = std.time.milliTimestamp(),
-        });
+    for (0..50) |_| {
+        _ = pool.submitCallback(incrementCounter, @ptrCast(&counter));
     }
 
+    // Submit a batch of tasks
+    var tasks: [50]logly.ThreadPool.Task = undefined;
+    for (&tasks) |*task| {
+        task.* = .{ .callback = .{ .func = incrementCounter, .context = @ptrCast(&counter) } };
+    }
+    _ = pool.submitBatch(&tasks, .normal);
+
+    // Submit high priority task
+    _ = pool.submitHighPriority(incrementCounter, @ptrCast(&counter));
+
     // Wait for completion
-    pool.waitIdle();
+    pool.waitAll();
 
     // Check results
     std.debug.print("Counter value: {d}\n", .{counter.load(.monotonic)});
@@ -88,8 +105,8 @@ zig build run-thread-pool-demo
 ## Expected Output
 
 ```
-Counter value: 100
-Tasks completed: 100
+Counter value: 101
+Tasks completed: 101
 ```
 
 ## Key Concepts

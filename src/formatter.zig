@@ -60,6 +60,12 @@ pub const Formatter = struct {
     stats: FormatterStats = .{},
     mutex: std.Thread.Mutex = .{},
 
+    /// Cached hostname of the current machine.
+    hostname: ?[]const u8 = null,
+
+    /// Cached process ID.
+    pid: Constants.NativeUint = 0,
+
     /// Callback invoked after a record is formatted.
     /// Parameters: (format_type: u32, output_size: u64)
     on_format_complete: ?*const fn (u32, u64) void = null,
@@ -106,19 +112,29 @@ pub const Formatter = struct {
         }
     };
 
-    /// Initializes a new Formatter.
+    /// Initializes a new Formatter and pre-fetches system metadata.
     ///
     /// Arguments:
-    /// * `allocator`: The allocator used for string building.
+    /// * `allocator`: The allocator used for string building and cached metadata.
     pub fn init(allocator: std.mem.Allocator) Formatter {
-        return .{ .allocator = allocator };
+        var self = Formatter{
+            .allocator = allocator,
+            .pid = fetchPID(),
+        };
+        self.hostname = fetchHostname(allocator) catch null;
+        return self;
     }
 
     /// Deinitializes the Formatter.
     ///
     /// Currently a no-op as the formatter doesn't hold persistent resources,
     /// but good for future-proofing! 🔮
-    pub fn deinit(_: *Formatter) void {}
+    /// Deinitializes the Formatter and frees cached resources.
+    pub fn deinit(self: *Formatter) void {
+        if (self.hostname) |h| {
+            self.allocator.free(h);
+        }
+    }
 
     /// Sets the callback for format completion.
     pub fn setFormatCompleteCallback(self: *Formatter, callback: *const fn (u32, u64) void) void {
@@ -604,31 +620,17 @@ pub const Formatter = struct {
         if (config.include_hostname) {
             try writer.writeAll(comma);
             try writer.print("{s}\"hostname\"{s}\"", .{ indent, sep });
-
-            // 🐛 Workaround: std.posix.gethostname seems to have issues on some Windows builds.
-            // We'll use a safe fallback for now to ensure the library compiles.
-            if (@import("builtin").os.tag == .windows) {
-                try writer.writeAll("windows-host");
+            if (self.hostname) |h| {
+                try escapeJsonString(writer, h);
             } else {
-                // var hostname_buf: [std.posix.HOST_NAME_MAX]u8 = undefined;
-                // const hostname = std.posix.gethostname(&hostname_buf) catch "unknown";
-                // try escapeJsonString(writer, hostname);
-                try writer.writeAll("non-windows-host");
+                try writer.writeAll("unknown-host");
             }
             try writer.writeAll("\"");
         }
 
         if (config.include_pid) {
             try writer.writeAll(comma);
-
-            // 🐛 Workaround: PID retrieval can be tricky across platforms in Zig.
-            // We'll use a safe fallback or platform-specific calls where we are sure.
-            const pid = switch (@import("builtin").os.tag) {
-                // .windows => std.os.windows.kernel32.GetCurrentProcessId(), // Not found in this Zig version
-                else => 0,
-            };
-
-            try writer.print("{s}\"pid\"{s}{d}", .{ indent, sep, pid });
+            try writer.print("{s}\"pid\"{s}{d}", .{ indent, sep, self.pid });
         }
 
         // Stack Trace
@@ -753,6 +755,39 @@ pub const Formatter = struct {
     pub const colors = setTheme;
 };
 
+fn fetchHostname(allocator: std.mem.Allocator) ![]const u8 {
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .windows) {
+        const win32 = struct {
+            extern "kernel32" fn GetComputerNameW(lpBuffer: ?[*]u16, nSize: *u32) callconv(.winapi) i32;
+        };
+        var buf: [256]u16 = undefined;
+        var size: u32 = buf.len;
+        if (win32.GetComputerNameW(&buf, &size) != 0) {
+            // size does not include null terminator if success
+            return std.unicode.utf16LeToUtf8Alloc(allocator, buf[0..size]);
+        }
+        return error.HostnameFetchFailed;
+    } else {
+        var buf: [std.posix.HOST_NAME_MAX]u8 = undefined;
+        const hostname = try std.posix.gethostname(&buf);
+        return try allocator.dupe(u8, hostname);
+    }
+}
+
+fn fetchPID() Constants.NativeUint {
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .windows) {
+        return @as(Constants.NativeUint, std.os.windows.GetCurrentProcessId());
+    } else if (builtin.os.tag == .linux) {
+        return @as(Constants.NativeUint, @intCast(std.os.linux.getpid()));
+    } else if (builtin.link_libc) {
+        return @as(Constants.NativeUint, @intCast(std.c.getpid()));
+    } else {
+        return 0;
+    }
+}
+
 /// Pre-built formatter configurations.
 pub const FormatterPresets = struct {
     /// Creates a formatter with no colors.
@@ -776,3 +811,45 @@ pub const FormatterPresets = struct {
         return f;
     }
 };
+
+test "formatter plain text" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "Test message");
+    defer record.deinit();
+    record.module = "test_mod";
+    record.timestamp = 1700000000000;
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatToWriter(buf.writer(allocator), &record, Config{});
+    const output_str = buf.items;
+
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "INFO") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "test_mod") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "Test message") != null);
+}
+
+test "formatter json" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .err, "Error occurred");
+    defer record.deinit();
+    record.module = "api";
+    record.timestamp = 1700000000000;
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, Config{});
+    const output_str = buf.items;
+
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\"level\":\"ERROR\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\"message\":\"Error occurred\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\"module\":\"api\"") != null);
+}

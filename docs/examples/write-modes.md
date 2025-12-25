@@ -1,3 +1,18 @@
+---
+title: Write Modes Example
+description: Example of controlling log file write modes in Logly.zig. Choose between append mode for persistent history or overwrite mode for fresh session logs.
+head:
+  - - meta
+    - name: keywords
+      content: write modes, append overwrite, file modes, session logs, persistent logs, file truncate
+  - - meta
+    - property: og:title
+      content: Write Modes Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Sink Write Modes
 
 Learn how to control whether log files are appended to or overwritten using the `overwrite_mode` parameter.

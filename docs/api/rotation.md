@@ -1,273 +1,195 @@
 # Rotation API
 
-The `Rotation` struct handles log file rotation logic with time-based and size-based strategies.
+The `Rotation` module provides enterprise-grade log rotation capabilities, including time-based and size-based rotation, retention policies, compression, and flexible naming strategies.
 
-## Overview
+## Rotation Struct
 
-Rotation manages the lifecycle of log files, including rolling over based on size or time intervals, and cleaning up old files based on retention policies. Supports callbacks for all rotation events.
-
-## Types
-
-### Rotation
-
-The main rotation controller with thread-safe operations.
-
-```zig
-pub const Rotation = struct {
-    allocator: std.mem.Allocator,
-    base_path: []const u8,
-    interval: ?RotationInterval,
-    size_limit: ?u64,
-    retention: ?usize,
-    stats: RotationStats,
-    mutex: std.Thread.Mutex,
-    
-    // Callbacks
-    on_rotation_start: ?*const fn ([]const u8, []const u8) void,
-    on_rotation_complete: ?*const fn ([]const u8, []const u8, u64) void,
-    on_rotation_error: ?*const fn ([]const u8, anyerror) void,
-    on_file_archived: ?*const fn ([]const u8, []const u8) void,
-    on_retention_cleanup: ?*const fn ([]const u8) void,
-};
-```
-
-### RotationInterval
-
-Time-based rotation intervals.
-
-```zig
-pub const RotationInterval = enum {
-    minutely,
-    hourly,
-    daily,
-    weekly,
-    monthly,
-    yearly,
-    
-    pub fn millis(self: RotationInterval) u64;
-    pub fn fromString(str: []const u8) ?RotationInterval;
-    pub fn name(self: RotationInterval) []const u8;
-};
-```
-
-### RotationStats
-
-Statistics for rotation operations.
-
-```zig
-pub const RotationStats = struct {
-    total_rotations: std.atomic.Value(u64),
-    files_archived: std.atomic.Value(u64),
-    files_deleted: std.atomic.Value(u64),
-    last_rotation_time_ms: std.atomic.Value(u64),
-    rotation_errors: std.atomic.Value(u64),
-    
-    pub fn reset(self: *RotationStats) void;
-    pub fn rotationCount(self: *const RotationStats) u64;
-    pub fn errorCount(self: *const RotationStats) u64;
-};
-```
-
-## Methods
-
-### Initialization
-
-#### `init(allocator, path, interval_str, size_limit, retention) !Rotation`
-
-Initializes a new Rotation instance.
-
-#### `deinit(self: *Rotation) void`
-
-Releases all resources associated with the rotation.
-
-### Factory Methods
-
-#### `daily(allocator, path, retention_days) !Rotation`
-
-Creates a daily rotation with specified retention.
-
-#### `hourly(allocator, path, retention_hours) !Rotation`
-
-Creates an hourly rotation with specified retention.
-
-#### `bySize(allocator, path, size_bytes, retention) !Rotation`
-
-Creates a size-based rotation.
-
-### Rotation Control
-
-#### `rotate() !void`
-
-Forces a log rotation.
-
-#### `checkAndRotate() !bool`
-
-Checks if rotation is needed and performs it. Returns true if rotation occurred.
-
-**Alias**: `check`, `tryRotate`
-
-#### `forceRotate() !void`
-
-Forces an immediate rotation regardless of conditions.
-
-**Alias**: `rotateNow`
-
-### Statistics
-
-#### `getStats() RotationStats`
-
-Returns current rotation statistics.
-
-#### `resetStats() void`
-
-Resets all statistics to zero.
-
-### State
-
-#### `shouldRotate() bool`
-
-Checks if rotation is needed based on current file size or time.
-
-#### `isEnabled() bool`
-
-Returns true if rotation is configured.
-
-#### `intervalName() []const u8`
-
-Returns the name of the current rotation interval.
-
-### Sink Creation
-
-#### `createRotatingSink(file_path, interval, retention) SinkConfig`
-
-Creates a rotating sink configuration with time-based rotation.
-
-**Alias**: `rotatingSink`
-
-#### `createSizeRotatingSink(file_path, size_limit, retention) SinkConfig`
-
-Creates a rotating sink configuration with size-based rotation.
-
-**Alias**: `sizeSink`
-
-## Presets
-
-### RotationPresets
-
-```zig
-pub const RotationPresets = struct {
-    /// Daily rotation with 7 day retention.
-    pub fn daily7Days(allocator, path) !Rotation;
-    
-    /// Daily rotation with 30 day retention.
-    pub fn daily30Days(allocator, path) !Rotation;
-    
-    /// Daily rotation with 90 day retention (compliance).
-    pub fn daily90Days(allocator, path) !Rotation;
-    
-    /// Hourly rotation with 24 hour retention.
-    pub fn hourly24Hours(allocator, path) !Rotation;
-    
-    /// Hourly rotation with 48 hour retention.
-    pub fn hourly48Hours(allocator, path) !Rotation;
-    
-    /// 10MB size-based rotation with 5 file retention.
-    pub fn size10MB(allocator, path) !Rotation;
-    
-    /// 100MB size-based rotation with 10 file retention.
-    pub fn size100MB(allocator, path) !Rotation;
-    
-    /// 1GB size-based rotation with 5 file retention (high-volume).
-    pub fn size1GB(allocator, path) !Rotation;
-    
-    /// Creates a daily rotation sink config.
-    pub fn dailySink(file_path, retention_days) SinkConfig;
-    
-    /// Creates an hourly rotation sink config.
-    pub fn hourlySink(file_path, retention_hours) SinkConfig;
-};
-```
-
-## Callbacks
-
-### `on_rotation_start`
-
-Called before rotation begins with old and new paths.
-
-```zig
-fn myCallback(old_path: []const u8, new_path: []const u8) void {
-    std.debug.print("Rotating: {s} -> {s}\n", .{old_path, new_path});
-}
-```
-
-### `on_rotation_complete`
-
-Called after successful rotation with file size.
-
-### `on_rotation_error`
-
-Called if rotation fails.
-
-### `on_file_archived`
-
-Called when a file is archived/compressed.
-
-### `on_retention_cleanup`
-
-Called when an old file is deleted due to retention policy.
-
-## Example
+The core struct managing rotation logic.
 
 ```zig
 const Rotation = @import("logly").Rotation;
-const RotationPresets = @import("logly").RotationPresets;
-
-// Create with presets
-var rotation = try RotationPresets.daily7Days(allocator, "/var/log/app.log");
-defer rotation.deinit();
-
-// Or create manually
-var manual_rotation = try Rotation.init(
-    allocator,
-    "/var/log/app.log",
-    "daily",        // interval
-    10 * 1024 * 1024, // 10MB size limit
-    7,              // retention days
-);
-defer manual_rotation.deinit();
-
-// Set callbacks
-rotation.on_rotation_complete = myRotationCallback;
-
-// Check and rotate if needed
-if (try rotation.checkAndRotate()) {
-    std.debug.print("Rotation performed\n", .{});
-}
-
-// Force rotation
-try rotation.forceRotate();
-
-// Check statistics
-const stats = rotation.getStats();
-std.debug.print("Total rotations: {d}\n", .{stats.rotationCount()});
-std.debug.print("Files cleaned up: {d}\n", .{stats.files_deleted.load(.monotonic)});
-
-// Create rotating sink
-const sink_config = RotationPresets.dailySink("/var/log/app.log", 30);
 ```
 
-## Strategy Guide
+### Initialization
 
-| Strategy | Use Case | Recommended Retention |
-|----------|----------|----------------------|
-| `hourly` | High-volume, debugging | 24-48 hours |
-| `daily` | Standard production | 7-30 days |
-| `size10MB` | Limited disk space | 5-10 files |
-| `size100MB` | Moderate volume | 10-20 files |
-| `size1GB` | High-volume archives | 3-5 files |
+```zig
+pub fn init(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    interval_str: ?[]const u8, // "daily", "hourly", etc.
+    size_limit: ?u64,          // Bytes
+    retention: ?usize          // Max files to keep
+) !Rotation
+```
 
-## See Also
+### Configuration Methods
 
-- [Rotation Guide](../guide/rotation.md) - Detailed rotation configuration
-- [Compression API](compression.md) - Compress rotated files
-- [Scheduler API](scheduler.md) - Schedule rotation tasks
+#### `withCompression`
+Enables automatic compression of rotated files.
+
+```zig
+pub fn withCompression(self: *Rotation, config: CompressionConfig) !void
+```
+
+**Example:**
+```zig
+try rot.withCompression(.{ .algorithm = .deflate });
+```
+
+#### `withNaming`
+Sets the naming strategy for rotated files.
+
+```zig
+pub fn withNaming(self: *Rotation, strategy: NamingStrategy) void
+```
+
+**Example:**
+```zig
+rot.withNaming(.iso_datetime);
+```
+
+#### `withNamingFormat`
+Sets a custom format string for rotated files. Automatically sets strategy to `.custom`.
+
+```zig
+pub fn withNamingFormat(self: *Rotation, format: []const u8) !void
+```
+
+**Example:**
+```zig
+try rot.withNamingFormat("{base}-{date}{ext}");
+```
+
+#### `withMaxAge`
+Sets a maximum age (in seconds) for retaining log files.
+
+```zig
+pub fn withMaxAge(self: *Rotation, seconds: i64) void
+```
+
+**Example:**
+```zig
+rot.withMaxAge(86400 * 7); // 7 days
+```
+
+#### `withArchiveDir`
+Sets a specific directory to move rotated files into.
+
+```zig
+pub fn withArchiveDir(self: *Rotation, dir: []const u8) !void
+```
+
+**Example:**
+```zig
+try rot.withArchiveDir("logs/archive");
+```
+
+#### `applyConfig`
+Applies global configuration settings to the rotation instance.
+
+```zig
+pub fn applyConfig(self: *Rotation, config: RotationConfig) !void
+```
+
+**Example:**
+```zig
+try rot.applyConfig(global_config.rotation);
+```
+
+## Configuration Structs
+
+### RotationConfig
+Global configuration struct for rotation defaults.
+
+```zig
+pub const RotationConfig = struct {
+    enabled: bool = false,
+    interval: ?[]const u8 = null,
+    size_limit: ?u64 = null,
+    size_limit_str: ?[]const u8 = null,
+    retention_count: ?usize = null,
+    max_age_seconds: ?i64 = null,
+    naming_strategy: NamingStrategy = .timestamp,
+    archive_dir: ?[]const u8 = null,
+    clean_empty_dirs: bool = false,
+};
+```
+
+## Enums
+
+### RotationInterval
+Defines the time interval for rotation.
+
+| Value | Description |
+| :--- | :--- |
+| `.minutely` | Rotate every minute. |
+| `.hourly` | Rotate every hour. |
+| `.daily` | Rotate every day (24 hours). |
+| `.weekly` | Rotate every week. |
+| `.monthly` | Rotate every 30 days. |
+| `.yearly` | Rotate every 365 days. |
+
+### NamingStrategy
+Defines how rotated files are named.
+
+| Value | Example (`app.log`) | Notes |
+| :--- | :--- | :--- |
+| `.timestamp` | `app.log.167882233` | Default for size/hourly rotation. |
+| `.date` | `app.log.2023-01-01` | Default for daily/weekly/monthly. |
+| `.iso_datetime` | `app.log.2023-01-01T12-00-00` | High precision. |
+| `.index` | `app.log.1`, `app.log.2` | Rolling log style. |
+| `.custom` | `app-2023-01-01.log` | Uses `naming_format`. |
+
+### Custom Format Placeholders
+
+When using `.custom` (or setting `naming_format`), you can use:
+
+| Placeholder | Description |
+| :--- | :--- |
+| `{base}` | Filename without extension |
+| `{ext}` | Extension (including dot) |
+| `{date}` | YYYY-MM-DD |
+| `{time}` | HH-mm-ss |
+| `{timestamp}` | Unix timestamp |
+| `{iso}` | ISO 8601 Datetime |
+
+**Flexible Date/Time Placeholders:**
+You can also use `{YYYY}`, `{YY}`, `{MM}`, `{M}`, `{DD}`, `{D}`, `{HH}`, `{H}`, `{mm}`, `{m}`, `{ss}`, `{s}` and any separators.
+Example: `app-{YYYY}/{M}/{D}.log` -> `app-2023/10/5.log`
+
+## Statistics
+
+The `RotationStats` struct provides insights into the rotation process.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `total_rotations` | `AtomicUnsigned` | Total number of rotations performed. |
+| `files_archived` | `AtomicUnsigned` | Number of files successfully compressed. |
+| `files_deleted` | `AtomicUnsigned` | Number of files deleted due to retention policy. |
+| `last_rotation_time_ms` | `AtomicUnsigned` | Duration of the last rotation operation. |
+| `rotation_errors` | `AtomicUnsigned` | Count of rotation failures. |
+| `compression_errors` | `AtomicUnsigned` | Count of compression failures. |
+
+## Presets
+
+The `RotationPresets` struct offers common configurations.
+
+```zig
+// Daily rotation, keep 7 days
+const rot = try RotationPresets.daily7Days(allocator, path);
+
+// Size based (10MB), keep 5 files
+const rot = try RotationPresets.size10MB(allocator, path);
+```
+
+## Example Usage
+
+```zig
+var rotation = try Rotation.init(allocator, "app.log", "daily", null, 30);
+
+// Enable compression
+try rotation.withCompression(.{ .algorithm = .deflate });
+
+// Logic ensures checks are fast
+try rotation.checkAndRotate(&file);
+```

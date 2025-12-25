@@ -1,6 +1,18 @@
+---
+title: Scheduler API Reference
+description: API reference for Logly.zig Scheduler module. Automatic log maintenance with scheduled cleanup, compression, rotation, cron expressions, and custom periodic tasks.
+head:
+  - - meta
+    - name: keywords
+      content: scheduler api, log maintenance, automatic cleanup, cron scheduler, periodic tasks, log rotation scheduler
+  - - meta
+    - property: og:title
+      content: Scheduler API Reference | Logly.zig
+---
+
 # Scheduler API
 
-The scheduler module provides automatic log maintenance with scheduled cleanup, compression, rotation, and custom tasks.
+The scheduler module provides automatic log maintenance with scheduled cleanup, compression, rotation, and custom tasks. It runs in the background using either a dedicated worker thread or by submitting tasks to a shared `ThreadPool`.
 
 ## Overview
 
@@ -82,8 +94,18 @@ pub const ScheduledTask = struct {
     schedule: Schedule,
     /// Task-specific configuration
     config: TaskConfig,
+    /// Task execution callback (for custom tasks)
+    callback: ?*const fn (*ScheduledTask) anyerror!void = null,
     /// Whether task is enabled
     enabled: bool = true,
+    /// Whether task is currently running
+    running: bool = false,
+    /// Task execution priority
+    priority: Priority = .normal,
+    /// Retry policy for failed tasks
+    retry_policy: RetryPolicy = .{},
+    /// Name of another task that must complete successfully before this one runs
+    depends_on: ?[]const u8 = null,
     /// Last execution timestamp
     last_run: i64 = 0,
     /// Next scheduled execution
@@ -92,6 +114,21 @@ pub const ScheduledTask = struct {
     run_count: u64 = 0,
     /// Number of failures
     error_count: u64 = 0,
+    /// Retries remaining for current failure
+    retries_remaining: u32 = 0,
+
+    pub const Priority = enum {
+        low,
+        normal,
+        high,
+        critical,
+    };
+
+    pub const RetryPolicy = struct {
+        max_retries: u32 = 3,
+        interval_ms: u32 = 5000,
+        backoff_multiplier: f32 = 1.5,
+    };
 };
 ```
 
@@ -109,12 +146,41 @@ pub const TaskType = enum {
     compression,
     /// Flush all buffers
     flush,
-    /// Health check
-    health_check,
     /// Custom user-defined task
     custom,
+    /// Health check
+    health_check,
+    /// Metrics collection
+    metrics_snapshot,
 };
 ```
+
+### TaskConfig
+
+Configuration specific to tasks.
+
+```zig
+pub const TaskConfig = struct {
+    /// Path for file-based tasks
+    path: ?[]const u8 = null,
+    /// Maximum age in seconds for cleanup
+    max_age_seconds: u64 = 7 * 24 * 60 * 60,
+    /// Maximum files to keep
+    max_files: ?usize = null,
+    /// Maximum total size in bytes
+    max_total_size: ?u64 = null,
+    /// Minimum age in seconds (useful for compression)
+    min_age_seconds: u64 = 0,
+    /// File pattern to match (e.g., "*.log")
+    file_pattern: ?[]const u8 = null,
+    /// Compress files before cleanup
+    compress_before_delete: bool = false,
+    /// Recursive directory processing
+    recursive: bool = false,
+    /// Trigger task only if disk usage exceeds this percentage (0-100)
+    trigger_disk_usage_percent: ?u8 = null,
+    /// Required free space in bytes before running task
+    min_free_space_bytes: ?u64 = null,
 };
 ```
 
@@ -123,92 +189,28 @@ pub const TaskType = enum {
 Schedule configuration.
 
 ```zig
-pub const Schedule = struct {
-    /// Schedule type
-    type: ScheduleType,
-    /// Interval in seconds (for interval type)
-    interval_seconds: u64 = 0,
-    /// Cron expression (for cron type)
-    cron: ?[]const u8 = null,
-    /// Hour of day (for daily type, 0-23)
-    hour: u8 = 0,
-    /// Minute (for daily/weekly type, 0-59)
-    minute: u8 = 0,
-    /// Day of week (for weekly type, 0=Sunday)
-    day_of_week: u8 = 0,
-};
-```
+pub const Schedule = union(enum) {
+    /// Run once after delay (in milliseconds)
+    once: u64,
+    /// Run at fixed intervals (in milliseconds)
+    interval: u64,
+    /// Run at specific time of day
+    daily: DailySchedule,
+    /// Cron-like schedule
+    cron: CronSchedule,
 
-### ScheduleType
+    pub const DailySchedule = struct {
+        hour: u8 = 0,
+        minute: u8 = 0,
+    };
 
-Types of schedules.
-
-```zig
-pub const ScheduleType = enum {
-    /// Run at fixed intervals
-    interval,
-    /// Cron-style schedule
-    cron,
-    /// Run once daily at specific time
-    daily,
-    /// Run once weekly at specific time
-    weekly,
-    /// Run once at specific timestamp
-    once,
-};
-```
-
-### TaskConfig
-
-Configuration specific to task types.
-
-```zig
-pub const TaskConfig = union(enum) {
-    cleanup: CleanupConfig,
-    compression: CompressionTaskConfig,
-    rotation: RotationConfig,
-    custom: CustomTaskConfig,
-    none: void,
-};
-```
-
-### CleanupConfig
-
-Configuration for cleanup tasks.
-
-```zig
-pub const CleanupConfig = struct {
-    /// Directory to clean
-    path: []const u8,
-    /// Maximum age in days
-    max_age_days: u32 = 30,
-    /// File pattern to match (glob)
-    pattern: []const u8 = "*.log",
-    /// Include compressed files
-    include_compressed: bool = true,
-    /// Minimum files to keep
-    min_files_to_keep: u32 = 5,
-    /// Dry run (don't actually delete)
-    dry_run: bool = false,
-};
-```
-
-### CompressionTaskConfig
-
-Configuration for compression tasks.
-
-```zig
-pub const CompressionTaskConfig = struct {
-    /// Directory containing files to compress
-    path: []const u8,
-    /// File pattern to match
-    pattern: []const u8 = "*.log",
-    /// Minimum file age before compressing (days)
-    min_age_days: u32 = 1,
-    /// Delete originals after compression
-    delete_originals: bool = true,
-    /// Skip already compressed files
-    skip_compressed: bool = true,
+    pub const CronSchedule = struct {
+        minute: ?u8 = null,
+        hour: ?u8 = null,
+        day_of_month: ?u8 = null,
+        month: ?u8 = null,
+        day_of_week: ?u8 = null,
+    };
 };
 ```
 
@@ -218,14 +220,11 @@ Statistics for scheduled operations.
 
 ```zig
 pub const SchedulerStats = struct {
-    // Note: Atomic counters are architecture-dependent (u64 on 64-bit targets, u32 on 32-bit targets)
-    tasks_executed: std.atomic.Value(/* architecture-dependent */),
-    tasks_failed: std.atomic.Value(/* architecture-dependent */),
-    files_cleaned: std.atomic.Value(/* architecture-dependent */),
-    files_compressed: std.atomic.Value(/* architecture-dependent */),
-    bytes_freed: std.atomic.Value(/* architecture-dependent */),
-    last_run_timestamp: std.atomic.Value(/* signed architecture-dependent */),
-    total_runtime_ns: std.atomic.Value(/* architecture-dependent */),
+    tasks_executed: u64 = 0,
+    tasks_failed: u64 = 0,
+    files_cleaned: u64 = 0,
+    bytes_freed: u64 = 0,
+    last_run_time: i64 = 0,
 };
 ```
 
@@ -236,14 +235,28 @@ pub const SchedulerStats = struct {
 Create a new scheduler.
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, config: SchedulerConfig) !Scheduler
+pub fn init(allocator: std.mem.Allocator) !*Scheduler
+```
+
+### initWithThreadPool
+
+Create a new scheduler that uses a thread pool for task execution.
+
+```zig
+pub fn initWithThreadPool(allocator: std.mem.Allocator, thread_pool: *ThreadPool) !*Scheduler
 ```
 
 **Parameters:**
 - `allocator`: Memory allocator
-- `config`: Scheduler configuration
+- `thread_pool`: Shared thread pool instance
 
-**Returns:** A new `Scheduler` instance
+### initFromConfig
+
+Create a scheduler from global configuration.
+
+```zig
+pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logs_path: ?[]const u8) !*Scheduler
+```
 
 ### deinit
 
@@ -263,7 +276,7 @@ pub fn start(self: *Scheduler) !void
 
 ### stop
 
-Stop the scheduler gracefully.
+Stop the scheduler gracefully, waiting for pending tasks to complete (with timeout).
 
 ```zig
 pub fn stop(self: *Scheduler) void
@@ -274,13 +287,56 @@ pub fn stop(self: *Scheduler) void
 Add a scheduled task.
 
 ```zig
-pub fn addTask(self: *Scheduler, task: ScheduledTask) !usize
+pub fn addTask(self: *Scheduler, name: []const u8, task_type: TaskType, schedule: Schedule, config: ScheduledTask.TaskConfig) !usize
 ```
 
 **Parameters:**
-- `task`: The task to add
+- `name`: Unique task identifier
+- `task_type`: Type of task
+- `schedule`: Execution schedule
+- `config`: Task configuration
 
 **Returns:** Index of the added task
+
+### setTaskPriority
+
+Set the execution priority for a task.
+
+```zig
+pub fn setTaskPriority(self: *Scheduler, index: usize, priority: ScheduledTask.Priority) void
+```
+
+### setTaskRetryPolicy
+
+Configure retry behavior for a task.
+
+```zig
+pub fn setTaskRetryPolicy(self: *Scheduler, index: usize, policy: ScheduledTask.RetryPolicy) void
+```
+
+### setTaskDependency
+
+Set a dependency for a task (it will only run if the dependency is running).
+
+```zig
+pub fn setTaskDependency(self: *Scheduler, index: usize, dependency_name: []const u8) !void
+```
+
+### getDiskUsage
+
+Get current disk usage percentage for a path.
+
+```zig
+pub fn getDiskUsage(self: *Scheduler, path: []const u8) !u8
+```
+
+### getFreeSpace
+
+Get free space in bytes for a path.
+
+```zig
+pub fn getFreeSpace(self: *Scheduler, path: []const u8) !u64
+```
 
 ### removeTask
 
@@ -330,133 +386,13 @@ Get list of all scheduled tasks.
 pub fn listTasks(self: *const Scheduler) []const ScheduledTask
 ```
 
-## Schedule Helpers
-
-### interval
-
-Create an interval schedule.
-
-```zig
-pub fn interval(seconds: u64) Schedule {
-    return .{
-        .type = .interval,
-        .interval_seconds = seconds,
-    };
-}
-```
-
-### daily
-
-Create a daily schedule.
-
-```zig
-pub fn daily(hour: u8, minute: u8) Schedule {
-    return .{
-        .type = .daily,
-        .hour = hour,
-        .minute = minute,
-    };
-}
-```
-
-### weekly
-
-Create a weekly schedule.
-
-```zig
-pub fn weekly(day_of_week: u8, hour: u8, minute: u8) Schedule {
-    return .{
-        .type = .weekly,
-        .day_of_week = day_of_week,
-        .hour = hour,
-        .minute = minute,
-    };
-}
-```
-
-### everyMinutes
-
-Create a schedule for every N minutes.
-
-```zig
-pub fn everyMinutes(minutes: u64) Schedule {
-    return interval(minutes * 60);
-}
-```
-
-### everyHours
-
-Create a schedule for every N hours.
-
-```zig
-pub fn everyHours(hours: u64) Schedule {
-    return interval(hours * 3600);
-}
-```
-
-## Presets
-
-### dailyCleanup
-
-Daily cleanup at 2 AM.
-
-```zig
-pub fn dailyCleanup(path: []const u8) ScheduledTask {
-    return .{
-        .name = "daily_cleanup",
-        .task_type = .cleanup,
-        .schedule = Schedule.daily(2, 0),
-        .config = .{ .cleanup = .{
-            .path = path,
-            .max_age_days = 30,
-            .pattern = "*.log",
-        }},
-    };
-}
-```
-
-### hourlyCompression
-
-Hourly log compression.
-
-```zig
-pub fn hourlyCompression(path: []const u8) ScheduledTask {
-    return .{
-        .name = "hourly_compression",
-        .task_type = .compression,
-        .schedule = Schedule.everyHours(1),
-        .config = .{ .compression = .{
-            .path = path,
-            .min_age_days = 0,
-        }},
-    };
-}
-```
-
-### weeklyDeepClean
-
-Weekly deep cleanup.
-
-```zig
-pub fn weeklyDeepClean(path: []const u8) ScheduledTask {
-    return .{
-        .name = "weekly_deep_clean",
-        .task_type = .cleanup,
-        .schedule = Schedule.weekly(0, 3, 0), // Sunday 3 AM
-        .config = .{ .cleanup = .{
-            .path = path,
-            .max_age_days = 7,
-            .include_compressed = true,
-        }},
-    };
-}
-```
-
 ## Usage Example
 
 ```zig
 const std = @import("std");
 const logly = @import("logly");
+const Scheduler = logly.Scheduler;
+const SchedulerPresets = logly.SchedulerPresets;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -464,34 +400,28 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create scheduler
-    var scheduler = try logly.Scheduler.init(allocator, .{
-        .check_interval_ms = 60000,
-        .auto_start = false,
-    });
+    var scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    // Add daily cleanup task
-    _ = try scheduler.addTask(.{
-        .name = "log_cleanup",
-        .task_type = .cleanup,
-        .schedule = logly.Schedule.daily(2, 30),
-        .config = .{ .cleanup = .{
-            .path = "logs",
-            .max_age_days = 30,
-            .pattern = "*.log",
-        }},
-    });
+    // Add daily cleanup task using Presets
+    _ = try scheduler.addTask(
+        "log_cleanup",
+        .cleanup,
+        SchedulerPresets.dailyAt(2, 30), // Daily at 2:30 AM
+        SchedulerPresets.dailyCleanup("logs", 30), // Config helper
+    );
 
-    // Add hourly compression
-    _ = try scheduler.addTask(.{
-        .name = "log_compression",
-        .task_type = .compression,
-        .schedule = logly.Schedule.everyHours(1),
-        .config = .{ .compression = .{
+    // Add hourly compression manually
+    _ = try scheduler.addTask(
+        "log_compression",
+        .compression,
+        .{ .interval = 3600 * 1000 }, // Every hour (ms)
+        .{
             .path = "logs",
-            .min_age_days = 1,
-        }},
-    });
+            .min_age_seconds = 3600, // Compress files older than 1 hour
+            .file_pattern = "*.log",
+        },
+    );
 
     // Start scheduler
     try scheduler.start();
@@ -500,20 +430,14 @@ pub fn main() !void {
     // Check stats periodically
     const stats = scheduler.getStats();
     std.debug.print("Tasks executed: {d}\n", .{
-        stats.tasks_executed.load(.monotonic),
+        stats.tasks_executed,
     });
 }
 ```
 
-## See Also
-
-- [Compression API](compression.md) - Log compression
-- [Rotation Guide](../guide/rotation.md) - Log rotation
-- [Configuration Guide](../guide/configuration.md) - Full configuration options
-
 ## Aliases
 
-The Scheduler provides convenience aliases:
+The Scheduler module provides convenience aliases:
 
 | Alias | Method |
 |-------|--------|
@@ -528,50 +452,30 @@ The Scheduler provides convenience aliases:
 - `isRunning() bool` - Returns true if scheduler is running
 - `hasTasks() bool` - Returns true if any tasks are scheduled
 
-## Extended Presets
+## SchedulerPresets
 
-### SchedulerPresets
+Helper functions for creating common schedules and task configurations.
 
 ```zig
 pub const SchedulerPresets = struct {
-    /// Every 5 minutes
-    pub fn every5Minutes() Schedule;
-    
-    /// Every 15 minutes
-    pub fn every15Minutes() Schedule;
-    
-    /// Every 30 minutes
-    pub fn every30Minutes() Schedule;
-    
-    /// Every 6 hours
-    pub fn every6Hours() Schedule;
-    
-    /// Every 12 hours
-    pub fn every12Hours() Schedule;
-    
-    /// Every hour
-    pub fn everyHour() Schedule;
-    
-    /// Daily at midnight
-    pub fn dailyMidnight() Schedule;
-    
-    /// Daily at 2 AM (maintenance window)
-    pub fn dailyMaintenance() Schedule;
-    
-    /// Daily at specific time
+    // Schedules
+    pub fn hourlyCompression() Schedule;
+    pub fn everyMinutes(n: u64) Schedule;
     pub fn dailyAt(hour: u8, minute: u8) Schedule;
-    
-    /// Daily cleanup with custom config
+    pub fn every30Minutes() Schedule;
+    pub fn every6Hours() Schedule;
+    pub fn every12Hours() Schedule;
+    pub fn dailyMidnight() Schedule;
+    pub fn dailyMaintenance() Schedule;
+
+    // Task Configurations
     pub fn dailyCleanup(path: []const u8, max_age_days: u64) TaskConfig;
-    
-    /// Hourly compression
-    pub fn hourlyCompression(path: []const u8) TaskConfig;
-    
-    /// Creates a scheduled log sink configuration
-    pub fn createScheduledSink(file_path: []const u8, rotation: []const u8) SinkConfig;
-    
-    /// Weekly cleanup config
-    pub fn weeklyCleanupConfig(path: []const u8, max_age_days: u64) TaskConfig;
 };
 ```
+
+## See Also
+
+- [Compression API](compression.md) - Log compression
+- [Rotation Guide](../guide/rotation.md) - Log rotation
+- [Configuration Guide](../guide/configuration.md) - Full configuration options
 

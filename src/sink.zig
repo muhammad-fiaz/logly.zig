@@ -7,6 +7,7 @@ const Record = @import("record.zig").Record;
 const Formatter = @import("formatter.zig").Formatter;
 const Rotation = @import("rotation.zig").Rotation;
 const Network = @import("network.zig");
+const DateFormatting = @import("date_formatting.zig");
 
 // Helper writer for compression that adapts ArrayList to std.io.Writer interface
 const SinkWriter = struct {
@@ -205,6 +206,10 @@ pub const SinkConfig = struct {
 
     /// Number of rotated files to keep.
     retention: ?usize = null,
+
+    /// Custom naming format for rotated files (e.g., "{base}-{date}{ext}").
+    /// Placeholders: base, ext, date, time, timestamp, iso
+    naming_format: ?[]const u8 = null,
 
     /// Sink-specific log level. Overrides the global level if set.
     level: ?Level = null,
@@ -405,30 +410,7 @@ pub const SinkConfig = struct {
     }
 };
 
-fn parseSize(s: []const u8) ?u64 {
-    var end: usize = 0;
-    while (end < s.len and std.ascii.isDigit(s[end])) : (end += 1) {}
-
-    if (end == 0) return null;
-
-    const num = std.fmt.parseInt(u64, s[0..end], 10) catch return null;
-
-    // Skip whitespace
-    var unit_start = end;
-    while (unit_start < s.len and std.ascii.isWhitespace(s[unit_start])) : (unit_start += 1) {}
-
-    if (unit_start >= s.len) return num; // Default to bytes if no unit
-
-    const unit = s[unit_start..];
-
-    if (std.ascii.eqlIgnoreCase(unit, "B")) return num;
-    if (std.ascii.eqlIgnoreCase(unit, "KB") or std.ascii.eqlIgnoreCase(unit, "K")) return num * 1024;
-    if (std.ascii.eqlIgnoreCase(unit, "MB") or std.ascii.eqlIgnoreCase(unit, "M")) return num * 1024 * 1024;
-    if (std.ascii.eqlIgnoreCase(unit, "GB") or std.ascii.eqlIgnoreCase(unit, "G")) return num * 1024 * 1024 * 1024;
-    if (std.ascii.eqlIgnoreCase(unit, "TB") or std.ascii.eqlIgnoreCase(unit, "T")) return num * 1024 * 1024 * 1024 * 1024;
-
-    return num;
-}
+const Utils = @import("utils.zig");
 
 pub const Sink = struct {
     /// Sink statistics for monitoring and diagnostics.
@@ -553,7 +535,7 @@ pub const Sink = struct {
 
                 var size_limit = config.size_limit;
                 if (size_limit == null and config.size_limit_str != null) {
-                    size_limit = parseSize(config.size_limit_str.?);
+                    size_limit = Utils.parseSize(config.size_limit_str.?);
                 }
 
                 if (config.rotation != null or size_limit != null) {
@@ -564,6 +546,13 @@ pub const Sink = struct {
                         size_limit,
                         config.retention,
                     );
+
+                    if (config.compression.enabled) {
+                        try sink.rotation.?.withCompression(config.compression);
+                    }
+                    if (config.naming_format) |fmt| {
+                        try sink.rotation.?.withNamingFormat(fmt);
+                    }
                 }
             }
         }
@@ -606,7 +595,7 @@ pub const Sink = struct {
                 } else if (std.mem.eql(u8, tag, "time")) {
                     try writer.print("{d:0>2}-{d:0>2}-{d:0>2}", .{ hours, minutes, secs });
                 } else {
-                    try formatCustomTime(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs);
+                    try DateFormatting.format(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs);
                 }
                 i = end + 1;
             } else {
@@ -615,37 +604,6 @@ pub const Sink = struct {
             }
         }
         return buf.toOwnedSlice(allocator);
-    }
-
-    fn formatCustomTime(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64) !void {
-        var i: usize = 0;
-        while (i < fmt.len) {
-            if (i + 4 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 4], "YYYY")) {
-                try writer.print("{d:0>4}", .{year});
-                i += 4;
-            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "YY")) {
-                try writer.print("{d:0>2}", .{@mod(year, 100)});
-                i += 2;
-            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "MM")) {
-                try writer.print("{d:0>2}", .{month});
-                i += 2;
-            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "DD")) {
-                try writer.print("{d:0>2}", .{day});
-                i += 2;
-            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "HH")) {
-                try writer.print("{d:0>2}", .{hour});
-                i += 2;
-            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "mm")) {
-                try writer.print("{d:0>2}", .{minute});
-                i += 2;
-            } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "ss")) {
-                try writer.print("{d:0>2}", .{second});
-                i += 2;
-            } else {
-                try writer.writeByte(fmt[i]);
-                i += 1;
-            }
-        }
     }
 
     pub fn deinit(self: *Sink) void {
@@ -1013,8 +971,7 @@ pub const Sink = struct {
                 const module = record.module orelse return false;
                 var found = false;
                 for (modules) |m| {
-                    if (std.mem.indexOf(u8, record.message, m) != null or
-                        std.mem.startsWith(u8, module, m) or
+                    if (std.mem.startsWith(u8, module, m) or
                         std.mem.eql(u8, module, m))
                     {
                         found = true;
@@ -1062,3 +1019,38 @@ pub const Sink = struct {
         return true;
     }
 };
+
+test "sink parseSize" {
+    try std.testing.expectEqual(@as(?u64, 1024), Utils.parseSize("1024"));
+    try std.testing.expectEqual(@as(?u64, 1024), Utils.parseSize("1KB"));
+    try std.testing.expectEqual(@as(?u64, 1024 * 1024), Utils.parseSize("1MB"));
+    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 10), Utils.parseSize("10M"));
+    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024), Utils.parseSize("1GB"));
+    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024 * 5), Utils.parseSize("5G"));
+}
+
+test "sink filtering" {
+    const allocator = std.testing.allocator;
+    var sink_cfg = SinkConfig.default();
+    sink_cfg.filter = .{
+        .include_modules = &[_][]const u8{"auth"},
+        .exclude_messages = &[_][]const u8{"password"},
+    };
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer sink.deinit();
+
+    var record = Record.init(allocator, .info, "user logged in");
+    defer record.deinit();
+    record.module = "auth.service";
+    record.timestamp = 0;
+
+    try std.testing.expect(sink.applyFilterConfig(&record));
+
+    record.module = "database";
+    try std.testing.expect(!sink.applyFilterConfig(&record));
+
+    record.module = "auth";
+    record.message = "inputted password was wrong";
+    try std.testing.expect(!sink.applyFilterConfig(&record));
+}

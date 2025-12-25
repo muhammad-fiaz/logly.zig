@@ -33,7 +33,7 @@ head:
       content: "Production-ready structured logging with a clean, simple API. Features async I/O, file rotation, JSON output, and more."
   - - meta
     - property: og:image
-      content: https://muhammad-fiaz.github.io/logly.zig/logo.png
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
   - - meta
     - property: og:url
       content: https://muhammad-fiaz.github.io/logly.zig/
@@ -51,7 +51,7 @@ head:
       content: "Production-ready structured logging with a clean, simple API. Features async I/O, file rotation, JSON output, and more."
   - - meta
     - name: twitter:image
-      content: https://muhammad-fiaz.github.io/logly.zig/logo.png
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
   - - script
     - type: application/ld+json
     - children: |
@@ -249,7 +249,7 @@ pub fn main() !void {
 
 ## Why Logly.Zig?
 
-- **Production Ready**: Battle-tested features from Rust Logly, reimplemented in Zig
+- **Production Ready**: Battle-tested features, built natively in Zig
 - **Zero Dependencies**: Pure Zig implementation with no external dependencies
 - **Memory Safe**: Compile-time safety guarantees from Zig
 - **Cross-Platform**: Works on Linux, Windows, macOS, and more

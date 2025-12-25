@@ -1,3 +1,18 @@
+---
+title: Context Binding
+description: Use context binding in Logly.zig to attach persistent key-value pairs to logs. Track user sessions, request IDs, and system state effortlessly.
+head:
+  - - meta
+    - name: keywords
+      content: context binding, structured logging, request tracking, session id, metadata, persistent context, zig logging
+  - - meta
+    - property: og:title
+      content: Context Binding | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Context Binding
 
 Context binding allows you to attach persistent key-value pairs to your logger. These values are automatically included in every log message, which is incredibly useful for tracking requests, users, or sessions.

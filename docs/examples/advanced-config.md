@@ -1,3 +1,15 @@
+---
+title: Advanced Configuration Example
+description: Example of advanced Logly.zig configuration including custom log formats, timestamps, timezone, colors, enterprise features, and multiple sinks with different settings.
+head:
+  - - meta
+    - name: keywords
+      content: advanced config, custom format, timezone, enterprise features, multiple sinks, log format
+  - - meta
+    - property: og:title
+      content: Advanced Configuration Example | Logly.zig
+---
+
 # Advanced Configuration
 
 This example demonstrates how to leverage advanced configuration options including custom log formats, timestamps, timezone settings, colors, and enterprise features.

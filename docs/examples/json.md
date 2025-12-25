@@ -1,3 +1,15 @@
+---
+title: JSON Logging Example
+description: Example of structured JSON logging with Logly.zig. Output logs in JSON format for ELK, Datadog, CloudWatch with context binding and pretty printing.
+head:
+  - - meta
+    - name: keywords
+      content: json logging example, structured logging, elk stack, log aggregation, context binding, pretty json
+  - - meta
+    - property: og:title
+      content: JSON Logging Example | Logly.zig
+---
+
 # JSON Logging
 
 This example demonstrates how to enable JSON logging with colors and use context binding. JSON logging is essential for modern log aggregation systems like ELK, Datadog, or CloudWatch.

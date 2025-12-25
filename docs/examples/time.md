@@ -1,3 +1,18 @@
+---
+title: Time Formatting Example
+description: Example of customizing timestamp formatting and timezones in Logly.zig. Switch between local and UTC time with standard date format strings.
+head:
+  - - meta
+    - name: keywords
+      content: time format, timestamp, timezone, utc local, date format, time configuration
+  - - meta
+    - property: og:title
+      content: Time Formatting Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Time Formatting
 
 This example demonstrates how to customize timestamp formatting and timezones. Logly allows you to use standard date format strings or switch between Local and UTC time.

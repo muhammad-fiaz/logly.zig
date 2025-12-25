@@ -200,7 +200,7 @@ pub const Logger = struct {
         }
 
         if (logger.config.check_for_updates) {
-            logger.update_thread = UpdateChecker.checkForUpdates(allocator);
+            logger.update_thread = UpdateChecker.checkForUpdates(allocator, null);
         }
 
         return logger;
@@ -254,7 +254,7 @@ pub const Logger = struct {
         }
 
         if (config.check_for_updates) {
-            logger.update_thread = UpdateChecker.checkForUpdates(allocator);
+            logger.update_thread = UpdateChecker.checkForUpdates(allocator, logger.thread_pool);
         }
 
         return logger;

@@ -1,3 +1,15 @@
+---
+title: Logging Metrics Example
+description: Example of collecting logging metrics with Logly.zig. Track record counts, bytes written, error rates, and per-level statistics for observability.
+head:
+  - - meta
+    - name: keywords
+      content: metrics example, logging statistics, performance monitoring, record counts, error tracking, observability
+  - - meta
+    - property: og:title
+      content: Logging Metrics Example | Logly.zig
+---
+
 # Metrics Example
 
 Collect logging metrics for observability and monitoring.

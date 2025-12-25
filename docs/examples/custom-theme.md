@@ -1,3 +1,18 @@
+---
+title: Custom Theme Example
+description: Example of creating and applying custom color themes in Logly.zig. Override default ANSI colors for each log level and customize output format templates.
+head:
+  - - meta
+    - name: keywords
+      content: custom theme, color theme, ansi theme, log format, template format, theme configuration
+  - - meta
+    - property: og:title
+      content: Custom Theme Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Custom Theme Example
 
 This example demonstrates how to create and apply a custom color theme to your logger. This allows you to override the default ANSI colors for each log level.

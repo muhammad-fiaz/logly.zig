@@ -1,3 +1,15 @@
+---
+title: Metrics API Reference
+description: API reference for Logly.zig Metrics struct. Track record counts, bytes written, error rates, per-level statistics, and sink throughput with atomic counters.
+head:
+  - - meta
+    - name: keywords
+      content: metrics api, logging metrics, performance counters, statistics api, throughput tracking, observability
+  - - meta
+    - property: og:title
+      content: Metrics API Reference | Logly.zig
+---
+
 # Metrics API
 
 The `Metrics` struct provides comprehensive observability into the logging system's performance and health.

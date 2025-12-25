@@ -1,6 +1,15 @@
+---
+title: Distributed Tracing Guide
+description: Implement distributed tracing with Logly.zig using OpenTelemetry-compatible trace and span IDs. Correlate logs across microservices and track request flows through your system.
+head:
+  - - meta
+    - name: keywords
+      content: distributed tracing, trace id, span id, correlation id, opentelemetry, microservices logging, request tracking, APM
+---
+
 # Distributed Tracing
 
-Logly-Zig v0.0.9 provides built-in support for distributed tracing, enabling you to correlate logs across microservices and track request flows through your system.
+Logly.zig provides built-in support for distributed tracing, enabling you to correlate logs across microservices and track request flows through your system.
 
 ## Overview
 

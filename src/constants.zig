@@ -135,3 +135,143 @@ pub const NetworkConstants = struct {
     /// Default send timeout in milliseconds.
     pub const send_timeout_ms: u64 = 1000;
 };
+
+/// Rules system constants for diagnostic message formatting.
+pub const RulesConstants = struct {
+    /// Default indentation for rule messages.
+    pub const default_indent: []const u8 = "    ";
+    /// Default prefix character for rule messages.
+    pub const default_prefix: []const u8 = "↳";
+    /// Default prefix character for ASCII mode.
+    pub const default_prefix_ascii: []const u8 = "|--";
+    /// Maximum number of rules allowed by default.
+    pub const default_max_rules: usize = 1000;
+    /// Maximum messages per rule allowed by default.
+    pub const default_max_messages: usize = 10;
+
+    /// Unicode prefixes for each message category.
+    pub const Prefixes = struct {
+        pub const cause: []const u8 = "⦿ cause:";
+        pub const fix: []const u8 = "✦ fix:";
+        pub const suggest: []const u8 = "→ suggest:";
+        pub const action: []const u8 = "▸ action:";
+        pub const docs: []const u8 = "📖 docs:";
+        pub const report: []const u8 = "🔗 report:";
+        pub const note: []const u8 = "ℹ note:";
+        pub const caution: []const u8 = "⚠ caution:";
+        pub const perf: []const u8 = "⚡ perf:";
+        pub const security: []const u8 = "🛡 security:";
+        pub const custom: []const u8 = "•";
+    };
+
+    /// ASCII-only prefixes for each message category.
+    pub const PrefixesAscii = struct {
+        pub const cause: []const u8 = "[CAUSE]";
+        pub const fix: []const u8 = "[FIX]";
+        pub const suggest: []const u8 = "[SUGGEST]";
+        pub const action: []const u8 = "[ACTION]";
+        pub const docs: []const u8 = "[DOCS]";
+        pub const report: []const u8 = "[REPORT]";
+        pub const note: []const u8 = "[NOTE]";
+        pub const caution: []const u8 = "[CAUTION]";
+        pub const perf: []const u8 = "[PERF]";
+        pub const security: []const u8 = "[SECURITY]";
+        pub const custom: []const u8 = "[*]";
+    };
+
+    /// ANSI color codes for each message category.
+    pub const Colors = struct {
+        pub const cause: []const u8 = "91;1"; // Bright red
+        pub const fix: []const u8 = "96;1"; // Bright cyan
+        pub const suggest: []const u8 = "93;1"; // Bright yellow
+        pub const action: []const u8 = "91;1"; // Bold red
+        pub const docs: []const u8 = "35"; // Magenta
+        pub const report: []const u8 = "33"; // Yellow
+        pub const note: []const u8 = "37"; // White
+        pub const caution: []const u8 = "33"; // Yellow
+        pub const perf: []const u8 = "36"; // Cyan
+        pub const security: []const u8 = "95;1"; // Bright magenta
+        pub const custom: []const u8 = "37"; // White
+    };
+};
+
+
+test "atomic types exist" {
+    // Verify atomic types are defined for cross-platform compatibility
+    try std.testing.expect(@sizeOf(AtomicUnsigned) > 0);
+    try std.testing.expect(@sizeOf(AtomicSigned) > 0);
+    try std.testing.expect(@sizeOf(NativeUint) > 0);
+    try std.testing.expect(@sizeOf(NativeInt) > 0);
+}
+
+test "buffer sizes are reasonable" {
+    try std.testing.expect(BufferSizes.message > 0);
+    try std.testing.expect(BufferSizes.format >= BufferSizes.message);
+    try std.testing.expect(BufferSizes.sink >= BufferSizes.format);
+    try std.testing.expect(BufferSizes.max_message >= BufferSizes.sink);
+}
+
+test "thread defaults are reasonable" {
+    try std.testing.expect(ThreadDefaults.stack_size > 0);
+    try std.testing.expect(ThreadDefaults.queue_size > 0);
+    try std.testing.expect(ThreadDefaults.max_tasks > 0);
+    try std.testing.expect(ThreadDefaults.wait_timeout_ns > 0);
+}
+
+test "level constants are valid" {
+    try std.testing.expect(LevelConstants.count > 0);
+    try std.testing.expect(LevelConstants.min_priority < LevelConstants.max_priority);
+    try std.testing.expect(LevelConstants.default_priority >= LevelConstants.min_priority);
+    try std.testing.expect(LevelConstants.default_priority <= LevelConstants.max_priority);
+}
+
+test "time constants are correct" {
+    try std.testing.expectEqual(@as(u64, 1000), TimeConstants.ms_per_second);
+    try std.testing.expectEqual(@as(u64, 1_000_000), TimeConstants.us_per_second);
+    try std.testing.expectEqual(@as(u64, 1_000_000_000), TimeConstants.ns_per_second);
+}
+
+test "rotation constants are reasonable" {
+    try std.testing.expect(RotationConstants.default_max_size > 0);
+    try std.testing.expect(RotationConstants.default_max_files > 0);
+    try std.testing.expect(RotationConstants.compressed_ext.len > 0);
+}
+
+test "network constants are reasonable" {
+    try std.testing.expect(NetworkConstants.tcp_buffer_size > 0);
+    try std.testing.expect(NetworkConstants.udp_max_packet > 0);
+    try std.testing.expect(NetworkConstants.connect_timeout_ms > 0);
+    try std.testing.expect(NetworkConstants.send_timeout_ms > 0);
+}
+
+test "rules constants exist" {
+    // Default values
+    try std.testing.expect(RulesConstants.default_indent.len > 0);
+    try std.testing.expect(RulesConstants.default_prefix.len > 0);
+    try std.testing.expect(RulesConstants.default_prefix_ascii.len > 0);
+    try std.testing.expect(RulesConstants.default_max_rules > 0);
+    try std.testing.expect(RulesConstants.default_max_messages > 0);
+
+    // Unicode prefixes
+    try std.testing.expect(RulesConstants.Prefixes.cause.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.fix.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.suggest.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.action.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.docs.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.report.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.note.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.caution.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.perf.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.security.len > 0);
+    try std.testing.expect(RulesConstants.Prefixes.custom.len > 0);
+
+    // ASCII prefixes
+    try std.testing.expect(RulesConstants.PrefixesAscii.cause.len > 0);
+    try std.testing.expect(RulesConstants.PrefixesAscii.fix.len > 0);
+    try std.testing.expect(RulesConstants.PrefixesAscii.security.len > 0);
+
+    // Colors
+    try std.testing.expect(RulesConstants.Colors.cause.len > 0);
+    try std.testing.expect(RulesConstants.Colors.fix.len > 0);
+    try std.testing.expect(RulesConstants.Colors.security.len > 0);
+}

@@ -1,3 +1,15 @@
+---
+title: Distributed Tracing Example
+description: Example of distributed tracing with Logly.zig. Track requests across microservices with trace IDs, span IDs, correlation IDs, and OpenTelemetry compatibility.
+head:
+  - - meta
+    - name: keywords
+      content: tracing example, distributed tracing, trace id, span id, microservices, opentelemetry, request tracking
+  - - meta
+    - property: og:title
+      content: Distributed Tracing Example | Logly.zig
+---
+
 # Tracing Example
 
 Distributed tracing support for tracking requests across services.

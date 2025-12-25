@@ -1,3 +1,12 @@
+---
+title: Log Compression Guide
+description: Learn how to compress log files with Logly.zig using DEFLATE, GZIP, or ZLIB algorithms. Covers automatic rotation compression, background processing, streaming mode, and performance optimization.
+head:
+  - - meta
+    - name: keywords
+      content: log compression, gzip logs, zlib compression, log archiving, storage optimization, compressed logging, log backup
+---
+
 # Compression Guide
 
 This guide covers log compression in Logly, including automatic and manual compression, configuration options, and best practices.

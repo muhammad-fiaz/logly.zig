@@ -18,7 +18,7 @@ pub const Rules = struct {
     enabled: bool = false,
     mutex: std.Thread.Mutex = .{},
     stats: RulesStats = .{},
-    config: InternalRulesConfig = .{},
+    config: RulesConfig = .{},
 
     // Callbacks
     on_rule_matched: ?*const fn (*const Rule, *const Record) void = null,
@@ -377,33 +377,6 @@ pub const Rules = struct {
         self.config.max_rules = rules_cfg.max_rules;
     }
 
-    /// Internal RulesConfig struct (local copy of settings).
-    pub const InternalRulesConfig = struct {
-        use_unicode: bool = true,
-        enable_colors: bool = true,
-        show_rule_id: bool = false,
-        indent: []const u8 = "    ",
-        message_prefix: []const u8 = "->",
-        include_in_json: bool = true,
-        max_rules: usize = 1000,
-
-        pub fn minimal() InternalRulesConfig {
-            return .{ .use_unicode = true, .enable_colors = true };
-        }
-
-        pub fn production() InternalRulesConfig {
-            return .{ .use_unicode = false, .enable_colors = false, .show_rule_id = false };
-        }
-
-        pub fn development() InternalRulesConfig {
-            return .{ .use_unicode = true, .enable_colors = true, .show_rule_id = true };
-        }
-
-        pub fn ascii() InternalRulesConfig {
-            return .{ .use_unicode = false, .enable_colors = true };
-        }
-    };
-
     // Initialization
     pub fn init(allocator: std.mem.Allocator) Rules {
         return .{
@@ -457,6 +430,18 @@ pub const Rules = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.config.enable_colors = enable_colors;
+    }
+
+    /// Update configuration at runtime.
+    pub fn setConfig(self: *Rules, new_config: RulesConfig) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.config = new_config;
+    }
+
+    /// Get current configuration.
+    pub fn getConfig(self: *const Rules) RulesConfig {
+        return self.config;
     }
 
     // Callback setters
@@ -1195,4 +1180,264 @@ test "rules addOrUpdate" {
     if (rules.getById(1)) |rule| {
         try std.testing.expectEqual(Rules.MessageCategory.solution_suggestion, rule.messages[0].category);
     }
+}
+
+test "rules config presets" {
+    // Test development preset
+    const dev = Rules.RulesConfig.development();
+    try std.testing.expect(dev.enabled);
+    try std.testing.expect(dev.use_unicode);
+    try std.testing.expect(dev.enable_colors);
+    try std.testing.expect(dev.show_rule_id);
+    try std.testing.expect(dev.verbose);
+
+    // Test production preset
+    const prod = Rules.RulesConfig.production();
+    try std.testing.expect(prod.enabled);
+    try std.testing.expect(!prod.use_unicode);
+    try std.testing.expect(!prod.enable_colors);
+    try std.testing.expect(!prod.show_rule_id);
+    try std.testing.expect(!prod.verbose);
+
+    // Test ASCII preset
+    const ascii = Rules.RulesConfig.ascii();
+    try std.testing.expect(ascii.enabled);
+    try std.testing.expect(!ascii.use_unicode);
+    try std.testing.expect(ascii.enable_colors);
+
+    // Test disabled preset
+    const disabled = Rules.RulesConfig.disabled();
+    try std.testing.expect(!disabled.enabled);
+
+    // Test silent preset
+    const silent = Rules.RulesConfig.silent();
+    try std.testing.expect(silent.enabled);
+    try std.testing.expect(!silent.console_output);
+    try std.testing.expect(!silent.file_output);
+
+    // Test console-only preset
+    const console_only = Rules.RulesConfig.consoleOnly();
+    try std.testing.expect(console_only.enabled);
+    try std.testing.expect(console_only.console_output);
+    try std.testing.expect(!console_only.file_output);
+
+    // Test file-only preset
+    const file_only = Rules.RulesConfig.fileOnly();
+    try std.testing.expect(file_only.enabled);
+    try std.testing.expect(!file_only.console_output);
+    try std.testing.expect(file_only.file_output);
+}
+
+test "rules config advanced fields" {
+    // Test default values
+    const default_config = Rules.RulesConfig{};
+    try std.testing.expectEqual(false, default_config.enabled);
+    try std.testing.expectEqual(true, default_config.client_rules_enabled);
+    try std.testing.expectEqual(true, default_config.builtin_rules_enabled);
+    try std.testing.expectEqual(true, default_config.use_unicode);
+    try std.testing.expectEqual(true, default_config.enable_colors);
+    try std.testing.expectEqual(false, default_config.show_rule_id);
+    try std.testing.expectEqual(false, default_config.include_rule_id_prefix);
+    try std.testing.expectEqual(true, default_config.include_in_json);
+    try std.testing.expectEqual(@as(usize, 1000), default_config.max_rules);
+    try std.testing.expectEqual(@as(usize, 10), default_config.max_messages_per_rule);
+    try std.testing.expectEqual(true, default_config.console_output);
+    try std.testing.expectEqual(true, default_config.file_output);
+    try std.testing.expectEqual(false, default_config.verbose);
+    try std.testing.expectEqual(false, default_config.sort_by_severity);
+}
+
+test "rules initWithConfig" {
+    const config = Rules.RulesConfig.development();
+    var rules = Rules.initWithConfig(std.testing.allocator, config);
+    defer rules.deinit();
+
+    // Verify config was applied
+    try std.testing.expect(rules.config.use_unicode);
+    try std.testing.expect(rules.config.enable_colors);
+    try std.testing.expect(rules.config.show_rule_id);
+    try std.testing.expect(rules.config.verbose);
+}
+
+test "rules setConfig and getConfig" {
+    var rules = Rules.init(std.testing.allocator);
+    defer rules.deinit();
+
+    // Get initial config
+    const initial = rules.getConfig();
+    try std.testing.expect(initial.use_unicode); // default is true
+
+    // Set new config
+    var new_config = Rules.RulesConfig{};
+    new_config.use_unicode = false;
+    new_config.enable_colors = false;
+    new_config.verbose = true;
+    rules.setConfig(new_config);
+
+    // Verify config was updated
+    const updated = rules.getConfig();
+    try std.testing.expect(!updated.use_unicode);
+    try std.testing.expect(!updated.enable_colors);
+    try std.testing.expect(updated.verbose);
+}
+
+test "rules message category prefixes" {
+    // Unicode prefixes
+    try std.testing.expect(std.mem.indexOf(u8, Rules.MessageCategory.error_analysis.prefix(), "cause") != null);
+    try std.testing.expect(std.mem.indexOf(u8, Rules.MessageCategory.solution_suggestion.prefix(), "fix") != null);
+    try std.testing.expect(std.mem.indexOf(u8, Rules.MessageCategory.best_practice.prefix(), "suggest") != null);
+    try std.testing.expect(std.mem.indexOf(u8, Rules.MessageCategory.documentation_link.prefix(), "docs") != null);
+
+    // ASCII prefixes (lowercase)
+    try std.testing.expect(std.mem.indexOf(u8, Rules.MessageCategory.error_analysis.prefixAscii(), "cause") != null);
+    try std.testing.expect(std.mem.indexOf(u8, Rules.MessageCategory.solution_suggestion.prefixAscii(), "fix") != null);
+}
+
+test "rules message category colors" {
+    // Test default colors exist
+    try std.testing.expect(Rules.MessageCategory.error_analysis.defaultColor().len > 0);
+    try std.testing.expect(Rules.MessageCategory.solution_suggestion.defaultColor().len > 0);
+    try std.testing.expect(Rules.MessageCategory.security_notice.defaultColor().len > 0);
+}
+
+test "rules message all builders" {
+    // Test all message builders
+    const cause = Rules.RuleMessage.cause("cause message");
+    try std.testing.expectEqual(Rules.MessageCategory.error_analysis, cause.category);
+
+    const fix = Rules.RuleMessage.fix("fix message");
+    try std.testing.expectEqual(Rules.MessageCategory.solution_suggestion, fix.category);
+
+    const suggest = Rules.RuleMessage.suggest("suggest message");
+    try std.testing.expectEqual(Rules.MessageCategory.best_practice, suggest.category);
+
+    const action = Rules.RuleMessage.action("action message");
+    try std.testing.expectEqual(Rules.MessageCategory.action_required, action.category);
+
+    const note = Rules.RuleMessage.note("note message");
+    try std.testing.expectEqual(Rules.MessageCategory.general_information, note.category);
+
+    const caution = Rules.RuleMessage.caution("caution message");
+    try std.testing.expectEqual(Rules.MessageCategory.warning_explanation, caution.category);
+
+    const perf = Rules.RuleMessage.perf("perf message");
+    try std.testing.expectEqual(Rules.MessageCategory.performance_tip, perf.category);
+
+    const security = Rules.RuleMessage.security("security message");
+    try std.testing.expectEqual(Rules.MessageCategory.security_notice, security.category);
+
+    const docs = Rules.RuleMessage.docs("Title", "https://example.com");
+    try std.testing.expectEqual(Rules.MessageCategory.documentation_link, docs.category);
+    try std.testing.expect(docs.url != null);
+    try std.testing.expect(docs.title != null);
+
+    const report = Rules.RuleMessage.report("Bug Report", "https://github.com/example/issues");
+    try std.testing.expectEqual(Rules.MessageCategory.bug_report, report.category);
+    try std.testing.expect(report.url != null);
+}
+
+test "rules level match builders" {
+    // Test level match builders
+    const exact = Rules.LevelMatch.level(.err);
+    try std.testing.expectEqual(Level.err, exact.exact);
+
+    const errors = Rules.LevelMatch.errors();
+    try std.testing.expectEqual(@as(u8, 40), errors.min_priority);
+
+    const warnings = Rules.LevelMatch.warnings();
+    try std.testing.expectEqual(@as(u8, 30), warnings.min_priority);
+
+    const all = Rules.LevelMatch.all();
+    _ = all.any; // Just check it compiles
+}
+
+test "rules once-firing behavior" {
+    var rules = Rules.init(std.testing.allocator);
+    defer rules.deinit();
+    rules.enable();
+
+    const messages = [_]Rules.RuleMessage{
+        .{ .category = .error_analysis, .message = "Test" },
+    };
+
+    try rules.add(.{
+        .id = 1,
+        .once = true,
+        .level_match = .{ .exact = .err },
+        .messages = &messages,
+    });
+
+    var record = Record.init(std.testing.allocator, .err, "Test");
+    defer record.deinit();
+
+    // First evaluation should match
+    const result1 = rules.evaluate(&record);
+    try std.testing.expect(result1 != null);
+    if (result1) |msgs| std.testing.allocator.free(msgs);
+
+    // Second evaluation should not match (once = true)
+    const result2 = rules.evaluate(&record);
+    try std.testing.expect(result2 == null);
+
+    // Reset once-fired status
+    rules.resetOnceFired();
+
+    // Should match again after reset
+    const result3 = rules.evaluate(&record);
+    try std.testing.expect(result3 != null);
+    if (result3) |msgs| std.testing.allocator.free(msgs);
+}
+
+test "rules formatting with config" {
+    var rules = Rules.initWithConfig(std.testing.allocator, Rules.RulesConfig.development());
+    defer rules.deinit();
+
+    const messages = [_]Rules.RuleMessage{
+        .{ .category = .error_analysis, .message = "Error occurred" },
+        .{ .category = .solution_suggestion, .message = "Try this fix" },
+    };
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(std.testing.allocator);
+
+    // Test with colors enabled
+    try rules.formatMessages(&messages, buf.writer(std.testing.allocator), true);
+    try std.testing.expect(buf.items.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Error occurred") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Try this fix") != null);
+}
+
+test "rules stats reset" {
+    var rules = Rules.init(std.testing.allocator);
+    defer rules.deinit();
+    rules.enable();
+
+    const messages = [_]Rules.RuleMessage{
+        .{ .category = .error_analysis, .message = "Test" },
+    };
+
+    try rules.add(.{
+        .id = 1,
+        .level_match = .{ .exact = .err },
+        .messages = &messages,
+    });
+
+    var record = Record.init(std.testing.allocator, .err, "Test");
+    defer record.deinit();
+
+    // Evaluate to generate stats
+    const result = rules.evaluate(&record);
+    if (result) |msgs| std.testing.allocator.free(msgs);
+
+    // Verify stats were updated
+    var stats = rules.getStats();
+    try std.testing.expect(stats.rules_evaluated.load(.monotonic) > 0);
+
+    // Reset stats
+    rules.resetStats();
+
+    // Verify stats were reset
+    stats = rules.getStats();
+    try std.testing.expectEqual(@as(Constants.AtomicUnsigned, 0), stats.rules_evaluated.load(.monotonic));
+    try std.testing.expectEqual(@as(Constants.AtomicUnsigned, 0), stats.rules_matched.load(.monotonic));
 }

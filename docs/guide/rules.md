@@ -1,3 +1,12 @@
+---
+title: Rules System Guide
+description: Learn how to use Logly.zig's Rules System for compiler-style guided diagnostics. Add contextual cause, fix, hint, and documentation messages to your logs automatically based on pattern matching.
+head:
+  - - meta
+    - name: keywords
+      content: logly rules, guided diagnostics, log analysis, error messages, debugging tips, log patterns, contextual logging
+---
+
 # Rules System Guide
 
 The Rules system provides compiler-style guided diagnostics for your log messages. When a log entry matches a rule's conditions, contextual messages are automatically appended to help developers understand issues, find solutions, and access documentation.
@@ -270,27 +279,75 @@ rules.resetOnceFired();  // All once-rules can fire again
 
 ### Global Configuration
 
+The rules system **respects global configuration switches** for console and file output:
+
 ```zig
 var config = logly.Config.default();
 config.rules = .{
-    .enabled = true,              // Master switch
-    .use_unicode = true,          // Use Unicode symbols (vs ASCII)
-    .enable_colors = true,        // ANSI colors in output
-    .show_rule_id = false,        // Show rule IDs for debugging
-    .indent = "    ",             // Indentation for messages
-    .message_prefix = "↳",        // Prefix character
-    .include_in_json = true,      // Include in JSON output
-    .max_rules = 1000,            // Maximum rules allowed
+    // Master switches
+    .enabled = true,                    // Master switch for rules system
+    .client_rules_enabled = true,       // Enable client-defined rules
+    .builtin_rules_enabled = true,      // Enable built-in rules (reserved)
+
+    // Display options
+    .use_unicode = true,                // Use Unicode symbols (vs ASCII)
+    .enable_colors = true,              // ANSI colors in output
+    .show_rule_id = false,              // Show rule IDs for debugging
+    .include_rule_id_prefix = false,    // Include "R0001:" prefix
+    .rule_id_format = "R{d}",           // Custom rule ID format
+    .indent = "    ",                   // Indentation for messages
+    .message_prefix = "↳",              // Prefix character
+
+    // Output control (respects global switches)
+    .console_output = true,             // Output to console (AND'd with global_console_display)
+    .file_output = true,                // Output to files (AND'd with global_file_storage)
+    .include_in_json = true,            // Include in JSON output
+
+    // Advanced options
+    .verbose = false,                   // Full context output
+    .max_rules = 1000,                  // Maximum rules allowed
+    .max_messages_per_rule = 10,        // Max messages to show per match
+    .sort_by_severity = false,          // Order by severity
 };
+```
+
+### Global Switch Integration
+
+Rule output is controlled by **both local and global settings**:
+
+```zig
+// Console output is shown ONLY when BOTH are true:
+// - RulesConfig.console_output = true
+// - Config.global_console_display = true
+
+// File output is written ONLY when BOTH are true:
+// - RulesConfig.file_output = true
+// - Config.global_file_storage = true
+
+// Color output is enabled ONLY when BOTH are true:
+// - RulesConfig.enable_colors = true
+// - Config.global_color_display = true
+```
+
+This allows you to:
+- Disable ALL console output globally without changing rule settings
+- Disable ONLY rule output while keeping other console output
+
+```zig
+// Disable ALL console output (including rules)
+config.global_console_display = false;
+
+// Or disable ONLY rule console output
+config.rules.console_output = false;
 ```
 
 ### Configuration Presets
 
 ```zig
-// Development: colors, Unicode, show rule IDs
+// Development: colors, Unicode, show rule IDs, verbose
 config.rules = logly.Config.RulesConfig.development();
 
-// Production: no colors, minimal output
+// Production: no colors, no verbose, minimal output
 config.rules = logly.Config.RulesConfig.production();
 
 // ASCII: for terminals without Unicode support
@@ -298,14 +355,28 @@ config.rules = logly.Config.RulesConfig.ascii();
 
 // Disabled: zero overhead
 config.rules = logly.Config.RulesConfig.disabled();
+
+// Silent: rules evaluate but don't output
+config.rules = logly.Config.RulesConfig.silent();
+
+// Console only: no file output
+config.rules = logly.Config.RulesConfig.consoleOnly();
+
+// File only: no console output
+config.rules = logly.Config.RulesConfig.fileOnly();
 ```
 
 ### Runtime Configuration
 
 ```zig
-rules.setUnicode(false);  // Switch to ASCII mode
-rules.setColors(true);    // Enable/disable colors
-rules.configure(.{ .show_rule_id = true });
+rules.setUnicode(false);          // Switch to ASCII mode
+rules.setColors(true);            // Enable/disable colors
+rules.setConfig(.{ .verbose = true });        // Update config
+rules.enableConsoleOutput();      // Enable console output
+rules.disableConsoleOutput();     // Disable console output
+rules.enableFileOutput();         // Enable file output
+rules.disableFileOutput();        // Disable file output
+rules.setVerbose(true);           // Enable verbose mode
 ```
 
 ## Callbacks

@@ -1,3 +1,18 @@
+---
+title: Customizations Example
+description: Complete example of Logly.zig customizations including global root path, format structure, color customization, diagnostics logging, and highlighter patterns.
+head:
+  - - meta
+    - name: keywords
+      content: customizations, root path, format structure, color customization, diagnostics, highlighters, alerts
+  - - meta
+    - property: og:title
+      content: Customizations Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Customizations Example
 
 This example demonstrates all of Logly's advanced customization features.

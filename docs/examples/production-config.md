@@ -1,3 +1,15 @@
+---
+title: Production Configuration Example
+description: Enterprise-ready Logly.zig configurations for production. Includes presets for production, development, high-throughput, and secure environments with multi-sink architecture.
+head:
+  - - meta
+    - name: keywords
+      content: production config, enterprise logging, config presets, multi-sink, environment config, best practices
+  - - meta
+    - property: og:title
+      content: Production Configuration Example | Logly.zig
+---
+
 # Production Configuration Example
 
 Enterprise-ready logging configurations for production environments.

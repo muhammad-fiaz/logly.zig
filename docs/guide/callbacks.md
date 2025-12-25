@@ -1,3 +1,18 @@
+---
+title: Logging Callbacks
+description: Use callbacks in Logly.zig to hook into the logging process. Monitor events, track metrics, and trigger alerts across the entire logging pipeline.
+head:
+  - - meta
+    - name: keywords
+      content: callbacks, log hooks, monitoring, alerting, metrics collection, event handling, zig logging
+  - - meta
+    - property: og:title
+      content: Logging Callbacks | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Callbacks
 
 Callbacks allow you to hook into the logging process and execute custom code whenever a log event occurs. This powerful feature enables integration with external monitoring systems, alerting mechanisms, metrics collection, and custom workflows throughout the logging pipeline.

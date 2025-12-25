@@ -1,3 +1,15 @@
+---
+title: Log Callbacks Example
+description: Example of monitoring log events with callbacks in Logly.zig. Trigger external alerts, metrics, or custom logic when specific log messages are processed.
+head:
+  - - meta
+    - name: keywords
+      content: callbacks example, log monitoring, event triggers, alerts, custom logic, log hooks
+  - - meta
+    - property: og:title
+      content: Log Callbacks Example | Logly.zig
+---
+
 # Callbacks
 
 This example demonstrates how to use callbacks to monitor log events. Callbacks are useful for triggering external alerts, metrics, or custom logic whenever a log message is processed.

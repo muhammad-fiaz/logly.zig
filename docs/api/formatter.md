@@ -1,3 +1,15 @@
+---
+title: Formatter API Reference
+description: API reference for Logly.zig Formatter struct. Custom log formats, JSON output, color themes, and template placeholders for timestamps, levels, and messages.
+head:
+  - - meta
+    - name: keywords
+      content: formatter api, log format, json formatter, color themes, custom format, template placeholders
+  - - meta
+    - property: og:title
+      content: Formatter API Reference | Logly.zig
+---
+
 # Formatter API
 
 The `Formatter` struct handles the conversion of log records into string output. It supports custom formats, JSON output, and color themes.
@@ -10,11 +22,19 @@ The `Formatter` is typically managed internally by sinks, but can be customized 
 
 #### `init(allocator: std.mem.Allocator) Formatter`
 
-Initializes a new Formatter.
+Initializes a new Formatter and pre-fetches system metadata (hostname, PID).
 
 #### `format(record: *const Record, config: anytype) ![]u8`
 
 Formats a log record into a string. The `config` can be `Config` or `SinkConfig`.
+
+#### `formatJson(record: *const Record, config: anytype) ![]u8`
+
+Formats a log record into a JSON string. Automatically includes cached hostname and PID if enabled in config.
+
+#### `formatJsonToWriter(writer: anytype, record: *const Record, config: anytype) !void`
+
+Writes a log record as JSON directly to a writer without intermediate allocation.
 
 #### `setTheme(theme: Theme) void`
 
@@ -23,6 +43,15 @@ Sets a custom color theme for the formatter.
 #### `getStats() FormatterStats`
 
 Returns formatter statistics.
+
+### System Metadata
+
+The Formatter caches system metadata during initialization to improve performance:
+
+- **Hostname**: Retrieved via `GetComputerNameW` (Windows) or `gethostname` (POSIX).
+- **PID**: Retrieved via `GetCurrentProcessId` (Windows) or `getpid` (POSIX).
+
+These values are automatically included in JSON output when `include_hostname` or `include_pid` are enabled in the configuration.
 
 ### Callbacks
 

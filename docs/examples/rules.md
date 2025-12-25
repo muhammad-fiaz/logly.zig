@@ -1,3 +1,15 @@
+---
+title: Rules System Example
+description: Example of compiler-style guided diagnostics with Logly.zig Rules. Add cause, fix, hint, and documentation messages to logs automatically based on patterns.
+head:
+  - - meta
+    - name: keywords
+      content: rules example, guided diagnostics, log analysis, error messages, debugging tips, pattern matching
+  - - meta
+    - property: og:title
+      content: Rules System Example | Logly.zig
+---
+
 # Rules System Example
 
 This example demonstrates the comprehensive rules system for compiler-style guided diagnostics.
@@ -183,14 +195,26 @@ Match rate: 100.0%
 ## Configuration Presets
 
 ```zig
-// Development (with rule IDs)
+// Development (with rule IDs, verbose, colors)
 config.rules = logly.Config.RulesConfig.development();
 
-// Production (no colors, minimal)
+// Production (no colors, minimal, no verbose)
 config.rules = logly.Config.RulesConfig.production();
 
 // ASCII-only (for non-Unicode terminals)
 config.rules = logly.Config.RulesConfig.ascii();
+
+// Disabled (zero overhead)
+config.rules = logly.Config.RulesConfig.disabled();
+
+// Silent (rules evaluate but don't output)
+config.rules = logly.Config.RulesConfig.silent();
+
+// Console only (no file output)
+config.rules = logly.Config.RulesConfig.consoleOnly();
+
+// File only (no console output)
+config.rules = logly.Config.RulesConfig.fileOnly();
 
 // Custom configuration
 config.rules = .{
@@ -198,8 +222,24 @@ config.rules = .{
     .use_unicode = true,
     .enable_colors = true,
     .show_rule_id = false,
+    .console_output = true,       // AND'd with global_console_display
+    .file_output = true,          // AND'd with global_file_storage
     .include_in_json = true,
+    .verbose = false,
+    .max_rules = 1000,
 };
+```
+
+### Global Switch Integration
+
+Rule output respects global configuration switches:
+
+```zig
+// Disable ALL console output (including rules)
+config.global_console_display = false;
+
+// Or disable ONLY rule console output
+config.rules.console_output = false;
 ```
 
 ## JSON Output

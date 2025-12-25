@@ -1,3 +1,15 @@
+---
+title: Async Logging Example
+description: Example of high-performance async logging with Logly.zig. Configure ring buffers, batch processing, and background I/O for non-blocking log operations.
+head:
+  - - meta
+    - name: keywords
+      content: async logging example, non-blocking logging, ring buffer, background io, high performance logging
+  - - meta
+    - property: og:title
+      content: Async Logging Example | Logly.zig
+---
+
 # Async Logging
 
 This example demonstrates how to configure asynchronous logging for high-performance scenarios. Async logging offloads file I/O to a background thread, preventing logging from blocking your main application flow.

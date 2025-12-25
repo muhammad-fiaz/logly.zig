@@ -1,3 +1,18 @@
+---
+title: Extended JSON Logging Example
+description: Example of extended JSON fields in Logly.zig including hostname, PID, and context binding. Essential for distributed systems and log aggregation.
+head:
+  - - meta
+    - name: keywords
+      content: json extended, hostname pid, distributed logging, log aggregation, extended fields, json context
+  - - meta
+    - property: og:title
+      content: Extended JSON Logging Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Extended JSON Logging
 
 This example demonstrates how to enable extended JSON fields like hostname and PID. These fields are valuable for distributed systems where knowing the source machine and process is critical.

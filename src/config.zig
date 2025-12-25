@@ -188,6 +188,9 @@ pub const Config = struct {
     /// Compression configuration.
     compression: CompressionConfig = .{},
 
+    /// Rotation configuration.
+    rotation: RotationConfig = .{},
+
     /// Use arena allocator for internal temporary allocations.
     /// Improves performance by batching allocations and reducing malloc overhead.
     use_arena_allocator: bool = false,
@@ -547,6 +550,64 @@ pub const Config = struct {
         };
     };
 
+    /// Rotation and retention configuration.
+    pub const RotationConfig = struct {
+        /// Enable default rotation for file sinks that don't specify it.
+        enabled: bool = false,
+
+        /// Default rotation interval (e.g., "daily", "hourly").
+        /// Only used if sink doesn't specify rotation.
+        interval: ?[]const u8 = null,
+
+        /// Default size limit for rotation (in bytes).
+        /// Only used if sink doesn't specify size limit.
+        size_limit: ?u64 = null,
+
+        /// Default size limit as string (e.g., "10MB").
+        /// Only used if sink doesn't specify size limit.
+        size_limit_str: ?[]const u8 = null,
+
+        /// Maximum number of rotated files to retain.
+        /// Older files will be deleted during rotation.
+        retention_count: ?usize = null,
+
+        /// Maximum age of rotated files in seconds.
+        /// Files older than this will be deleted during rotation.
+        max_age_seconds: ?i64 = null,
+
+        /// Strategy for naming rotated files.
+        /// Strategy for naming rotated files.
+        naming_strategy: NamingStrategy = .timestamp,
+
+        /// Custom format string for rotated files.
+        /// Used when naming_strategy is .custom.
+        /// Placeholders: {base}, {ext}, {timestamp}, {date}, {iso}, {index}
+        naming_format: ?[]const u8 = null,
+
+        /// Optional directory to move rotated files to.
+        /// If null, files remain in the same directory as the log.
+        archive_dir: ?[]const u8 = null,
+
+        /// Whether to remove empty directories after cleanup.
+        clean_empty_dirs: bool = false,
+
+        /// Whether to perform cleanup asynchronously.
+        async_cleanup: bool = false,
+
+        pub const NamingStrategy = enum {
+            /// Append timestamp: logly.log -> logly.log.1678888888
+            timestamp,
+            /// Append date: logly.log -> logly.log.2023-01-01
+            date,
+            /// Append ISO datetime: logly.log -> logly.log.2023-01-01T12-00-00
+            iso_datetime,
+            /// Rolling index: logly.log -> logly.log.1 (renames existing)
+            index,
+            /// Custom format string (requires naming_format to be set)
+            custom,
+        };
+    };
+
     /// Rules system configuration for compiler-style guided diagnostics.
     pub const RulesConfig = struct {
         /// Master switch for rules system.
@@ -567,6 +628,12 @@ pub const Config = struct {
         /// Show rule IDs in output (useful for debugging).
         show_rule_id: bool = false,
 
+        /// Include rule ID prefix like "R0001:" in output.
+        include_rule_id_prefix: bool = false,
+
+        /// Custom rule ID format string.
+        rule_id_format: []const u8 = "R{d}",
+
         /// Indent string for rule messages.
         indent: []const u8 = "    ",
 
@@ -579,36 +646,72 @@ pub const Config = struct {
         /// Maximum number of rules allowed.
         max_rules: usize = 1000,
 
+        /// Maximum messages per rule to display.
+        max_messages_per_rule: usize = 10,
+
         /// Display rule messages on console (respects global_console_display).
         console_output: bool = true,
 
         /// Write rule messages to file sinks (respects global_file_storage).
         file_output: bool = true,
 
+        /// Enable verbose mode with full context.
+        verbose: bool = false,
+
+        /// Sort messages by severity.
+        sort_by_severity: bool = false,
+
         /// Preset configurations
+        /// Minimal configuration with rules enabled.
         pub fn minimal() RulesConfig {
             return .{ .enabled = true, .use_unicode = true, .enable_colors = true };
         }
 
+        /// Production configuration: no colors, no verbose, minimal output.
         pub fn production() RulesConfig {
-            return .{ .enabled = true, .use_unicode = false, .enable_colors = false, .show_rule_id = false };
+            return .{
+                .enabled = true,
+                .use_unicode = false,
+                .enable_colors = false,
+                .show_rule_id = false,
+                .verbose = false,
+            };
         }
 
+        /// Development configuration: full debugging with colors and Unicode.
         pub fn development() RulesConfig {
-            return .{ .enabled = true, .use_unicode = true, .enable_colors = true, .show_rule_id = true };
+            return .{
+                .enabled = true,
+                .use_unicode = true,
+                .enable_colors = true,
+                .show_rule_id = true,
+                .verbose = true,
+            };
         }
 
+        /// ASCII-only configuration for terminals without Unicode support.
         pub fn ascii() RulesConfig {
             return .{ .enabled = true, .use_unicode = false, .enable_colors = true };
         }
 
+        /// Disabled configuration: zero overhead.
         pub fn disabled() RulesConfig {
             return .{ .enabled = false };
         }
 
-        /// Silent mode - rules evaluate but don't output
+        /// Silent mode: rules evaluate but don't output.
         pub fn silent() RulesConfig {
             return .{ .enabled = true, .console_output = false, .file_output = false };
+        }
+
+        /// Console only: no file output.
+        pub fn consoleOnly() RulesConfig {
+            return .{ .enabled = true, .console_output = true, .file_output = false };
+        }
+
+        /// File only: no console output.
+        pub fn fileOnly() RulesConfig {
+            return .{ .enabled = true, .console_output = false, .file_output = true };
         }
     };
 
@@ -673,6 +776,11 @@ pub const Config = struct {
                 .level = .default,
                 .on_rotation = true,
             },
+            .rotation = .{
+                .enabled = true,
+                .retention_count = 30,
+                .max_age_seconds = 30 * 24 * 3600,
+            },
             .scheduler = .{
                 .enabled = true,
                 .cleanup_max_age_days = 30,
@@ -729,6 +837,10 @@ pub const Config = struct {
                 .buffer_size = 32768,
                 .batch_size = 256,
                 .flush_interval_ms = 50,
+            },
+            .rotation = .{
+                .enabled = true,
+                .naming_strategy = .timestamp,
             },
         };
     }
@@ -854,3 +966,163 @@ pub const Config = struct {
         return result;
     }
 };
+
+test "config default values" {
+    const config = Config.default();
+    try std.testing.expectEqual(Level.info, config.level);
+    try std.testing.expect(config.global_color_display);
+    try std.testing.expect(config.global_console_display);
+    try std.testing.expect(config.global_file_storage);
+    try std.testing.expect(config.color);
+    try std.testing.expect(!config.json);
+    try std.testing.expect(config.auto_sink);
+}
+
+test "config presets" {
+    // Production preset
+    const prod_config = Config.production();
+    try std.testing.expectEqual(Level.info, prod_config.level);
+    try std.testing.expect(!prod_config.color);
+    try std.testing.expect(prod_config.json);
+
+    // Development preset
+    const dev_config = Config.development();
+    try std.testing.expectEqual(Level.debug, dev_config.level);
+    try std.testing.expect(dev_config.color);
+
+    // High throughput preset
+    const ht_config = Config.highThroughput();
+    try std.testing.expectEqual(Level.warning, ht_config.level);
+    try std.testing.expect(ht_config.thread_pool.enabled);
+    try std.testing.expect(ht_config.async_config.enabled);
+
+    // Secure preset
+    const secure_config = Config.secure();
+    try std.testing.expect(secure_config.redaction.enabled);
+    try std.testing.expect(secure_config.structured);
+
+    // Log only preset
+    const log_only = Config.logOnly();
+    try std.testing.expect(!log_only.global_console_display);
+    try std.testing.expect(log_only.global_file_storage);
+
+    // Display only preset
+    const display_only = Config.displayOnly();
+    try std.testing.expect(display_only.global_console_display);
+    try std.testing.expect(!display_only.global_file_storage);
+}
+
+test "config with display storage" {
+    // Console only
+    const console_only = Config.withDisplayStorage(true, false, true);
+    try std.testing.expect(console_only.global_console_display);
+    try std.testing.expect(!console_only.global_file_storage);
+    try std.testing.expect(console_only.auto_sink);
+
+    // File only
+    const file_only = Config.withDisplayStorage(false, true, false);
+    try std.testing.expect(!file_only.global_console_display);
+    try std.testing.expect(file_only.global_file_storage);
+    try std.testing.expect(!file_only.auto_sink);
+
+    // Both enabled
+    const both = Config.withDisplayStorage(true, true, true);
+    try std.testing.expect(both.global_console_display);
+    try std.testing.expect(both.global_file_storage);
+}
+
+test "rules config default values" {
+    const rules_config = Config.RulesConfig{};
+    try std.testing.expect(!rules_config.enabled);
+    try std.testing.expect(rules_config.client_rules_enabled);
+    try std.testing.expect(rules_config.builtin_rules_enabled);
+    try std.testing.expect(rules_config.use_unicode);
+    try std.testing.expect(rules_config.enable_colors);
+    try std.testing.expect(!rules_config.show_rule_id);
+    try std.testing.expect(!rules_config.include_rule_id_prefix);
+    try std.testing.expect(rules_config.include_in_json);
+    try std.testing.expectEqual(@as(usize, 1000), rules_config.max_rules);
+    try std.testing.expectEqual(@as(usize, 10), rules_config.max_messages_per_rule);
+    try std.testing.expect(rules_config.console_output);
+    try std.testing.expect(rules_config.file_output);
+    try std.testing.expect(!rules_config.verbose);
+    try std.testing.expect(!rules_config.sort_by_severity);
+}
+
+test "rules config presets" {
+    // Development preset
+    const dev = Config.RulesConfig.development();
+    try std.testing.expect(dev.enabled);
+    try std.testing.expect(dev.use_unicode);
+    try std.testing.expect(dev.enable_colors);
+    try std.testing.expect(dev.show_rule_id);
+    try std.testing.expect(dev.verbose);
+
+    // Production preset
+    const prod = Config.RulesConfig.production();
+    try std.testing.expect(prod.enabled);
+    try std.testing.expect(!prod.use_unicode);
+    try std.testing.expect(!prod.enable_colors);
+    try std.testing.expect(!prod.show_rule_id);
+    try std.testing.expect(!prod.verbose);
+
+    // ASCII preset
+    const ascii = Config.RulesConfig.ascii();
+    try std.testing.expect(ascii.enabled);
+    try std.testing.expect(!ascii.use_unicode);
+    try std.testing.expect(ascii.enable_colors);
+
+    // Disabled preset
+    const disabled = Config.RulesConfig.disabled();
+    try std.testing.expect(!disabled.enabled);
+
+    // Silent preset
+    const silent = Config.RulesConfig.silent();
+    try std.testing.expect(silent.enabled);
+    try std.testing.expect(!silent.console_output);
+    try std.testing.expect(!silent.file_output);
+
+    // Console only preset
+    const console_only = Config.RulesConfig.consoleOnly();
+    try std.testing.expect(console_only.enabled);
+    try std.testing.expect(console_only.console_output);
+    try std.testing.expect(!console_only.file_output);
+
+    // File only preset
+    const file_only = Config.RulesConfig.fileOnly();
+    try std.testing.expect(file_only.enabled);
+    try std.testing.expect(!file_only.console_output);
+    try std.testing.expect(file_only.file_output);
+}
+
+test "config with rules" {
+    var config = Config.default();
+    config.rules = Config.RulesConfig.development();
+
+    try std.testing.expect(config.rules.enabled);
+    try std.testing.expect(config.rules.verbose);
+    try std.testing.expect(config.rules.show_rule_id);
+}
+
+test "config global switches affect rules" {
+    // Test that rules config fields exist for global switch integration
+    var config = Config.default();
+    config.global_console_display = false;
+    config.global_file_storage = false;
+    config.global_color_display = false;
+
+    // Verify rules config has corresponding fields
+    try std.testing.expect(config.rules.console_output);
+    try std.testing.expect(config.rules.file_output);
+    try std.testing.expect(config.rules.enable_colors);
+
+    // The actual AND logic happens in the formatter/sink at runtime
+    // Here we just verify the fields exist and can be set
+    config.rules.console_output = false;
+    config.rules.file_output = false;
+    config.rules.enable_colors = false;
+
+    try std.testing.expect(!config.rules.console_output);
+    try std.testing.expect(!config.rules.file_output);
+    try std.testing.expect(!config.rules.enable_colors);
+}

@@ -1,3 +1,18 @@
+---
+title: Thread Pool API Reference
+description: API reference for Logly.zig ThreadPool module. Covers worker threads, task submission, batch processing, priority queues, work stealing, and parallel sink writing.
+head:
+  - - meta
+    - name: keywords
+      content: thread pool api, worker threads, task queue, parallel logging, work stealing, batch processing
+  - - meta
+    - property: og:title
+      content: Thread Pool API Reference | Logly.zig
+  - - meta
+    - property: og:description
+      content: API reference for parallel log processing with worker threads, priority queues, and work stealing.
+---
+
 # Thread Pool API
 
 The thread pool module provides parallel log processing capabilities with work stealing, priority queues, and concurrent sink writing.
@@ -127,23 +142,21 @@ pub const TaskPriority = enum(u8) {
 };
 ```
 
-### Task
-
-A unit of work for the thread pool.
-
-```zig
 pub const Task = union(enum) {
     /// Function pointer task
-    func: *const fn () void,
+    function: FunctionTask,
     /// Callback with context
-    callback: struct {
-        func: *const fn (*anyopaque) void,
+    callback: CallbackTask,
+
+    pub const FunctionTask = struct {
+        func: *const fn (?std.mem.Allocator) void,
+    };
+
+    pub const CallbackTask = struct {
+        func: *const fn (*anyopaque, ?std.mem.Allocator) void,
         context: *anyopaque,
-    },
-    /// Shutdown signal
-    shutdown: void,
+    };
 };
-```
 
 ### ThreadPoolStats
 
@@ -174,35 +187,20 @@ Writes to multiple sinks in parallel.
 ```zig
 pub const ParallelSinkWriter = struct {
     allocator: std.mem.Allocator,
-    config: ParallelConfig,
-    sinks: std.ArrayList(*Sink),
-    thread_pool: ThreadPool,
-    stats: WriterStats,
+    pool: *ThreadPool,
+    sinks: std.ArrayList(SinkHandle),
+    mutex: std.Thread.Mutex,
+
+    pub const SinkHandle = struct {
+        write_fn: *const fn (data: []const u8) void,
+        name: []const u8,
+    };
 };
 ```
 
 ### ParallelConfig
 
-Configuration for parallel sink writing.
-
-```zig
-pub const ParallelConfig = struct {
-    /// Maximum concurrent writes
-    max_concurrent: usize = 8,
-    /// Timeout for each write operation (ms)
-    write_timeout_ms: u64 = 1000,
-    /// Retry failed writes
-    retry_on_failure: bool = true,
-    /// Maximum retry attempts
-    max_retries: u3 = 3,
-    /// Fail-fast on any sink error
-    fail_fast: bool = false,
-    /// Buffer writes before parallel dispatch
-    buffered: bool = true,
-    /// Buffer size
-    buffer_size: usize = 64,
-};
-```
+**[Deprecated/Removed]** Parallel sink writing now uses direct thread pool submission without separate configuration.
 
 ## ThreadPool Methods
 
@@ -211,14 +209,14 @@ pub const ParallelConfig = struct {
 Create a new thread pool.
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, config: ThreadPoolConfig) !ThreadPool
+pub fn init(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool
 ```
 
 **Parameters:**
 - `allocator`: Memory allocator
 - `config`: Thread pool configuration
 
-**Returns:** A new `ThreadPool` instance
+**Returns:** A pointer to the new `ThreadPool` instance
 
 ### deinit
 
@@ -246,34 +244,74 @@ pub fn stop(self: *ThreadPool) void
 
 ### submit
 
-Submit a task to the pool.
+Submits a task to the pool.
 
 ```zig
-pub fn submit(self: *ThreadPool, task: Task) !void
+pub fn submit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool
 ```
 
-**Parameters:**
-- `task`: The task to execute
+### submitFn
 
-### submitWithPriority
-
-Submit a task with specific priority.
+Submits a function for execution with normal priority.
 
 ```zig
-pub fn submitWithPriority(
-    self: *ThreadPool,
-    func: *const fn (*anyopaque) void,
-    context: *anyopaque,
-    priority: TaskPriority,
-) !void
+pub fn submitFn(self: *ThreadPool, func: *const fn (?std.mem.Allocator) void) bool
 ```
 
-### waitIdle
+### submitCallback
 
-Wait until all tasks are completed.
+Submits a callback with context with normal priority.
 
 ```zig
-pub fn waitIdle(self: *ThreadPool) void
+pub fn submitCallback(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool
+```
+
+### submitHighPriority
+
+Shortcut for submitting a high priority callback.
+
+```zig
+pub fn submitHighPriority(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool
+```
+
+### submitCritical
+
+Shortcut for submitting a critical priority callback.
+
+```zig
+pub fn submitCritical(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool
+```
+
+### submitBatch
+
+Submits multiple tasks at once. Returns the number of successfully submitted tasks.
+
+```zig
+pub fn submitBatch(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority) usize
+```
+
+### trySubmit
+
+Attempts to submit without blocking. Returns true if successful.
+
+```zig
+pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool
+```
+
+### submitToWorker
+
+Submits to a specific worker's local queue.
+
+```zig
+pub fn submitToWorker(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) bool
+```
+
+### waitAll
+
+Wait until all submitted tasks are completed.
+
+```zig
+pub fn waitAll(self: *ThreadPool) void
 ```
 
 ### getStats
@@ -281,33 +319,33 @@ pub fn waitIdle(self: *ThreadPool) void
 Get current pool statistics.
 
 ```zig
-pub fn getStats(self: *const ThreadPool) PoolStats
+pub fn getStats(self: *const ThreadPool) ThreadPoolStats
 ```
 
-## PoolStats Methods
+## ThreadPoolStats Methods
 
 ### throughput
 
 Calculate tasks per second.
 
 ```zig
-pub fn throughput(self: *const PoolStats) f64
+pub fn throughput(self: *const ThreadPoolStats) f64
 ```
 
-### averageWaitTimeNs
+### avgWaitTimeNs
 
 Get average task wait time.
 
 ```zig
-pub fn averageWaitTimeNs(self: *const PoolStats) u64
+pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64
 ```
 
-### averageExecTimeNs
+### avgExecTimeNs
 
 Get average task execution time.
 
 ```zig
-pub fn averageExecTimeNs(self: *const PoolStats) u64
+pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64
 ```
 
 ## ParallelSinkWriter Methods
@@ -317,7 +355,7 @@ pub fn averageExecTimeNs(self: *const PoolStats) u64
 Create a new parallel sink writer.
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, config: ParallelConfig) !ParallelSinkWriter
+pub fn init(allocator: std.mem.Allocator, pool: *ThreadPool) !*ParallelSinkWriter
 ```
 
 ### deinit
@@ -333,7 +371,7 @@ pub fn deinit(self: *ParallelSinkWriter) void
 Add a sink for parallel writing.
 
 ```zig
-pub fn addSink(self: *ParallelSinkWriter, sink: *Sink) !void
+pub fn addSink(self: *ParallelSinkWriter, handle: SinkHandle) !void
 ```
 
 ### write
@@ -341,15 +379,7 @@ pub fn addSink(self: *ParallelSinkWriter, sink: *Sink) !void
 Write to all sinks in parallel.
 
 ```zig
-pub fn write(self: *ParallelSinkWriter, record: *const Record) !void
-```
-
-### flush
-
-Flush all sinks.
-
-```zig
-pub fn flush(self: *ParallelSinkWriter) void
+pub fn write(self: *ParallelSinkWriter, data: []const u8) void
 ```
 
 ## Presets
@@ -378,7 +408,6 @@ pub fn cpuBound() ThreadPoolConfig {
     return .{
         .thread_count = cpu_count,
         .work_stealing = true,
-        .enable_priorities = true,
     };
 }
 ```
@@ -408,8 +437,6 @@ pub fn highThroughput() ThreadPoolConfig {
         .thread_count = 0, // Auto
         .queue_size = 4096,
         .work_stealing = true,
-        .enable_priorities = false,
-        .thread_local_cache = true,
     };
 }
 ```
@@ -439,17 +466,12 @@ pub fn main() !void {
     // Submit tasks
     var counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
     
-    for (0..100) |_| {
-        try pool.submit(.{
-            .func = incrementTask,
-            .context = @ptrCast(&counter),
-            .priority = .normal,
-            .submitted_at = std.time.milliTimestamp(),
-        });
+    for (0..100) |i| {
+        _ = pool.submitCallback(incrementTask, &counter);
     }
 
     // Wait for completion
-    pool.waitIdle();
+    pool.waitAll();
 
     // Check stats
     const stats = pool.getStats();
@@ -459,7 +481,7 @@ pub fn main() !void {
     });
 }
 
-fn incrementTask(ctx: *anyopaque) void {
+fn incrementTask(ctx: *anyopaque, _: ?std.mem.Allocator) void {
     const counter: *std.atomic.Value(u32) = @alignCast(@ptrCast(ctx));
     _ = counter.fetchAdd(1, .monotonic);
 }

@@ -1,3 +1,15 @@
+---
+title: Log Redaction Example
+description: Example of automatic sensitive data masking with Logly.zig. Redact passwords, API keys, credit cards, and PII for security and GDPR compliance.
+head:
+  - - meta
+    - name: keywords
+      content: redaction example, data masking, pii protection, password masking, gdpr compliance, security logging
+  - - meta
+    - property: og:title
+      content: Log Redaction Example | Logly.zig
+---
+
 # Redaction Example
 
 Automatically mask sensitive data in log messages for compliance and security.

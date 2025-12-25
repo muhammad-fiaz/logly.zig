@@ -1,3 +1,15 @@
+---
+title: Record API Reference
+description: API reference for Logly.zig Record struct. Log event representation with message, level, timestamp, source location, context, trace IDs, and metadata fields.
+head:
+  - - meta
+    - name: keywords
+      content: record api, log event, log record, structured log, log fields, trace context, source location
+  - - meta
+    - property: og:title
+      content: Record API Reference | Logly.zig
+---
+
 # Record API
 
 The `Record` struct represents a single log event.

@@ -1,3 +1,18 @@
+---
+title: Logging Scheduler
+description: Automate log maintenance with the Logly.zig scheduler. Schedule cleanup, compression, rotation, and health checks to keep your logs managed and efficient.
+head:
+  - - meta
+    - name: keywords
+      content: scheduler, log maintenance, automatic cleanup, log compression, rotation task, health check, background tasks
+  - - meta
+    - property: og:title
+      content: Logging Scheduler | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Scheduler Guide
 
 This guide covers automatic log maintenance in Logly using the scheduler, including cleanup, compression, rotation tasks, and custom scheduled operations.

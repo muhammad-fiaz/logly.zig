@@ -1,3 +1,15 @@
+---
+title: Level API Reference
+description: API reference for Logly.zig Level enum. All 10 built-in log levels (trace, debug, info, success, warning, error, fail, critical, fatal, panic) with priorities and colors.
+head:
+  - - meta
+    - name: keywords
+      content: log level api, level enum, log priority, trace debug info, error critical fatal, severity levels
+  - - meta
+    - property: og:title
+      content: Level API Reference | Logly.zig
+---
+
 # Level API
 
 The Level module defines the standard logging levels and their priorities.

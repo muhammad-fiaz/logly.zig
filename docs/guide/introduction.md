@@ -1,6 +1,15 @@
-# What is Logly.Zig?
+---
+title: What is Logly.zig?
+description: Logly.zig is a high-performance structured logging library for Zig with zero-copy architecture, async I/O, JSON output, file rotation, and enterprise features like redaction, metrics, and distributed tracing.
+head:
+  - - meta
+    - name: keywords
+      content: logly zig, zig logging library, structured logging, high performance logging, async logging, json logging, zig logger
+---
 
-Logly.Zig is a high-performance, structured logging library for Zig, engineered to deliver the robust feature set of its Python and Rust counterparts while maximizing native Zig performance and safety guarantees.
+# What is Logly.zig?
+
+Logly.zig is a high-performance, structured logging library for Zig, engineered to deliver the robust feature set of its Python and Rust counterparts while maximizing native Zig performance and safety guarantees.
 
 ## Key Features
 
@@ -44,29 +53,34 @@ Logly.Zig is built upon the following core principles:
 
 ## Comparison with Other Implementations
 
-| Feature                   | Python Logly            | Rust Logly           | Logly.Zig           |
-| :------------------------ | :---------------------- | :------------------- | :------------------ |
-| **Performance**           | Maturin-Bindings (Fast) | Native Rust (Faster) | Native Zig (faster) |
-| **Memory Safety**         | Runtime                 | Compile-time         | **Compile-time**    |
-| **Async Support**         | ✓                       | ✓                    | **✓**               |
-| **File Rotation**         | ✓                       | ✓                    | **✓**               |
-| **JSON Logging**          | ✓                       | ✓                    | **✓**               |
-| **Custom Colors**         | ✓                       | ✓                    | **✓**               |
-| **Simplified API**        | ✓                       | ✓                    | **✓**               |
-| **Filtering**             | ✓                       | ✓                    | **✓**               |
-| **Sampling**              | ✗ Coming soon!)         | ✗ (Coming soon!)     | **✓**               |
-| **Redaction**             | ✗ (Coming soon!)        | ✗ (Coming soon!)     | **✓**               |
-| **Metrics**               | ✗ (Coming soon!)        | ✗ (Coming soon!)     | **✓**               |
-| **Tracing**               | ✗ (Coming soon!)        | ✗ (Coming soon!)     | **✓**               |
-| **Compression**           | ✗ (Coming soon!)        | ✗ (Coming soon!)     | **✓**               |
-| **Thread Pool**           | ✗ (Coming soon!)        | ✗ (Coming soon!)     | **✓**               |
-| **Scheduler**             | ✗ (Coming soon!)        | ✗ (Coming soon!)     | **✓**               |
-| **Custom Formats**        | ✗ (Coming soon!)        | ✗ (Coming soon!)     | **✓**               |
-| **Cross-Platform Colors** | ✓                       | ✓                    | **✓**               |
+| Feature                   | Python Logly            | Rust Logly           | Logly.zig           | std.log |
+| :------------------------ | :---------------------- | :------------------- | :------------------ | :------ |
+| **Performance**           | Maturin-Bindings (Fast) | Native Rust (Faster) | Native Zig (Faster) | Raw (Manual) |
+| **Memory Safety**         | Runtime                 | Compile-time         | **Compile-time**    | Compile-time |
+| **Async Support**         | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ Manual |
+| **File Rotation**         | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ Manual |
+| **JSON Logging**          | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ Manual |
+| **Custom Colors**         | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ |
+| **Simplified API**        | ✓                       | ✓                    | **✓**               | ✓ Basic |
+| **Filtering**             | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✓ Manual |
+| **Sampling**              | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
+| **Redaction**             | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
+| **Metrics**               | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
+| **Tracing**               | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
+| **Compression**           | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
+| **Thread Pool**           | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
+| **Scheduler**             | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
+| **Custom Formats**        | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ Manual |
+| **Cross-Platform Colors** | ✓                       | ✓                    | **✓**               | ✗ |
+| **Rules System (v0.0.9+)**| ✗                       | ✗                    | **✓ Automatic**     | ✗ |
+
+::: tip Full Comparison
+For a comprehensive comparison with other Zig logging libraries including nexlog, log.zig, and std.log, see the [Comparison](/guide/comparison) page.
+:::
 
 ## Enterprise Features
 
-Logly.Zig v0.0.4 introduces enterprise-grade features:
+Logly.zig v0.0.6+ includes enterprise-grade features:
 
 ### 🔍 Filtering
 

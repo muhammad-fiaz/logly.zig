@@ -1,6 +1,15 @@
+---
+title: Log Sinks Guide
+description: Configure log sinks in Logly.zig for console, file, network (TCP/UDP), and system event log output. Learn about rotation, compression, async writing, and multi-sink configurations.
+head:
+  - - meta
+    - name: keywords
+      content: log sinks, file logging, network logging, tcp logging, udp logging, console output, log rotation, multiple outputs
+---
+
 # Sinks
 
-Sinks are destinations where log messages are written. Logly-Zig supports multiple sinks, allowing you to send logs to the console, files, or custom destinations simultaneously.
+Sinks are destinations where log messages are written. Logly.zig supports multiple sinks, allowing you to send logs to the console, files, or custom destinations simultaneously.
 
 ## Console Sink
 

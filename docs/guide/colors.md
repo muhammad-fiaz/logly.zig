@@ -1,3 +1,18 @@
+---
+title: Colors and Styling
+description: Master ANSI color support in Logly.zig. Learn about whole-line coloring, custom level colors, and enabling colors on Windows, Linux, and macOS.
+head:
+  - - meta
+    - name: keywords
+      content: colors, styling, ansi codes, terminal colors, windows colors, custom colors, log formatting
+  - - meta
+    - property: og:title
+      content: Colors and Styling | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Colors & Styling
 
 Logly-Zig provides comprehensive ANSI color support for console output, with options to enable colors in file output as well.

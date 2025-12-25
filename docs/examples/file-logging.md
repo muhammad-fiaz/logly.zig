@@ -1,3 +1,15 @@
+---
+title: File Logging Example
+description: Example of logging to files with Logly.zig. Write logs to multiple destinations including console and files with automatic directory creation.
+head:
+  - - meta
+    - name: keywords
+      content: file logging example, log to file, multiple sinks, log file, file output, console and file
+  - - meta
+    - property: og:title
+      content: File Logging Example | Logly.zig
+---
+
 # File Logging
 
 This example demonstrates how to log to a file. Logly supports logging to multiple destinations simultaneously (e.g., console and file).

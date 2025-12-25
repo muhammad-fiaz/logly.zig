@@ -1,3 +1,18 @@
+---
+title: Logger API Reference
+description: Complete API reference for Logly.zig Logger struct. Covers initialization, log methods, sink management, filtering, sampling, redaction, metrics, and distributed tracing APIs.
+head:
+  - - meta
+    - name: keywords
+      content: logly api, logger api, zig logger reference, logging methods, log functions, api documentation
+  - - meta
+    - property: og:title
+      content: Logger API Reference | Logly.zig
+  - - meta
+    - property: og:description
+      content: Complete API reference for Logly.zig Logger struct with all logging methods and configurations.
+---
+
 # Logger API
 
 The `Logger` struct is the central component of the Logly library, orchestrating all logging operations, sink management, configuration, and enterprise features like filtering, sampling, redaction, metrics, and distributed tracing.

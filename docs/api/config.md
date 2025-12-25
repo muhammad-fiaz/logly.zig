@@ -1,3 +1,15 @@
+---
+title: Config API Reference
+description: API reference for Logly.zig Config struct. Configure log levels, output formats, thread pools, schedulers, compression, async logging, and all enterprise features.
+head:
+  - - meta
+    - name: keywords
+      content: logly config, configuration api, logger settings, zig config struct, logging options
+  - - meta
+    - property: og:title
+      content: Config API Reference | Logly.zig
+---
+
 # Config API
 
 The `Config` struct controls the behavior of the logger, including all enterprise features like thread pools, schedulers, compression, and async logging through centralized configuration.
@@ -294,6 +306,37 @@ Async logging configuration.
 - `overflow_policy`: Overflow policy (`.drop_oldest`, `.drop_newest`, `.block`).
 - `background_worker`: Auto-start worker thread.
 
+#### `rules: RulesConfig`
+
+Rules system configuration. The rules system **respects global switches** (`global_console_display`, `global_file_storage`, `global_color_display`).
+
+- `enabled`: Master switch for rules system. Default: `false`.
+- `client_rules_enabled`: Enable client-defined rules. Default: `true`.
+- `builtin_rules_enabled`: Enable built-in rules (reserved). Default: `true`.
+- `use_unicode`: Use Unicode symbols (set false for ASCII). Default: `true`.
+- `enable_colors`: ANSI colors in output. Default: `true`.
+- `show_rule_id`: Show rule IDs in output. Default: `false`.
+- `include_rule_id_prefix`: Include "R0001:" prefix. Default: `false`.
+- `rule_id_format`: Custom rule ID format. Default: `"R{d}"`.
+- `indent`: Message indent. Default: `"    "`.
+- `message_prefix`: Prefix character. Default: `"↳"`.
+- `console_output`: Output to console (AND'd with `global_console_display`). Default: `true`.
+- `file_output`: Output to files (AND'd with `global_file_storage`). Default: `true`.
+- `include_in_json`: Include in JSON output. Default: `true`.
+- `verbose`: Full context output. Default: `false`.
+- `max_rules`: Maximum rules allowed. Default: `1000`.
+- `max_messages_per_rule`: Max messages to show per match. Default: `10`.
+- `sort_by_severity`: Order by severity. Default: `false`.
+
+**Presets:**
+- `RulesConfig.development()`: Full debugging with colors and Unicode.
+- `RulesConfig.production()`: Minimal output, no colors, no verbose.
+- `RulesConfig.ascii()`: ASCII-only for terminals without Unicode.
+- `RulesConfig.disabled()`: Zero overhead.
+- `RulesConfig.silent()`: Rules evaluate but don't output.
+- `RulesConfig.consoleOnly()`: No file output.
+- `RulesConfig.fileOnly()`: No console output.
+
 #### `thread_pool: ThreadPoolConfig`
 
 Thread pool configuration.
@@ -576,6 +619,47 @@ pub const CompressionConfig = struct {
 };
 ```
 
+### Rotation Configuration
+
+#### `rotation: RotationConfig`
+
+Global rotation and retention settings.
+
+```zig
+pub const RotationConfig = struct {
+    /// Enable default rotation for file sinks.
+    enabled: bool = false,
+
+    /// Default rotation interval (e.g., "daily", "hourly").
+    interval: ?[]const u8 = null,
+
+    /// Default size limit for rotation (in bytes).
+    size_limit: ?u64 = null,
+
+    /// Maximum number of rotated files to retain.
+    retention_count: ?usize = null,
+
+    /// Maximum age of rotated files in seconds.
+    max_age_seconds: ?i64 = null,
+
+    /// Strategy for naming rotated files.
+    naming_strategy: NamingStrategy = .timestamp,
+
+    /// Optional directory to move rotated files to.
+    archive_dir: ?[]const u8 = null,
+
+    /// Whether to remove empty directories after cleanup.
+    clean_empty_dirs: bool = false,
+
+    pub const NamingStrategy = enum {
+        timestamp,
+        date,
+        iso_datetime,
+        index,
+    };
+};
+```
+
 ### Async Logging Configuration
 
 #### `async_config: AsyncConfig`
@@ -617,6 +701,16 @@ Returns the default configuration.
 
 ```zig
 const config = logly.Config.default();
+```
+
+### `merge(other: Config) void`
+
+Merges another configuration into this one. Values from `other` take precedence over `self`.
+
+```zig
+var config = Config.default();
+const overrides = Config{ .level = .debug };
+config.merge(overrides);
 ```
 
 ### `production() Config`

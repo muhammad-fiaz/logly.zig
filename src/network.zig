@@ -375,3 +375,22 @@ pub fn getStats() NetworkStats {
 pub fn resetStats() void {
     stats.reset();
 }
+
+test "syslog severity mapping" {
+    try std.testing.expectEqual(SyslogSeverity.debug, SyslogSeverity.fromLogLevel(.debug));
+    try std.testing.expectEqual(SyslogSeverity.info, SyslogSeverity.fromLogLevel(.info));
+    try std.testing.expectEqual(SyslogSeverity.warning, SyslogSeverity.fromLogLevel(.warning));
+    try std.testing.expectEqual(SyslogSeverity.err, SyslogSeverity.fromLogLevel(.err));
+    try std.testing.expectEqual(SyslogSeverity.critical, SyslogSeverity.fromLogLevel(.critical));
+}
+
+test "syslog formatting" {
+    const allocator = std.testing.allocator;
+    const formatted = try formatSyslog(allocator, .user, .info, "localhost", "test-app", "Hello Syslog");
+    defer allocator.free(formatted);
+
+    // <(facility*8 + severity)>1 timestamp hostname app-name - - - message
+    // user(1)*8 + info(6) = 14
+    try std.testing.expect(std.mem.startsWith(u8, formatted, "<14>1 "));
+    try std.testing.expect(std.mem.indexOf(u8, formatted, "localhost test-app - - - Hello Syslog") != null);
+}

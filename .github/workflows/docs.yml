@@ -128,6 +128,12 @@ jobs:
         if: ${{ steps.indexnow-flag.outputs.indexnow == '1' }}
         uses: bojieyang/indexnow-action@v2
         with:
-          sitemap-location: ${{ steps.deployment.outputs.page_url }}/sitemap.xml
+          sitemap-location: https://muhammad-fiaz.github.io/logly.zig/sitemap.xml
           key: ${{ secrets.INDEXNOW_KEY }}
+          since: 7
+          since-unit: day
+          endpoint: www.bing.com
+          limit: 200
+          timeout: 30000
           failure-strategy: ignore
+          lastmod-required: false

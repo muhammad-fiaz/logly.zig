@@ -1,3 +1,18 @@
+---
+title: Arena Allocation
+description: Learn how to use arena allocation in Logly.zig for high-performance logging. Reduce memory overhead and improve cache locality with batched allocations.
+head:
+  - - meta
+    - name: keywords
+      content: arena allocation, memory management, high-performance, zip, logging performance, malloc overhead
+  - - meta
+    - property: og:title
+      content: Arena Allocation | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Arena Allocation
 
 Logly.zig supports optional arena allocation for improved performance in high-throughput logging scenarios. Arena allocation reduces memory allocation overhead by batching temporary allocations and releasing them efficiently.

@@ -1,6 +1,15 @@
+---
+title: Log Redaction Guide
+description: Automatically mask sensitive data in logs with Logly.zig. Redact passwords, API keys, credit card numbers, and PII using keyword patterns, regex, and custom rules.
+head:
+  - - meta
+    - name: keywords
+      content: log redaction, data masking, PII protection, sensitive data, password masking, GDPR logging, security logging, compliance
+---
+
 # Redaction
 
-Logly-Zig v0.0.9 provides automatic sensitive data masking to help maintain security and compliance. Redact passwords, API keys, credit card numbers, and other PII from log messages.
+Logly.zig provides automatic sensitive data masking to help maintain security and compliance. Redact passwords, API keys, credit card numbers, and other PII from log messages.
 
 ## Overview
 

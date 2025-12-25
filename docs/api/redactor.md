@@ -1,3 +1,15 @@
+---
+title: Redactor API Reference
+description: API reference for Logly.zig Redactor struct. Mask passwords, API keys, credit cards, and PII with keyword patterns, regex rules, and custom redaction strategies.
+head:
+  - - meta
+    - name: keywords
+      content: redactor api, data masking, pii redaction, sensitive data, password masking, security api
+  - - meta
+    - property: og:title
+      content: Redactor API Reference | Logly.zig
+---
+
 # Redactor API
 
 The `Redactor` struct handles the masking of sensitive data in log messages and context fields.

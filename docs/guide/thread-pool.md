@@ -1,6 +1,15 @@
+---
+title: Thread Pool Guide
+description: Learn how to use Logly.zig's high-performance thread pool for parallel log processing. Covers worker configuration, task submission, batch processing, priority queues, work stealing, and cache-aware scheduling.
+head:
+  - - meta
+    - name: keywords
+      content: zig thread pool, parallel logging, async logging, worker threads, task queue, work stealing, batch processing, high throughput logging
+---
+
 # Thread Pool Guide
 
-This guide covers parallel log processing in Logly using thread pools, including configuration, task submission, work stealing, and best practices.
+This guide covers parallel log processing in Logly using thread pools, including configuration, task submission, batch processing, priority queues, work stealing, and best practices.
 
 ## Overview
 
@@ -153,12 +162,59 @@ pub const TaskPriority = enum(u8) {
 ### Submit with Priority
 
 ```zig
-try pool.submitWithPriority(
-    myFunction,
-    @ptrCast(&data),
-    .critical,
-);
+// Standard priority submission
+_ = pool.submitCallback(myFunction, @ptrCast(&data));
+
+// High priority (processed before normal)
+_ = pool.submitHighPriority(myFunction, @ptrCast(&data));
+
+// Critical priority (processed first)
+_ = pool.submitCritical(myFunction, @ptrCast(&data));
 ```
+
+### Batch Submission
+
+Submit multiple tasks at once for higher throughput (single lock acquisition):
+
+```zig
+// Create array of tasks
+var tasks: [10]logly.ThreadPool.Task = undefined;
+for (&tasks) |*task| {
+    task.* = .{ .callback = .{ .func = myFunction, .context = context } };
+}
+
+// Batch submit - returns number of successfully submitted tasks
+const submitted = pool.submitBatch(&tasks, .normal);
+std.debug.print("Submitted {} tasks\n", .{submitted});
+```
+
+### Non-Blocking Submission
+
+Use `trySubmit` for low-latency scenarios where blocking is unacceptable:
+
+```zig
+// Returns immediately if lock is contended
+if (pool.trySubmit(task, .high)) {
+    // Task submitted successfully
+} else {
+    // Queue is contended or full, handle fallback
+    handleFallback(task);
+}
+```
+
+### Worker Affinity
+
+Submit to a specific worker's local queue for better cache locality:
+
+```zig
+// Submit to worker 0's local queue
+_ = pool.submitToWorker(0, task, .normal);
+
+// Submit to worker 1's local queue  
+_ = pool.submitToWorker(1, task, .normal);
+```
+
+This is useful when tasks need to access the same data, as keeping them on the same worker improves CPU cache hit rates.
 
 ## Parallel Sink Writing
 

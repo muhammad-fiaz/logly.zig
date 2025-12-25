@@ -1,3 +1,18 @@
+---
+title: Custom Log Levels
+description: Define your own log levels with Logly.zig. Customize level names, priorities, and colors to fit your application's domain requirements perfectly.
+head:
+  - - meta
+    - name: keywords
+      content: custom levels, log priority, level colors, domain logging, zig logging, custom log levels, priority mapping
+  - - meta
+    - property: og:title
+      content: Custom Log Levels | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Custom Log Levels
 
 While Logly-Zig comes with 8 built-in levels, you might need to define your own levels for specific domain requirements.

@@ -1,3 +1,15 @@
+---
+title: Scheduler Example
+description: Example of automatic log maintenance with Logly.zig scheduler. Configure cleanup, compression, rotation, cron expressions, and custom periodic tasks.
+head:
+  - - meta
+    - name: keywords
+      content: scheduler example, automatic cleanup, log maintenance, cron scheduler, periodic tasks, log rotation
+  - - meta
+    - property: og:title
+      content: Scheduler Example | Logly.zig
+---
+
 # Scheduler Example
 
 This example demonstrates automatic log maintenance using Logly's scheduler.

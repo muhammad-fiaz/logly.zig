@@ -1,3 +1,15 @@
+---
+title: Network API Reference
+description: API reference for Logly.zig Network module. TCP, UDP logging, HTTP endpoints, Syslog support, and network compression for centralized log aggregation.
+head:
+  - - meta
+    - name: keywords
+      content: network api, tcp logging, udp logging, syslog, remote logging, log aggregation, network sink
+  - - meta
+    - property: og:title
+      content: Network API Reference | Logly.zig
+---
+
 # Network API
 
 The `Network` module provides utilities for network-based logging, including TCP, UDP connections, HTTP requests, and Syslog support.

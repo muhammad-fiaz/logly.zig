@@ -1,6 +1,15 @@
+---
+title: Logging Metrics Guide
+description: Monitor logging performance with Logly.zig's built-in metrics. Track record counts, error rates, bytes written, per-level statistics, and sink throughput with atomic counters.
+head:
+  - - meta
+    - name: keywords
+      content: logging metrics, performance monitoring, log statistics, error tracking, throughput metrics, observability, log analytics
+---
+
 # Metrics
 
-Logly-Zig v0.0.9 provides built-in metrics collection for monitoring logging performance and behavior. Track record counts, error rates, throughput, and more.
+Logly.zig provides built-in metrics collection for monitoring logging performance and behavior. Track record counts, error rates, throughput, and more.
 
 ## Overview
 

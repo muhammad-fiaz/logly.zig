@@ -1,6 +1,21 @@
+---
+title: Basic Logging Example
+description: Learn the basics of Logly.zig with this simple example. Covers logger initialization, all 10 built-in log levels, and proper cleanup with defer.
+head:
+  - - meta
+    - name: keywords
+      content: logly example, basic logging, zig logging tutorial, hello world logging, getting started
+  - - meta
+    - property: og:title
+      content: Basic Logging Example | Logly.zig
+  - - meta
+    - property: og:description
+      content: Simple example demonstrating Logly.zig initialization and all 10 built-in log levels.
+---
+
 # Basic Usage
 
-This example demonstrates the basic usage of Logly-Zig, including initialization and logging at all 10 built-in levels.
+This example demonstrates the basic usage of Logly.zig, including initialization and logging at all 10 built-in levels.
 
 ## Code Example
 

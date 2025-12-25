@@ -1,6 +1,15 @@
+---
+title: Log Filtering Guide
+description: Filter logs by level, module, message pattern, and custom rules in Logly.zig. Learn to create allow/deny rules, batch filtering, and sink-level filters for precise log control.
+head:
+  - - meta
+    - name: keywords
+      content: log filtering, zig log filter, log level filter, message pattern, module filter, log rules, conditional logging
+---
+
 # Filtering
 
-Logly-Zig v0.0.9 provides a powerful filtering system for rule-based log filtering. Filter logs by level, message patterns, modules, and more. Filters work with all sink types: console, file, and JSON.
+Logly.zig provides a powerful filtering system for rule-based log filtering. Filter logs by level, message patterns, modules, and more. Filters work with all sink types: console, file, and JSON.
 
 ## Overview
 

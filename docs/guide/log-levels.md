@@ -1,3 +1,18 @@
+---
+title: Log Levels
+description: Explore the 10 built-in log levels in Logly.zig. Learn about priorities, whole-line coloring, custom levels, and fine-grained level filtering for modules.
+head:
+  - - meta
+    - name: keywords
+      content: log levels, log priority, level filtering, module levels, custom log levels, whole-line coloring, zig logging
+  - - meta
+    - property: og:title
+      content: Log Levels | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Log Levels
 
 Logly-Zig supports **10 built-in log levels**, each with a specific priority, color, and use case.

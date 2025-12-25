@@ -1,3 +1,15 @@
+---
+title: Sink API Reference
+description: API reference for Logly.zig Sink struct. Configure log destinations including console, file, network (TCP/UDP), rotation, compression, and custom outputs.
+head:
+  - - meta
+    - name: keywords
+      content: sink api, log destination, file sink, console sink, network sink, output configuration
+  - - meta
+    - property: og:title
+      content: Sink API Reference | Logly.zig
+---
+
 # Sink API
 
 The `Sink` struct represents a destination for log messages. Sinks can write to console, files, or custom outputs with individual configuration options.
@@ -322,53 +334,34 @@ const name = sink.getName();
 const stats = sink.getStats();  // or sink.statistics()
 ```
 
-## SinkPresets
+## Configuration Helpers
 
-Pre-configured sink options for common use cases:
+Helper methods on `SinkConfig` for common use cases:
 
 ```zig
-pub const SinkPresets = struct {
-    /// Console sink with default settings.
-    pub fn console() SinkConfig {
-        return .{};
-    }
+// Usage: logger.addSink(SinkConfig.console());
+
+pub const SinkConfig = struct {
+    /// Returns the default sink configuration (Console, async).
+    pub fn default() SinkConfig;
+
+    /// Returns a console sink configuration.
+    pub fn console() SinkConfig;
     
-    /// JSON file sink.
-    pub fn jsonFile(path: []const u8) SinkConfig {
-        return .{
-            .path = path,
-            .json = true,
-            .color = false,
-        };
-    }
+    /// Returns a file sink configuration.
+    pub fn file(path: []const u8) SinkConfig;
+
+    /// Returns a JSON file sink configuration.
+    pub fn jsonFile(path: []const u8) SinkConfig;
     
-    /// Rotating file sink.
-    pub fn rotatingFile(path: []const u8, rotation: []const u8, retention: usize) SinkConfig {
-        return .{
-            .path = path,
-            .rotation = rotation,
-            .retention = retention,
-        };
-    }
+    /// Returns a rotating file sink configuration.
+    pub fn rotating(path: []const u8, rotation_interval: []const u8, retention_count: usize) SinkConfig;
     
-    /// Error-only sink.
-    pub fn errorOnly(path: []const u8) SinkConfig {
-        return .{
-            .path = path,
-            .level = .err,
-            .color = false,
-        };
-    }
+    /// Returns an error-only sink configuration.
+    pub fn errorOnly(path: []const u8) SinkConfig;
     
-    /// High-throughput async sink.
-    pub fn highThroughput(path: []const u8) SinkConfig {
-        return .{
-            .path = path,
-            .async_write = true,
-            .buffer_size = 65536,
-            .flush_interval_ms = 500,
-        };
-    }
+    /// Returns a network sink configuration.
+    pub fn network(uri: []const u8) SinkConfig;
 };
 ```
 

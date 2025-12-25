@@ -1,3 +1,15 @@
+---
+title: Compression API Reference
+description: API reference for Logly.zig Compression module. DEFLATE, GZIP, ZLIB algorithms with streaming support, background processing, and performance monitoring.
+head:
+  - - meta
+    - name: keywords
+      content: compression api, gzip api, zlib api, deflate, log compression, streaming compression
+  - - meta
+    - property: og:title
+      content: Compression API Reference | Logly.zig
+---
+
 # Compression API Reference
 
 Comprehensive log file compression with multiple algorithms, streaming support, and advanced monitoring.

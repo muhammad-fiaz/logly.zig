@@ -1,3 +1,15 @@
+---
+title: Network Logging Example
+description: Example of sending logs over TCP and UDP with Logly.zig. Configure network sinks with JSON formatting, compression, and centralized log aggregation.
+head:
+  - - meta
+    - name: keywords
+      content: network logging, tcp logging, udp logging, centralized logs, log aggregation, remote logging
+  - - meta
+    - property: og:title
+      content: Network Logging Example | Logly.zig
+---
+
 # Network Logging Example
 
 This example demonstrates how to use Logly's network sinks to send logs over TCP and UDP, including support for JSON formatting and compression.

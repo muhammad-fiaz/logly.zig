@@ -1,3 +1,15 @@
+---
+title: System Diagnostics Example
+description: Example of emitting system diagnostics with Logly.zig. Log OS, CPU, memory, and storage info at startup or on-demand for monitoring and debugging.
+head:
+  - - meta
+    - name: keywords
+      content: diagnostics example, system info, cpu info, memory stats, storage info, monitoring, debugging
+  - - meta
+    - property: og:title
+      content: System Diagnostics Example | Logly.zig
+---
+
 # Diagnostics Example
 
 Emit system diagnostics at startup and on-demand, including optional per-drive storage details.

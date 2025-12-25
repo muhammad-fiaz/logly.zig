@@ -2,6 +2,7 @@ const std = @import("std");
 const Config = @import("config.zig").Config;
 const Compression = @import("compression.zig").Compression;
 const SinkConfig = @import("sink.zig").SinkConfig;
+const ThreadPool = @import("thread_pool.zig").ThreadPool;
 
 /// Scheduler for automated log maintenance tasks.
 ///
@@ -29,6 +30,7 @@ pub const Scheduler = struct {
     stats: SchedulerStats,
     compression: Compression,
     compression_initialized: bool = false,
+    thread_pool: ?*ThreadPool = null,
     health_callback: ?*const fn () HealthStatus = null,
     metrics_callback: ?*const fn () MetricsSnapshot = null,
 
@@ -84,8 +86,26 @@ pub const Scheduler = struct {
         next_run: i64 = 0,
         run_count: u64 = 0,
         error_count: u64 = 0,
+        retries_remaining: u32 = 0,
         enabled: bool = true,
+        running: bool = false,
+        priority: Priority = .normal,
+        retry_policy: RetryPolicy = .{},
+        depends_on: ?[]const u8 = null,
         config: TaskConfig = .{},
+
+        pub const Priority = enum {
+            low,
+            normal,
+            high,
+            critical,
+        };
+
+        pub const RetryPolicy = struct {
+            max_retries: u32 = 3,
+            interval_ms: u32 = 5000,
+            backoff_multiplier: f32 = 1.5,
+        };
 
         /// Task-specific configuration.
         pub const TaskConfig = struct {
@@ -97,12 +117,18 @@ pub const Scheduler = struct {
             max_files: ?usize = null,
             /// Maximum total size in bytes
             max_total_size: ?u64 = null,
+            /// Minimum age in seconds (useful for compression - e.g. compress files older than 1 day)
+            min_age_seconds: u64 = 0,
             /// File pattern to match (e.g., "*.log")
             file_pattern: ?[]const u8 = null,
             /// Compress files before cleanup
             compress_before_delete: bool = false,
             /// Recursive directory processing
             recursive: bool = false,
+            /// Trigger task only if disk usage exceeds this percentage (0-100, null to disable)
+            trigger_disk_usage_percent: ?u8 = null,
+            /// Required free space in bytes before running task
+            min_free_space_bytes: ?u64 = null,
 
             /// Create from centralized Config.SchedulerConfig.
             pub fn fromCentralized(cfg: SchedulerConfig) TaskConfig {
@@ -201,7 +227,35 @@ pub const Scheduler = struct {
                         break :blk now_ms + @as(i64, @intCast((24 * 3600 - current_seconds + target_seconds) * 1000));
                     }
                 },
-                .cron => now_ms + 60 * 1000, // Simplified: check every minute
+                .cron => |cron| blk: {
+                    var check_time = now_ms + 60 * 1000;
+                    // Find closest match within the next 30 days
+                    const limit = now_ms + 30 * 24 * 3600 * 1000;
+                    while (check_time < limit) : (check_time += 60 * 1000) {
+                        const sec = @divFloor(check_time, 1000);
+                        const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(sec) };
+                        const day = epoch.getEpochDay();
+                        const year_day = day.calculateYearDay();
+                        const month_day = year_day.calculateMonthDay();
+                        const day_sec = epoch.getDaySeconds();
+
+                        const minute = @divFloor(day_sec.secs % 3600, 60);
+                        const hour = @divFloor(day_sec.secs, 3600);
+                        const month = month_day.month.numeric();
+                        const mday = month_day.day_index + 1;
+                        // Unix epoch (Jan 1, 1970) was a Thursday (4)
+                        const wday = @as(u8, @intCast((day.day + 4) % 7));
+
+                        if (cron.minute != null and cron.minute.? != minute) continue;
+                        if (cron.hour != null and cron.hour.? != hour) continue;
+                        if (cron.month != null and cron.month.? != month) continue;
+                        if (cron.day_of_month != null and cron.day_of_month.? != mday) continue;
+                        if (cron.day_of_week != null and cron.day_of_week.? != wday) continue;
+
+                        break :blk check_time;
+                    }
+                    break :blk now_ms + 60 * 1000; // Fallback
+                },
             };
         }
     };
@@ -245,6 +299,13 @@ pub const Scheduler = struct {
         return self;
     }
 
+    /// Initializes a new Scheduler with a ThreadPool.
+    pub fn initWithThreadPool(allocator: std.mem.Allocator, thread_pool: *ThreadPool) !*Scheduler {
+        const self = try init(allocator);
+        self.thread_pool = thread_pool;
+        return self;
+    }
+
     /// Initializes a Scheduler from global Config.SchedulerConfig.
     ///
     /// Arguments:
@@ -277,7 +338,7 @@ pub const Scheduler = struct {
     pub fn deinit(self: *Scheduler) void {
         self.stop();
 
-        // Deinit compression
+        // Deinit compression if initialized
         if (self.compression_initialized) {
             self.compression.deinit();
         }
@@ -375,10 +436,40 @@ pub const Scheduler = struct {
             .schedule = schedule,
             .next_run = schedule.nextRunTime(now),
             .config = owned_config,
+            .retries_remaining = 3, // Default retries
         };
 
         try self.tasks.append(self.allocator, task);
         return self.tasks.items.len - 1;
+    }
+
+    /// Configures priority for a specific task.
+    pub fn setTaskPriority(self: *Scheduler, index: usize, priority: ScheduledTask.Priority) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (index < self.tasks.items.len) {
+            self.tasks.items[index].priority = priority;
+        }
+    }
+
+    /// Configures retry policy for a specific task.
+    pub fn setTaskRetryPolicy(self: *Scheduler, index: usize, policy: ScheduledTask.RetryPolicy) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (index < self.tasks.items.len) {
+            self.tasks.items[index].retry_policy = policy;
+            self.tasks.items[index].retries_remaining = policy.max_retries;
+        }
+    }
+
+    /// Sets a dependency for a task.
+    pub fn setTaskDependency(self: *Scheduler, index: usize, dependency_name: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (index < self.tasks.items.len) {
+            if (self.tasks.items[index].depends_on) |p| self.allocator.free(p);
+            self.tasks.items[index].depends_on = try self.allocator.dupe(u8, dependency_name);
+        }
     }
 
     /// Adds a cleanup task for old log files.
@@ -454,7 +545,7 @@ pub const Scheduler = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         if (index < self.tasks.items.len) {
-            const task = self.tasks.orderedRemove(self.allocator, index);
+            const task = self.tasks.orderedRemove(index);
             self.allocator.free(task.name);
             if (task.config.path) |p| self.allocator.free(p);
             if (task.config.file_pattern) |p| self.allocator.free(p);
@@ -505,15 +596,34 @@ pub const Scheduler = struct {
     }
 
     /// Stops the scheduler.
+    /// Stops the scheduler and waits for pending tasks.
     pub fn stop(self: *Scheduler) void {
         if (!self.running.load(.acquire)) return;
 
         self.running.store(false, .release);
         self.condition.broadcast();
 
+        // Join the worker loop thread
         if (self.worker_thread) |thread| {
             thread.join();
             self.worker_thread = null;
+        }
+
+        // Wait for running tasks (with a simple timeout)
+        var wait_loops: u8 = 0;
+        while (wait_loops < 50) : (wait_loops += 1) { // 5 second max wait
+            var any_running = false;
+            self.mutex.lock();
+            for (self.tasks.items) |task| {
+                if (task.running) {
+                    any_running = true;
+                    break;
+                }
+            }
+            self.mutex.unlock();
+
+            if (!any_running) break;
+            std.Thread.sleep(100 * std.time.ns_per_ms);
         }
     }
 
@@ -532,20 +642,128 @@ pub const Scheduler = struct {
         defer self.mutex.unlock();
 
         const now = std.time.milliTimestamp();
-        for (self.tasks.items) |*task| {
-            if (task.enabled and task.next_run <= now) {
-                self.executeTask(task) catch {
-                    task.error_count += 1;
-                    self.stats.tasks_failed += 1;
-                };
+        for (self.tasks.items, 0..) |*task, i| {
+            if (task.enabled and !task.running and task.next_run <= now) {
+                // Check dependencies
+                if (task.depends_on) |dep_name| {
+                    var dep_running = false;
+                    for (self.tasks.items) |t| {
+                        if (std.mem.eql(u8, t.name, dep_name) and t.running) {
+                            dep_running = true;
+                            break;
+                        }
+                    }
+                    if (dep_running) continue;
+                }
+
+                // Check disk usage if configured
+                if (task.config.trigger_disk_usage_percent) |threshold| {
+                    const usage = self.getDiskUsage(task.config.path orelse ".") catch 0;
+                    if (usage < threshold) continue;
+                }
+
+                if (task.config.min_free_space_bytes) |min_free| {
+                    const free = self.getFreeSpace(task.config.path orelse ".") catch min_free;
+                    if (free < min_free) continue;
+                }
+
+                if (self.thread_pool) |tp| {
+                    task.running = true;
+                    const TaskCtx = struct {
+                        scheduler: *Scheduler,
+                        task_index: usize,
+
+                        fn run(ctx_ptr: *anyopaque, _: ?std.mem.Allocator) void {
+                            const ctx = @as(*@This(), @ptrCast(@alignCast(ctx_ptr)));
+                            defer ctx.scheduler.allocator.destroy(ctx);
+
+                            ctx.scheduler.runTaskByIndex(ctx.task_index) catch |err| {
+                                ctx.scheduler.handleTaskError(ctx.task_index, err);
+                            };
+                        }
+                    };
+
+                    const ctx = self.allocator.create(TaskCtx) catch continue;
+                    ctx.* = .{
+                        .scheduler = self,
+                        .task_index = i,
+                    };
+
+                    const tp_prio: ThreadPool.WorkItem.Priority = switch (task.priority) {
+                        .low => .low,
+                        .normal => .normal,
+                        .high => .high,
+                        .critical => .critical,
+                    };
+
+                    if (!tp.submit(.{ .callback = .{ .func = TaskCtx.run, .context = ctx } }, tp_prio)) {
+                        self.allocator.destroy(ctx);
+                        self.executeTask(task) catch |err| {
+                            self.handleTaskError(i, err);
+                        };
+                        task.running = false;
+                    }
+                } else {
+                    self.executeTask(task) catch |err| {
+                        self.handleTaskError(i, err);
+                    };
+                }
             }
         }
+    }
+
+    fn handleTaskError(self: *Scheduler, index: usize, err: anyerror) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (index >= self.tasks.items.len) return;
+        const task = &self.tasks.items[index];
+
+        task.error_count += 1;
+        self.stats.tasks_failed += 1;
+
+        if (task.retries_remaining > 0) {
+            task.retries_remaining -= 1;
+            const delay = @as(u64, @intFromFloat(@as(f32, @floatFromInt(task.retry_policy.interval_ms)) * std.math.pow(f32, task.retry_policy.backoff_multiplier, @floatFromInt(task.retry_policy.max_retries - task.retries_remaining))));
+            task.next_run = std.time.milliTimestamp() + @as(i64, @intCast(delay));
+
+            std.log.warn("Scheduled task '{s}' failed ({s}), retrying in {d}ms ({d} retries left)", .{ task.name, @errorName(err), delay, task.retries_remaining });
+        } else {
+            if (self.on_task_error) |cb| {
+                cb(task.name, @errorName(err));
+            } else {
+                std.log.err("Scheduled task '{s}' failed: {s}", .{ task.name, @errorName(err) });
+            }
+        }
+    }
+
+    fn runTaskByIndex(self: *Scheduler, index: usize) !void {
+        self.mutex.lock();
+        if (index >= self.tasks.items.len) {
+            self.mutex.unlock();
+            return;
+        }
+        const task = &self.tasks.items[index];
+        self.mutex.unlock();
+
+        defer {
+            self.mutex.lock();
+            task.running = false;
+            self.mutex.unlock();
+        }
+
+        try self.executeTask(task);
     }
 
     fn schedulerLoop(self: *Scheduler) void {
         while (self.running.load(.acquire)) {
             self.runPending();
-            std.Thread.sleep(1000 * std.time.ns_per_ms); // Check every second
+
+            // Check every 500ms for more responsive scheduling
+            var i: usize = 0;
+            while (i < 5 and self.running.load(.acquire)) : (i += 1) {
+                std.Thread.sleep(100 * std.time.ns_per_ms);
+            }
         }
     }
 
@@ -613,7 +831,7 @@ pub const Scheduler = struct {
         };
         defer dir.close();
 
-        // Collect file info for sorting (needed for max_files)
+        // Collect file info for ranking
         var files: std.ArrayList(FileInfo) = .empty;
         defer {
             for (files.items) |fi| {
@@ -623,6 +841,7 @@ pub const Scheduler = struct {
         }
 
         var iter = dir.iterate();
+        var total_size: u64 = 0;
         while (try iter.next()) |entry| {
             if (entry.kind != .file) continue;
 
@@ -633,9 +852,12 @@ pub const Scheduler = struct {
 
             // Get file stats
             const file = dir.openFile(entry.name, .{}) catch continue;
-            defer file.close();
+            const stat = file.stat() catch {
+                file.close();
+                continue;
+            };
+            file.close();
 
-            const stat = file.stat() catch continue;
             const mtime: i64 = @intCast(@divFloor(stat.mtime, std.time.ns_per_s));
             const age = now - mtime;
 
@@ -649,6 +871,7 @@ pub const Scheduler = struct {
                 self.allocator.free(name_copy);
                 continue;
             };
+            total_size += stat.size;
         }
 
         // Sort by modification time (oldest first)
@@ -658,25 +881,21 @@ pub const Scheduler = struct {
             }
         }.lessThan);
 
-        // Delete files based on age
-        for (files.items) |fi| {
-            var should_delete = false;
+        // Track what we delete
+        var deleted_indices = std.DynamicBitSet.initEmpty(self.allocator, files.items.len) catch return result;
+        defer deleted_indices.deinit();
 
-            // Check age
+        // 1. Delete files based on age
+        for (files.items, 0..) |fi, i| {
             if (fi.age > max_age) {
-                should_delete = true;
-            }
-
-            if (should_delete) {
                 // Optionally compress before delete
                 if (config.compress_before_delete and self.compression_initialized) {
-                    const full_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ path, fi.name }) catch continue;
-                    defer self.allocator.free(full_path);
-
                     // Skip already compressed files
                     if (!std.mem.endsWith(u8, fi.name, ".gz") and
                         !std.mem.endsWith(u8, fi.name, ".lgz"))
                     {
+                        const full_path = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
+                        defer self.allocator.free(full_path);
                         _ = self.compression.compressFile(full_path, null) catch {};
                         result.files_compressed += 1;
                     }
@@ -689,18 +908,18 @@ pub const Scheduler = struct {
 
                 result.files_deleted += 1;
                 result.bytes_freed += fi.size;
+                total_size -= fi.size;
+                deleted_indices.set(i);
             }
         }
 
-        // Enforce max files limit (delete oldest files beyond limit)
+        // 2. Enforce max files limit
         if (config.max_files) |max| {
-            if (files.items.len > max) {
-                const files_to_delete = files.items.len - max;
-                var deleted: usize = 0;
-
-                // Files are sorted oldest first, delete from the beginning
-                for (files.items) |fi| {
-                    if (deleted >= files_to_delete) break;
+            var current_count = files.items.len - result.files_deleted;
+            if (current_count > max) {
+                for (files.items, 0..) |fi, i| {
+                    if (deleted_indices.isSet(i)) continue;
+                    if (current_count <= max) break;
 
                     dir.deleteFile(fi.name) catch {
                         result.errors += 1;
@@ -709,7 +928,29 @@ pub const Scheduler = struct {
 
                     result.files_deleted += 1;
                     result.bytes_freed += fi.size;
-                    deleted += 1;
+                    total_size -= fi.size;
+                    deleted_indices.set(i);
+                    current_count -= 1;
+                }
+            }
+        }
+
+        // 3. Enforce max total size limit
+        if (config.max_total_size) |max_size| {
+            if (total_size > max_size) {
+                for (files.items, 0..) |fi, i| {
+                    if (deleted_indices.isSet(i)) continue;
+                    if (total_size <= max_size) break;
+
+                    dir.deleteFile(fi.name) catch {
+                        result.errors += 1;
+                        continue;
+                    };
+
+                    result.files_deleted += 1;
+                    result.bytes_freed += fi.size;
+                    total_size -= fi.size;
+                    deleted_indices.set(i);
                 }
             }
         }
@@ -743,6 +984,7 @@ pub const Scheduler = struct {
         defer dir.close();
 
         var iter = dir.iterate();
+        const now = std.time.timestamp();
         while (try iter.next()) |entry| {
             if (entry.kind != .file) continue;
 
@@ -754,6 +996,18 @@ pub const Scheduler = struct {
             // Check pattern
             if (config.file_pattern) |pattern| {
                 if (!matchPattern(entry.name, pattern)) continue;
+            }
+
+            // Check age if min_age_seconds is set
+            if (config.min_age_seconds > 0) {
+                const file = dir.openFile(entry.name, .{}) catch continue;
+                const stat = file.stat() catch {
+                    file.close();
+                    continue;
+                };
+                file.close();
+                const mtime: i64 = @intCast(@divFloor(stat.mtime, std.time.ns_per_s));
+                if (now - mtime < @as(i64, @intCast(config.min_age_seconds))) continue;
             }
 
             // Build full path
@@ -825,6 +1079,56 @@ pub const Scheduler = struct {
 
     /// Alias for getStats
     pub const statistics = getStats;
+
+    fn getDiskUsage(_: *Scheduler, path: []const u8) !u8 {
+        if (@import("builtin").os.tag == .windows) {
+            var free_bytes: u64 = 0;
+            var total_bytes: u64 = 0;
+            var total_free: u64 = 0;
+
+            const path_w = try std.unicode.utf8ToUtf16LeAllocZ(std.heap.page_allocator, path);
+            defer std.heap.page_allocator.free(path_w);
+
+            if (GetDiskFreeSpaceExW(path_w.ptr, &free_bytes, &total_bytes, &total_free) == 0) {
+                return 0;
+            }
+            if (total_bytes == 0) return 0;
+            return @intCast(100 - (free_bytes * 100 / total_bytes));
+        } else {
+            const path_c = try std.heap.page_allocator.dupeZ(u8, path);
+            defer std.heap.page_allocator.free(path_c);
+
+            var stat: std.posix.statvfs = undefined;
+            try std.posix.statvfs(path_c, &stat);
+
+            if (stat.blocks == 0) return 0;
+            return @intCast(100 - (stat.bfree * 100 / stat.blocks));
+        }
+    }
+
+    fn getFreeSpace(_: *Scheduler, path: []const u8) !u64 {
+        if (@import("builtin").os.tag == .windows) {
+            var free_bytes: u64 = 0;
+            var total_bytes: u64 = 0;
+            var total_free: u64 = 0;
+
+            const path_w = try std.unicode.utf8ToUtf16LeAllocZ(std.heap.page_allocator, path);
+            defer std.heap.page_allocator.free(path_w);
+
+            if (GetDiskFreeSpaceExW(path_w.ptr, &free_bytes, &total_bytes, &total_free) == 0) {
+                return 0;
+            }
+            return free_bytes;
+        } else {
+            const path_c = try std.heap.page_allocator.dupeZ(u8, path);
+            defer std.heap.page_allocator.free(path_c);
+
+            var stat: std.posix.statvfs = undefined;
+            try std.posix.statvfs(path_c, &stat);
+
+            return stat.bfree * stat.frsize;
+        }
+    }
 };
 
 fn matchPattern(name: []const u8, pattern: []const u8) bool {
@@ -938,3 +1242,73 @@ test "pattern matching" {
     try std.testing.expect(!matchPattern("app.txt", "*.log"));
     try std.testing.expect(matchPattern("test.log.gz", "*.gz"));
 }
+
+test "scheduler maintenance task" {
+    const allocator = std.testing.allocator;
+    const scheduler = try Scheduler.init(allocator);
+    defer scheduler.deinit();
+
+    const tmp_path = ".test_logs_maintenance";
+    std.fs.cwd().makeDir(tmp_path) catch {};
+    defer std.fs.cwd().deleteTree(tmp_path) catch {};
+
+    var dir = try std.fs.cwd().openDir(tmp_path, .{ .iterate = true });
+    defer dir.close();
+
+    // Create initial set of log files for testing limit enforcement
+    var i: usize = 0;
+    while (i < 10) : (i += 1) {
+        const name = try std.fmt.allocPrint(allocator, "test_{d}.log", .{i});
+        defer allocator.free(name);
+        const file = try dir.createFile(name, .{});
+        try file.writeAll("test content");
+        file.close();
+    }
+
+    // Create additional files to test overflow handling
+    while (i < 15) : (i += 1) {
+        const name = try std.fmt.allocPrint(allocator, "new_{d}.log", .{i});
+        defer allocator.free(name);
+        const file = try dir.createFile(name, .{});
+        try file.writeAll("new log content");
+        file.close();
+    }
+
+    // Verify max_files constraint enforcement
+    var config = Scheduler.ScheduledTask.TaskConfig{
+        .path = tmp_path,
+        .max_files = 5,
+        .file_pattern = "*.log",
+    };
+
+    const result = try scheduler.performCleanup(tmp_path, config);
+    try std.testing.expectEqual(@as(usize, 10), result.files_deleted);
+
+    var count: usize = 0;
+    var iter = dir.iterate();
+    while (try iter.next()) |_| {
+        count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 5), count);
+
+    // Verify max_total_size constraint enforcement
+    {
+        const file = try dir.createFile("large.log", .{});
+        try file.writeAll(&([_]u8{'A'} ** 1024));
+        file.close();
+    }
+
+    config.max_files = null;
+    config.max_total_size = 500;
+
+    const result2 = try scheduler.performCleanup(tmp_path, config);
+    try std.testing.expect(result2.files_deleted >= 1);
+}
+
+// Windows helper functions
+extern "kernel32" fn GetDiskFreeSpaceExW(
+    lpDirectoryName: ?[*:0]const u16,
+    lpFreeBytesAvailableToCaller: ?*u64,
+    lpTotalNumberOfBytes: ?*u64,
+    lpTotalNumberOfFreeBytes: ?*u64,
+) callconv(.winapi) i32;

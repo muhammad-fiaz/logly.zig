@@ -1,3 +1,15 @@
+---
+title: Context Binding Example  
+description: Example of attaching metadata to logs with Logly.zig context binding. Track requests, user sessions, and system state across multiple log messages.
+head:
+  - - meta
+    - name: keywords
+      content: context binding, log metadata, request tracking, session logging, structured context, bind unbind
+  - - meta
+    - property: og:title
+      content: Context Binding Example | Logly.zig
+---
+
 # Context Binding
 
 This example demonstrates how to use context binding to attach metadata to logs. Context is particularly useful for tracking requests, user sessions, or system states across multiple log messages.

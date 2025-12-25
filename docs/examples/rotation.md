@@ -1,8 +1,11 @@
-# File Rotation
+# Rotation Examples
 
-This example demonstrates how to configure file rotation. Rotation ensures that log files don't grow indefinitely by creating new files based on time intervals or size limits, and deleting old files based on retention policies.
+This page demonstrates various ways to configure file rotation and retention in Logly, covering basic usage, global configuration, advanced retention, and compression.
 
-## Code Example
+## Basic Usage
+
+### Daily Rotation
+Standard setup: daily rotation with 30-day retention.
 
 ```zig
 const std = @import("std");
@@ -10,96 +13,140 @@ const logly = @import("logly");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const logger = try logly.Logger.init(allocator);
+    var logger = try logly.Logger.init(allocator, .{});
     defer logger.deinit();
 
-    var config = logly.Config.default();
-    config.auto_sink = false;
-    logger.configure(config);
+    // Add a rotating sink: Daily rotation, keep 30 files
+    try logger.addSink(logly.SinkConfig.rotating("logs/app.log", "daily", 30));
 
-    // Daily rotation with 7 day retention (using add() alias)
-    _ = try logger.add(.{
-        .path = "logs/daily.log",
-        .rotation = "daily",
-        .retention = 7,
-    });
-
-    // Size-based rotation (10MB limit)
-    _ = try logger.add(.{
-        .path = "logs/size_based.log",
-        .size_limit = 10 * 1024 * 1024,
-        .retention = 5,
-    });
-
-    // Combined rotation (daily OR 5MB)
-    _ = try logger.add(.{
-        .path = "logs/combined.log",
-        .rotation = "daily",
-        .size_limit = 5 * 1024 * 1024,
-        .retention = 10,
-    });
-
-    try logger.info("Rotation example - files will rotate based on time or size", @src());
-    try logger.success("Check logs/ directory for rotated files", @src());
-
-    try logger.flush();
-
-    std.debug.print("\nRotation example completed!\n", .{});
+    logger.info("Application started");
 }
 ```
 
-## Expected Output
-
-Files created in `logs/`:
-
-- `daily.log`
-- `size_based.log`
-- `combined.log`
-
-(When rotation triggers, you will see files like `daily.2024-06-01.log` or `size_based.1.log`)
-
-## New Presets (v0.0.9)
+### Size-Based Rotation
+Rotate every 50MB, keep 5 files.
 
 ```zig
-const RotationPresets = logly.RotationPresets;
-
-// 1GB size-based rotation
-var rotation = RotationPresets.size1GB();
-
-// 90-day daily rotation
-var rotation = RotationPresets.daily90Days();
-
-// 48-hour hourly rotation
-var rotation = RotationPresets.hourly48Hours();
-
-// Factory methods for sinks
-var sink = RotationPresets.dailySink("logs/app.log", 30);
-var sink = RotationPresets.hourlySink("logs/app.log", 24);
+try logger.addSink(logly.SinkConfig.createSizeRotatingSink("logs/data.log", 50 * 1024 * 1024, 5));
 ```
 
-## Aliases
+### Concise Configuration (Short Alias)
+You can use `logger.add()` with a struct literal to configure rotation inline, without needing helper functions. This gives you full access to all `SinkConfig` fields.
 
-| Alias | Method |
-|-------|--------|
-| `check` | `shouldRotate` |
-| `tryRotate` | `rotate` |
-| `rotateNow` | `rotate` |
-| `rotatingSink` | `createSinkWithRotation` |
-| `sizeSink` | `createSinkWithSizeRotation` |
+```zig
+_ = try logger.add(.{
+    .path = "logs/app.log",
+    .size_limit_str = "10MB",       // Use string for easy size definition
+    // .size_limit = 10 * 1024 * 1024, // Or raw bytes
+    .retention = 5,                 // Keep 5 rotated files
+    .rotation = "daily",            // Optional: Combine time and size
+});
+```
 
-## Best Practices
+---
 
-1. **Set retention** - Always define retention to prevent disk filling
-2. **Use compression** - Enable compression for rotated files
-3. **Monitor disk** - Alert when disk usage is high
-4. **Test rotation** - Verify rotation works in staging
-5. **Combine with scheduler** - Use scheduler for cleanup tasks
+## Global Configuration
+Configure rotation defaults globally. This is useful for enforcing consistency across services or multiple sinks.
 
-## See Also
+### Full Global Config Example
 
-- [Rotation Guide](/guide/rotation) - Detailed rotation documentation
-- [Rotation API](/api/rotation) - Full API reference
+```zig
+const config = logly.Config{
+    .rotation = .{
+        .enabled = true,
+        .naming_strategy = .iso_datetime, // Use ISO timestamps
+        .archive_dir = "logs/archive",    // Move old files here
+        .max_age_seconds = 86400 * 30,    // 30 days max age
+        .retention_count = 50,            // Max 50 files total
+        .clean_empty_dirs = true,         // Clean up archive dir if empty
+        .interval = "hourly",             // Default interval
+    }
+};
 
+var logger = try logly.Logger.init(allocator, config);
+// Sinks added will inherit these rotation settings if applicable
+```
+
+---
+
+## Advanced Scenarios
+
+### Archiving and Compression
+Rotate files, compress them with Zstd, and move them to an archive folder.
+
+```zig
+const Rotation = logly.Rotation;
+
+// Manually configure a Rotation instance
+var rot = try Rotation.init(allocator, "logs/access.log", "daily", null, 60);
+
+// 1. Enable Zstd compression (high ratio)
+try rot.withCompression(.{ 
+    .algorithm = .zstd, 
+    .level = .best 
+});
+
+// 2. Use ISO timestamps for better sorting
+rot.withNaming(.iso_datetime); 
+
+// 3. Move rotated files to a dedicated archive folder
+try rot.withArchiveDir("logs/archive/access");
+
+// Note: To use this manually configured Rotation with a Sink, you would integrate it 
+// into a custom Sink implementation or ensure your SinkConfig supports applying these settings.
+```
+
+### Complex Retention (Age AND Count)
+Enforce both max age and max count. The stricter limit applies.
+
+```zig
+var rot = try Rotation.init(allocator, "server.log", "daily", null, 100); // Max 100 files
+
+// AND max 7 days old
+rot.withMaxAge(7 * 24 * 3600); 
+
+// Result: Files are deleted if they are the 101st file OR if they are older than 7 days.
+```
+
+### Rolling Index Strategy
+Mimic standard Unix `logrotate` behavior: `app.log` -> `app.log.1` -> `app.log.2`.
+
+```zig
+var rot = try Rotation.init(allocator, "sys.log", "size", 10 * 1024 * 1024, 5);
+rot.withNaming(.index);
+
+// Result: 
+// sys.log (current)
+// sys.log.1 (previous)
+// Result: 
+// sys.log (current)
+// sys.log.1 (previous)
+// sys.log.2 (oldest)
+```
+
+### Dynamic Base Paths
+You can combine rotation with dynamic paths (e.g., date-based directories).
+
+```zig
+// Writes to logs/2023-10-25/app.log and rotates hourly within that folder
+_ = try logger.add(.{
+    .path = "logs/{date}/app.log",
+    .rotation = "hourly",
+    .retention = 24,
+});
+// See 'examples/dynamic-path.md' for more path patterns.
+```
+
+### Custom File Naming
+Control exactly how the rotated file is named using a format string.
+
+```zig
+// Rotates "app.log" to "app-2023.10.25.log" instead of "app.log.2023-10-25"
+try logger.add(.{
+    .path = "app.log",
+    .rotation = "daily",
+    .naming_format = "{base}-{date}{ext}",
+});
+```

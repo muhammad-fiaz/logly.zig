@@ -1,3 +1,15 @@
+---
+title: Color Control Example
+description: Example of ANSI color control in Logly.zig. Configure global and per-sink colors, custom level colors, Windows support, and color modifiers for terminals.
+head:
+  - - meta
+    - name: keywords
+      content: color control, ansi colors, terminal colors, windows colors, custom colors, color themes
+  - - meta
+    - property: og:title
+      content: Color Control Example | Logly.zig
+---
+
 # Color Control Example
 
 This example demonstrates comprehensive control over ANSI color output at global and per-sink levels, including Windows support and custom colors.

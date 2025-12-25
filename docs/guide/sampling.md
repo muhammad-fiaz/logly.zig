@@ -1,6 +1,15 @@
+---
+title: Log Sampling Guide
+description: Control log volume in high-throughput applications with Logly.zig sampling. Use probability sampling, rate limiting, every-Nth message, and adaptive sampling strategies.
+head:
+  - - meta
+    - name: keywords
+      content: log sampling, rate limiting, high volume logging, probability sampling, log throttling, adaptive sampling, log control
+---
+
 # Sampling
 
-Logly-Zig v0.0.9 provides a sophisticated sampling system for controlling log volume in high-throughput scenarios. Sample logs by probability, rate limits, or every-Nth message.
+Logly.zig provides a sophisticated sampling system for controlling log volume in high-throughput scenarios. Sample logs by probability, rate limits, or every-Nth message.
 
 ## Overview
 

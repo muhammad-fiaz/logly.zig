@@ -1,3 +1,18 @@
+---
+title: Custom Levels Full Example
+description: Complete example of custom log levels in Logly.zig with console, file, JSON output, context binding, and formatted messages all working together.
+head:
+  - - meta
+    - name: keywords
+      content: custom levels, full features, console file json, context binding, formatted messages, log level priority
+  - - meta
+    - property: og:title
+      content: Custom Levels Full Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Custom Levels (Full Features)
 
 This example demonstrates custom log levels with **all features**: console output, file output, JSON output, context binding, and formatted messages.

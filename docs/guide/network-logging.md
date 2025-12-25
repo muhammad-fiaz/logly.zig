@@ -1,3 +1,18 @@
+---
+title: Network Logging
+description: Send logs over TCP and UDP with Logly.zig. Perfect for centralized logging, shipping to collectors like Logstash, and remote application monitoring.
+head:
+  - - meta
+    - name: keywords
+      content: network logging, tcp logging, udp logging, centralized logging, logstash, fluentd, remote monitoring
+  - - meta
+    - property: og:title
+      content: Network Logging | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Network Logging
 
 Logly supports sending logs over the network using TCP and UDP protocols. This is useful for centralized logging, shipping logs to log collectors (like Logstash, Fluentd, or Splunk), or monitoring applications remotely.

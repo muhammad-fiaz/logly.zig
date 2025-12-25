@@ -1,3 +1,18 @@
+---
+title: Quick Start Guide
+description: Get started with Logly.zig in minutes. Learn basic console logging, file rotation, JSON output, context binding, and more with practical examples.
+head:
+  - - meta
+    - name: keywords
+      content: quick start, getting started, basic usage, file logging, json logging, context binding, zig library
+  - - meta
+    - property: og:title
+      content: Quick Start Guide | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Quick Start
 
 Learn the basics of Logly-Zig with practical examples.

@@ -1,6 +1,6 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
-const SinkConfig = @import("sink.zig").SinkConfig;
+// const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
 
 /// Log compression utilities with callback support and comprehensive monitoring.
@@ -742,7 +742,8 @@ pub const Compression = struct {
     }
 
     /// Creates a compressed file sink configuration.
-    pub fn createCompressedSink(file_path: []const u8) SinkConfig {
+    pub fn createCompressedSink(file_path: []const u8) @import("sink.zig").SinkConfig {
+        const SinkConfig = @import("sink.zig").SinkConfig;
         return SinkConfig{
             .path = file_path,
             .compression = CompressionPresets.balanced(),

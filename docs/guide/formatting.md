@@ -1,3 +1,18 @@
+---
+title: Logging Formats
+description: Customize your log output with Logly.zig. Learn about default formats, custom themes, JSON formatting, and flexible timestamp placeholders for any scenario.
+head:
+  - - meta
+    - name: keywords
+      content: formatting, log layout, custom themes, timestamp format, json logging, pretty print, zig logging
+  - - meta
+    - property: og:title
+      content: Logging Formats | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Formatting
 
 Logly-Zig provides flexible formatting options for your logs.

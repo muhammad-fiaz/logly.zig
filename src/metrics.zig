@@ -327,9 +327,9 @@ pub const Metrics = struct {
     ///     A formatted string describing levels with counts > 0 (caller must free).
     pub fn formatLevelBreakdown(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
         const snapshot = self.getSnapshot();
-        var buf = std.ArrayList(u8).init(allocator);
-        errdefer buf.deinit();
-        const writer = buf.writer();
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+        const writer = buf.writer(allocator);
 
         try writer.writeAll("Level Breakdown:");
         var has_levels = false;
@@ -347,7 +347,7 @@ pub const Metrics = struct {
             try writer.writeAll(" (none)");
         }
 
-        return buf.toOwnedSlice();
+        return buf.toOwnedSlice(allocator);
     }
 
     /// Records a log for a custom level.

@@ -1,3 +1,15 @@
+---
+title: Async API Reference
+description: API reference for Logly.zig AsyncLogger and ring buffer. Non-blocking logging with configurable buffering, batch processing, and up to 36M ops/sec throughput.
+head:
+  - - meta
+    - name: keywords
+      content: async api, async logger, ring buffer, non-blocking logging, background processing, high throughput
+  - - meta
+    - property: og:title
+      content: Async API Reference | Logly.zig
+---
+
 # Async API
 
 The async module provides non-blocking asynchronous logging with configurable buffering, background processing, and high-throughput capabilities.

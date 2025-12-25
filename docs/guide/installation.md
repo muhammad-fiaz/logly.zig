@@ -1,6 +1,15 @@
+---
+title: Installation Guide
+description: Install Logly.zig in your Zig project using zig fetch, manual configuration, or prebuilt libraries. Supports Windows, Linux, macOS, and bare-metal targets with step-by-step instructions.
+head:
+  - - meta
+    - name: keywords
+      content: install logly, zig package manager, zig fetch, build.zig.zon, zig library installation, prebuilt zig libraries
+---
+
 # Installation
 
-This guide covers all available methods to install Logly-Zig in your project.
+This guide covers all available methods to install Logly.zig in your project.
 
 ## Prerequisites
 

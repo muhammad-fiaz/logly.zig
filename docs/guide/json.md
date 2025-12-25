@@ -1,3 +1,18 @@
+---
+title: JSON Logging
+description: Enable structured JSON logging in Logly.zig for modern observability stacks. Configure global or per-sink JSON output with custom levels and pretty-printing.
+head:
+  - - meta
+    - name: keywords
+      content: json logging, structured logging, observability, log aggregators, pretty print, custom levels, metadata
+  - - meta
+    - property: og:title
+      content: JSON Logging | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # JSON Logging
 
 Structured logging is essential for modern observability stacks. Logly-Zig supports JSON output out of the box.

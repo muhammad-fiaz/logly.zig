@@ -1,6 +1,15 @@
+---
+title: Getting Started with Logly.zig
+description: Learn how to install and set up Logly.zig in your Zig project. This beginner-friendly guide covers installation via zon package manager, basic configuration, and your first logging example.
+head:
+  - - meta
+    - name: keywords
+      content: logly tutorial, zig logging setup, install logly, zig package manager, zig logging example, getting started zig
+---
+
 # Getting Started
 
-Get started with Logly-Zig in minutes.
+Get started with Logly.zig in minutes.
 
 ## Prerequisites
 

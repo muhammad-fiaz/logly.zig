@@ -1,3 +1,15 @@
+---
+title: Diagnostics API Reference
+description: API reference for Logly.zig Diagnostics module. Collect OS info, CPU details, memory stats, storage info, and host metadata for logging and system monitoring.
+head:
+  - - meta
+    - name: keywords
+      content: diagnostics api, system info, cpu info, memory stats, storage info, host metadata, system monitoring
+  - - meta
+    - property: og:title
+      content: Diagnostics API Reference | Logly.zig
+---
+
 # Diagnostics API Reference
 
 The `Diagnostics` module collects comprehensive host information including OS, CPU, memory, and storage details for logging and monitoring.

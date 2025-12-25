@@ -1,3 +1,15 @@
+---
+title: Log Compression Example
+description: Example of log compression with Logly.zig using LZ77+RLE hybrid algorithm. Compress logs with CRC32 verification, configurable levels, and rotation integration.
+head:
+  - - meta
+    - name: keywords
+      content: log compression example, gzip logs, lz77 compression, log archiving, compression ratio, crc32 verification
+  - - meta
+    - property: og:title
+      content: Log Compression Example | Logly.zig
+---
+
 # Compression Example
 
 This example demonstrates log compression features in Logly using the LZ77+RLE hybrid algorithm.

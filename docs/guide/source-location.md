@@ -1,3 +1,18 @@
+---
+title: Source Location Display
+description: Enhance logs with source file paths and line numbers in Logly.zig. Learn how to use @src() and custom format strings for effortless debugging.
+head:
+  - - meta
+    - name: keywords
+      content: source location, filename, line number, @src, debugging, log formatting, caller info, function name
+  - - meta
+    - property: og:title
+      content: Source Location Display | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Source Location Display
 
 Logly.zig supports displaying source file paths and line numbers in your log output. This feature is invaluable for debugging and tracing log messages back to their origin in your codebase.

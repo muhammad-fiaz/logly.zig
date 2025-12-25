@@ -1,3 +1,15 @@
+---
+title: Rules API Reference
+description: API reference for Logly.zig Rules module. Compiler-style diagnostics with cause, fix, hint, and docs messages. Pattern matching, severity levels, and auto-triggering.
+head:
+  - - meta
+    - name: keywords
+      content: rules api, diagnostic rules, log guidance, error explanations, fix suggestions, pattern matching rules
+  - - meta
+    - property: og:title
+      content: Rules API Reference | Logly.zig
+---
+
 # Rules API
 
 The Rules module provides a powerful compiler-style diagnostic system for log messages. It enables attaching contextual guidance, solutions, documentation links, and best practices to log entries based on configurable conditions.
@@ -348,19 +360,63 @@ rules.resetStats();
 
 ## RulesConfig
 
-Configure rules behavior globally:
+Configure rules behavior globally. The rules system **respects global configuration settings** such as `global_console_display`, `global_file_storage`, and `global_color_display`.
 
 ```zig
 const config = logly.Config.RulesConfig{
-    .enabled = true,              // Master switch
-    .use_unicode = true,          // Use Unicode symbols
-    .enable_colors = true,        // ANSI colors
-    .show_rule_id = false,        // Show rule IDs
-    .indent = "    ",             // Message indent
-    .message_prefix = "↳",        // Prefix character
-    .include_in_json = true,      // Include in JSON output
-    .max_rules = 1000,            // Maximum rules allowed
+    // Master switches
+    .enabled = true,                    // Master switch for rules system
+    .client_rules_enabled = true,       // Enable client-defined rules
+    .builtin_rules_enabled = true,      // Enable built-in rules (reserved)
+
+    // Display options
+    .use_unicode = true,                // Use Unicode symbols (set false for ASCII)
+    .enable_colors = true,              // ANSI colors in output
+    .show_rule_id = false,              // Show rule IDs in output
+    .include_rule_id_prefix = false,    // Include "R0001:" prefix
+    .rule_id_format = "R{d}",           // Custom rule ID format
+    .indent = "    ",                   // Message indent
+    .message_prefix = "↳",              // Prefix character
+
+    // Output control (respects global switches)
+    .console_output = true,             // Output to console (AND'd with global_console_display)
+    .file_output = true,                // Output to files (AND'd with global_file_storage)
+    .include_in_json = true,            // Include in JSON output
+
+    // Advanced options
+    .verbose = false,                   // Full context output
+    .max_rules = 1000,                  // Maximum rules allowed
+    .max_messages_per_rule = 10,        // Max messages to show per match
+    .sort_by_severity = false,          // Order by severity
 };
+```
+
+### Global Switch Integration
+
+Rule output is controlled by **both local and global settings**:
+
+```zig
+// Console output requires BOTH to be true:
+// - RulesConfig.console_output = true
+// - Config.global_console_display = true
+
+// File output requires BOTH to be true:
+// - RulesConfig.file_output = true
+// - Config.global_file_storage = true
+
+// Color output requires BOTH to be true:
+// - RulesConfig.enable_colors = true
+// - Config.global_color_display = true
+```
+
+This ensures rules can be disabled globally without modifying individual rule configurations:
+
+```zig
+// Disable ALL console output (including rules)
+config.global_console_display = false;
+
+// Or disable ONLY rule console output
+config.rules.console_output = false;
 ```
 
 ### Presets
@@ -369,7 +425,7 @@ const config = logly.Config.RulesConfig{
 // Development (full debugging)
 config.rules = logly.Config.RulesConfig.development();
 
-// Production (minimal output)
+// Production (minimal output, no colors, no verbose)
 config.rules = logly.Config.RulesConfig.production();
 
 // ASCII-only terminals
@@ -377,6 +433,15 @@ config.rules = logly.Config.RulesConfig.ascii();
 
 // Disabled
 config.rules = logly.Config.RulesConfig.disabled();
+
+// Silent (rules evaluate but don't output)
+config.rules = logly.Config.RulesConfig.silent();
+
+// Console only (no file output)
+config.rules = logly.Config.RulesConfig.consoleOnly();
+
+// File only (no console output)
+config.rules = logly.Config.RulesConfig.fileOnly();
 ```
 
 ## JSON Output

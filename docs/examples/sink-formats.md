@@ -1,3 +1,18 @@
+---
+title: Sink Formats Example
+description: Example of configuring different output formats per sink in Logly.zig. Plain text console, raw JSON for ingestion, and pretty JSON for debugging simultaneously.
+head:
+  - - meta
+    - name: keywords
+      content: sink formats, multiple formats, json text, output format, per sink config, multi-format logging
+  - - meta
+    - property: og:title
+      content: Sink Formats Example | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Sink Formats
 
 This example demonstrates how to configure different output formats for different sinks. You can have one sink writing plain text to the console, another writing raw JSON to a file for ingestion, and a third writing pretty-printed JSON for debugging.

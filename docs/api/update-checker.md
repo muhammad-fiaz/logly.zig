@@ -1,3 +1,15 @@
+---
+title: UpdateChecker API Reference
+description: API reference for Logly.zig UpdateChecker module. Check for new library versions, manage version info, and receive update notifications automatically.
+head:
+  - - meta
+    - name: keywords
+      content: update checker, version check, library updates, version management, auto update, version notification
+  - - meta
+    - property: og:title
+      content: UpdateChecker API Reference | Logly.zig
+---
+
 # UpdateChecker API
 
 The `UpdateChecker` module provides functionality to check for new releases of the library and manage version information.

@@ -502,3 +502,42 @@ test "sampler stats and callbacks" {
     try std.testing.expectEqual(@as(u64, 5), stats.records_rejected.load(.monotonic));
     try std.testing.expectEqual(@as(u64, 5), stats.rate_limit_exceeded.load(.monotonic));
 }
+
+test "sampler every_n" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .every_n = 3 });
+    defer sampler.deinit();
+
+    try std.testing.expectEqual(false, sampler.shouldSample()); // 1
+    try std.testing.expectEqual(false, sampler.shouldSample()); // 2
+    try std.testing.expectEqual(true, sampler.shouldSample()); // 3
+    try std.testing.expectEqual(false, sampler.shouldSample()); // 4
+    try std.testing.expectEqual(false, sampler.shouldSample()); // 5
+    try std.testing.expectEqual(true, sampler.shouldSample()); // 6
+}
+
+test "sampler adaptive" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .adaptive = .{
+        .target_rate = 100,
+        .adjustment_interval_ms = 50,
+        .min_sample_rate = 0.01,
+        .max_sample_rate = 1.0,
+    } });
+    defer sampler.deinit();
+
+    // Initial rate should be 1.0
+    try std.testing.expectEqual(1.0, sampler.getCurrentRate());
+
+    // Stimulate with many records to force rate decrease
+    for (0..200) |_| {
+        _ = sampler.shouldSample();
+    }
+
+    // Wait for adjustment interval
+    std.Thread.sleep(60 * std.time.ns_per_ms);
+
+    // One more sample to trigger adjustment
+    _ = sampler.shouldSample();
+
+    const rate = sampler.getCurrentRate();
+    try std.testing.expect(rate < 1.0);
+}

@@ -1,3 +1,15 @@
+---
+title: Log Filtering Example
+description: Example of filtering logs with Logly.zig. Filter by level, module, message content with allow/deny rules and batch evaluation for precise log control.
+head:
+  - - meta
+    - name: keywords
+      content: log filtering example, filter logs, level filter, module filter, message pattern, log rules
+  - - meta
+    - property: og:title
+      content: Log Filtering Example | Logly.zig
+---
+
 # Filtering Example
 
 Learn how to filter log messages based on level, module, or content.

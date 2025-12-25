@@ -64,16 +64,37 @@ fn fetchLatestTag(allocator: std.mem.Allocator) ![]const u8 {
     };
 }
 
-/// Checks for updates in a background thread (runs only once per process).
-/// Returns a thread handle so callers can optionally join during shutdown.
+/// Checks for updates in a background thread or thread pool (runs only once per process).
+/// Returns a thread handle if spawned, or null if using thread pool or already done.
 /// Fails silently on errors (no internet, api limits, etc).
-pub fn checkForUpdates(allocator: std.mem.Allocator) ?std.Thread {
+pub fn checkForUpdates(allocator: std.mem.Allocator, thread_pool: ?*ThreadPool) ?std.Thread {
     update_check_mutex.lock();
     defer update_check_mutex.unlock();
 
     // Prevent multiple concurrent update checks
     if (update_check_done) return null;
     update_check_done = true;
+
+    if (thread_pool) |tp| {
+        const Ctx = struct {
+            allocator: std.mem.Allocator,
+            fn run(ptr: *anyopaque, _: ?std.mem.Allocator) void {
+                const self = @as(*@This(), @ptrCast(@alignCast(ptr)));
+                const alloc = self.allocator;
+                checkWorker(alloc);
+                alloc.destroy(self);
+            }
+        };
+        // Submit background check to thread pool with stable context
+        const ctx = allocator.create(Ctx) catch {
+            return std.Thread.spawn(.{}, checkWorker, .{allocator}) catch null;
+        };
+        ctx.* = .{ .allocator = allocator };
+        if (tp.submitCallback(Ctx.run, ctx)) {
+            return null;
+        }
+        allocator.destroy(ctx);
+    }
 
     return std.Thread.spawn(.{}, checkWorker, .{allocator}) catch null;
 }
@@ -89,3 +110,5 @@ fn checkWorker(allocator: std.mem.Allocator) void {
         else => {},
     }
 }
+
+const ThreadPool = @import("thread_pool.zig").ThreadPool;

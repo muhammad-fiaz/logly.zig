@@ -1,3 +1,18 @@
+---
+title: Advanced Customizations
+description: Tailor Logly.zig to your needs with advanced customizations. Configure global root paths, format structures, per-level colors, and highlighters.
+head:
+  - - meta
+    - name: keywords
+      content: customizations, root path, format structure, level colors, highlighters, alerts, diagnostic path
+  - - meta
+    - property: og:title
+      content: Advanced Customizations | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
+---
+
 # Advanced Customizations Guide
 
 This guide covers Logly's advanced customization features that allow you to tailor logging behavior to your specific needs.

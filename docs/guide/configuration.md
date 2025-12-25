@@ -1,6 +1,15 @@
+---
+title: Configuration Guide
+description: Complete guide to configuring Logly.zig. Learn about log levels, output formats, JSON logging, color settings, async configuration, thread pools, compression, and enterprise features like filtering, sampling, and redaction.
+head:
+  - - meta
+    - name: keywords
+      content: logly configuration, zig logger config, logging settings, json logging config, async logging config, log level configuration
+---
+
 # Configuration
 
-Logly-Zig offers a comprehensive and flexible configuration system, allowing you to tailor every aspect of the logging behavior to your application's needs.
+Logly.zig offers a comprehensive and flexible configuration system, allowing you to tailor every aspect of the logging behavior to your application's needs.
 
 ## Basic Configuration
 
