@@ -292,7 +292,6 @@ gtag('config', '${GA_ID}');`,
           { text: "Constants", link: "/api/constants" },
           { text: "Customizations", link: "/api/customizations" },
           { text: "Utils", link: "/api/utils" },
-          { text: "Date Formatting", link: "/api/date-formatting" },
         ],
       },
       {

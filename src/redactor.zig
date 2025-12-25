@@ -44,7 +44,11 @@ pub const Redactor = struct {
         }
     };
 
+    /// Re-export RedactionConfig from global config.
+    pub const RedactionConfig = Config.RedactionConfig;
+
     allocator: std.mem.Allocator,
+    config: RedactionConfig = .{},
     patterns: std.ArrayList(RedactionPattern),
     fields: std.StringHashMap(RedactionType),
     stats: RedactorStats = .{},
@@ -131,19 +135,26 @@ pub const Redactor = struct {
         }
     };
 
-    /// Initializes a new Redactor instance.
-    ///
-    /// Arguments:
-    ///     allocator: Memory allocator for internal storage.
-    ///
-    /// Returns:
-    ///     A new Redactor instance.
+    /// Initializes a new Redactor instance with default configuration.
     pub fn init(allocator: std.mem.Allocator) Redactor {
-        return .{
+        return initWithConfig(allocator, .{});
+    }
+
+    /// Initializes a new Redactor instance with custom configuration.
+    pub fn initWithConfig(allocator: std.mem.Allocator, config: RedactionConfig) Redactor {
+        var redactor = Redactor{
             .allocator = allocator,
+            .config = config,
             .patterns = .empty,
             .fields = std.StringHashMap(RedactionType).init(allocator),
         };
+
+        // Invoke initialized callback if set
+        if (redactor.on_redactor_initialized) |callback| {
+            callback(&redactor.stats);
+        }
+
+        return redactor;
     }
 
     /// Releases all resources associated with the redactor.
@@ -241,21 +252,132 @@ pub const Redactor = struct {
     }
 
     /// Redacts sensitive data from a message.
-    ///
-    /// Arguments:
-    ///     message: The message to redact.
-    ///
-    /// Returns:
-    ///     The redacted message (caller must free).
+    /// Uses config settings for replacement text and audit logging.
     pub fn redact(self: *Redactor, message: []const u8) ![]u8 {
+        // Track processing
+        _ = self.stats.total_values_processed.fetchAdd(1, .monotonic);
+
         var result = try self.allocator.dupe(u8, message);
         errdefer self.allocator.free(result);
 
+        var was_redacted = false;
         for (self.patterns.items) |pattern| {
+            const original_len = result.len;
             result = try self.applyPattern(result, pattern);
+            if (result.len != original_len or !std.mem.eql(u8, result, message)) {
+                was_redacted = true;
+                _ = self.stats.patterns_matched.fetchAdd(1, .monotonic);
+
+                // Invoke pattern matched callback
+                if (self.on_pattern_matched) |callback| {
+                    callback(pattern.name, message);
+                }
+            }
+        }
+
+        if (was_redacted) {
+            _ = self.stats.values_redacted.fetchAdd(1, .monotonic);
+
+            // Invoke redaction applied callback
+            if (self.on_redaction_applied) |callback| {
+                callback(@intCast(message.len), @intCast(result.len), 0);
+            }
+
+            // Audit logging if enabled
+            if (self.config.audit_redactions) {
+                // The callback handles audit logging
+            }
         }
 
         return result;
+    }
+
+    /// Redacts a field value based on field rules.
+    pub fn redactField(self: *Redactor, field_name: []const u8, value: []const u8) ![]u8 {
+        _ = self.stats.total_values_processed.fetchAdd(1, .monotonic);
+
+        // Check if field should be redacted
+        const redaction_type = self.getFieldRedactionWithConfig(field_name);
+        if (redaction_type) |rtype| {
+            _ = self.stats.fields_redacted.fetchAdd(1, .monotonic);
+            _ = self.stats.values_redacted.fetchAdd(1, .monotonic);
+
+            // Apply the redaction with config settings
+            return self.applyRedactionType(rtype, value);
+        }
+
+        return self.allocator.dupe(u8, value);
+    }
+
+    /// Get field redaction type considering config settings.
+    fn getFieldRedactionWithConfig(self: *const Redactor, field_name: []const u8) ?RedactionType {
+        // Check explicit field rules first
+        if (self.fields.get(field_name)) |rtype| {
+            return rtype;
+        }
+
+        // Case-insensitive matching if enabled
+        if (self.config.case_insensitive) {
+            var it = self.fields.iterator();
+            while (it.next()) |entry| {
+                if (std.ascii.eqlIgnoreCase(entry.key_ptr.*, field_name)) {
+                    return entry.value_ptr.*;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// Apply redaction type with config settings.
+    fn applyRedactionType(self: *Redactor, rtype: RedactionType, value: []const u8) ![]u8 {
+        const mask_char = self.config.mask_char;
+        const start_chars = self.config.partial_start_chars;
+        const end_chars = self.config.partial_end_chars;
+
+        return switch (rtype) {
+            .full => try self.allocator.dupe(u8, self.config.replacement),
+            .partial_start => blk: {
+                if (value.len <= end_chars) {
+                    const result = try self.allocator.alloc(u8, end_chars);
+                    @memset(result, mask_char);
+                    break :blk result;
+                }
+                const result = try self.allocator.alloc(u8, value.len);
+                @memset(result[0 .. value.len - end_chars], mask_char);
+                @memcpy(result[value.len - end_chars ..], value[value.len - end_chars ..]);
+                break :blk result;
+            },
+            .partial_end => blk: {
+                if (value.len <= start_chars) {
+                    const result = try self.allocator.alloc(u8, start_chars);
+                    @memset(result, mask_char);
+                    break :blk result;
+                }
+                const result = try self.allocator.alloc(u8, value.len);
+                @memcpy(result[0..start_chars], value[0..start_chars]);
+                @memset(result[start_chars..], mask_char);
+                break :blk result;
+            },
+            .hash => blk: {
+                var hash: [32]u8 = undefined;
+                std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
+                break :blk try std.fmt.allocPrint(self.allocator, "[HASH:{s}]", .{&std.fmt.bytesToHex(hash[0..8], .lower)});
+            },
+            .mask_middle => blk: {
+                const reveal = @min(start_chars, 3);
+                if (value.len <= reveal * 2) {
+                    const result = try self.allocator.alloc(u8, 3);
+                    @memset(result, mask_char);
+                    break :blk result;
+                }
+                const result = try self.allocator.alloc(u8, value.len);
+                @memcpy(result[0..reveal], value[0..reveal]);
+                @memset(result[reveal .. value.len - reveal], mask_char);
+                @memcpy(result[value.len - reveal ..], value[value.len - reveal ..]);
+                break :blk result;
+            },
+        };
     }
 
     fn applyPattern(self: *Redactor, input: []u8, pattern: RedactionPattern) ![]u8 {
@@ -401,9 +523,28 @@ pub const Redactor = struct {
     /// Alias for redact
     pub const mask = redact;
     pub const sanitize = redact;
+    pub const process = redact;
+
+    /// Alias for redactField
+    pub const maskField = redactField;
 
     /// Alias for getStats
     pub const statistics = getStats;
+
+    /// Get current configuration.
+    pub fn getConfig(self: *const Redactor) RedactionConfig {
+        return self.config;
+    }
+
+    /// Check if redaction is enabled.
+    pub fn isEnabled(self: *const Redactor) bool {
+        return self.config.enabled;
+    }
+
+    /// Get the default replacement text.
+    pub fn getDefaultReplacement(self: *const Redactor) []const u8 {
+        return self.config.replacement;
+    }
 };
 
 /// Simple regex-like pattern matching.

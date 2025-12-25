@@ -699,47 +699,167 @@ pub const ThreadPool = struct {
     pub const add = submit;
 };
 
-/// Parallel sink writer for distributing writes across threads.
+/// Re-export ParallelConfig from global config for convenience.
+pub const ParallelConfig = Config.ParallelConfig;
+
+/// Parallel sink writer for distributing writes across threads with full configuration support.
+/// Uses ParallelConfig for fine-grained control over concurrent write behavior.
 pub const ParallelSinkWriter = struct {
     allocator: std.mem.Allocator,
     pool: *ThreadPool,
+    config: ParallelConfig,
     sinks: std.ArrayList(SinkHandle),
+    buffer: std.ArrayList([]const u8),
     mutex: std.Thread.Mutex = .{},
+    stats: ParallelStats = .{},
 
     pub const SinkHandle = struct {
         write_fn: *const fn (data: []const u8) void,
+        flush_fn: ?*const fn () void = null,
         name: []const u8,
+        enabled: bool = true,
     };
 
+    pub const ParallelStats = struct {
+        writes_submitted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        writes_completed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        writes_failed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        retries: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+        pub fn successRate(self: *const ParallelStats) f64 {
+            const completed = @as(f64, @floatFromInt(self.writes_completed.load(.monotonic)));
+            const total = @as(f64, @floatFromInt(self.writes_submitted.load(.monotonic)));
+            if (total == 0) return 1.0;
+            return completed / total;
+        }
+    };
+
+    /// Initialize with default ParallelConfig.
     pub fn init(allocator: std.mem.Allocator, pool: *ThreadPool) !*ParallelSinkWriter {
+        return initWithConfig(allocator, pool, .{});
+    }
+
+    /// Initialize with custom ParallelConfig.
+    pub fn initWithConfig(allocator: std.mem.Allocator, pool: *ThreadPool, config: ParallelConfig) !*ParallelSinkWriter {
         const self = try allocator.create(ParallelSinkWriter);
         self.* = .{
             .allocator = allocator,
             .pool = pool,
+            .config = config,
             .sinks = .empty,
+            .buffer = .empty,
         };
         return self;
     }
 
     pub fn deinit(self: *ParallelSinkWriter) void {
+        // Flush any remaining buffered data
+        self.flushBuffer();
+
+        // Clean up buffer
+        for (self.buffer.items) |item| {
+            self.allocator.free(item);
+        }
+        self.buffer.deinit(self.allocator);
         self.sinks.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
+    /// Add a sink for parallel writing.
     pub fn addSink(self: *ParallelSinkWriter, handle: SinkHandle) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
         try self.sinks.append(self.allocator, handle);
     }
 
-    pub fn writeParallel(self: *ParallelSinkWriter, data: []const u8) void {
+    /// Remove a sink by name.
+    pub fn removeSink(self: *ParallelSinkWriter, name: []const u8) void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        var i: usize = 0;
+        while (i < self.sinks.items.len) {
+            if (std.mem.eql(u8, self.sinks.items[i].name, name)) {
+                _ = self.sinks.orderedRemove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    /// Enable or disable a sink by name.
+    pub fn setSinkEnabled(self: *ParallelSinkWriter, name: []const u8, enabled: bool) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.sinks.items) |*sink| {
+            if (std.mem.eql(u8, sink.name, name)) {
+                sink.enabled = enabled;
+            }
+        }
+    }
+
+    /// Write to all sinks in parallel.
+    pub fn writeParallel(self: *ParallelSinkWriter, data: []const u8) void {
+        _ = self.stats.writes_submitted.fetchAdd(1, .monotonic);
+        _ = self.stats.bytes_written.fetchAdd(@intCast(data.len), .monotonic);
+
+        if (self.config.buffered) {
+            self.bufferWrite(data);
+        } else {
+            self.dispatchWrite(data);
+        }
+    }
+
+    /// Buffer a write for later dispatch.
+    fn bufferWrite(self: *ParallelSinkWriter, data: []const u8) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.allocator.dupe(u8, data)) |data_copy| {
+            self.buffer.append(self.allocator, data_copy) catch {
+                self.allocator.free(data_copy);
+                return;
+            };
+
+            // Flush if buffer is full
+            if (self.buffer.items.len >= self.config.buffer_size) {
+                self.flushBufferUnlocked();
+            }
+        } else |_| {}
+    }
+
+    /// Flush the buffer immediately.
+    pub fn flushBuffer(self: *ParallelSinkWriter) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.flushBufferUnlocked();
+    }
+
+    fn flushBufferUnlocked(self: *ParallelSinkWriter) void {
+        for (self.buffer.items) |item| {
+            self.dispatchWriteUnlocked(item);
+            self.allocator.free(item);
+        }
+        self.buffer.clearRetainingCapacity();
+    }
+
+    /// Dispatch write to all sinks.
+    fn dispatchWrite(self: *ParallelSinkWriter, data: []const u8) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.dispatchWriteUnlocked(data);
+    }
+
+    fn dispatchWriteUnlocked(self: *ParallelSinkWriter, data: []const u8) void {
         const WriteContext = struct {
             allocator: std.mem.Allocator,
             write_fn: *const fn (data: []const u8) void,
             data: []const u8,
+            stats: *ParallelStats,
+            max_retries: u3,
+            retry_on_failure: bool,
         };
 
         const task_fn = struct {
@@ -749,12 +869,45 @@ pub const ParallelSinkWriter = struct {
                     ctx.allocator.free(ctx.data);
                     ctx.allocator.destroy(ctx);
                 }
-                ctx.write_fn(ctx.data);
+
+                var success = false;
+                var attempts: u32 = 0;
+                const max_attempts: u32 = if (ctx.retry_on_failure) @as(u32, ctx.max_retries) + 1 else 1;
+
+                while (attempts < max_attempts and !success) {
+                    // Execute the write
+                    ctx.write_fn(ctx.data);
+                    success = true; // Assume success if no error
+                    attempts += 1;
+
+                    if (!success and ctx.retry_on_failure) {
+                        _ = ctx.stats.retries.fetchAdd(1, .monotonic);
+                    }
+                }
+
+                if (success) {
+                    _ = ctx.stats.writes_completed.fetchAdd(1, .monotonic);
+                } else {
+                    _ = ctx.stats.writes_failed.fetchAdd(1, .monotonic);
+                }
             }
         }.run;
 
-        // Submit write task to each sink in parallel
+        // Track concurrent writes
+        var active_writes: usize = 0;
+
+        // Submit write task to each enabled sink
         for (self.sinks.items) |sink| {
+            if (!sink.enabled) continue;
+
+            // Respect max_concurrent limit
+            if (active_writes >= self.config.max_concurrent) {
+                // Execute synchronously if at limit
+                sink.write_fn(data);
+                _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
+                continue;
+            }
+
             // Create context for this task
             if (self.allocator.create(WriteContext)) |ctx| {
                 if (self.allocator.dupe(u8, data)) |data_copy| {
@@ -762,25 +915,72 @@ pub const ParallelSinkWriter = struct {
                         .allocator = self.allocator,
                         .write_fn = sink.write_fn,
                         .data = data_copy,
+                        .stats = &self.stats,
+                        .max_retries = self.config.max_retries,
+                        .retry_on_failure = self.config.retry_on_failure,
                     };
 
                     if (!self.pool.submitCallback(task_fn, ctx)) {
                         // Fallback: execute synchronously if pool is full
                         sink.write_fn(data);
+                        _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
                         self.allocator.free(data_copy);
                         self.allocator.destroy(ctx);
+                    } else {
+                        active_writes += 1;
                     }
                 } else |_| {
-                    // Allocation failed, fallback to sync write
                     sink.write_fn(data);
+                    _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
                     self.allocator.destroy(ctx);
                 }
             } else |_| {
-                // Allocation failed, fallback to sync write
                 sink.write_fn(data);
+                _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
             }
         }
     }
+
+    /// Flush all sinks.
+    pub fn flushAll(self: *ParallelSinkWriter) void {
+        self.flushBuffer();
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.sinks.items) |sink| {
+            if (sink.flush_fn) |flush_func| {
+                flush_func();
+            }
+        }
+    }
+
+    /// Get current statistics.
+    pub fn getStats(self: *const ParallelSinkWriter) ParallelStats {
+        return self.stats;
+    }
+
+    /// Get sink count.
+    pub fn sinkCount(self: *const ParallelSinkWriter) usize {
+        return self.sinks.items.len;
+    }
+
+    /// Check if any sinks are enabled.
+    pub fn hasEnabledSinks(self: *ParallelSinkWriter) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.sinks.items) |sink| {
+            if (sink.enabled) return true;
+        }
+        return false;
+    }
+
+    // Aliases
+    pub const write = writeParallel;
+    pub const flush = flushAll;
+    pub const add = addSink;
+    pub const remove = removeSink;
 };
 
 /// Preset thread pool configurations.

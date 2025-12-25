@@ -39,7 +39,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 
 | Feature | Description |
 |---------|-------------|
-| ✨ **Simple & Clean API** | Python-like logging interface (`logger.info()`, `logger.err()`, etc.) |
+| ✨ **Simple & Clean API** | User-friendly logging interface (`logger.info()`, `logger.err()`, etc.) |
 | 🎯 **10 Log Levels** | TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL |
 | 🚀 **Custom Levels** | Define your own log levels with custom priorities and colors |
 | 📁 **Multiple Sinks** | Console, file, and custom outputs simultaneously |

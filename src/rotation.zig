@@ -5,7 +5,6 @@ const Constants = @import("constants.zig");
 const Compression = @import("compression.zig").Compression;
 const CompressionConfig = Config.CompressionConfig;
 const RotationConfig = Config.RotationConfig;
-const DateFormatting = @import("date_formatting.zig");
 const Utils = @import("utils.zig");
 
 /// Handles log file rotation logic with comprehensive features for enterprise use.
@@ -411,7 +410,7 @@ pub const Rotation = struct {
                                 try res.appendSlice(self.allocator, f);
                             } else {
                                 // Granular date format parsing via shared utility
-                                try DateFormatting.format(res.writer(self.allocator), tag, yd.year, md.month.numeric(), md.day_index + 1, h, m, s);
+                                try Utils.formatDatePattern(res.writer(self.allocator), tag, yd.year, md.month.numeric(), md.day_index + 1, h, m, s);
                             }
                             i = end + 1;
                         } else {

@@ -7,7 +7,7 @@ const Record = @import("record.zig").Record;
 const Formatter = @import("formatter.zig").Formatter;
 const Rotation = @import("rotation.zig").Rotation;
 const Network = @import("network.zig");
-const DateFormatting = @import("date_formatting.zig");
+const Utils = @import("utils.zig");
 
 // Helper writer for compression that adapts ArrayList to std.io.Writer interface
 const SinkWriter = struct {
@@ -410,8 +410,6 @@ pub const SinkConfig = struct {
     }
 };
 
-const Utils = @import("utils.zig");
-
 pub const Sink = struct {
     /// Sink statistics for monitoring and diagnostics.
     pub const SinkStats = struct {
@@ -595,7 +593,7 @@ pub const Sink = struct {
                 } else if (std.mem.eql(u8, tag, "time")) {
                     try writer.print("{d:0>2}-{d:0>2}-{d:0>2}", .{ hours, minutes, secs });
                 } else {
-                    try DateFormatting.format(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs);
+                    try Utils.formatDatePattern(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs);
                 }
                 i = end + 1;
             } else {

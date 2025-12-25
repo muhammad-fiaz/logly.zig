@@ -195,7 +195,6 @@ pub const RulesConstants = struct {
     };
 };
 
-
 test "atomic types exist" {
     // Verify atomic types are defined for cross-platform compatibility
     try std.testing.expect(@sizeOf(AtomicUnsigned) > 0);

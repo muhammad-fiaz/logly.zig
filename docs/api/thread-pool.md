@@ -182,25 +182,65 @@ pub const ThreadPoolStats = struct {
 
 ### ParallelSinkWriter
 
-Writes to multiple sinks in parallel.
+Writes to multiple sinks in parallel with full configuration support, buffering, retry logic, and statistics.
 
 ```zig
 pub const ParallelSinkWriter = struct {
     allocator: std.mem.Allocator,
     pool: *ThreadPool,
+    config: ParallelConfig,
     sinks: std.ArrayList(SinkHandle),
+    buffer: std.ArrayList([]const u8),
     mutex: std.Thread.Mutex,
+    stats: ParallelStats,
 
     pub const SinkHandle = struct {
         write_fn: *const fn (data: []const u8) void,
+        flush_fn: ?*const fn () void,
         name: []const u8,
+        enabled: bool,
+    };
+
+    pub const ParallelStats = struct {
+        writes_submitted: std.atomic.Value(u64),
+        writes_completed: std.atomic.Value(u64),
+        writes_failed: std.atomic.Value(u64),
+        retries: std.atomic.Value(u64),
+        bytes_written: std.atomic.Value(u64),
+
+        pub fn successRate(self: *const ParallelStats) f64;
     };
 };
 ```
 
 ### ParallelConfig
 
-**[Deprecated/Removed]** Parallel sink writing now uses direct thread pool submission without separate configuration.
+Configuration for parallel sink writing operations. Available through `Config.ParallelConfig`.
+
+```zig
+pub const ParallelConfig = struct {
+    /// Maximum concurrent writes allowed at once.
+    max_concurrent: usize = 8,
+    /// Timeout for each write operation (ms).
+    write_timeout_ms: u64 = 1000,
+    /// Retry failed writes automatically.
+    retry_on_failure: bool = true,
+    /// Maximum number of retry attempts.
+    max_retries: u3 = 3,
+    /// Fail-fast mode: abort on any sink error.
+    fail_fast: bool = false,
+    /// Buffer writes before parallel dispatch.
+    buffered: bool = true,
+    /// Buffer size for buffered writes.
+    buffer_size: usize = 64,
+
+    // Presets
+    pub fn default() ParallelConfig;
+    pub fn highThroughput() ParallelConfig;
+    pub fn lowLatency() ParallelConfig;
+    pub fn reliable() ParallelConfig;
+};
+```
 
 ## ThreadPool Methods
 
@@ -352,15 +392,23 @@ pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64
 
 ### init
 
-Create a new parallel sink writer.
+Create a new parallel sink writer with default configuration.
 
 ```zig
 pub fn init(allocator: std.mem.Allocator, pool: *ThreadPool) !*ParallelSinkWriter
 ```
 
+### initWithConfig
+
+Create a new parallel sink writer with custom configuration.
+
+```zig
+pub fn initWithConfig(allocator: std.mem.Allocator, pool: *ThreadPool, config: ParallelConfig) !*ParallelSinkWriter
+```
+
 ### deinit
 
-Clean up resources.
+Clean up resources and flush any buffered data.
 
 ```zig
 pub fn deinit(self: *ParallelSinkWriter) void
@@ -374,13 +422,70 @@ Add a sink for parallel writing.
 pub fn addSink(self: *ParallelSinkWriter, handle: SinkHandle) !void
 ```
 
-### write
+### removeSink
 
-Write to all sinks in parallel.
+Remove a sink by name.
 
 ```zig
-pub fn write(self: *ParallelSinkWriter, data: []const u8) void
+pub fn removeSink(self: *ParallelSinkWriter, name: []const u8) void
 ```
+
+### setSinkEnabled
+
+Enable or disable a sink by name.
+
+```zig
+pub fn setSinkEnabled(self: *ParallelSinkWriter, name: []const u8, enabled: bool) void
+```
+
+### writeParallel / write
+
+Write to all enabled sinks in parallel.
+
+```zig
+pub fn writeParallel(self: *ParallelSinkWriter, data: []const u8) void
+```
+
+### flushBuffer
+
+Flush any buffered writes immediately.
+
+```zig
+pub fn flushBuffer(self: *ParallelSinkWriter) void
+```
+
+### flushAll / flush
+
+Flush buffer and all sinks.
+
+```zig
+pub fn flushAll(self: *ParallelSinkWriter) void
+```
+
+### getStats
+
+Get current parallel write statistics.
+
+```zig
+pub fn getStats(self: *const ParallelSinkWriter) ParallelStats
+```
+
+### sinkCount
+
+Get the number of registered sinks.
+
+```zig
+pub fn sinkCount(self: *const ParallelSinkWriter) usize
+```
+
+### hasEnabledSinks
+
+Check if any sinks are enabled.
+
+```zig
+pub fn hasEnabledSinks(self: *ParallelSinkWriter) bool
+```
+
 
 ## Presets
 

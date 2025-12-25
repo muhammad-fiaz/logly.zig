@@ -170,6 +170,9 @@ pub const Config = struct {
     /// Enable metrics collection.
     enable_metrics: bool = false,
 
+    /// Metrics configuration.
+    metrics: MetricsConfig = .{},
+
     /// Buffer configuration for async operations.
     buffer_config: BufferConfig = .{},
 
@@ -398,12 +401,97 @@ pub const Config = struct {
         per_level: bool = false,
     };
 
-    /// Redaction configuration.
+    /// Redaction configuration for sensitive data masking.
     pub const RedactionConfig = struct {
+        /// Enable redaction system.
         enabled: bool = false,
+        /// Fields to redact (by name).
         fields: ?[]const []const u8 = null,
+        /// Patterns to redact (string patterns).
         patterns: ?[]const []const u8 = null,
+        /// Default replacement text.
         replacement: []const u8 = "[REDACTED]",
+        /// Default redaction type for fields.
+        default_type: RedactionType = .full,
+        /// Enable regex pattern matching.
+        enable_regex: bool = false,
+        /// Hash algorithm for hash redaction type.
+        hash_algorithm: HashAlgorithm = .sha256,
+        /// Characters to reveal at start for partial redaction.
+        partial_start_chars: u8 = 4,
+        /// Characters to reveal at end for partial redaction.
+        partial_end_chars: u8 = 4,
+        /// Mask character for redacted content.
+        mask_char: u8 = '*',
+        /// Enable case-insensitive field matching.
+        case_insensitive: bool = true,
+        /// Log when redaction is applied (for audit).
+        audit_redactions: bool = false,
+        /// Compliance preset to use (null for custom).
+        compliance_preset: ?CompliancePreset = null,
+
+        pub const RedactionType = enum {
+            full,
+            partial_start,
+            partial_end,
+            hash,
+            mask_middle,
+            truncate,
+        };
+
+        pub const HashAlgorithm = enum {
+            sha256,
+            sha512,
+            md5,
+        };
+
+        pub const CompliancePreset = enum {
+            pci_dss,
+            hipaa,
+            gdpr,
+            sox,
+            custom,
+        };
+
+        pub fn default() RedactionConfig {
+            return .{};
+        }
+
+        pub fn pciDss() RedactionConfig {
+            return .{
+                .enabled = true,
+                .compliance_preset = .pci_dss,
+                .default_type = .mask_middle,
+                .audit_redactions = true,
+            };
+        }
+
+        pub fn hipaa() RedactionConfig {
+            return .{
+                .enabled = true,
+                .compliance_preset = .hipaa,
+                .default_type = .hash,
+                .hash_algorithm = .sha256,
+                .audit_redactions = true,
+            };
+        }
+
+        pub fn gdpr() RedactionConfig {
+            return .{
+                .enabled = true,
+                .compliance_preset = .gdpr,
+                .default_type = .partial_end,
+            };
+        }
+
+        pub fn strict() RedactionConfig {
+            return .{
+                .enabled = true,
+                .default_type = .full,
+                .case_insensitive = true,
+                .audit_redactions = true,
+            };
+        }
     };
 
     /// Error handling behavior.
@@ -456,6 +544,58 @@ pub const Config = struct {
         thread_affinity: bool = false,
     };
 
+    /// Parallel sink writing configuration.
+    pub const ParallelConfig = struct {
+        /// Maximum concurrent writes allowed at once.
+        max_concurrent: usize = 8,
+        /// Timeout for each write operation (ms).
+        write_timeout_ms: u64 = 1000,
+        /// Retry failed writes automatically.
+        retry_on_failure: bool = true,
+        /// Maximum number of retry attempts.
+        max_retries: u3 = 3,
+        /// Fail-fast mode: abort on any sink error.
+        fail_fast: bool = false,
+        /// Buffer writes before parallel dispatch.
+        buffered: bool = true,
+        /// Buffer size for buffered writes.
+        buffer_size: usize = 64,
+
+        pub fn default() ParallelConfig {
+            return .{};
+        }
+
+        pub fn highThroughput() ParallelConfig {
+            return .{
+                .max_concurrent = 16,
+                .buffered = true,
+                .buffer_size = 128,
+                .retry_on_failure = false,
+                .fail_fast = false,
+            };
+        }
+
+        pub fn lowLatency() ParallelConfig {
+            return .{
+                .max_concurrent = 4,
+                .buffered = false,
+                .write_timeout_ms = 500,
+                .retry_on_failure = false,
+                .fail_fast = true,
+            };
+        }
+
+        pub fn reliable() ParallelConfig {
+            return .{
+                .max_concurrent = 8,
+                .retry_on_failure = true,
+                .max_retries = 5,
+                .write_timeout_ms = 2000,
+                .fail_fast = false,
+            };
+        }
+    };
+
     /// Scheduler configuration.
     pub const SchedulerConfig = struct {
         /// Enable the scheduler.
@@ -468,6 +608,80 @@ pub const Config = struct {
         compress_before_cleanup: bool = false,
         /// Default file pattern for cleanup.
         file_pattern: []const u8 = "*.log",
+    };
+
+    /// Metrics collection configuration.
+    pub const MetricsConfig = struct {
+        /// Enable metrics collection.
+        enabled: bool = false,
+        /// Track per-level counts.
+        track_levels: bool = true,
+        /// Track per-sink metrics.
+        track_sinks: bool = true,
+        /// Calculate throughput (records/sec, bytes/sec).
+        track_throughput: bool = true,
+        /// Track latency statistics.
+        track_latency: bool = false,
+        /// Snapshot interval in milliseconds (0 = disabled).
+        snapshot_interval_ms: u64 = 0,
+        /// Alert threshold for error rate (0.0-1.0, 0 = disabled).
+        error_rate_threshold: f32 = 0.0,
+        /// Alert threshold for drop rate (0.0-1.0, 0 = disabled).
+        drop_rate_threshold: f32 = 0.0,
+        /// Maximum records/sec before alerting (0 = disabled).
+        max_records_per_second: u64 = 0,
+        /// Export format for metrics.
+        export_format: ExportFormat = .text,
+        /// Enable histogram for latency distribution.
+        enable_histogram: bool = false,
+        /// Number of histogram buckets.
+        histogram_buckets: u8 = 10,
+        /// Retain metrics history (in snapshots).
+        history_size: u16 = 0,
+
+        pub const ExportFormat = enum {
+            text,
+            json,
+            prometheus,
+            statsd,
+        };
+
+        pub fn default() MetricsConfig {
+            return .{};
+        }
+
+        pub fn production() MetricsConfig {
+            return .{
+                .enabled = true,
+                .track_levels = true,
+                .track_sinks = true,
+                .track_throughput = true,
+                .error_rate_threshold = 0.01,
+                .drop_rate_threshold = 0.001,
+            };
+        }
+
+        pub fn minimal() MetricsConfig {
+            return .{
+                .enabled = true,
+                .track_levels = false,
+                .track_sinks = false,
+                .track_throughput = false,
+            };
+        }
+
+        pub fn detailed() MetricsConfig {
+            return .{
+                .enabled = true,
+                .track_levels = true,
+                .track_sinks = true,
+                .track_throughput = true,
+                .track_latency = true,
+                .enable_histogram = true,
+                .histogram_buckets = 20,
+                .history_size = 60,
+            };
+        }
     };
 
     /// Compression configuration.

@@ -120,7 +120,9 @@ pub const Network = @import("network.zig");
 
 // Utility components
 pub const Utils = @import("utils.zig");
-pub const DateFormatting = @import("date_formatting.zig");
+
+// Re-export ParallelConfig from Config
+pub const ParallelConfig = Config.ParallelConfig;
 
 // Configuration presets
 pub const ConfigPresets = struct {

@@ -91,7 +91,11 @@ pub const Metrics = struct {
         fatal = 9,
     };
 
+    /// Re-export MetricsConfig from global config.
+    pub const MetricsConfig = Config.MetricsConfig;
+
     mutex: std.Thread.Mutex = .{},
+    config: MetricsConfig = .{},
 
     total_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     total_bytes: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
@@ -102,6 +106,17 @@ pub const Metrics = struct {
 
     start_time: i64,
     last_record_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+
+    /// Latency tracking
+    total_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    min_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(std.math.maxInt(Constants.AtomicUnsigned)),
+    max_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+
+    /// Histogram buckets (for latency distribution)
+    histogram: [20]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 20,
+
+    /// Snapshot history
+    history: std.ArrayList(Snapshot),
 
     sink_metrics: std.ArrayList(SinkMetrics),
     allocator: std.mem.Allocator,
@@ -139,6 +154,17 @@ pub const Metrics = struct {
         };
     }
 
+    /// Maps an index back to a histogram bucket boundary (in nanoseconds).
+    fn histogramBucketBoundary(bucket: usize) u64 {
+        // Exponential buckets: 1us, 10us, 100us, 1ms, 10ms, 100ms, 1s, etc.
+        const boundaries = [_]u64{
+            1_000,         2_000,                5_000,     10_000,     20_000,     50_000,     100_000,     200_000,     500_000,
+            1_000_000,     2_000_000,            5_000_000, 10_000_000, 20_000_000, 50_000_000, 100_000_000, 200_000_000, 500_000_000,
+            1_000_000_000, std.math.maxInt(u64),
+        };
+        return if (bucket < boundaries.len) boundaries[bucket] else std.math.maxInt(u64);
+    }
+
     /// Maps a LevelIndex back to a Level name string.
     pub fn indexToLevelName(index: usize) []const u8 {
         return switch (index) {
@@ -156,18 +182,19 @@ pub const Metrics = struct {
         };
     }
 
-    /// Initializes a new Metrics instance.
-    ///
-    /// Arguments:
-    ///     allocator: Memory allocator for internal storage.
-    ///
-    /// Returns:
-    ///     A new Metrics instance.
+    /// Initializes a new Metrics instance with default configuration.
     pub fn init(allocator: std.mem.Allocator) Metrics {
+        return initWithConfig(allocator, .{});
+    }
+
+    /// Initializes a new Metrics instance with custom configuration.
+    pub fn initWithConfig(allocator: std.mem.Allocator, config: MetricsConfig) Metrics {
         return .{
             .start_time = std.time.milliTimestamp(),
             .sink_metrics = .empty,
+            .history = .empty,
             .allocator = allocator,
+            .config = config,
         };
     }
 
@@ -177,29 +204,130 @@ pub const Metrics = struct {
             self.allocator.free(metric.name);
         }
         self.sink_metrics.deinit(self.allocator);
+        self.history.deinit(self.allocator);
     }
 
     /// Records a new log record.
-    ///
-    /// Arguments:
-    ///     level: The level of the logged record.
-    ///     bytes: The size of the formatted record in bytes.
+    /// Basic counting always works; advanced features (thresholds, callbacks) require config.enabled = true.
     pub fn recordLog(self: *Metrics, level: Level, bytes: u64) void {
         _ = self.total_records.fetchAdd(1, .monotonic);
         _ = self.total_bytes.fetchAdd(@truncate(bytes), .monotonic);
-        const level_index = levelToIndex(level);
-        _ = self.level_counts[level_index].fetchAdd(1, .monotonic);
+
+        if (self.config.track_levels) {
+            const level_index = levelToIndex(level);
+            _ = self.level_counts[level_index].fetchAdd(1, .monotonic);
+        }
+
         self.last_record_time.store(@truncate(std.time.milliTimestamp()), .monotonic);
+
+        // Advanced features only when enabled
+        if (self.config.enabled) {
+            // Check thresholds
+            self.checkThresholds();
+
+            // Invoke callback if set
+            if (self.on_record_logged) |callback| {
+                callback(level, bytes);
+            }
+        }
+    }
+
+    /// Records a log with latency measurement.
+    pub fn recordLogWithLatency(self: *Metrics, level: Level, bytes: u64, latency_ns: u64) void {
+        self.recordLog(level, bytes);
+
+        if (!self.config.track_latency) return;
+
+        _ = self.total_latency_ns.fetchAdd(@truncate(latency_ns), .monotonic);
+
+        // Update min latency
+        var current_min = self.min_latency_ns.load(.monotonic);
+        while (latency_ns < current_min) {
+            const result = self.min_latency_ns.cmpxchgWeak(current_min, @truncate(latency_ns), .monotonic, .monotonic);
+            if (result) |new_current| {
+                current_min = new_current;
+            } else {
+                break;
+            }
+        }
+
+        // Update max latency
+        var current_max = self.max_latency_ns.load(.monotonic);
+        while (latency_ns > current_max) {
+            const result = self.max_latency_ns.cmpxchgWeak(current_max, @truncate(latency_ns), .monotonic, .monotonic);
+            if (result) |new_current| {
+                current_max = new_current;
+            } else {
+                break;
+            }
+        }
+
+        // Update histogram if enabled
+        if (self.config.enable_histogram) {
+            const bucket = self.getHistogramBucket(latency_ns);
+            if (bucket < self.histogram.len) {
+                _ = self.histogram[bucket].fetchAdd(1, .monotonic);
+            }
+        }
+    }
+
+    /// Get histogram bucket for a latency value.
+    fn getHistogramBucket(self: *const Metrics, latency_ns: u64) usize {
+        _ = self;
+        var bucket: usize = 0;
+        while (bucket < 20) : (bucket += 1) {
+            if (latency_ns <= histogramBucketBoundary(bucket)) {
+                return bucket;
+            }
+        }
+        return 19;
+    }
+
+    /// Check thresholds and invoke callback if exceeded.
+    fn checkThresholds(self: *Metrics) void {
+        if (self.on_threshold_exceeded == null) return;
+
+        const callback = self.on_threshold_exceeded.?;
+
+        // Check error rate threshold
+        if (self.config.error_rate_threshold > 0) {
+            const err_rate = self.errorRate();
+            if (err_rate > self.config.error_rate_threshold) {
+                callback(.error_count, self.errorCount(), @intFromFloat(self.config.error_rate_threshold * 100));
+            }
+        }
+
+        // Check drop rate threshold
+        if (self.config.drop_rate_threshold > 0) {
+            const drop_rate_val = self.dropRate();
+            if (drop_rate_val > self.config.drop_rate_threshold) {
+                callback(.dropped_records, self.droppedCount(), @intFromFloat(self.config.drop_rate_threshold * 100));
+            }
+        }
+
+        // Check max records per second
+        if (self.config.max_records_per_second > 0) {
+            const rps = self.rate();
+            if (rps > @as(f64, @floatFromInt(self.config.max_records_per_second))) {
+                callback(.records_per_second, @intFromFloat(rps), self.config.max_records_per_second);
+            }
+        }
     }
 
     /// Records a dropped log record.
     pub fn recordDrop(self: *Metrics) void {
         _ = self.dropped_records.fetchAdd(1, .monotonic);
+        if (self.on_error_detected) |callback| {
+            callback(.records_dropped, self.droppedCount());
+        }
     }
 
     /// Records an error.
     pub fn recordError(self: *Metrics) void {
         _ = self.error_count.fetchAdd(1, .monotonic);
+        if (self.on_error_detected) |callback| {
+            callback(.sink_write_error, self.errorCount());
+        }
     }
 
     /// Adds a sink to track.
@@ -269,6 +397,36 @@ pub const Metrics = struct {
         };
     }
 
+    /// Takes a snapshot and optionally stores in history.
+    pub fn takeSnapshot(self: *Metrics) !Snapshot {
+        const snapshot = self.getSnapshot();
+
+        // Store in history if configured
+        if (self.config.history_size > 0) {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+
+            // Remove oldest if at capacity
+            if (self.history.items.len >= self.config.history_size) {
+                _ = self.history.orderedRemove(0);
+            }
+
+            try self.history.append(self.allocator, snapshot);
+        }
+
+        // Invoke callback
+        if (self.on_metrics_snapshot) |callback| {
+            callback(&snapshot);
+        }
+
+        return snapshot;
+    }
+
+    /// Get snapshot history.
+    pub fn getHistory(self: *const Metrics) []const Snapshot {
+        return self.history.items;
+    }
+
     /// Resets all metrics to zero.
     pub fn reset(self: *Metrics) void {
         self.total_records.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
@@ -276,6 +434,16 @@ pub const Metrics = struct {
         self.dropped_records.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         self.error_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         self.start_time = std.time.milliTimestamp();
+
+        // Reset latency
+        self.total_latency_ns.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.min_latency_ns.store(std.math.maxInt(Constants.AtomicUnsigned), .monotonic);
+        self.max_latency_ns.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+
+        // Reset histogram
+        for (0..20) |i| {
+            self.histogram[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        }
 
         for (0..10) |i| {
             self.level_counts[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
@@ -287,6 +455,112 @@ pub const Metrics = struct {
             metric.write_errors.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
             metric.flush_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
+
+        // Clear history
+        self.history.clearRetainingCapacity();
+    }
+
+    /// Export metrics in configured format.
+    pub fn exportMetrics(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
+        return switch (self.config.export_format) {
+            .text => self.format(allocator),
+            .json => self.exportJson(allocator),
+            .prometheus => self.exportPrometheus(allocator),
+            .statsd => self.exportStatsd(allocator),
+        };
+    }
+
+    /// Export as JSON format.
+    pub fn exportJson(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
+        const snapshot = self.getSnapshot();
+        return try std.fmt.allocPrint(allocator,
+            \\{{"total_records":{d},"total_bytes":{d},"dropped":{d},"errors":{d},"uptime_ms":{d},"rps":{d:.2},"bps":{d:.2}}}
+        , .{
+            snapshot.total_records,
+            snapshot.total_bytes,
+            snapshot.dropped_records,
+            snapshot.error_count,
+            snapshot.uptime_ms,
+            snapshot.records_per_second,
+            snapshot.bytes_per_second,
+        });
+    }
+
+    /// Export as Prometheus format.
+    pub fn exportPrometheus(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
+        const snapshot = self.getSnapshot();
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+        const writer = buf.writer(allocator);
+
+        try writer.print("# HELP logly_records_total Total log records\n", .{});
+        try writer.print("# TYPE logly_records_total counter\n", .{});
+        try writer.print("logly_records_total {d}\n", .{snapshot.total_records});
+
+        try writer.print("# HELP logly_bytes_total Total bytes logged\n", .{});
+        try writer.print("# TYPE logly_bytes_total counter\n", .{});
+        try writer.print("logly_bytes_total {d}\n", .{snapshot.total_bytes});
+
+        try writer.print("# HELP logly_dropped_total Dropped records\n", .{});
+        try writer.print("# TYPE logly_dropped_total counter\n", .{});
+        try writer.print("logly_dropped_total {d}\n", .{snapshot.dropped_records});
+
+        try writer.print("# HELP logly_errors_total Error count\n", .{});
+        try writer.print("# TYPE logly_errors_total counter\n", .{});
+        try writer.print("logly_errors_total {d}\n", .{snapshot.error_count});
+
+        try writer.print("# HELP logly_records_per_second Records per second\n", .{});
+        try writer.print("# TYPE logly_records_per_second gauge\n", .{});
+        try writer.print("logly_records_per_second {d:.2}\n", .{snapshot.records_per_second});
+
+        return buf.toOwnedSlice(allocator);
+    }
+
+    /// Export as StatsD format.
+    pub fn exportStatsd(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
+        const snapshot = self.getSnapshot();
+        return try std.fmt.allocPrint(allocator,
+            \\logly.records.total:{d}|c
+            \\logly.bytes.total:{d}|c
+            \\logly.dropped.total:{d}|c
+            \\logly.errors.total:{d}|c
+            \\logly.rps:{d:.2}|g
+        , .{
+            snapshot.total_records,
+            snapshot.total_bytes,
+            snapshot.dropped_records,
+            snapshot.error_count,
+            snapshot.records_per_second,
+        });
+    }
+
+    /// Get average latency in nanoseconds.
+    pub fn avgLatencyNs(self: *const Metrics) u64 {
+        const total = @as(u64, self.total_records.load(.monotonic));
+        if (total == 0) return 0;
+        const latency = @as(u64, self.total_latency_ns.load(.monotonic));
+        return latency / total;
+    }
+
+    /// Get min latency in nanoseconds.
+    pub fn minLatencyNs(self: *const Metrics) u64 {
+        const min = self.min_latency_ns.load(.monotonic);
+        if (min == std.math.maxInt(Constants.AtomicUnsigned)) return 0;
+        return @as(u64, min);
+    }
+
+    /// Get max latency in nanoseconds.
+    pub fn maxLatencyNs(self: *const Metrics) u64 {
+        return @as(u64, self.max_latency_ns.load(.monotonic));
+    }
+
+    /// Get histogram data.
+    pub fn getHistogram(self: *const Metrics) [20]u64 {
+        var result: [20]u64 = undefined;
+        for (0..20) |i| {
+            result[i] = @as(u64, self.histogram[i].load(.monotonic));
+        }
+        return result;
     }
 
     /// Formats metrics as a human-readable string.

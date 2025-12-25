@@ -233,6 +233,62 @@ pub fn main() !void {
 }
 ```
 
+## Global Configuration
+
+Configure metrics globally through `Config.MetricsConfig`:
+
+```zig
+var config = logly.Config.default();
+config.enable_metrics = true;
+config.metrics = .{
+    .enabled = true,
+    .track_levels = true,
+    .track_sinks = true,
+    .track_throughput = true,
+    .track_latency = true,
+    .snapshot_interval_ms = 60000,  // 1 minute
+    .error_rate_threshold = 0.01,   // 1% error rate alert
+    .drop_rate_threshold = 0.001,   // 0.1% drop rate alert
+    .export_format = .json,
+    .enable_histogram = true,
+    .histogram_buckets = 20,
+    .history_size = 60,
+};
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+```
+
+### MetricsConfig Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable metrics collection |
+| `track_levels` | `bool` | `true` | Track per-level counts |
+| `track_sinks` | `bool` | `true` | Track per-sink metrics |
+| `track_throughput` | `bool` | `true` | Calculate records/bytes per second |
+| `track_latency` | `bool` | `false` | Track logging latency |
+| `snapshot_interval_ms` | `u64` | `0` | Auto-snapshot interval (0 = disabled) |
+| `error_rate_threshold` | `f32` | `0.0` | Error rate alert threshold |
+| `drop_rate_threshold` | `f32` | `0.0` | Drop rate alert threshold |
+| `max_records_per_second` | `u64` | `0` | Max rate alert threshold |
+| `export_format` | `ExportFormat` | `.text` | Export format (text/json/prometheus/statsd) |
+| `enable_histogram` | `bool` | `false` | Enable latency histogram |
+| `histogram_buckets` | `u8` | `10` | Number of histogram buckets |
+| `history_size` | `u16` | `0` | Snapshots to retain in history |
+
+### Configuration Presets
+
+```zig
+// Production - comprehensive with alerts
+config.metrics = logly.Config.MetricsConfig.production();
+
+// Minimal - basic counts only
+config.metrics = logly.Config.MetricsConfig.minimal();
+
+// Detailed - everything including histograms
+config.metrics = logly.Config.MetricsConfig.detailed();
+```
+
 ## Best Practices
 
 1. **Use metrics in production**: Metrics have minimal overhead

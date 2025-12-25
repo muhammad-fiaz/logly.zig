@@ -91,13 +91,92 @@ pub const RedactorStats = struct {
 };
 ```
 
+### RedactionConfig
+
+Global configuration for redaction, available through `Config.RedactionConfig`:
+
+```zig
+pub const RedactionConfig = struct {
+    /// Enable redaction system.
+    enabled: bool = false,
+    /// Fields to redact (by name).
+    fields: ?[]const []const u8 = null,
+    /// Patterns to redact (string patterns).
+    patterns: ?[]const []const u8 = null,
+    /// Default replacement text.
+    replacement: []const u8 = "[REDACTED]",
+    /// Default redaction type for fields.
+    default_type: RedactionType = .full,
+    /// Enable regex pattern matching.
+    enable_regex: bool = false,
+    /// Hash algorithm for hash redaction type.
+    hash_algorithm: HashAlgorithm = .sha256,
+    /// Characters to reveal at start for partial redaction.
+    partial_start_chars: u8 = 4,
+    /// Characters to reveal at end for partial redaction.
+    partial_end_chars: u8 = 4,
+    /// Mask character for redacted content.
+    mask_char: u8 = '*',
+    /// Enable case-insensitive field matching.
+    case_insensitive: bool = true,
+    /// Log when redaction is applied (for audit).
+    audit_redactions: bool = false,
+    /// Compliance preset to use (null for custom).
+    compliance_preset: ?CompliancePreset = null,
+
+    // Presets
+    pub fn pciDss() RedactionConfig;
+    pub fn hipaa() RedactionConfig;
+    pub fn gdpr() RedactionConfig;
+    pub fn strict() RedactionConfig;
+};
+```
+
+### CompliancePreset
+
+```zig
+pub const CompliancePreset = enum {
+    pci_dss,
+    hipaa,
+    gdpr,
+    sox,
+    custom,
+};
+```
+
+### HashAlgorithm
+
+```zig
+pub const HashAlgorithm = enum {
+    sha256,
+    sha512,
+    md5,
+};
+```
+
 ## Methods
 
 ### Initialization
 
 #### `init(allocator: std.mem.Allocator) Redactor`
 
-Initializes a new Redactor instance.
+Initializes a new Redactor instance with default configuration.
+
+#### `initWithConfig(allocator: std.mem.Allocator, config: RedactionConfig) Redactor`
+
+Initializes a new Redactor instance with custom configuration.
+
+```zig
+var redactor = Redactor.initWithConfig(allocator, .{
+    .enabled = true,
+    .replacement = "[HIDDEN]",
+    .mask_char = '#',
+    .partial_start_chars = 3,
+    .partial_end_chars = 3,
+    .case_insensitive = true,
+    .audit_redactions = true,
+});
+```
 
 #### `deinit(self: *Redactor) void`
 
@@ -133,9 +212,29 @@ Removes all redaction rules.
 
 #### `redact(value: []const u8) ![]u8`
 
-Applies redaction to a string value. Returns a new allocated string.
+Applies redaction to a string value using pattern rules. Returns a new allocated string.
 
-**Alias**: `mask`, `sanitize`
+**Alias**: `mask`, `sanitize`, `process`
+
+#### `redactField(field_name: []const u8, value: []const u8) ![]u8`
+
+Redacts a field value based on field rules with config settings.
+
+**Alias**: `maskField`
+
+### Configuration
+
+#### `getConfig() RedactionConfig`
+
+Returns current redaction configuration.
+
+#### `isEnabled() bool`
+
+Returns true if redaction is enabled in config.
+
+#### `getDefaultReplacement() []const u8`
+
+Returns the default replacement text from config.
 
 ### Statistics
 

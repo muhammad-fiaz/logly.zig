@@ -218,23 +218,42 @@ This is useful when tasks need to access the same data, as keeping them on the s
 
 ## Parallel Sink Writing
 
-Write to multiple sinks concurrently:
+Write to multiple sinks concurrently with the enhanced `ParallelSinkWriter`:
 
 ```zig
-var writer = try logly.ParallelSinkWriter.init(allocator, .{
+// Create with default config
+var writer = try logly.ParallelSinkWriter.init(allocator, pool);
+defer writer.deinit();
+
+// Or with custom ParallelConfig
+var writer = try logly.ParallelSinkWriter.initWithConfig(allocator, pool, .{
     .max_concurrent = 4,
     .retry_on_failure = true,
-    .fail_fast = false,
+    .max_retries = 3,
+    .buffered = true,
+    .buffer_size = 64,
 });
 defer writer.deinit();
 
 // Add sinks
-try writer.addSink(&file_sink);
-try writer.addSink(&console_sink);
-try writer.addSink(&network_sink);
+try writer.addSink(.{
+    .write_fn = &fileWriteFn,
+    .flush_fn = &fileFlushFn,
+    .name = "file",
+});
+try writer.addSink(.{
+    .write_fn = &consoleWriteFn,
+    .name = "console",
+});
 
 // Write to all sinks in parallel
-try writer.write(&record);
+writer.writeParallel("Log message data");
+
+// Or use alias
+writer.write("Log message data");
+
+// Flush all buffered writes
+writer.flushAll();
 ```
 
 ### Configuration Options
@@ -249,6 +268,65 @@ pub const ParallelConfig = struct {
     buffered: bool = true,           // Buffer before dispatch
     buffer_size: usize = 64,         // Buffer size
 };
+```
+
+### ParallelConfig Presets
+
+```zig
+// High throughput - max concurrent, large buffers
+const config = logly.ParallelConfig.highThroughput();
+
+// Low latency - small buffers, no retry, fail-fast
+const config = logly.ParallelConfig.lowLatency();
+
+// Reliable - more retries, longer timeouts
+const config = logly.ParallelConfig.reliable();
+```
+
+### Sink Management
+
+```zig
+// Remove a sink by name
+writer.removeSink("console");
+
+// Disable a sink temporarily
+writer.setSinkEnabled("file", false);
+
+// Re-enable
+writer.setSinkEnabled("file", true);
+
+// Check if any sinks are enabled
+if (writer.hasEnabledSinks()) {
+    writer.write(data);
+}
+
+// Get sink count
+const count = writer.sinkCount();
+```
+
+### Parallel Write Statistics
+
+```zig
+const stats = writer.getStats();
+
+std.debug.print("Writes submitted: {d}\n", .{
+    stats.writes_submitted.load(.monotonic),
+});
+std.debug.print("Writes completed: {d}\n", .{
+    stats.writes_completed.load(.monotonic),
+});
+std.debug.print("Writes failed: {d}\n", .{
+    stats.writes_failed.load(.monotonic),
+});
+std.debug.print("Retries: {d}\n", .{
+    stats.retries.load(.monotonic),
+});
+std.debug.print("Bytes written: {d}\n", .{
+    stats.bytes_written.load(.monotonic),
+});
+std.debug.print("Success rate: {d:.2}%\n", .{
+    stats.successRate() * 100,
+});
 ```
 
 ## Statistics

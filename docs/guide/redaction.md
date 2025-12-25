@@ -230,6 +230,59 @@ Redaction helps with compliance requirements like:
 5. **Document patterns**: Keep a list of what data types are being redacted
 6. **Performance**: Complex regex patterns may impact performance
 
+## Global Configuration
+
+Configure redaction globally through `Config.RedactionConfig`:
+
+```zig
+var config = logly.Config.default();
+config.redaction = .{
+    .enabled = true,
+    .replacement = "[REDACTED]",
+    .default_type = .full,
+    .mask_char = '*',
+    .partial_start_chars = 4,
+    .partial_end_chars = 4,
+    .case_insensitive = true,
+    .audit_redactions = true,
+    .compliance_preset = .gdpr,
+};
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+```
+
+### RedactionConfig Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable redaction system |
+| `replacement` | `[]const u8` | `"[REDACTED]"` | Default replacement text |
+| `default_type` | `RedactionType` | `.full` | Default redaction type |
+| `enable_regex` | `bool` | `false` | Enable regex patterns |
+| `hash_algorithm` | `HashAlgorithm` | `.sha256` | Hash algorithm for `.hash` type |
+| `partial_start_chars` | `u8` | `4` | Characters to reveal at start |
+| `partial_end_chars` | `u8` | `4` | Characters to reveal at end |
+| `mask_char` | `u8` | `'*'` | Mask character |
+| `case_insensitive` | `bool` | `true` | Case-insensitive field matching |
+| `audit_redactions` | `bool` | `false` | Log when redaction applied |
+| `compliance_preset` | `?CompliancePreset` | `null` | Use compliance preset |
+
+### Configuration Presets
+
+```zig
+// PCI-DSS compliance
+config.redaction = logly.Config.RedactionConfig.pciDss();
+
+// HIPAA compliance
+config.redaction = logly.Config.RedactionConfig.hipaa();
+
+// GDPR compliance
+config.redaction = logly.Config.RedactionConfig.gdpr();
+
+// Maximum security
+config.redaction = logly.Config.RedactionConfig.strict();
+```
+
 ## See Also
 
 - [Filtering](/guide/filtering) - Rule-based log filtering
