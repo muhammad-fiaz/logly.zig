@@ -11,7 +11,9 @@ pub fn main() !void {
     _ = logly.Terminal.enableAnsiColors();
 
     // Create logger (auto-sink enabled by default)
-    const logger = try logly.Logger.init(allocator);
+    var config_init = logly.Config.default();
+    config_init.check_for_updates = true;
+    const logger = try logly.Logger.initWithConfig(allocator, config_init);
     defer logger.deinit();
 
     // Configure to show filename and line number (clickable in terminals)

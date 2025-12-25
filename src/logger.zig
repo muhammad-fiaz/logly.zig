@@ -199,8 +199,8 @@ pub const Logger = struct {
             logger.logSystemDiagnostics(null) catch {};
         }
 
-        if (logger.config.check_for_updates) {
-            logger.update_thread = UpdateChecker.checkForUpdates(allocator, null);
+        if (logger.config.check_for_updates and logger.config.global_console_display) {
+            logger.update_thread = UpdateChecker.checkForUpdates(allocator, true);
         }
 
         return logger;
@@ -253,8 +253,8 @@ pub const Logger = struct {
             logger.thread_pool = tp;
         }
 
-        if (config.check_for_updates) {
-            logger.update_thread = UpdateChecker.checkForUpdates(allocator, logger.thread_pool);
+        if (config.check_for_updates and config.global_console_display) {
+            logger.update_thread = UpdateChecker.checkForUpdates(allocator, true);
         }
 
         return logger;

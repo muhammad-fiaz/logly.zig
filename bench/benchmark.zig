@@ -27,6 +27,10 @@ const BenchmarkResult = struct {
         "Enterprise Features",
         "Sampling & Rate Limiting",
         "Filtering",
+        "Rules Engine",
+        "Redaction",
+        "Metrics",
+        "Rotation",
         "System Diagnostics",
         "Multi-Threading",
         "Performance Comparison",
@@ -877,6 +881,231 @@ pub fn main() !void {
         const ctxFilter = BenchContext{ .logger = loggerFilter, .allocator = allocator };
         try results.append(allocator, runBenchmark("Filter (allowed)", benchFilterAllowed, &ctxFilter, "Message passes filter", "Filtering"));
         try results.append(allocator, runBenchmark("Filter (rejected)", benchFilterRejected, &ctxFilter, "Message blocked by filter", "Filtering"));
+    }
+
+    // ============================================
+    // CATEGORY: Rules Engine
+    // ============================================
+    {
+        std.debug.print("Running: Rules Engine benchmarks...\n", .{});
+
+        // Rules with conditions
+        const RulesContext = struct {
+            logger: *Logger,
+            fn benchRulesLog(self: *const @This()) !void {
+                try self.logger.info("Processing order #12345", null);
+            }
+        };
+
+        const loggerRules = try Logger.init(allocator);
+        defer loggerRules.deinit();
+
+        var configRules = Config.default();
+        configRules.auto_sink = false;
+        configRules.rules = .{
+            .enabled = true,
+        };
+        loggerRules.configure(configRules);
+
+        _ = try loggerRules.addSink(.{ .path = NULL_PATH });
+
+        const rulesCtx = RulesContext{ .logger = loggerRules };
+        try results.append(allocator, runBenchmark("Rules engine (enabled)", struct {
+            fn bench(ctx: *const RulesContext) !void {
+                try ctx.benchRulesLog();
+            }
+        }.bench, &rulesCtx, "Rule evaluation", "Rules Engine"));
+    }
+
+    {
+        // Rules disabled baseline
+        const loggerNoRules = try Logger.init(allocator);
+        defer loggerNoRules.deinit();
+
+        var configNoRules = Config.default();
+        configNoRules.auto_sink = false;
+        configNoRules.rules = .{ .enabled = false };
+        loggerNoRules.configure(configNoRules);
+
+        _ = try loggerNoRules.addSink(.{ .path = NULL_PATH });
+
+        const ctx = BenchContext{ .logger = loggerNoRules, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Rules engine (disabled)", benchSimpleLog, &ctx, "No rule evaluation", "Rules Engine"));
+    }
+
+    // ============================================
+    // CATEGORY: Redaction
+    // ============================================
+    {
+        std.debug.print("Running: Redaction benchmarks...\n", .{});
+
+        const Redactor = logly.Redactor;
+
+        // Redactor pattern matching
+        const RedactorContext = struct {
+            redactor: *Redactor,
+            allocator: std.mem.Allocator,
+
+            fn benchRedact(self: *const @This()) !void {
+                const msg = "User password=secret123 logged in from api_key=abc123";
+                const result = try self.redactor.redact(msg);
+                self.allocator.free(result);
+            }
+
+            fn benchNoRedact(self: *const @This()) !void {
+                const msg = "Normal message without sensitive data";
+                const result = try self.redactor.redact(msg);
+                self.allocator.free(result);
+            }
+        };
+
+        var redactor = Redactor.init(allocator);
+        defer redactor.deinit();
+
+        try redactor.addPattern("password", .contains, "password=", "[REDACTED]");
+        try redactor.addPattern("api_key", .contains, "api_key=", "[HIDDEN]");
+
+        const redactCtx = RedactorContext{ .redactor = &redactor, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Redaction (pattern match)", struct {
+            fn bench(ctx: *const RedactorContext) !void {
+                try ctx.benchRedact();
+            }
+        }.bench, &redactCtx, "2 patterns matched", "Redaction"));
+
+        try results.append(allocator, runBenchmark("Redaction (no match)", struct {
+            fn bench(ctx: *const RedactorContext) !void {
+                try ctx.benchNoRedact();
+            }
+        }.bench, &redactCtx, "No patterns matched", "Redaction"));
+    }
+
+    {
+        // Field redaction
+        const Redactor = logly.Redactor;
+
+        const FieldRedactContext = struct {
+            redactor: *Redactor,
+            allocator: std.mem.Allocator,
+
+            fn benchFieldRedact(self: *const @This()) !void {
+                const result = try self.redactor.redactField("password", "supersecret123");
+                self.allocator.free(result);
+            }
+        };
+
+        var fieldRedactor = Redactor.init(allocator);
+        defer fieldRedactor.deinit();
+
+        try fieldRedactor.addField("password", .full);
+        try fieldRedactor.addField("email", .partial_end);
+        try fieldRedactor.addField("credit_card", .mask_middle);
+
+        const fieldCtx = FieldRedactContext{ .redactor = &fieldRedactor, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Field redaction (full)", struct {
+            fn bench(ctx: *const FieldRedactContext) !void {
+                try ctx.benchFieldRedact();
+            }
+        }.bench, &fieldCtx, "Full field masking", "Redaction"));
+    }
+
+    // ============================================
+    // CATEGORY: Metrics
+    // ============================================
+    {
+        std.debug.print("Running: Metrics benchmarks...\n", .{});
+
+        const Metrics = logly.Metrics;
+
+        const MetricsContext = struct {
+            metrics: *Metrics,
+
+            fn benchRecordLog(self: *const @This()) !void {
+                self.metrics.recordLog(.info, 100);
+            }
+
+            fn benchRecordLogWithLatency(self: *const @This()) !void {
+                self.metrics.recordLogWithLatency(.info, 100, 1000);
+            }
+
+            fn benchSnapshot(self: *const @This()) !void {
+                _ = self.metrics.getSnapshot();
+            }
+        };
+
+        var metrics = Metrics.init(allocator);
+        defer metrics.deinit();
+
+        const metricsCtx = MetricsContext{ .metrics = &metrics };
+        try results.append(allocator, runBenchmark("Metrics recordLog", struct {
+            fn bench(ctx: *const MetricsContext) !void {
+                try ctx.benchRecordLog();
+            }
+        }.bench, &metricsCtx, "Atomic counter update", "Metrics"));
+
+        try results.append(allocator, runBenchmark("Metrics with latency", struct {
+            fn bench(ctx: *const MetricsContext) !void {
+                try ctx.benchRecordLogWithLatency();
+            }
+        }.bench, &metricsCtx, "With latency tracking", "Metrics"));
+
+        try results.append(allocator, runBenchmark("Metrics snapshot", struct {
+            fn bench(ctx: *const MetricsContext) !void {
+                try ctx.benchSnapshot();
+            }
+        }.bench, &metricsCtx, "Get current snapshot", "Metrics"));
+    }
+
+    {
+        // Metrics with config
+        const Metrics = logly.Metrics;
+
+        var metricsWithConfig = Metrics.initWithConfig(allocator, .{
+            .enabled = true,
+            .track_levels = true,
+            .track_latency = true,
+            .enable_histogram = true,
+        });
+        defer metricsWithConfig.deinit();
+
+        const MetricsConfigContext = struct {
+            metrics: *Metrics,
+
+            fn benchRecordWithConfig(self: *const @This()) !void {
+                self.metrics.recordLogWithLatency(.warning, 150, 2500);
+            }
+        };
+
+        const configCtx = MetricsConfigContext{ .metrics = &metricsWithConfig };
+        try results.append(allocator, runBenchmark("Metrics (full config)", struct {
+            fn bench(ctx: *const MetricsConfigContext) !void {
+                try ctx.benchRecordWithConfig();
+            }
+        }.bench, &configCtx, "All tracking enabled", "Metrics"));
+    }
+
+    // ============================================
+    // CATEGORY: Rotation
+    // ============================================
+    {
+        std.debug.print("Running: Rotation benchmarks...\n", .{});
+
+        const loggerRotation = try Logger.init(allocator);
+        defer loggerRotation.deinit();
+
+        var configRot = Config.default();
+        configRot.auto_sink = false;
+        loggerRotation.configure(configRot);
+
+        // Add a sink with rotation
+        _ = try loggerRotation.addSink(.{
+            .path = NULL_PATH,
+            .rotation = "daily",
+            .size_limit = 1024 * 1024, // 1MB
+            .retention = 5,
+        });
+
+        const ctxRot = BenchContext{ .logger = loggerRotation, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Rotation (size check)", benchSimpleLog, &ctxRot, "Size-based check", "Rotation"));
     }
 
     // ============================================

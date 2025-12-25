@@ -64,10 +64,10 @@ fn fetchLatestTag(allocator: std.mem.Allocator) ![]const u8 {
     };
 }
 
-/// Checks for updates in a background thread or thread pool (runs only once per process).
-/// Returns a thread handle if spawned, or null if using thread pool or already done.
+/// Checks for updates in a background thread (runs only once per process).
+/// Returns a thread handle so callers can optionally join during shutdown.
 /// Fails silently on errors (no internet, api limits, etc).
-pub fn checkForUpdates(allocator: std.mem.Allocator, thread_pool: ?*ThreadPool) ?std.Thread {
+pub fn checkForUpdates(allocator: std.mem.Allocator, global_console_display: bool) ?std.Thread {
     update_check_mutex.lock();
     defer update_check_mutex.unlock();
 
@@ -75,40 +75,47 @@ pub fn checkForUpdates(allocator: std.mem.Allocator, thread_pool: ?*ThreadPool) 
     if (update_check_done) return null;
     update_check_done = true;
 
-    if (thread_pool) |tp| {
-        const Ctx = struct {
-            allocator: std.mem.Allocator,
-            fn run(ptr: *anyopaque, _: ?std.mem.Allocator) void {
-                const self = @as(*@This(), @ptrCast(@alignCast(ptr)));
-                const alloc = self.allocator;
-                checkWorker(alloc);
-                alloc.destroy(self);
-            }
-        };
-        // Submit background check to thread pool with stable context
-        const ctx = allocator.create(Ctx) catch {
-            return std.Thread.spawn(.{}, checkWorker, .{allocator}) catch null;
-        };
-        ctx.* = .{ .allocator = allocator };
-        if (tp.submitCallback(Ctx.run, ctx)) {
-            return null;
-        }
-        allocator.destroy(ctx);
-    }
-
-    return std.Thread.spawn(.{}, checkWorker, .{allocator}) catch null;
+    return std.Thread.spawn(.{}, checkWorker, .{ allocator, global_console_display }) catch null;
 }
 
-fn checkWorker(allocator: std.mem.Allocator) void {
+fn checkWorker(allocator: std.mem.Allocator, global_console_display: bool) void {
     const latest_tag = fetchLatestTag(allocator) catch return;
     defer allocator.free(latest_tag);
 
-    // Use ASCII-safe indicators instead of emoji for cross-platform compatibility
+    // Errors are silenced as requested for production use
+    // If you need to debug, you can uncomment these line comments:
+    // const reset = "\x1b[0m";
+    // const bold_white = "\x1b[1;37m";
+    // const red_bg = "\x1b[41m";
+    // std.log.info("{s}{s} [UPDATE ERROR] ❌ Failed to check for updates {s}", .{ bold_white, red_bg, reset });
+
+    const reset = "\x1b[0m";
+    const bold_white = "\x1b[1;37m";
+    const bold_black = "\x1b[1;30m";
+    const green_bg = "\x1b[42m"; // Professional Green
+    const cyan_bg = "\x1b[46m"; // Professional Cyan
+
+    if (!global_console_display) return;
+
     switch (compareVersions(latest_tag)) {
-        .remote_newer => std.log.info("[UPDATE] A newer release is available: {s} (current {s})", .{ latest_tag, CURRENT_VERSION }),
-        .local_newer => std.log.info("[NIGHTLY] Running a dev/nightly build ahead of latest release: current {s}, latest {s}", .{ CURRENT_VERSION, latest_tag }),
+        .remote_newer => {
+            std.debug.print("{s}{s} [UPDATE] >> A newer release is available: {s} (current {s}) {s}\n", .{
+                bold_white,
+                green_bg,
+                latest_tag,
+                CURRENT_VERSION,
+                reset,
+            });
+        },
+        .local_newer => {
+            std.debug.print("{s}{s} [NIGHTLY] * Running a dev/nightly build ahead of latest release: current {s}, latest {s} {s}\n", .{
+                bold_black,
+                cyan_bg,
+                CURRENT_VERSION,
+                latest_tag,
+                reset,
+            });
+        },
         else => {},
     }
 }
-
-const ThreadPool = @import("thread_pool.zig").ThreadPool;

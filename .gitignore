@@ -25,7 +25,7 @@ docs/node_modules
 !docs/.vitepress/config.mts
 docs/.vitepress/cache
 docs/.vitepress/dist
-NUL
+NUL*
 *.txt
 !docs/public/robots.txt
 !docs/robots.txt
