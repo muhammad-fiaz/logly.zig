@@ -305,6 +305,7 @@ Async logging configuration.
 - `max_latency_ms`: Maximum latency before forcing a flush.
 - `overflow_policy`: Overflow policy (`.drop_oldest`, `.drop_newest`, `.block`).
 - `background_worker`: Auto-start worker thread.
+- `use_arena`: Enable arena allocator for batch processing. Default: `false`.
 
 #### `rules: RulesConfig`
 
@@ -600,8 +601,30 @@ pub const CompressionConfig = struct {
     on_rotation: bool = true,
     /// Keep original file after compression.
     keep_original: bool = false,
+    /// Compression mode.
+    mode: Mode = .on_rotation,
+    /// Size threshold in bytes for on_size_threshold mode.
+    size_threshold: u64 = 10 * 1024 * 1024,
+    /// Buffer size for streaming compression.
+    buffer_size: usize = 32 * 1024,
+    /// Compression strategy.
+    strategy: Strategy = .default,
     /// File extension for compressed files.
     extension: []const u8 = ".gz",
+    /// Delete files older than this after compression (in seconds, 0 = never).
+    delete_after: u64 = 0,
+    /// Enable checksum validation.
+    checksum: bool = true,
+    /// Enable streaming compression (compress while writing).
+    streaming: bool = false,
+    /// Use background thread for compression.
+    background: bool = false,
+    /// Dictionary for compression (pre-trained patterns).
+    dictionary: ?[]const u8 = null,
+    /// Enable multi-threaded compression (for large files).
+    parallel: bool = false,
+    /// Memory limit for compression (bytes, 0 = unlimited).
+    memory_limit: usize = 0,
 
     pub const CompressionAlgorithm = enum {
         none,
@@ -610,11 +633,29 @@ pub const CompressionConfig = struct {
         raw_deflate,
     };
 
-    pub const CompressionLevel = enum(u4) {
-        none = 0,
-        fast = 1,
-        default = 6,
-        best = 9,
+    pub const CompressionLevel = enum {
+        none,
+        fastest,
+        fast,
+        default,
+        best,
+    };
+
+    pub const Mode = enum {
+        disabled,
+        on_rotation,
+        on_size_threshold,
+        scheduled,
+        streaming,
+    };
+
+    pub const Strategy = enum {
+        default,
+        text,
+        binary,
+        huffman_only,
+        rle_only,
+        adaptive,
     };
 };
 ```
@@ -684,6 +725,8 @@ pub const AsyncConfig = struct {
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
     background_worker: bool = true,
+    /// Enable arena allocator for batch processing.
+    use_arena: bool = false,
 
     pub const OverflowPolicy = enum {
         drop_oldest,

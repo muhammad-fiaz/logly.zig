@@ -82,6 +82,8 @@ pub const AsyncConfig = struct {
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
     background_worker: bool = true,
+    /// Enable arena allocator for batch processing (reduces malloc overhead).
+    use_arena: bool = false,
 
     pub const OverflowPolicy = enum {
         drop_oldest,
@@ -192,15 +194,27 @@ pub const FileWriterConfig = struct {
 
 ### init
 
-Create a new async logger.
+Create a new async logger with default configuration.
+
+**Alias:** `create`
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, config: AsyncConfig) !AsyncLogger
+pub fn init(allocator: std.mem.Allocator) !*AsyncLogger
+```
+
+### initWithConfig
+
+Create a new async logger with custom configuration.
+
+```zig
+pub fn initWithConfig(allocator: std.mem.Allocator, config: AsyncConfig) !*AsyncLogger
 ```
 
 ### deinit
 
 Clean up resources and stop worker thread.
+
+**Alias:** `destroy`
 
 ```zig
 pub fn deinit(self: *AsyncLogger) void
@@ -252,6 +266,22 @@ Get current async statistics.
 
 ```zig
 pub fn getStats(self: *const AsyncLogger) AsyncStats
+```
+
+### scratchAllocator
+
+Returns the arena allocator if enabled, otherwise returns the main allocator. Use for temporary allocations that can be batch-freed.
+
+```zig
+pub fn scratchAllocator(self: *AsyncLogger) std.mem.Allocator
+```
+
+### resetArena
+
+Resets the arena allocator, freeing all temporary allocations. Call periodically after processing batches.
+
+```zig
+pub fn resetArena(self: *AsyncLogger) void
 ```
 
 ## AsyncStats Methods

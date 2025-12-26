@@ -53,6 +53,9 @@ pub const AsyncLogger = struct {
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     sinks: std.ArrayList(*Sink),
 
+    /// Optional arena allocator for batch processing (reduces malloc overhead)
+    arena: ?std.heap.ArenaAllocator = null,
+
     /// Callback invoked when buffer overflows (depends on overflow policy)
     /// Parameters: (dropped_count: u64)
     overflow_callback: ?*const fn (dropped_count: u64) void = null,
@@ -250,6 +253,9 @@ pub const AsyncLogger = struct {
         return initWithConfig(allocator, .{});
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Initializes an AsyncLogger with custom configuration.
     ///
     /// Arguments:
@@ -270,6 +276,11 @@ pub const AsyncLogger = struct {
             .sinks = .empty,
         };
 
+        // Initialize arena allocator if enabled for better batch processing performance
+        if (config.use_arena) {
+            self.arena = std.heap.ArenaAllocator.init(allocator);
+        }
+
         if (config.background_worker) {
             try self.startWorker();
         }
@@ -284,9 +295,34 @@ pub const AsyncLogger = struct {
         // Flush remaining entries
         self.flushSync();
 
+        // Clean up arena allocator if it was created
+        if (self.arena) |*arena| {
+            arena.deinit();
+        }
+
         self.buffer.deinit();
         self.sinks.deinit(self.allocator);
         self.allocator.destroy(self);
+    }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
+
+    /// Returns the arena allocator if enabled, otherwise the main allocator.
+    /// Use this for temporary allocations that can be batch-freed.
+    pub fn scratchAllocator(self: *AsyncLogger) std.mem.Allocator {
+        if (self.arena) |*arena| {
+            return arena.allocator();
+        }
+        return self.allocator;
+    }
+
+    /// Resets the arena allocator if enabled, freeing all temporary allocations.
+    /// Call this after processing a batch to reclaim memory.
+    pub fn resetArena(self: *AsyncLogger) void {
+        if (self.arena) |*arena| {
+            _ = arena.reset(.retain_capacity);
+        }
     }
 
     /// Adds a sink for async writing.
@@ -540,6 +576,9 @@ pub const AsyncLogger = struct {
                 if (self.on_batch_processed) |cb| {
                     cb(count, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, std.time.ns_per_us))))));
                 }
+
+                // Reset arena after each batch to free temporary memory
+                self.resetArena();
             }
         }
     }

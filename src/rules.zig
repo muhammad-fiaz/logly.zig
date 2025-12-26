@@ -3,6 +3,7 @@ const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
 const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Unified Rules System for compiler-style guided diagnostics.
 ///
@@ -385,6 +386,9 @@ pub const Rules = struct {
         };
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     pub fn initWithConfig(allocator: std.mem.Allocator, config: RulesConfig) Rules {
         return .{
             .allocator = allocator,
@@ -396,6 +400,9 @@ pub const Rules = struct {
     pub fn deinit(self: *Rules) void {
         self.rules.deinit(self.allocator);
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     // Configuration methods
     pub fn enable(self: *Rules) void {
@@ -646,6 +653,15 @@ pub const Rules = struct {
 
     // Evaluation
     pub fn evaluate(self: *Rules, record: *const Record) ?[]const RuleMessage {
+        return self.evaluateWithAllocator(record, null);
+    }
+
+    /// Evaluates rules against a record using an optional scratch allocator.
+    /// If scratch_allocator is provided, it will be used for temporary allocations.
+    /// This is useful for arena allocators that batch-free memory.
+    pub fn evaluateWithAllocator(self: *Rules, record: *const Record, scratch_allocator: ?std.mem.Allocator) ?[]const RuleMessage {
+        const alloc = scratch_allocator orelse self.allocator;
+
         if (!self.enabled) {
             _ = self.stats.evaluations_skipped.fetchAdd(1, .monotonic);
             return null;
@@ -663,7 +679,7 @@ pub const Rules = struct {
         _ = self.stats.rules_evaluated.fetchAdd(1, .monotonic);
 
         var matched_messages: std.ArrayList(RuleMessage) = .empty;
-        errdefer matched_messages.deinit(self.allocator);
+        errdefer matched_messages.deinit(alloc);
 
         var matched_count: usize = 0;
 
@@ -683,7 +699,7 @@ pub const Rules = struct {
                 }
 
                 for (rule.messages) |msg| {
-                    matched_messages.append(self.allocator, msg) catch continue;
+                    matched_messages.append(alloc, msg) catch continue;
                     _ = self.stats.messages_emitted.fetchAdd(1, .monotonic);
                 }
 
@@ -696,11 +712,11 @@ pub const Rules = struct {
         }
 
         if (matched_messages.items.len == 0) {
-            matched_messages.deinit(self.allocator);
+            matched_messages.deinit(alloc);
             return null;
         }
 
-        const result = matched_messages.toOwnedSlice(self.allocator) catch null;
+        const result = matched_messages.toOwnedSlice(alloc) catch null;
         if (result) |msgs| {
             if (self.on_messages_attached) |cb| {
                 cb(record, msgs.len);
@@ -719,9 +735,15 @@ pub const Rules = struct {
 
             if (enable_colors) {
                 if (msg.use_background and msg.background_color != null) {
-                    try writer.print("\x1b[{s};{s}m", .{ msg.getColor(), msg.background_color.? });
+                    try writer.writeAll("\x1b[");
+                    try writer.writeAll(msg.getColor());
+                    try writer.writeByte(';');
+                    try writer.writeAll(msg.background_color.?);
+                    try writer.writeByte('m');
                 } else {
-                    try writer.print("\x1b[{s}m", .{msg.getColor()});
+                    try writer.writeAll("\x1b[");
+                    try writer.writeAll(msg.getColor());
+                    try writer.writeByte('m');
                 }
             }
 
@@ -732,7 +754,11 @@ pub const Rules = struct {
                 if (enable_colors) try writer.writeAll("\x1b[1m");
                 try writer.writeAll(title);
                 try writer.writeAll(": ");
-                if (enable_colors) try writer.print("\x1b[0m\x1b[{s}m", .{msg.getColor()});
+                if (enable_colors) {
+                    try writer.writeAll("\x1b[0m\x1b[");
+                    try writer.writeAll(msg.getColor());
+                    try writer.writeByte('m');
+                }
             }
 
             try writer.writeAll(msg.message);
@@ -741,7 +767,11 @@ pub const Rules = struct {
                 try writer.writeAll(" (");
                 if (enable_colors) try writer.writeAll("\x1b[4m");
                 try writer.writeAll(url);
-                if (enable_colors) try writer.print("\x1b[0m\x1b[{s}m", .{msg.getColor()});
+                if (enable_colors) {
+                    try writer.writeAll("\x1b[0m\x1b[");
+                    try writer.writeAll(msg.getColor());
+                    try writer.writeByte('m');
+                }
                 try writer.writeAll(")");
             }
 
@@ -761,37 +791,55 @@ pub const Rules = struct {
         try writer.writeAll(newline);
 
         for (messages, 0..) |msg, i| {
-            try writer.print("{s}{{", .{indent});
+            try writer.writeAll(indent);
+            try writer.writeByte('{');
             try writer.writeAll(newline);
 
-            try writer.print("{s}{s}\"category\"{s}\"", .{ indent, indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll(indent);
+            try writer.writeAll("\"category\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
             try writer.writeAll(@tagName(msg.category));
             try writer.writeAll("\"");
 
             if (msg.title) |title| {
                 try writer.writeAll(",");
                 try writer.writeAll(newline);
-                try writer.print("{s}{s}\"title\"{s}\"", .{ indent, indent, sep });
+                try writer.writeAll(indent);
+                try writer.writeAll(indent);
+                try writer.writeAll("\"title\"");
+                try writer.writeAll(sep);
+                try writer.writeByte('"');
                 try escapeJsonString(writer, title);
                 try writer.writeAll("\"");
             }
 
             try writer.writeAll(",");
             try writer.writeAll(newline);
-            try writer.print("{s}{s}\"message\"{s}\"", .{ indent, indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll(indent);
+            try writer.writeAll("\"message\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
             try escapeJsonString(writer, msg.message);
             try writer.writeAll("\"");
 
             if (msg.url) |url| {
                 try writer.writeAll(",");
                 try writer.writeAll(newline);
-                try writer.print("{s}{s}\"url\"{s}\"", .{ indent, indent, sep });
+                try writer.writeAll(indent);
+                try writer.writeAll(indent);
+                try writer.writeAll("\"url\"");
+                try writer.writeAll(sep);
+                try writer.writeByte('"');
                 try escapeJsonString(writer, url);
                 try writer.writeAll("\"");
             }
 
             try writer.writeAll(newline);
-            try writer.print("{s}}}", .{indent});
+            try writer.writeAll(indent);
+            try writer.writeByte('}');
 
             if (i + 1 < messages.len) {
                 try writer.writeAll(",");
@@ -802,24 +850,8 @@ pub const Rules = struct {
         try writer.writeAll("]");
     }
 
-    fn escapeJsonString(writer: anytype, s: []const u8) !void {
-        for (s) |c| {
-            switch (c) {
-                '"' => try writer.writeAll("\\\""),
-                '\\' => try writer.writeAll("\\\\"),
-                '\n' => try writer.writeAll("\\n"),
-                '\r' => try writer.writeAll("\\r"),
-                '\t' => try writer.writeAll("\\t"),
-                else => {
-                    if (c < 0x20) {
-                        try writer.print("\\u{x:0>4}", .{c});
-                    } else {
-                        try writer.writeByte(c);
-                    }
-                },
-            }
-        }
-    }
+    /// Escapes a JSON string. Delegates to the shared utility in utils.zig.
+    const escapeJsonString = Utils.escapeJsonString;
 
     // Statistics
     pub fn getStats(self: *const Rules) RulesStats {

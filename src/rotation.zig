@@ -329,7 +329,9 @@ pub const Rotation = struct {
     }
 
     fn generateRotatedPath(self: *Rotation) ![]u8 {
-        const now = std.time.timestamp();
+        const now_ms = std.time.milliTimestamp();
+        const now = @divFloor(now_ms, 1000);
+        const millis = @as(u64, @intCast(@mod(now_ms, 1000)));
         var name_buf: []u8 = undefined;
 
         const base_name = std.fs.path.basename(self.base_path);
@@ -354,7 +356,20 @@ pub const Rotation = struct {
                 const m = (ds.secs % 3600) / 60;
                 const s = ds.secs % 60;
 
-                name_buf = try std.fmt.allocPrint(self.allocator, "{s}.{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}-{d:0>2}-{d:0>2}", .{ base_name, yd.year, md.month.numeric(), md.day_index + 1, h, m, s });
+                var res: std.ArrayList(u8) = .empty;
+                errdefer res.deinit(self.allocator);
+                const w = res.writer(self.allocator);
+                try w.writeAll(base_name);
+                try w.writeByte('.');
+                try Utils.writeFilenameSafe(w, Utils.TimeComponents{
+                    .year = yd.year,
+                    .month = md.month.numeric(),
+                    .day = md.day_index + 1,
+                    .hour = h,
+                    .minute = m,
+                    .second = s,
+                });
+                name_buf = try res.toOwnedSlice(self.allocator);
             },
             .index => {
                 // For index strategy, the immediate rotated file is always .1
@@ -393,24 +408,37 @@ pub const Rotation = struct {
                             } else if (std.mem.eql(u8, tag, "ext")) {
                                 try res.appendSlice(self.allocator, ext);
                             } else if (std.mem.eql(u8, tag, "timestamp")) {
-                                var buf: [32]u8 = undefined;
-                                const f = try std.fmt.bufPrint(&buf, "{d}", .{now});
-                                try res.appendSlice(self.allocator, f);
+                                try Utils.writeInt(res.writer(self.allocator), now);
                             } else if (std.mem.eql(u8, tag, "date")) {
-                                var buf: [32]u8 = undefined;
-                                const f = try std.fmt.bufPrint(&buf, "{d:0>4}-{d:0>2}-{d:0>2}", .{ yd.year, md.month.numeric(), md.day_index + 1 });
-                                try res.appendSlice(self.allocator, f);
+                                try Utils.writeIsoDate(res.writer(self.allocator), Utils.TimeComponents{
+                                    .year = yd.year,
+                                    .month = md.month.numeric(),
+                                    .day = md.day_index + 1,
+                                    .hour = h,
+                                    .minute = m,
+                                    .second = s,
+                                });
                             } else if (std.mem.eql(u8, tag, "time")) {
-                                var buf: [32]u8 = undefined;
-                                const f = try std.fmt.bufPrint(&buf, "{d:0>2}-{d:0>2}-{d:0>2}", .{ h, m, s });
-                                try res.appendSlice(self.allocator, f);
+                                try Utils.writeIsoTime(res.writer(self.allocator), Utils.TimeComponents{
+                                    .year = yd.year,
+                                    .month = md.month.numeric(),
+                                    .day = md.day_index + 1,
+                                    .hour = h,
+                                    .minute = m,
+                                    .second = s,
+                                });
                             } else if (std.mem.eql(u8, tag, "iso")) {
-                                var buf: [64]u8 = undefined;
-                                const f = try std.fmt.bufPrint(&buf, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}-{d:0>2}-{d:0>2}", .{ yd.year, md.month.numeric(), md.day_index + 1, h, m, s });
-                                try res.appendSlice(self.allocator, f);
+                                try Utils.writeIsoDateTime(res.writer(self.allocator), Utils.TimeComponents{
+                                    .year = yd.year,
+                                    .month = md.month.numeric(),
+                                    .day = md.day_index + 1,
+                                    .hour = h,
+                                    .minute = m,
+                                    .second = s,
+                                });
                             } else {
                                 // Granular date format parsing via shared utility
-                                try Utils.formatDatePattern(res.writer(self.allocator), tag, yd.year, md.month.numeric(), md.day_index + 1, h, m, s);
+                                try Utils.formatDatePattern(res.writer(self.allocator), tag, yd.year, md.month.numeric(), md.day_index + 1, h, m, s, millis);
                             }
                             i = end + 1;
                         } else {

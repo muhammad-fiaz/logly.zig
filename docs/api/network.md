@@ -54,7 +54,13 @@ pub const LogServer = struct {
     pub const Protocol = enum { tcp, udp };
     
     pub fn init(allocator: std.mem.Allocator, protocol: Protocol, port: u16) !*LogServer;
+    /// Alias for init()
+    pub const create = init;
+
     pub fn deinit(self: *LogServer) void;
+    /// Alias for deinit()
+    pub const destroy = deinit;
+
     pub fn start(self: *LogServer) !void;
     pub fn stop(self: *LogServer) void;
 };

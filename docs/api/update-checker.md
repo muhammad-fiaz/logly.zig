@@ -68,7 +68,7 @@ pub const UpdateCheckerStats = struct {
 
 ## Functions
 
-### `checkForUpdates(allocator: std.mem.Allocator) ?std.Thread`
+### `checkForUpdates(allocator: std.mem.Allocator, global_console_display: bool) ?std.Thread`
 
 Checks for updates in a background thread. Runs only once per process lifecycle.
 

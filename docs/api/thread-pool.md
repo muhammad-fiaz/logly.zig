@@ -107,10 +107,6 @@ pub const ThreadPoolConfig = struct {
     thread_affinity: bool = false,
 };
 ```
-    /// Enable per-worker arena allocator for temporary allocations
-    enable_arena: bool = false,
-};
-```
 
 ### ThreadPoolPresets
 
@@ -246,10 +242,20 @@ pub const ParallelConfig = struct {
 
 ### init
 
-Create a new thread pool.
+Create a new thread pool with default configuration.
+
+**Alias:** `create`
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool
+pub fn init(allocator: std.mem.Allocator) !*ThreadPool
+```
+
+### initWithConfig
+
+Create a new thread pool with custom configuration.
+
+```zig
+pub fn initWithConfig(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool
 ```
 
 **Parameters:**
@@ -261,6 +267,8 @@ pub fn init(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool
 ### deinit
 
 Clean up resources and stop all workers.
+
+**Alias:** `destroy`
 
 ```zig
 pub fn deinit(self: *ThreadPool) void

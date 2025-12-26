@@ -62,6 +62,13 @@ The `Logger` struct is the central component of the Logly library, orchestrating
 | `fatalf()` | `panicf()` | Formatted FATAL log |
 | `customf()` | - | Formatted custom level log |
 
+### Lifecycle Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize logger |
+| `deinit()` | `destroy()` | Deinitialize logger |
+
 ### Other Aliases
 
 | Full Method | Alias(es) | Description |
@@ -99,6 +106,31 @@ Deinitializes the logger, freeing all allocated resources including sinks, conte
 ### `configure(config: Config) void`
 
 Updates the global configuration of the logger in a thread-safe manner.
+
+## Arena Allocator Methods
+
+When `use_arena_allocator` is enabled in config, the logger uses an arena allocator for temporary allocations, improving performance.
+
+### `scratchAllocator() std.mem.Allocator`
+
+Returns the arena allocator if enabled, otherwise returns the main allocator. Use for temporary allocations that can be batch-freed.
+
+```zig
+const allocator = logger.scratchAllocator();
+const temp = try allocator.alloc(u8, 1024);
+defer allocator.free(temp);
+```
+
+### `resetArena() void`
+
+Resets the arena allocator, freeing all temporary allocations at once. Call periodically in high-throughput scenarios.
+
+```zig
+// Reset every 1000 logs to prevent memory growth
+if (i % 1000 == 0) {
+    logger.resetArena();
+}
+```
 
 ## Callbacks
 

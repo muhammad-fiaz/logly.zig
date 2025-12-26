@@ -3,6 +3,7 @@ const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
 const Level = @import("level.zig").Level;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Handles the formatting of log records into strings or JSON.
 ///
@@ -193,11 +194,27 @@ pub const Formatter = struct {
     /// Returns:
     /// * `![]u8`: The formatted string (caller must free).
     pub fn format(self: *Formatter, record: *const Record, config: anytype) ![]u8 {
+        return self.formatWithAllocator(record, config, null);
+    }
+
+    /// Formats a log record into a string using an optional scratch allocator.
+    /// If scratch_allocator is provided, it will be used for temporary allocations.
+    /// This is useful for arena allocators that batch-free memory.
+    ///
+    /// Arguments:
+    /// * `record`: The log record to format.
+    /// * `config`: The configuration object (Config or SinkConfig).
+    /// * `scratch_allocator`: Optional allocator for temporary allocations.
+    ///
+    /// Returns:
+    /// * `![]u8`: The formatted string (caller must free).
+    pub fn formatWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        const alloc = scratch_allocator orelse self.allocator;
         var buf: std.ArrayList(u8) = .empty;
-        errdefer buf.deinit(self.allocator);
-        const writer = buf.writer(self.allocator);
+        errdefer buf.deinit(alloc);
+        const writer = buf.writer(alloc);
         try self.formatToWriter(writer, record, config);
-        return buf.toOwnedSlice(self.allocator);
+        return buf.toOwnedSlice(alloc);
     }
 
     /// Formats a log record directly to a writer.
@@ -245,9 +262,9 @@ pub const Formatter = struct {
                     } else if (std.mem.eql(u8, tag, "file")) {
                         if (record.filename) |f| try writer.writeAll(f);
                     } else if (std.mem.eql(u8, tag, "line")) {
-                        if (record.line) |l| try writer.print("{d}", .{l});
+                        if (record.line) |l| try Utils.writeInt(writer, l);
                     } else if (std.mem.eql(u8, tag, "thread")) {
-                        if (record.thread_id) |tid| try writer.print("{d}", .{tid});
+                        if (record.thread_id) |tid| try Utils.writeInt(writer, tid);
                     } else {
                         // Unknown tag, print as is
                         try writer.writeAll(fmt_str[i .. end + 1]);
@@ -279,32 +296,42 @@ pub const Formatter = struct {
             }
 
             // Level (use custom name if available)
-            try writer.print("[{s}] ", .{record.levelName()});
+            try writer.writeByte('[');
+            try writer.writeAll(record.levelName());
+            try writer.writeAll("] ");
 
             // Module
             if (config.show_module and record.module != null) {
-                try writer.print("[{s}] ", .{record.module.?});
+                try writer.writeByte('[');
+                try writer.writeAll(record.module.?);
+                try writer.writeAll("] ");
             }
 
             // Function
             if (config.show_function and record.function != null) {
-                try writer.print("[{s}] ", .{record.function.?});
+                try writer.writeByte('[');
+                try writer.writeAll(record.function.?);
+                try writer.writeAll("] ");
             }
 
             // Thread ID
             if (config.show_thread_id and record.thread_id != null) {
-                try writer.print("[TID:{d}] ", .{record.thread_id.?});
+                try writer.writeAll("[TID:");
+                try Utils.writeInt(writer, record.thread_id.?);
+                try writer.writeAll("] ");
             }
 
             // Filename and line (Clickable format: file:line:column: for terminal clickability)
             if (config.show_filename and record.filename != null) {
-                try writer.print("{s}", .{record.filename.?});
+                try writer.writeAll(record.filename.?);
                 if (config.show_lineno and record.line != null) {
-                    try writer.print(":{d}:0:", .{record.line.?});
+                    try writer.writeByte(':');
+                    try Utils.writeInt(writer, record.line.?);
+                    try writer.writeAll(":0:");
                 } else {
                     try writer.writeAll(":0:0:");
                 }
-                try writer.writeAll(" ");
+                try writer.writeByte(' ');
             }
 
             // Message
@@ -369,11 +396,11 @@ pub const Formatter = struct {
 
         // Handle special time formats
         if (std.mem.eql(u8, config.time_format, "unix")) {
-            try writer.print("{d}", .{@divFloor(timestamp_ms, 1000)});
+            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(timestamp_ms, 1000))));
             return;
         }
         if (std.mem.eql(u8, config.time_format, "unix_ms")) {
-            try writer.print("{d}", .{timestamp_ms});
+            try Utils.writeInt(writer, @as(u64, @intCast(timestamp_ms)));
             return;
         }
 
@@ -396,28 +423,34 @@ pub const Formatter = struct {
 
         // ISO8601 format: 2025-12-04T06:39:53.091Z
         if (std.mem.eql(u8, config.time_format, "ISO8601")) {
-            try writer.print("{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}Z", .{
-                yd.year,
-                month_day.month.numeric(),
-                month_day.day_index + 1,
-                hours,
-                minutes,
-                secs,
-                millis,
+            try Utils.writeIsoDateTime(writer, Utils.TimeComponents{
+                .year = yd.year,
+                .month = month_day.month.numeric(),
+                .day = month_day.day_index + 1,
+                .hour = hours,
+                .minute = minutes,
+                .second = secs,
             });
+            try writer.writeByte('.');
+            try Utils.write3Digits(writer, millis);
+            try writer.writeByte('Z');
             return;
         }
 
         // RFC3339 format: 2025-12-04T06:39:53+00:00
         if (std.mem.eql(u8, config.time_format, "RFC3339")) {
-            try writer.print("{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}+00:00", .{
-                yd.year,
-                month_day.month.numeric(),
-                month_day.day_index + 1,
-                hours,
-                minutes,
-                secs,
-            });
+            try Utils.write4Digits(writer, yd.year);
+            try writer.writeByte('-');
+            try Utils.write2Digits(writer, month_day.month.numeric());
+            try writer.writeByte('-');
+            try Utils.write2Digits(writer, month_day.day_index + 1);
+            try writer.writeByte('T');
+            try Utils.write2Digits(writer, hours);
+            try writer.writeByte(':');
+            try Utils.write2Digits(writer, minutes);
+            try writer.writeByte(':');
+            try Utils.write2Digits(writer, secs);
+            try writer.writeAll("+00:00");
             return;
         }
 
@@ -428,129 +461,24 @@ pub const Formatter = struct {
         // HH = 2-digit hour (24h), hh = 2-digit hour (12h)
         // mm = 2-digit minute
         // ss = 2-digit second
-        // SSS = 3-digit millisecond
-        // Any other characters are output literally (-, /, :, space, T, etc.)
-        try writeCustomFormat(writer, config.time_format, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs, millis);
+        // Custom format parsing via shared utility
+        try Utils.formatDatePattern(writer, config.time_format, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs, millis);
     }
 
-    /// Writes a timestamp using a custom format string.
-    /// Supports placeholders: YYYY, YY, MM, M, DD, D, HH, hh, mm, ss, SSS
-    /// Any other characters are written literally.
-    fn writeCustomFormat(
-        writer: anytype,
-        fmt: []const u8,
-        year: i32,
-        month: u9,
-        day: u9,
-        hours: u64,
-        minutes: u64,
-        secs: u64,
-        millis: u64,
-    ) !void {
-        var i: usize = 0;
-        while (i < fmt.len) {
-            // Check for YYYY (4-digit year)
-            if (i + 4 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 4], "YYYY")) {
-                const abs_year: u32 = @intCast(if (year < 0) 0 else year);
-                try writer.print("{d:0>4}", .{abs_year});
-                i += 4;
-                continue;
-            }
-            // Check for YY (2-digit year)
-            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "YY")) {
-                const short_year = @mod(@as(u32, @intCast(if (year < 0) 0 else year)), 100);
-                try writer.print("{d:0>2}", .{short_year});
-                i += 2;
-                continue;
-            }
-            // Check for SSS (3-digit milliseconds) - must check before ss
-            if (i + 3 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 3], "SSS")) {
-                try writer.print("{d:0>3}", .{millis});
-                i += 3;
-                continue;
-            }
-            // Check for MM (2-digit month)
-            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "MM")) {
-                try writer.print("{d:0>2}", .{month});
-                i += 2;
-                continue;
-            }
-            // Check for M (1-2 digit month)
-            if (i + 1 <= fmt.len and fmt[i] == 'M' and (i + 1 >= fmt.len or fmt[i + 1] != 'M')) {
-                try writer.print("{d}", .{month});
-                i += 1;
-                continue;
-            }
-            // Check for DD (2-digit day)
-            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "DD")) {
-                try writer.print("{d:0>2}", .{day});
-                i += 2;
-                continue;
-            }
-            // Check for D (1-2 digit day)
-            if (i + 1 <= fmt.len and fmt[i] == 'D' and (i + 1 >= fmt.len or fmt[i + 1] != 'D')) {
-                try writer.print("{d}", .{day});
-                i += 1;
-                continue;
-            }
-            // Check for HH (2-digit hour 24h)
-            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "HH")) {
-                try writer.print("{d:0>2}", .{hours});
-                i += 2;
-                continue;
-            }
-            // Check for hh (2-digit hour 12h)
-            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "hh")) {
-                const hour12 = if (hours == 0) 12 else if (hours > 12) hours - 12 else hours;
-                try writer.print("{d:0>2}", .{hour12});
-                i += 2;
-                continue;
-            }
-            // Check for mm (2-digit minute)
-            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "mm")) {
-                try writer.print("{d:0>2}", .{minutes});
-                i += 2;
-                continue;
-            }
-            // Check for ss (2-digit second)
-            if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "ss")) {
-                try writer.print("{d:0>2}", .{secs});
-                i += 2;
-                continue;
-            }
-            // Any other character - write literally
-            try writer.writeByte(fmt[i]);
-            i += 1;
-        }
-    }
-
-    fn escapeJsonString(writer: anytype, s: []const u8) !void {
-        for (s) |c| {
-            switch (c) {
-                '"' => try writer.writeAll("\\\""),
-                '\\' => try writer.writeAll("\\\\"),
-                '\x08' => try writer.writeAll("\\b"),
-                '\x0c' => try writer.writeAll("\\f"),
-                '\n' => try writer.writeAll("\\n"),
-                '\r' => try writer.writeAll("\\r"),
-                '\t' => try writer.writeAll("\\t"),
-                else => {
-                    if (c < 0x20) {
-                        try writer.print("\\u{x:0>4}", .{c});
-                    } else {
-                        try writer.writeByte(c);
-                    }
-                },
-            }
-        }
-    }
+    /// Escapes a JSON string. Delegates to the shared utility in utils.zig.
+    const escapeJsonString = Utils.escapeJsonString;
 
     pub fn formatJson(self: *Formatter, record: *const Record, config: anytype) ![]u8 {
+        return self.formatJsonWithAllocator(record, config, null);
+    }
+
+    pub fn formatJsonWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        const alloc = scratch_allocator orelse self.allocator;
         var buf: std.ArrayList(u8) = .empty;
-        errdefer buf.deinit(self.allocator);
-        const writer = buf.writer(self.allocator);
+        errdefer buf.deinit(alloc);
+        const writer = buf.writer(alloc);
         try self.formatJsonToWriter(writer, record, config);
-        return buf.toOwnedSlice(self.allocator);
+        return buf.toOwnedSlice(alloc);
     }
 
     pub fn formatJsonToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
@@ -566,16 +494,20 @@ pub const Formatter = struct {
 
         // Start color for entire JSON line/block
         if (use_color) {
-            try writer.print("\x1b[{s}m", .{color_code});
+            try writer.writeAll("\x1b[");
+            try writer.writeAll(color_code);
+            try writer.writeByte('m');
         }
 
         try writer.writeAll("{");
         try writer.writeAll(newline);
 
         // Timestamp
-        try writer.print("{s}\"timestamp\"{s}", .{ indent, sep });
+        try writer.writeAll(indent);
+        try writer.writeAll("\"timestamp\"");
+        try writer.writeAll(sep);
         if (std.mem.eql(u8, config.time_format, "unix")) {
-            try writer.print("{d}", .{record.timestamp});
+            try Utils.writeInt(writer, @as(u64, @intCast(record.timestamp)));
         } else {
             try writer.writeAll("\"");
             try self.writeTimestamp(writer, record.timestamp, config);
@@ -584,59 +516,88 @@ pub const Formatter = struct {
 
         // Level (use custom name if available)
         try writer.writeAll(comma);
-        try writer.print("{s}\"level\"{s}\"{s}\"", .{ indent, sep, record.levelName() });
+        try writer.writeAll(indent);
+        try writer.writeAll("\"level\"");
+        try writer.writeAll(sep);
+        try writer.writeByte('"');
+        try writer.writeAll(record.levelName());
+        try writer.writeByte('"');
 
         // Message
         try writer.writeAll(comma);
-        try writer.print("{s}\"message\"{s}\"", .{ indent, sep });
+        try writer.writeAll(indent);
+        try writer.writeAll("\"message\"");
+        try writer.writeAll(sep);
+        try writer.writeByte('"');
         try escapeJsonString(writer, record.message);
-        try writer.writeAll("\"");
+        try writer.writeByte('"');
 
         // Optional fields
         if (record.module) |m| {
             try writer.writeAll(comma);
-            try writer.print("{s}\"module\"{s}\"", .{ indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"module\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
             try escapeJsonString(writer, m);
-            try writer.writeAll("\"");
+            try writer.writeByte('"');
         }
         if (record.function) |f| {
             try writer.writeAll(comma);
-            try writer.print("{s}\"function\"{s}\"", .{ indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"function\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
             try escapeJsonString(writer, f);
-            try writer.writeAll("\"");
+            try writer.writeByte('"');
         }
         if (record.filename) |f| {
             try writer.writeAll(comma);
-            try writer.print("{s}\"filename\"{s}\"", .{ indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"filename\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
             try escapeJsonString(writer, f);
-            try writer.writeAll("\"");
+            try writer.writeByte('"');
         }
         if (record.line) |l| {
             try writer.writeAll(comma);
-            try writer.print("{s}\"line\"{s}{d}", .{ indent, sep, l });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"line\"");
+            try writer.writeAll(sep);
+            try Utils.writeInt(writer, l);
         }
 
         // Hostname and PID
         if (config.include_hostname) {
             try writer.writeAll(comma);
-            try writer.print("{s}\"hostname\"{s}\"", .{ indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"hostname\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
             if (self.hostname) |h| {
                 try escapeJsonString(writer, h);
             } else {
                 try writer.writeAll("unknown-host");
             }
-            try writer.writeAll("\"");
+            try writer.writeByte('"');
         }
 
         if (config.include_pid) {
             try writer.writeAll(comma);
-            try writer.print("{s}\"pid\"{s}{d}", .{ indent, sep, self.pid });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"pid\"");
+            try writer.writeAll(sep);
+            try Utils.writeInt(writer, self.pid);
         }
 
         // Stack Trace
         if (record.stack_trace) |st| {
             try writer.writeAll(comma);
-            try writer.print("{s}\"stack_trace\"{s}[", .{ indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"stack_trace\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('[');
 
             // We can't easily symbolize here without debug info, but we can print addresses
             var first_addr = true;
@@ -684,29 +645,51 @@ pub const Formatter = struct {
         }
 
         // Context fields
-        var it = record.context.iterator();
-        while (it.next()) |entry| {
+        if (record.context.count() > 0) {
             try writer.writeAll(comma);
-            try writer.print("{s}\"", .{indent});
-            try escapeJsonString(writer, entry.key_ptr.*);
-            try writer.print("\"{s}", .{sep});
-            switch (entry.value_ptr.*) {
-                .string => |s| {
-                    try writer.writeAll("\"");
-                    try escapeJsonString(writer, s);
-                    try writer.writeAll("\"");
-                },
-                .integer => |i| try writer.print("{d}", .{i}),
-                .float => |f| try writer.print("{d}", .{f}),
-                .bool => |b| try writer.print("{}", .{b}),
-                else => try writer.writeAll("null"),
+            try writer.writeAll(indent);
+            try writer.writeAll("\"context\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('{');
+            try writer.writeAll(newline);
+
+            var it = record.context.iterator();
+            var first = true;
+            while (it.next()) |entry| {
+                if (!first) {
+                    try writer.writeAll(comma);
+                }
+                try writer.writeAll(indent);
+                try writer.writeAll(indent);
+                try writer.writeByte('"');
+                try writer.writeAll(entry.key_ptr.*);
+                try writer.writeAll("\"");
+                try writer.writeAll(sep);
+
+                switch (entry.value_ptr.*) {
+                    .string => |s| {
+                        try writer.writeByte('"');
+                        try escapeJsonString(writer, s);
+                        try writer.writeByte('"');
+                    },
+                    .integer => |i| try Utils.writeInt(writer, i), // Utils.writeInt handles signed i64
+                    .float => |f| try writer.print("{d}", .{f}),
+                    .bool => |b| try writer.writeAll(if (b) "true" else "false"),
+                    else => try writer.writeAll("null"),
+                }
+                first = false;
             }
+            try writer.writeAll(newline);
+            try writer.writeAll(indent);
+            try writer.writeByte('}');
         }
 
-        // Rule messages
+        // Rules
         if (record.rule_messages) |messages| {
             try writer.writeAll(comma);
-            try writer.print("{s}\"rules\"{s}", .{ indent, sep });
+            try writer.writeAll(indent);
+            try writer.writeAll("\"rules\"");
+            try writer.writeAll(sep);
             const Rules = @import("rules.zig").Rules;
             var rules_temp = Rules.init(self.allocator);
             defer rules_temp.deinit();

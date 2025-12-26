@@ -26,11 +26,29 @@ Initializes a new Formatter and pre-fetches system metadata (hostname, PID).
 
 #### `format(record: *const Record, config: anytype) ![]u8`
 
-Formats a log record into a string. The `config` can be `Config` or `SinkConfig`.
+Formats a log record into a string. The `config` can be `Config` or `SinkConfig`. Uses the internal allocator for string building.
+
+#### `formatWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Formats a log record using an optional scratch allocator. If provided, temporary allocations use this allocator. If null, falls back to the internal allocator.
+
+**Example:**
+```zig
+const formatted = try formatter.formatWithAllocator(record, config, logger.scratchAllocator());
+```
 
 #### `formatJson(record: *const Record, config: anytype) ![]u8`
 
-Formats a log record into a JSON string. Automatically includes cached hostname and PID if enabled in config.
+Formats a log record into a JSON string. Automatically includes cached hostname and PID if enabled in config. Uses the internal allocator.
+
+#### `formatJsonWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Formats a log record as JSON using an optional scratch allocator.
+
+**Example:**
+```zig
+const json = try formatter.formatJsonWithAllocator(record, config, logger.scratchAllocator());
+```
 
 #### `formatJsonToWriter(writer: anytype, record: *const Record, config: anytype) !void`
 

@@ -98,9 +98,9 @@ var rules = logly.Rules.initWithConfig(allocator, .{
 
 | Method | Description |
 |--------|-------------|
-| `init(allocator)` | Create a new Rules engine |
+| `init(allocator)`Alias: `create` | Create a new Rules engine |
 | `initWithConfig(allocator, config)` | Create with custom configuration |
-| `deinit()` | Free all resources |
+| `deinit()` Alias: `destroy` | Free all resources |
 | `enable()` | Enable the rules engine |
 | `disable()` | Disable the rules engine (zero overhead) |
 | `isEnabled()` | Check if rules are enabled |
@@ -149,6 +149,22 @@ rules.clear();
 
 // Get rule count
 const count = rules.count();
+```
+
+### Evaluation
+
+#### `evaluate(record: *const Record) ?[]const RuleMessage`
+
+Evaluates all enabled rules against a log record. Returns a slice of rule messages if any rules match. Note: Caller must free the returned slice.
+
+#### `evaluateWithAllocator(record: *const Record, scratch_allocator: ?std.mem.Allocator) ?[]const RuleMessage`
+
+Evaluates rules using an optional scratch allocator for the resulting message slice.
+
+**Example:**
+```zig
+const messages = rules.evaluateWithAllocator(record, logger.scratchAllocator());
+// No need to free if using logger's scratch allocator (batch-freed)
 ```
 
 | Method | Description |

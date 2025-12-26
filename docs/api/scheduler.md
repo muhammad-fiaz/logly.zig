@@ -234,6 +234,8 @@ pub const SchedulerStats = struct {
 
 Create a new scheduler.
 
+**Alias:** `create`
+
 ```zig
 pub fn init(allocator: std.mem.Allocator) !*Scheduler
 ```
