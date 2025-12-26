@@ -947,6 +947,8 @@ pub const Config = struct {
         overflow_policy: OverflowPolicy = .drop_oldest,
         /// Auto-start worker thread.
         background_worker: bool = true,
+        /// Use arena allocator for batch processing (reduces malloc overhead).
+        use_arena: bool = false,
 
         pub const OverflowPolicy = enum {
             drop_oldest,

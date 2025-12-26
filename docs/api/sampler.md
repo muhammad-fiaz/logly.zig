@@ -99,9 +99,13 @@ pub const SamplerStats = struct {
 
 Initializes a new Sampler instance with the specified strategy.
 
+**Alias:** `create`
+
 #### `deinit(self: *Sampler) void`
 
 Releases all resources associated with the sampler.
+
+**Alias:** `destroy`
 
 ### Sampling
 

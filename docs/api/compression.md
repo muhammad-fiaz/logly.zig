@@ -328,15 +328,10 @@ pub const CompressionResult = struct {
 
 Creates a new Compression instance with default configuration.
 
+**Alias:** `create`
+
 ```zig
 pub fn init(allocator: std.mem.Allocator) Compression
-```
-
-**Example:**
-
-```zig
-var compression = Compression.init(allocator);
-defer compression.deinit();
 ```
 
 ### initWithConfig
@@ -362,16 +357,23 @@ defer compression.deinit();
 
 Releases resources associated with the compression instance.
 
+**Alias:** `destroy`
+
 ```zig
 pub fn deinit(self: *Compression) void
 ```
 
-### compress
+#### `compress(self: *Compression, data: []const u8) ![]u8`
 
-Compresses data in memory using advanced algorithms.
+Compresses data in memory using advanced algorithms. Uses the internal allocator.
 
+#### `compressWithAllocator(self: *Compression, data: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Compresses data using an optional scratch allocator. If provided, temporary allocations use this allocator. If null, falls back to the internal allocator.
+
+**Example:**
 ```zig
-pub fn compress(self: *Compression, data: []const u8) ![]u8
+const compressed = try compression.compressWithAllocator(data, logger.scratchAllocator());
 ```
 
 **Features:**
@@ -505,13 +507,7 @@ compression.configure(.{
 });
 ```
 
-### getStats
-
-Gets current compression statistics.
-
-```zig
 pub fn getStats(self: *const Compression) CompressionStats
-```
 
 ### resetStats
 

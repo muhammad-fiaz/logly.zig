@@ -230,36 +230,51 @@ pub const ThreadPool = struct {
             self.mutex.lock();
             defer self.mutex.unlock();
 
+            return self.popUnlocked();
+        }
+
+        /// Internal pop without locking - caller must hold mutex
+        fn popUnlocked(self: *WorkQueue) ?WorkItem {
             if (self.items.items.len == 0) return null;
 
-            // Find highest priority item
+            // For most logging, priority is "normal" so FIFO is fine
+            // Only search for priority if we have critical/high priority items
+            // This is O(n) worst case but O(1) for typical logging
             var best_idx: usize = 0;
             var best_priority: u8 = @intFromEnum(self.items.items[0].priority);
 
+            // Quick check: if first item is critical, just take it
+            if (best_priority >= @intFromEnum(WorkItem.Priority.critical)) {
+                return self.items.swapRemove(0);
+            }
+
+            // Only scan if we might have higher priority items
             for (self.items.items[1..], 1..) |item, i| {
                 const p = @intFromEnum(item.priority);
                 if (p > best_priority) {
                     best_priority = p;
                     best_idx = i;
+                    // Early exit if critical found
+                    if (p >= @intFromEnum(WorkItem.Priority.critical)) break;
                 }
             }
 
-            return self.items.orderedRemove(best_idx);
+            // Use swapRemove for O(1) removal instead of orderedRemove O(n)
+            // Order within same priority level doesn't need to be preserved
+            return self.items.swapRemove(best_idx);
         }
 
         pub fn popWait(self: *WorkQueue, timeout_ns: u64) ?WorkItem {
             self.mutex.lock();
-            // We need to unlock manually because pop() will lock it again, or we can just implement the wait logic here
+            defer self.mutex.unlock();
+
+            // Wait for items if queue is empty
             if (self.items.items.len == 0) {
                 self.condition.timedWait(&self.mutex, timeout_ns) catch {};
             }
-            const has_items = self.items.items.len > 0;
-            self.mutex.unlock();
 
-            if (has_items) {
-                return self.pop();
-            }
-            return null;
+            // Pop while still holding the lock (no double-locking)
+            return self.popUnlocked();
         }
 
         pub fn steal(self: *WorkQueue) ?WorkItem {
@@ -306,6 +321,9 @@ pub const ThreadPool = struct {
     pub fn init(allocator: std.mem.Allocator) !*ThreadPool {
         return initWithConfig(allocator, .{});
     }
+
+    /// Alias for init().
+    pub const create = init;
 
     /// Initializes a ThreadPool with custom configuration.
     ///
@@ -359,6 +377,9 @@ pub const ThreadPool = struct {
         self.work_queue.deinit();
         self.allocator.destroy(self);
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Starts the thread pool.
     pub fn start(self: *ThreadPool) !void {

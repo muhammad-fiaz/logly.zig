@@ -558,14 +558,17 @@ pub const Sink = struct {
         return sink;
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     fn resolvePath(allocator: std.mem.Allocator, path_pattern: []const u8) ![]u8 {
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(allocator);
         const writer = buf.writer(allocator);
 
-        const timestamp = std.time.milliTimestamp();
-        const abs_timestamp = if (timestamp < 0) @as(u64, 0) else @as(u64, @intCast(timestamp));
-        const seconds = abs_timestamp / 1000;
+        const now_ms = std.time.milliTimestamp();
+        const seconds = @as(u64, @intCast(@divFloor(now_ms, 1000)));
+        const millis = @as(u64, @intCast(@mod(now_ms, 1000)));
 
         const epoch = std.time.epoch.EpochSeconds{ .secs = seconds };
         const day_seconds = epoch.getDaySeconds();
@@ -589,11 +592,19 @@ pub const Sink = struct {
                 const tag = path_pattern[i + 1 .. end];
 
                 if (std.mem.eql(u8, tag, "date")) {
-                    try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{ yd.year, month_day.month.numeric(), month_day.day_index + 1 });
+                    try Utils.write4Digits(writer, yd.year);
+                    try writer.writeByte('-');
+                    try Utils.write2Digits(writer, month_day.month.numeric());
+                    try writer.writeByte('-');
+                    try Utils.write2Digits(writer, month_day.day_index + 1);
                 } else if (std.mem.eql(u8, tag, "time")) {
-                    try writer.print("{d:0>2}-{d:0>2}-{d:0>2}", .{ hours, minutes, secs });
+                    try Utils.write2Digits(writer, hours);
+                    try writer.writeByte('-');
+                    try Utils.write2Digits(writer, minutes);
+                    try writer.writeByte('-');
+                    try Utils.write2Digits(writer, secs);
                 } else {
-                    try Utils.formatDatePattern(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs);
+                    try Utils.formatDatePattern(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs, millis);
                 }
                 i = end + 1;
             } else {
@@ -626,6 +637,9 @@ pub const Sink = struct {
         self.formatter.deinit();
         self.allocator.destroy(self);
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Sets the callback for write events.
     pub fn setWriteCallback(self: *Sink, callback: *const fn (u64, u64) void) void {

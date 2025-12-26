@@ -118,8 +118,14 @@ pub const Redactor = struct {
                 .hash => blk: {
                     var hash: [32]u8 = undefined;
                     std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
-                    const hex = try std.fmt.allocPrint(allocator, "[HASH:{s}]", .{&std.fmt.bytesToHex(hash[0..8], .lower)});
-                    break :blk hex;
+                    const hex_val = std.fmt.bytesToHex(hash[0..8], .lower);
+                    const prefix = "[HASH:";
+                    const suffix = "]";
+                    const res = try allocator.alloc(u8, prefix.len + hex_val.len + suffix.len);
+                    @memcpy(res[0..prefix.len], prefix);
+                    @memcpy(res[prefix.len..][0..hex_val.len], &hex_val);
+                    @memcpy(res[prefix.len + hex_val.len ..], suffix);
+                    break :blk res;
                 },
                 .mask_middle => blk: {
                     if (value.len <= 6) {
@@ -254,16 +260,25 @@ pub const Redactor = struct {
     /// Redacts sensitive data from a message.
     /// Uses config settings for replacement text and audit logging.
     pub fn redact(self: *Redactor, message: []const u8) ![]u8 {
+        return self.redactWithAllocator(message, null);
+    }
+
+    /// Redacts sensitive data from a message using an optional scratch allocator.
+    /// If scratch_allocator is provided, it will be used for temporary allocations.
+    /// This is useful for arena allocators that batch-free memory.
+    pub fn redactWithAllocator(self: *Redactor, message: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        const alloc = scratch_allocator orelse self.allocator;
+
         // Track processing
         _ = self.stats.total_values_processed.fetchAdd(1, .monotonic);
 
-        var result = try self.allocator.dupe(u8, message);
-        errdefer self.allocator.free(result);
+        var result = try alloc.dupe(u8, message);
+        errdefer alloc.free(result);
 
         var was_redacted = false;
         for (self.patterns.items) |pattern| {
             const original_len = result.len;
-            result = try self.applyPattern(result, pattern);
+            result = try self.applyPatternWithAllocator(result, pattern, alloc);
             if (result.len != original_len or !std.mem.eql(u8, result, message)) {
                 was_redacted = true;
                 _ = self.stats.patterns_matched.fetchAdd(1, .monotonic);
@@ -362,7 +377,14 @@ pub const Redactor = struct {
             .hash => blk: {
                 var hash: [32]u8 = undefined;
                 std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
-                break :blk try std.fmt.allocPrint(self.allocator, "[HASH:{s}]", .{&std.fmt.bytesToHex(hash[0..8], .lower)});
+                const hex_val = std.fmt.bytesToHex(hash[0..8], .lower);
+                const prefix = "[HASH:";
+                const suffix = "]";
+                const res = try self.allocator.alloc(u8, prefix.len + hex_val.len + suffix.len);
+                @memcpy(res[0..prefix.len], prefix);
+                @memcpy(res[prefix.len..][0..hex_val.len], &hex_val);
+                @memcpy(res[prefix.len + hex_val.len ..], suffix);
+                break :blk res;
             },
             .mask_middle => blk: {
                 const reveal = @min(start_chars, 3);
@@ -381,56 +403,61 @@ pub const Redactor = struct {
     }
 
     fn applyPattern(self: *Redactor, input: []u8, pattern: RedactionPattern) ![]u8 {
+        return self.applyPatternWithAllocator(input, pattern, self.allocator);
+    }
+
+    fn applyPatternWithAllocator(self: *Redactor, input: []u8, pattern: RedactionPattern, alloc: std.mem.Allocator) ![]u8 {
+        _ = self; // self only needed for stats/callbacks in caller
         switch (pattern.pattern_type) {
             .contains => {
                 var result: std.ArrayList(u8) = .empty;
-                defer result.deinit(self.allocator);
+                defer result.deinit(alloc);
 
                 var i: usize = 0;
                 while (i < input.len) {
                     if (std.mem.indexOf(u8, input[i..], pattern.pattern)) |pos| {
-                        try result.appendSlice(self.allocator, input[i .. i + pos]);
-                        try result.appendSlice(self.allocator, pattern.replacement);
+                        try result.appendSlice(alloc, input[i .. i + pos]);
+                        try result.appendSlice(alloc, pattern.replacement);
                         i = i + pos + pattern.pattern.len;
                     } else {
-                        try result.appendSlice(self.allocator, input[i..]);
+                        try result.appendSlice(alloc, input[i..]);
                         break;
                     }
                 }
 
-                self.allocator.free(input);
-                return try result.toOwnedSlice(self.allocator);
+                alloc.free(input);
+                return try result.toOwnedSlice(alloc);
             },
             .prefix => {
                 if (std.mem.startsWith(u8, input, pattern.pattern)) {
-                    const new_result = try self.allocator.alloc(
+                    const new_result = try alloc.alloc(
                         u8,
                         pattern.replacement.len + input.len - pattern.pattern.len,
                     );
                     @memcpy(new_result[0..pattern.replacement.len], pattern.replacement);
                     @memcpy(new_result[pattern.replacement.len..], input[pattern.pattern.len..]);
-                    self.allocator.free(input);
+                    alloc.free(input);
                     return new_result;
                 }
                 return input;
             },
             .suffix => {
                 if (std.mem.endsWith(u8, input, pattern.pattern)) {
-                    const new_result = try self.allocator.alloc(
+                    const new_result = try alloc.alloc(
                         u8,
                         input.len - pattern.pattern.len + pattern.replacement.len,
                     );
                     @memcpy(new_result[0 .. input.len - pattern.pattern.len], input[0 .. input.len - pattern.pattern.len]);
                     @memcpy(new_result[input.len - pattern.pattern.len ..], pattern.replacement);
-                    self.allocator.free(input);
+                    alloc.free(input);
                     return new_result;
                 }
                 return input;
             },
             .exact => {
                 if (std.mem.eql(u8, input, pattern.pattern)) {
-                    self.allocator.free(input);
-                    return try self.allocator.dupe(u8, pattern.replacement);
+                    alloc.free(input);
+                    return try alloc.dupe(u8, pattern.replacement);
                 }
                 return input;
             },
@@ -438,21 +465,21 @@ pub const Redactor = struct {
                 // Simple regex-like pattern matching for common cases
                 // Supports: * (any chars), ? (single char), \d (digit), \w (word char), \s (whitespace)
                 var result: std.ArrayList(u8) = .empty;
-                defer result.deinit(self.allocator);
+                defer result.deinit(alloc);
 
                 var i: usize = 0;
                 while (i < input.len) {
                     if (matchRegexPattern(input[i..], pattern.pattern)) |match_len| {
-                        try result.appendSlice(self.allocator, pattern.replacement);
+                        try result.appendSlice(alloc, pattern.replacement);
                         i += match_len;
                     } else {
-                        try result.append(self.allocator, input[i]);
+                        try result.append(alloc, input[i]);
                         i += 1;
                     }
                 }
 
-                self.allocator.free(input);
-                return try result.toOwnedSlice(self.allocator);
+                alloc.free(input);
+                return try result.toOwnedSlice(alloc);
             },
         }
     }

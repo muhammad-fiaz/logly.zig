@@ -108,22 +108,19 @@ for (diag.drives) |drive| {
 
 ## Functions
 
-### collect()
+### `collect(allocator: std.mem.Allocator, include_drives: bool) !Diagnostics`
 
-Collects system diagnostics information.
+Collects system diagnostics information. Returns a `Diagnostics` struct that must be freed with `deinit()`.
 
-```zig
-pub fn collect(allocator: std.mem.Allocator, include_drives: bool) !Diagnostics
-```
+**Alias**: `gather()`, `snapshot()`
 
-**Parameters:**
+### `summary(allocator: std.mem.Allocator) ![]u8`
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `allocator` | `std.mem.Allocator` | Memory allocator for diagnostic data (must call `deinit()` to free) |
-| `include_drives` | `bool` | Include drive enumeration (adds ~1-5ms on Windows) |
+Returns a quick system summary string (e.g., "windows/x86_64 - Intel Core i7 (8 cores)"). Caller must free the returned string.
 
-**Returns:** `Diagnostics` struct with collected information
+### `createDiagnosticsSink(file_path: []const u8) SinkConfig`
+
+Creates a diagnostics-specific file sink configuration (JSON, pretty-printed, with timestamps).
 
 **Errors:** 
 - `error.OutOfMemory` - If allocation fails
@@ -378,22 +375,22 @@ The Diagnostics module provides convenience aliases:
 
 ## Additional Methods
 
-- `summary() []const u8` - Returns a compact summary string of system info
+- `summary(allocator: std.mem.Allocator) ![]u8` - Returns a compact summary string of system info (caller must free).
 
 ## DiagnosticsPresets
 
-Pre-configured diagnostic collection options:
+Pre-configured diagnostic collection helpers:
 
 ```zig
 pub const DiagnosticsPresets = struct {
-    /// Minimal diagnostics (no drives).
-    pub fn minimal() DiagnosticsConfig {
-        return .{ .include_drives = false };
+    /// Minimal diagnostics (no drive info).
+    pub fn minimal(allocator: std.mem.Allocator) !Diagnostics {
+        return collect(allocator, false);
     }
     
-    /// Full diagnostics with all information.
-    pub fn full() DiagnosticsConfig {
-        return .{ .include_drives = true };
+    /// Full diagnostics (includes drive info).
+    pub fn full(allocator: std.mem.Allocator) !Diagnostics {
+        return collect(allocator, true);
     }
 };
 ```

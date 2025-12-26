@@ -123,6 +123,9 @@ pub const Sampler = struct {
         };
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Releases resources associated with the sampler.
     ///
     /// Safe to call multiple times (idempotent).
@@ -130,6 +133,9 @@ pub const Sampler = struct {
         _ = self;
         // No resources to free - sampler is zero-copy after init
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Sets the callback for when a record passes sampling.
     pub fn setAcceptCallback(self: *Sampler, callback: *const fn (f64) void) void {

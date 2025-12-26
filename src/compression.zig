@@ -160,6 +160,9 @@ pub const Compression = struct {
         return initWithConfig(allocator, .{});
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Initializes a Compression instance with custom configuration.
     ///
     /// Arguments:
@@ -181,6 +184,9 @@ pub const Compression = struct {
         _ = self;
         // Currently no owned resources to free
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Sets the callback for compression start events.
     pub fn setCompressionStartCallback(self: *Compression, callback: *const fn ([]const u8, u64) void) void {
@@ -236,6 +242,14 @@ pub const Compression = struct {
     ///     - Memory usage: 2-4x input size during compression
     ///     - Best for files >1KB (overhead for small files)
     pub fn compress(self: *Compression, data: []const u8) ![]u8 {
+        return self.compressWithAllocator(data, null);
+    }
+
+    /// Compresses data using an optional scratch allocator.
+    /// If scratch_allocator is provided, it will be used for temporary allocations.
+    /// This is useful for arena allocators that batch-free memory.
+    pub fn compressWithAllocator(self: *Compression, data: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        const alloc = scratch_allocator orelse self.allocator;
         const start_time = std.time.nanoTimestamp();
         defer {
             const elapsed = @as(u64, @intCast(@max(0, std.time.nanoTimestamp() - start_time)));
@@ -246,36 +260,36 @@ pub const Compression = struct {
         defer self.mutex.unlock();
 
         if (self.config.algorithm == .none or data.len == 0) {
-            const copy = try self.allocator.dupe(u8, data);
+            const copy = try alloc.dupe(u8, data);
             _ = self.stats.bytes_before.fetchAdd(@intCast(data.len), .monotonic);
             _ = self.stats.bytes_after.fetchAdd(@intCast(data.len), .monotonic);
             return copy;
         }
 
         var result: std.ArrayList(u8) = .empty;
-        errdefer result.deinit(self.allocator);
+        errdefer result.deinit(alloc);
 
         // Write header: magic number + algorithm + original size + checksum
         const magic: [4]u8 = .{ 'L', 'G', 'Z', @intFromEnum(self.config.algorithm) };
-        try result.appendSlice(self.allocator, &magic);
+        try result.appendSlice(alloc, &magic);
 
         // Write original size (4 bytes, little-endian)
         const size_bytes = std.mem.toBytes(@as(u32, @intCast(@min(data.len, std.math.maxInt(u32)))));
-        try result.appendSlice(self.allocator, &size_bytes);
+        try result.appendSlice(alloc, &size_bytes);
 
         // Calculate and write CRC32 checksum if enabled
         if (self.config.checksum) {
             const checksum = calculateCRC32(data);
-            try result.appendSlice(self.allocator, &std.mem.toBytes(checksum));
+            try result.appendSlice(alloc, &std.mem.toBytes(checksum));
         } else {
-            try result.appendSlice(self.allocator, &[_]u8{ 0, 0, 0, 0 });
+            try result.appendSlice(alloc, &[_]u8{ 0, 0, 0, 0 });
         }
 
         // Compress based on algorithm and level
         switch (self.config.algorithm) {
-            .none => try result.appendSlice(self.allocator, data),
+            .none => try result.appendSlice(alloc, data),
             .deflate, .zlib, .raw_deflate => {
-                try self.compressDeflate(data, &result);
+                try self.compressDeflateWithAllocator(data, &result, alloc);
             },
         }
 
@@ -283,16 +297,21 @@ pub const Compression = struct {
         _ = self.stats.bytes_after.fetchAdd(@intCast(result.items.len), .monotonic);
         _ = self.stats.files_compressed.fetchAdd(1, .monotonic);
 
-        return result.toOwnedSlice(self.allocator);
+        return result.toOwnedSlice(alloc);
     }
 
     /// DEFLATE-style compression using LZ77 + RLE
     fn compressDeflate(self: *Compression, data: []const u8, result: *std.ArrayList(u8)) !void {
+        try self.compressDeflateWithAllocator(data, result, self.allocator);
+    }
+
+    /// DEFLATE-style compression using LZ77 + RLE with custom allocator
+    fn compressDeflateWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
         const level = self.config.level.toInt();
 
         if (level == 0) {
             // No compression - store as literal blocks
-            try self.writeLiteralBlock(data, result);
+            try self.writeLiteralBlockWithAllocator(data, result, alloc);
             return;
         }
 
@@ -341,13 +360,13 @@ pub const Compression = struct {
             if (best_length >= min_match and best_offset <= std.math.maxInt(u16)) {
                 // Write any pending literals
                 if (pos > literal_start) {
-                    try self.writeLiteralBlock(data[literal_start..pos], result);
+                    try self.writeLiteralBlockWithAllocator(data[literal_start..pos], result, alloc);
                 }
 
                 // Write match: <offset:2><length:1>
-                try result.append(self.allocator, 0xFF); // Match marker
-                try result.appendSlice(self.allocator, &std.mem.toBytes(@as(u16, @intCast(best_offset))));
-                try result.append(self.allocator, @as(u8, @intCast(best_length)));
+                try result.append(alloc, 0xFF); // Match marker
+                try result.appendSlice(alloc, &std.mem.toBytes(@as(u16, @intCast(best_offset))));
+                try result.append(alloc, @as(u8, @intCast(best_length)));
 
                 pos += best_length;
                 literal_start = pos;
@@ -358,15 +377,21 @@ pub const Compression = struct {
 
         // Write remaining literals
         if (literal_start < data.len) {
-            try self.writeLiteralBlock(data[literal_start..], result);
+            try self.writeLiteralBlockWithAllocator(data[literal_start..], result, alloc);
         }
 
         // Write end marker
-        try result.append(self.allocator, 0x00);
+        try result.append(alloc, 0x00);
     }
 
     /// Write a literal block with RLE compression
     fn writeLiteralBlock(self: *Compression, data: []const u8, result: *std.ArrayList(u8)) !void {
+        try self.writeLiteralBlockWithAllocator(data, result, self.allocator);
+    }
+
+    /// Write a literal block with RLE compression using custom allocator
+    fn writeLiteralBlockWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
+        _ = self;
         if (data.len == 0) return;
 
         var i: usize = 0;
@@ -384,16 +409,16 @@ pub const Compression = struct {
 
             if (run_length >= 4) {
                 // RLE: marker + count + byte
-                try result.append(self.allocator, 0xFE); // RLE marker
-                try result.append(self.allocator, @as(u8, @intCast(run_length)));
-                try result.append(self.allocator, byte);
+                try result.append(alloc, 0xFE); // RLE marker
+                try result.append(alloc, @as(u8, @intCast(run_length)));
+                try result.append(alloc, byte);
                 i += run_length;
             } else {
                 // Literal: escape special bytes
                 if (byte == 0xFF or byte == 0xFE or byte == 0x00) {
-                    try result.append(self.allocator, 0xFD); // Escape marker
+                    try result.append(alloc, 0xFD); // Escape marker
                 }
-                try result.append(self.allocator, byte);
+                try result.append(alloc, byte);
                 i += 1;
             }
         }
@@ -523,13 +548,13 @@ pub const Compression = struct {
         return result.toOwnedSlice(self.allocator);
     }
 
-    /// CRC32 checksum calculation (IEEE polynomial)
-    fn calculateCRC32(data: []const u8) u32 {
+    /// CRC32 lookup table for optimized calculation
+    const crc32_table = blk: {
+        @setEvalBranchQuota(4096);
+        var table: [256]u32 = undefined;
         const polynomial: u32 = 0xEDB88320;
-        var crc: u32 = 0xFFFFFFFF;
-
-        for (data) |byte| {
-            crc ^= byte;
+        for (0..256) |i| {
+            var crc = @as(u32, @intCast(i));
             for (0..8) |_| {
                 if (crc & 1 != 0) {
                     crc = (crc >> 1) ^ polynomial;
@@ -537,8 +562,17 @@ pub const Compression = struct {
                     crc = crc >> 1;
                 }
             }
+            table[i] = crc;
         }
+        break :blk table;
+    };
 
+    /// CRC32 checksum calculation (IEEE polynomial) - Optimized with lookup table
+    fn calculateCRC32(data: []const u8) u32 {
+        var crc: u32 = 0xFFFFFFFF;
+        for (data) |byte| {
+            crc = (crc >> 8) ^ crc32_table[(crc ^ byte) & 0xFF];
+        }
         return ~crc;
     }
 

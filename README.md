@@ -138,7 +138,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.0.9 🚀
+### Version 0.1.0 🚀
 
 **New Features:**
 - 🆕 **Log Levels**: `notice()` / `note()` and `fatal()` / `panic()` with formatted variants
@@ -155,7 +155,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 - Updated API reference with complete alias tables
 - All docs updated to v0.0.9
 
-> 📖 See the [full changelog](https://github.com/muhammad-fiaz/logly.zig/releases/tag/0.0.9) for details.
+> 📖 See the [full changelog](https://github.com/muhammad-fiaz/logly.zig/releases/tag/0.1.0) for details.
 
 ---
 
@@ -167,7 +167,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.0.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -215,7 +215,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.0.9.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.0.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

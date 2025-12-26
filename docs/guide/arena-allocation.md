@@ -68,11 +68,15 @@ When using the Thread Pool, you can enable per-worker arena allocation to furthe
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `use_arena_allocator` | `bool` | `false` | Enable/disable arena allocation for main logger |
+| `arena_reset_threshold` | `usize` | `64 * 1024` | Arena size threshold before automatic reset |
 | `thread_pool.enable_arena` | `bool` | `false` | Enable per-worker arena allocation in thread pool |
+| `async.use_arena` | `bool` | `false` | Enable arena allocation for async logger batch processing |
 
 ## Arena Methods
 
-### `scratchAllocator()`
+### Logger Methods
+
+#### `scratchAllocator()`
 
 Returns the arena allocator if enabled, otherwise returns the main allocator:
 
@@ -85,41 +89,29 @@ const temp_buffer = try allocator.alloc(u8, 1024);
 defer allocator.free(temp_buffer);
 ```
 
-### `resetArena()`
+#### `resetArena()`
 
 Resets the arena allocator, freeing all temporary allocations at once:
 
 ```zig
-const std = @import("std");
-const logly = @import("logly");
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const config = logly.Config{
-        .use_arena_allocator = true,
-    };
-
-    const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
-    defer logger.deinit();
-
-    // High-throughput logging loop
-    var i: usize = 0;
-    while (i < 10000) : (i += 1) {
-        try logger.infof("Processing item {d}", .{i}, @src());
-
-        // Periodically reset arena to prevent memory growth
-        if (i % 1000 == 0) {
-            logger.resetArena();
-        }
-    }
-
-    // Final reset
+// Periodically reset arena to prevent memory growth
+if (i % 1000 == 0) {
     logger.resetArena();
-    try logger.info("Batch processing complete", @src());
 }
 ```
+
+### Component Methods with Arena Support
+
+The following components have arena-aware methods that automatically use the logger's scratch allocator:
+
+| Component | Arena Method | Description |
+|-----------|--------------|-------------|
+| **Sink** | `writeWithAllocator(record, config, allocator)` | Write with custom allocator |
+| **Formatter** | `formatWithAllocator(record, config, allocator)` | Format with custom allocator |
+| **Redactor** | `redactWithAllocator(message, allocator)` | Redact with custom allocator |
+| **Compression** | `compressWithAllocator(data, allocator)` | Compress with custom allocator |
+| **Rules** | `evaluateWithAllocator(record, allocator)` | Evaluate with custom allocator |
+| **AsyncLogger** | `scratchAllocator()`, `resetArena()` | Arena for batch processing |
 
 ## Thread Pool Integration
 

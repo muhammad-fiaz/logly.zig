@@ -17,7 +17,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| Current Version | 0.0.9 | 0.7.2 | 0.0.0 | Built-in |
+| Current Version | 0.1.0 | 0.7.2 | 0.0.0 | Built-in |
 | Min Zig Version | 0.15.0+ | 0.14, 0.15-dev | 0.11+ | Any |
 | API Style | User-friendly | Builder/Fluent | Pool/Fluent | Basic/Manual |
 | Structured Logging | ✅ Automatic | ✅ JSON/logfmt | ✅ JSON/logfmt | ❌ Manual |
@@ -42,7 +42,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Dynamic Path | ✅ Automatic | ❌ | ❌ | ❌ |
 | Module-level Config | ✅ | ❌ | ❌ | ✅ Manual |
 | Custom Log Levels | ✅ | ❌ | ❌ | ❌ |
-| Rules System (v0.0.6+) | ✅ Template-triggered messages | ❌ | ❌ | ❌ |
+| Rules System (v0.0.9+) | ✅ Template-triggered messages | ❌ | ❌ | ❌ |
 | Bare-Metal Support | ✅ | ❌ | ❌ | ✅ |
 | Prebuilt Libraries | ✅ | ❌ | ❌ | ✅ |
 | Documentation Site | ✅ | ❌ | ❌ | ✅ |
@@ -104,7 +104,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 - N/A means the feature is not available or requires manual implementation
 :::
 
-## Rules System (v0.0.9+)
+## Rules System (v0.1.0+)
 
 Logly.zig includes a unique **Rules System** that provides compiler-style guided diagnostics:
 

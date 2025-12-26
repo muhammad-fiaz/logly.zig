@@ -299,6 +299,9 @@ pub const Scheduler = struct {
         return self;
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Initializes a new Scheduler with a ThreadPool.
     pub fn initWithThreadPool(allocator: std.mem.Allocator, thread_pool: *ThreadPool) !*Scheduler {
         const self = try init(allocator);
@@ -347,10 +350,14 @@ pub const Scheduler = struct {
             self.allocator.free(task.name);
             if (task.config.path) |p| self.allocator.free(p);
             if (task.config.file_pattern) |p| self.allocator.free(p);
+            if (task.depends_on) |p| self.allocator.free(p);
         }
         self.tasks.deinit(self.allocator);
         self.allocator.destroy(self);
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Sets health check callback.
     pub fn setHealthCallback(self: *Scheduler, callback: *const fn () HealthStatus) void {
@@ -425,9 +432,12 @@ pub const Scheduler = struct {
         if (config.path) |p| {
             owned_config.path = try self.allocator.dupe(u8, p);
         }
+        errdefer if (owned_config.path) |p| self.allocator.free(p);
+
         if (config.file_pattern) |p| {
             owned_config.file_pattern = try self.allocator.dupe(u8, p);
         }
+        errdefer if (owned_config.file_pattern) |p| self.allocator.free(p);
 
         const now = std.time.milliTimestamp();
         const task = ScheduledTask{
@@ -549,6 +559,7 @@ pub const Scheduler = struct {
             self.allocator.free(task.name);
             if (task.config.path) |p| self.allocator.free(p);
             if (task.config.file_pattern) |p| self.allocator.free(p);
+            if (task.depends_on) |p| self.allocator.free(p);
         }
     }
 
@@ -1225,7 +1236,9 @@ pub const SchedulerPresets = struct {
 };
 
 test "scheduler basic" {
-    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();

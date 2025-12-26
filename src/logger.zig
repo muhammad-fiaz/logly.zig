@@ -179,17 +179,24 @@ pub const Logger = struct {
     /// Returns:
     ///     A pointer to the initialized Logger or an error.
     pub fn init(allocator: std.mem.Allocator) !*Logger {
+        const config = Config.default();
         const logger = try allocator.create(Logger);
         logger.* = .{
             .allocator = allocator,
-            .config = Config.default(),
+            .config = config,
             .sinks = .empty,
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
             .module_levels = std.StringHashMap(Level).init(allocator),
             .init_timestamp = std.time.timestamp(),
-            .atomic_level = std.atomic.Value(u8).init(@intFromEnum(Config.default().level)),
+            .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
         };
+
+        // Initialize arena allocator if configured in default config
+        if (config.use_arena_allocator) {
+            logger.arena_state = std.heap.ArenaAllocator.init(allocator);
+            logger.parent_allocator = allocator;
+        }
 
         if (logger.config.auto_sink and logger.config.global_console_display) {
             _ = try logger.addSink(SinkConfig.console());
@@ -205,6 +212,9 @@ pub const Logger = struct {
 
         return logger;
     }
+
+    /// Alias for init().
+    pub const create = init;
 
     /// Initializes a Logger with a specific configuration preset.
     ///
@@ -314,6 +324,9 @@ pub const Logger = struct {
 
         self.allocator.destroy(self);
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Updates the logger configuration.
     ///
@@ -916,14 +929,15 @@ pub const Logger = struct {
             }
         }
 
-        // Apply redaction if configured
+        // Apply redaction if configured - use scratch allocator if available
         var final_message = message;
         var redacted_message: ?[]u8 = null;
+        const scratch = self.scratchAllocator();
         if (self.redactor) |redactor| {
-            redacted_message = try redactor.redact(message);
+            redacted_message = try redactor.redactWithAllocator(message, scratch);
             final_message = redacted_message orelse message;
         }
-        defer if (redacted_message) |rm| self.allocator.free(rm);
+        defer if (redacted_message) |rm| scratch.free(rm);
 
         // Create record with enhanced fields
         var record = Record.init(self.scratchAllocator(), level, final_message);
@@ -1024,7 +1038,7 @@ pub const Logger = struct {
             try self.log_callback.?(&record);
         }
 
-        // Dispatch to thread pool if available
+        // Dispatch to thread pool if available - this is where async parallelism happens
         if (self.thread_pool) |tp| {
             // Clone record for async processing
             // We need to clone because the original record is stack-allocated and will be deinitialized
@@ -1046,9 +1060,11 @@ pub const Logger = struct {
             cloned_rec.deinit();
         }
 
-        // Write to all sinks
+        // Write to all sinks (synchronous path when no thread pool)
+        // Note: Each sink has its own mutex for thread-safety
+        const scratch_alloc = if (self.config.use_arena_allocator) scratch else null;
         for (self.sinks.items) |sink| {
-            sink.write(&record, self.config) catch |write_err| {
+            sink.writeWithAllocator(&record, self.config, scratch_alloc) catch |write_err| {
                 if (self.metrics) |m| {
                     m.recordError();
                 }
@@ -1093,8 +1109,9 @@ pub const Logger = struct {
             m.recordError();
         }
 
+        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
         for (self.sinks.items) |sink| {
-            try sink.write(&record, self.config);
+            try sink.writeWithAllocator(&record, self.config, scratch_alloc);
         }
     }
 
@@ -1128,8 +1145,9 @@ pub const Logger = struct {
             m.recordLog(level, message.len);
         }
 
+        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
         for (self.sinks.items) |sink| {
-            try sink.write(&record, self.config);
+            try sink.writeWithAllocator(&record, self.config, scratch_alloc);
         }
 
         return duration;
@@ -1212,8 +1230,9 @@ pub const Logger = struct {
         // The diagnostics context fields (diag.os, diag.cpu, etc) are available for custom formats
 
         // Write to all sinks
+        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
         for (self.sinks.items) |sink| {
-            sink.write(&record, self.config) catch |write_err| {
+            sink.writeWithAllocator(&record, self.config, scratch_alloc) catch |write_err| {
                 if (self.metrics) |m| m.recordError();
                 if (self.config.debug_mode) {
                     std.debug.print("Diagnostics write error: {}\n", .{write_err});
@@ -1427,8 +1446,9 @@ pub const Logger = struct {
         }
 
         // Write to all sinks
+        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
         for (self.sinks.items) |sink| {
-            sink.write(&record, self.config) catch |write_err| {
+            sink.writeWithAllocator(&record, self.config, scratch_alloc) catch |write_err| {
                 if (self.metrics) |m| {
                     m.recordError();
                 }

@@ -158,13 +158,26 @@ _ = try logger.addSink(.{
 
 Initializes a new sink with the specified configuration.
 
+**Alias:** `create`
+
 ### `deinit() void`
 
 Deinitializes the sink and frees resources.
 
+**Alias:** `destroy`
+
 ### `write(record: *const Record, global_config: Config) !void`
 
-Writes a log record to the sink.
+Writes a log record to the sink. Uses the internal allocator for formatting.
+
+### `writeWithAllocator(record: *const Record, global_config: Config, scratch_allocator: ?std.mem.Allocator) !void`
+
+Writes a log record using an optional scratch allocator for formatting.
+
+**Example:**
+```zig
+try sink.writeWithAllocator(record, config, logger.scratchAllocator());
+```
 
 ### `flush() !void`
 

@@ -2,6 +2,7 @@ const std = @import("std");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Metrics collection for logging system observability and performance monitoring.
 ///
@@ -187,6 +188,9 @@ pub const Metrics = struct {
         return initWithConfig(allocator, .{});
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Initializes a new Metrics instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: MetricsConfig) Metrics {
         return .{
@@ -206,6 +210,9 @@ pub const Metrics = struct {
         self.sink_metrics.deinit(self.allocator);
         self.history.deinit(self.allocator);
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Records a new log record.
     /// Basic counting always works; advanced features (thresholds, callbacks) require config.enabled = true.
@@ -493,25 +500,35 @@ pub const Metrics = struct {
         errdefer buf.deinit(allocator);
         const writer = buf.writer(allocator);
 
-        try writer.print("# HELP logly_records_total Total log records\n", .{});
-        try writer.print("# TYPE logly_records_total counter\n", .{});
-        try writer.print("logly_records_total {d}\n", .{snapshot.total_records});
+        try writer.writeAll("# HELP logly_records_total Total log records\n");
+        try writer.writeAll("# TYPE logly_records_total counter\n");
+        try writer.writeAll("logly_records_total ");
+        try Utils.writeInt(writer, snapshot.total_records);
+        try writer.writeByte('\n');
 
-        try writer.print("# HELP logly_bytes_total Total bytes logged\n", .{});
-        try writer.print("# TYPE logly_bytes_total counter\n", .{});
-        try writer.print("logly_bytes_total {d}\n", .{snapshot.total_bytes});
+        try writer.writeAll("# HELP logly_bytes_total Total bytes logged\n");
+        try writer.writeAll("# TYPE logly_bytes_total counter\n");
+        try writer.writeAll("logly_bytes_total ");
+        try Utils.writeInt(writer, snapshot.total_bytes);
+        try writer.writeByte('\n');
 
-        try writer.print("# HELP logly_dropped_total Dropped records\n", .{});
-        try writer.print("# TYPE logly_dropped_total counter\n", .{});
-        try writer.print("logly_dropped_total {d}\n", .{snapshot.dropped_records});
+        try writer.writeAll("# HELP logly_dropped_total Dropped records\n");
+        try writer.writeAll("# TYPE logly_dropped_total counter\n");
+        try writer.writeAll("logly_dropped_total ");
+        try Utils.writeInt(writer, snapshot.dropped_records);
+        try writer.writeByte('\n');
 
-        try writer.print("# HELP logly_errors_total Error count\n", .{});
-        try writer.print("# TYPE logly_errors_total counter\n", .{});
-        try writer.print("logly_errors_total {d}\n", .{snapshot.error_count});
+        try writer.writeAll("# HELP logly_errors_total Error count\n");
+        try writer.writeAll("# TYPE logly_errors_total counter\n");
+        try writer.writeAll("logly_errors_total ");
+        try Utils.writeInt(writer, snapshot.error_count);
+        try writer.writeByte('\n');
 
-        try writer.print("# HELP logly_records_per_second Records per second\n", .{});
-        try writer.print("# TYPE logly_records_per_second gauge\n", .{});
-        try writer.print("logly_records_per_second {d:.2}\n", .{snapshot.records_per_second});
+        try writer.writeAll("# HELP logly_records_per_second Records per second\n");
+        try writer.writeAll("# TYPE logly_records_per_second gauge\n");
+        try writer.writeAll("logly_records_per_second ");
+        try writer.print("{d:.2}", .{snapshot.records_per_second});
+        try writer.writeByte('\n');
 
         return buf.toOwnedSlice(allocator);
     }
@@ -613,7 +630,10 @@ pub const Metrics = struct {
                 if (has_levels) {
                     try writer.writeAll(",");
                 }
-                try writer.print(" {s}:{d}", .{ indexToLevelName(i), count });
+                try writer.writeByte(' ');
+                try writer.writeAll(indexToLevelName(i));
+                try writer.writeByte(':');
+                try Utils.writeInt(writer, count);
                 has_levels = true;
             }
         }

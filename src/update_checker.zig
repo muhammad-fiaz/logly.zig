@@ -71,8 +71,8 @@ pub fn checkForUpdates(allocator: std.mem.Allocator, global_console_display: boo
     update_check_mutex.lock();
     defer update_check_mutex.unlock();
 
-    // Prevent multiple concurrent update checks
-    if (update_check_done) return null;
+    // Prevent concurrent checks or running during tests
+    if (update_check_done or builtin.is_test) return null;
     update_check_done = true;
 
     return std.Thread.spawn(.{}, checkWorker, .{ allocator, global_console_display }) catch null;

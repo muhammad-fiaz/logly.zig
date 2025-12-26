@@ -113,9 +113,13 @@ pub const Snapshot = struct {
 
 Initializes a new Metrics instance with all counters at zero.
 
+**Alias:** `create`
+
 #### `deinit(self: *Metrics) void`
 
 Releases all resources associated with metrics.
+
+**Alias:** `destroy`
 
 ### Recording
 

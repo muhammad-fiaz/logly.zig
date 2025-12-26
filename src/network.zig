@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const http = std.http;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 pub const NetworkError = error{
     InvalidUri,
@@ -94,7 +95,6 @@ pub const SyslogFacility = enum(u5) {
     local7 = 23,
 };
 
-/// Formats a message in Syslog format (RFC 5424).
 pub fn formatSyslog(
     allocator: std.mem.Allocator,
     facility: SyslogFacility,
@@ -106,13 +106,23 @@ pub fn formatSyslog(
     const priority = (@as(u8, @intFromEnum(facility)) * 8) + @as(u8, @intFromEnum(severity));
     const timestamp = std.time.timestamp();
 
-    return std.fmt.allocPrint(allocator, "<{d}>1 {d} {s} {s} - - - {s}\n", .{
-        priority,
-        timestamp,
-        hostname,
-        app_name,
-        message,
-    });
+    var res: std.ArrayList(u8) = .{};
+    errdefer res.deinit(allocator);
+    const w = res.writer(allocator);
+
+    try w.writeByte('<');
+    try Utils.writeInt(w, priority);
+    try w.writeAll(">1 ");
+    try Utils.writeInt(w, @as(u64, @intCast(timestamp)));
+    try w.writeByte(' ');
+    try w.writeAll(hostname);
+    try w.writeByte(' ');
+    try w.writeAll(app_name);
+    try w.writeAll(" - - - ");
+    try w.writeAll(message);
+    try w.writeByte('\n');
+
+    return res.toOwnedSlice(allocator);
 }
 
 /// Connects to a TCP host specified by a URI string (e.g., "tcp://127.0.0.1:8080").
@@ -240,9 +250,15 @@ pub const LogServer = struct {
         };
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     pub fn deinit(self: *LogServer) void {
         self.stop();
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     pub fn stop(self: *LogServer) void {
         self.running.store(false, .monotonic);

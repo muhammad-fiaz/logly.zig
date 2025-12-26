@@ -216,6 +216,15 @@ Applies redaction to a string value using pattern rules. Returns a new allocated
 
 **Alias**: `mask`, `sanitize`, `process`
 
+#### `redactWithAllocator(value: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Applies redaction using an optional scratch allocator. If provided, temporary allocations use the scratch allocator (useful for arena allocators). If null, uses the redactor's main allocator.
+
+```zig
+// Use with arena allocator from logger
+const result = try redactor.redactWithAllocator(message, logger.scratchAllocator());
+```
+
 #### `redactField(field_name: []const u8, value: []const u8) ![]u8`
 
 Redacts a field value based on field rules with config settings.

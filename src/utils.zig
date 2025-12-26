@@ -36,9 +36,8 @@ pub fn parseSize(s: []const u8) ?u64 {
     return num;
 }
 
-/// Formats a byte size into a human-readable string.
-/// Uses the most appropriate unit (B, KB, MB, GB, TB).
-pub fn formatSize(allocator: std.mem.Allocator, bytes: u64) ![]u8 {
+/// Writes a human-readable byte size to the writer.
+pub fn writeSize(writer: anytype, bytes: u64) !void {
     const units = [_][]const u8{ "B", "KB", "MB", "GB", "TB" };
     var value: f64 = @floatFromInt(bytes);
     var unit_idx: usize = 0;
@@ -49,10 +48,19 @@ pub fn formatSize(allocator: std.mem.Allocator, bytes: u64) ![]u8 {
     }
 
     if (unit_idx == 0) {
-        return std.fmt.allocPrint(allocator, "{d} {s}", .{ bytes, units[unit_idx] });
+        try writer.print("{d} {s}", .{ bytes, units[unit_idx] });
     } else {
-        return std.fmt.allocPrint(allocator, "{d:.2} {s}", .{ value, units[unit_idx] });
+        try writer.print("{d:.2} {s}", .{ value, units[unit_idx] });
     }
+}
+
+/// Formats a byte size into a human-readable string.
+/// Uses the most appropriate unit (B, KB, MB, GB, TB).
+pub fn formatSize(allocator: std.mem.Allocator, bytes: u64) ![]u8 {
+    var list = std.ArrayList(u8).init(allocator);
+    errdefer list.deinit();
+    try writeSize(list.writer(), bytes);
+    return list.toOwnedSlice();
 }
 
 /// Parses a duration string (e.g., "30s", "5m", "2h") into milliseconds.
@@ -89,19 +97,27 @@ pub fn parseDuration(s: []const u8) ?i64 {
     return num;
 }
 
+/// Writes a human-readable duration to the writer.
+pub fn writeDuration(writer: anytype, ms: i64) !void {
+    if (ms < 1000) {
+        try writer.print("{d}ms", .{ms});
+    } else if (ms < 60 * 1000) {
+        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ms)) / 1000.0});
+    } else if (ms < 60 * 60 * 1000) {
+        try writer.print("{d:.2}m", .{@as(f64, @floatFromInt(ms)) / 60000.0});
+    } else if (ms < 24 * 60 * 60 * 1000) {
+        try writer.print("{d:.2}h", .{@as(f64, @floatFromInt(ms)) / 3600000.0});
+    } else {
+        try writer.print("{d:.2}d", .{@as(f64, @floatFromInt(ms)) / 86400000.0});
+    }
+}
+
 /// Formats a duration in milliseconds into a human-readable string.
 pub fn formatDuration(allocator: std.mem.Allocator, ms: i64) ![]u8 {
-    if (ms < 1000) {
-        return std.fmt.allocPrint(allocator, "{d}ms", .{ms});
-    } else if (ms < 60 * 1000) {
-        return std.fmt.allocPrint(allocator, "{d:.2}s", .{@as(f64, @floatFromInt(ms)) / 1000.0});
-    } else if (ms < 60 * 60 * 1000) {
-        return std.fmt.allocPrint(allocator, "{d:.2}m", .{@as(f64, @floatFromInt(ms)) / 60000.0});
-    } else if (ms < 24 * 60 * 60 * 1000) {
-        return std.fmt.allocPrint(allocator, "{d:.2}h", .{@as(f64, @floatFromInt(ms)) / 3600000.0});
-    } else {
-        return std.fmt.allocPrint(allocator, "{d:.2}d", .{@as(f64, @floatFromInt(ms)) / 86400000.0});
-    }
+    var list = std.ArrayList(u8).init(allocator);
+    errdefer list.deinit();
+    try writeDuration(list.writer(), ms);
+    return list.toOwnedSlice();
 }
 
 /// Time components extracted from an epoch timestamp.
@@ -204,38 +220,48 @@ pub fn elapsedSeconds(start_time: i64) u64 {
 /// M    - Month (1-12) - single digit
 /// D    - Day (1-31) - single digit
 /// H    - Hour (0-23) - single digit
-pub fn formatDatePattern(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64) !void {
+pub fn formatDatePattern(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64) !void {
     var i: usize = 0;
     while (i < fmt.len) {
         if (i + 4 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 4], "YYYY")) {
-            try writer.print("{d:0>4}", .{year});
+            try write4Digits(writer, year);
             i += 4;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "YY")) {
-            try writer.print("{d:0>2}", .{@mod(year, 100)});
+            try write2Digits(writer, @mod(year, 100));
             i += 2;
+        } else if (i + 3 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 3], "SSS")) {
+            try write3Digits(writer, millis);
+            i += 3;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "MM")) {
-            try writer.print("{d:0>2}", .{month});
+            try write2Digits(writer, month);
             i += 2;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "DD")) {
-            try writer.print("{d:0>2}", .{day});
+            try write2Digits(writer, day);
             i += 2;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "HH")) {
-            try writer.print("{d:0>2}", .{hour});
+            try write2Digits(writer, hour);
+            i += 2;
+        } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "hh")) {
+            const h12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour;
+            try write2Digits(writer, h12);
             i += 2;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "mm")) {
-            try writer.print("{d:0>2}", .{minute});
+            try write2Digits(writer, minute);
             i += 2;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "ss")) {
-            try writer.print("{d:0>2}", .{second});
+            try write2Digits(writer, second);
             i += 2;
         } else if (fmt[i] == 'M' and (i + 1 >= fmt.len or fmt[i + 1] != 'M')) {
-            try writer.print("{d}", .{month});
+            try write1Or2Digits(writer, month);
             i += 1;
         } else if (fmt[i] == 'D' and (i + 1 >= fmt.len or fmt[i + 1] != 'D')) {
-            try writer.print("{d}", .{day});
+            try write1Or2Digits(writer, day);
             i += 1;
         } else if (fmt[i] == 'H' and (i + 1 >= fmt.len or fmt[i + 1] != 'H')) {
-            try writer.print("{d}", .{hour});
+            try write1Or2Digits(writer, hour);
+            i += 1;
+        } else if (fmt[i] == 's' and (i + 1 >= fmt.len or fmt[i + 1] != 's')) {
+            try write1Or2Digits(writer, second);
             i += 1;
         } else {
             try writer.writeByte(fmt[i]);
@@ -245,41 +271,77 @@ pub fn formatDatePattern(writer: anytype, fmt: []const u8, year: i32, month: u8,
 }
 
 /// Formats a date/time to a caller-provided buffer using a pattern.
-pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64) ![]u8 {
+pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64) ![]u8 {
     var fbs = std.io.fixedBufferStream(buf);
-    try formatDatePattern(fbs.writer(), fmt, year, month, day, hour, minute, second);
+    try formatDatePattern(fbs.writer(), fmt, year, month, day, hour, minute, second, millis);
     return fbs.getWritten();
+}
+
+/// Writes an ISO 8601 date (YYYY-MM-DD) to the writer.
+pub fn writeIsoDate(writer: anytype, tc: TimeComponents) !void {
+    try write4Digits(writer, tc.year);
+    try writer.writeByte('-');
+    try write2Digits(writer, tc.month);
+    try writer.writeByte('-');
+    try write2Digits(writer, tc.day);
 }
 
 /// Formats an ISO 8601 date string (YYYY-MM-DD) to buffer.
 pub fn formatIsoDate(buf: []u8, tc: TimeComponents) ![]u8 {
     var fbs = std.io.fixedBufferStream(buf);
-    try fbs.writer().print("{d:0>4}-{d:0>2}-{d:0>2}", .{ tc.year, tc.month, tc.day });
+    try writeIsoDate(fbs.writer(), tc);
     return fbs.getWritten();
+}
+
+/// Writes an ISO 8601 time (HH:MM:SS) to the writer.
+pub fn writeIsoTime(writer: anytype, tc: TimeComponents) !void {
+    try write2Digits(writer, tc.hour);
+    try writer.writeByte(':');
+    try write2Digits(writer, tc.minute);
+    try writer.writeByte(':');
+    try write2Digits(writer, tc.second);
 }
 
 /// Formats an ISO 8601 time string (HH:MM:SS) to buffer.
 pub fn formatIsoTime(buf: []u8, tc: TimeComponents) ![]u8 {
     var fbs = std.io.fixedBufferStream(buf);
-    try fbs.writer().print("{d:0>2}:{d:0>2}:{d:0>2}", .{ tc.hour, tc.minute, tc.second });
+    try writeIsoTime(fbs.writer(), tc);
     return fbs.getWritten();
+}
+
+/// Writes an ISO 8601 datetime (YYYY-MM-DDTHH:MM:SS) to the writer.
+pub fn writeIsoDateTime(writer: anytype, tc: TimeComponents) !void {
+    try writeIsoDate(writer, tc);
+    try writer.writeByte('T');
+    try writeIsoTime(writer, tc);
 }
 
 /// Formats an ISO 8601 datetime string (YYYY-MM-DDTHH:MM:SS) to buffer.
 pub fn formatIsoDateTime(buf: []u8, tc: TimeComponents) ![]u8 {
     var fbs = std.io.fixedBufferStream(buf);
-    try fbs.writer().print("{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}", .{
-        tc.year, tc.month, tc.day, tc.hour, tc.minute, tc.second,
-    });
+    try writeIsoDateTime(fbs.writer(), tc);
     return fbs.getWritten();
+}
+
+/// Writes a filename-safe datetime (YYYY-MM-DD_HH-MM-SS) to the writer.
+pub fn writeFilenameSafe(writer: anytype, tc: TimeComponents) !void {
+    try write4Digits(writer, tc.year);
+    try writer.writeByte('-');
+    try write2Digits(writer, tc.month);
+    try writer.writeByte('-');
+    try write2Digits(writer, tc.day);
+    try writer.writeByte('_');
+    try write2Digits(writer, tc.hour);
+    try writer.writeByte('-');
+    try write2Digits(writer, tc.minute);
+    try writer.writeByte('-');
+    try write2Digits(writer, tc.second);
 }
 
 /// Formats a filename-safe datetime string (YYYY-MM-DD_HH-MM-SS) to buffer.
 pub fn formatFilenameSafe(buf: []u8, tc: TimeComponents) ![]u8 {
     var fbs = std.io.fixedBufferStream(buf);
-    try fbs.writer().print("{d:0>4}-{d:0>2}-{d:0>2}_{d:0>2}-{d:0>2}-{d:0>2}", .{
-        tc.year, tc.month, tc.day, tc.hour, tc.minute, tc.second,
-    });
+    try writeFilenameSafe(fbs.writer(), tc);
     return fbs.getWritten();
 }
 
@@ -311,6 +373,154 @@ pub const format = formatDatePattern;
 
 /// Alias for formatDateToBuf
 pub const formatToBuf = formatDateToBuf;
+
+/// Escapes a string for safe inclusion in JSON output.
+/// Handles all JSON special characters including control characters.
+///
+/// Performance: O(n) where n = string length
+/// Memory: Zero allocations - writes directly to the provided writer
+///
+/// Example:
+/// ```zig
+/// var buf: [256]u8 = undefined;
+/// var fbs = std.io.fixedBufferStream(&buf);
+/// try escapeJsonString(fbs.writer(), "Hello\nWorld");
+/// // Result: Hello\nWorld (with escaped newline)
+/// ```
+pub fn escapeJsonString(writer: anytype, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\x08' => try writer.writeAll("\\b"),
+            '\x0c' => try writer.writeAll("\\f"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => {
+                if (c < 0x20) {
+                    try writer.writeAll("\\u");
+                    try write4Hex(writer, @intCast(c));
+                } else {
+                    try writer.writeByte(c);
+                }
+            },
+        }
+    }
+}
+
+/// Escapes a string for JSON and writes it to a buffer.
+/// Returns the written slice.
+///
+/// Arguments:
+///     buf: Output buffer
+///     s: String to escape
+///
+/// Returns:
+///     Slice of written content
+pub fn escapeJsonStringToBuf(buf: []u8, s: []const u8) ![]u8 {
+    var fbs = std.io.fixedBufferStream(buf);
+    try escapeJsonString(fbs.writer(), s);
+    return fbs.getWritten();
+}
+
+/// Calculates a rate as a floating-point ratio (0.0 - 1.0).
+/// Safely handles division by zero by returning 0.
+///
+/// Performance: O(1)
+///
+/// Arguments:
+///     numerator: The count of specific items
+///     denominator: The total count
+///
+/// Returns:
+///     The rate as a float between 0.0 and 1.0
+pub fn calculateRate(numerator: u64, denominator: u64) f64 {
+    if (denominator == 0) return 0.0;
+    return @as(f64, @floatFromInt(numerator)) / @as(f64, @floatFromInt(denominator));
+}
+
+/// Calculates a percentage (0.0 - 100.0).
+/// Safely handles division by zero by returning 0.
+///
+/// Performance: O(1)
+///
+/// Arguments:
+///     numerator: The count of specific items
+///     denominator: The total count
+///
+/// Returns:
+///     The percentage as a float between 0.0 and 100.0
+pub fn calculatePercentage(numerator: u64, denominator: u64) f64 {
+    return calculateRate(numerator, denominator) * 100.0;
+}
+
+/// Calculates throughput (items per second) given a count and elapsed time.
+///
+/// Performance: O(1)
+///
+/// Arguments:
+///     count: Number of items processed
+///     elapsed_ns: Elapsed time in nanoseconds
+///
+/// Returns:
+///     Items per second as a float
+pub fn calculateThroughput(count: u64, elapsed_ns: u64) f64 {
+    if (elapsed_ns == 0) return 0.0;
+    const seconds = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
+    return @as(f64, @floatFromInt(count)) / seconds;
+}
+
+/// Calculates throughput in milliseconds.
+///
+/// Performance: O(1)
+///
+/// Arguments:
+///     count: Number of items processed
+///     elapsed_ms: Elapsed time in milliseconds
+///
+/// Returns:
+///     Items per second as a float
+pub fn calculateThroughputMs(count: u64, elapsed_ms: i64) f64 {
+    if (elapsed_ms <= 0) return 0.0;
+    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
+    return @as(f64, @floatFromInt(count)) / seconds;
+}
+
+test "escapeJsonString" {
+    var buf: [256]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+
+    try escapeJsonString(fbs.writer(), "Hello\"World");
+    try std.testing.expectEqualStrings("Hello\\\"World", fbs.getWritten());
+
+    fbs.reset();
+    try escapeJsonString(fbs.writer(), "Line1\nLine2");
+    try std.testing.expectEqualStrings("Line1\\nLine2", fbs.getWritten());
+
+    fbs.reset();
+    try escapeJsonString(fbs.writer(), "Tab\there");
+    try std.testing.expectEqualStrings("Tab\\there", fbs.getWritten());
+}
+
+test "calculateRate" {
+    try std.testing.expectEqual(@as(f64, 0.0), calculateRate(0, 0));
+    try std.testing.expectEqual(@as(f64, 0.5), calculateRate(50, 100));
+    try std.testing.expectEqual(@as(f64, 1.0), calculateRate(100, 100));
+}
+
+test "calculatePercentage" {
+    try std.testing.expectEqual(@as(f64, 0.0), calculatePercentage(0, 0));
+    try std.testing.expectEqual(@as(f64, 50.0), calculatePercentage(50, 100));
+    try std.testing.expectEqual(@as(f64, 100.0), calculatePercentage(100, 100));
+}
+
+test "calculateThroughput" {
+    // 100 items in 1 second = 100 items/sec
+    try std.testing.expectEqual(@as(f64, 100.0), calculateThroughput(100, 1_000_000_000));
+    // 0 elapsed time = 0 throughput
+    try std.testing.expectEqual(@as(f64, 0.0), calculateThroughput(100, 0));
+}
 
 test "parseSize bytes" {
     try std.testing.expectEqual(@as(?u64, 1024), parseSize("1024"));
@@ -375,8 +585,8 @@ test "safeToUnsigned" {
 
 test "formatDatePattern basic" {
     var buf: [64]u8 = undefined;
-    const result = try formatDateToBuf(&buf, "YYYY", 2025, 12, 25, 14, 30, 45);
-    try std.testing.expect(result.len >= 4);
+    const result = try formatDateToBuf(&buf, "YYYY-MM-DD | HH:mm:ss.SSS", 2025, 12, 25, 14, 30, 45, 123);
+    try std.testing.expectEqualStrings("2025-12-25 | 14:30:45.123", result);
 }
 
 test "formatIsoDate basic" {
@@ -391,4 +601,48 @@ test "formatIsoDateTime basic" {
     var buf: [32]u8 = undefined;
     const result = try formatIsoDateTime(&buf, tc);
     try std.testing.expect(result.len > 0);
+}
+
+pub fn write2Digits(writer: anytype, value: anytype) !void {
+    const v: u64 = @intCast(value);
+    const v2 = v % 100;
+    try writer.writeByte(@intCast('0' + (v2 / 10)));
+    try writer.writeByte(@intCast('0' + (v2 % 10)));
+}
+
+pub fn write3Digits(writer: anytype, value: anytype) !void {
+    const v: u64 = @intCast(value);
+    const v3 = v % 1000;
+    try writer.writeByte(@intCast('0' + (v3 / 100)));
+    try writer.writeByte(@intCast('0' + ((v3 / 10) % 10)));
+    try writer.writeByte(@intCast('0' + (v3 % 10)));
+}
+
+pub fn write4Digits(writer: anytype, value: anytype) !void {
+    const v: u64 = @intCast(value);
+    const v4 = v % 10000;
+    try writer.writeByte(@intCast('0' + (v4 / 1000)));
+    try writer.writeByte(@intCast('0' + ((v4 / 100) % 10)));
+    try writer.writeByte(@intCast('0' + ((v4 / 10) % 10)));
+    try writer.writeByte(@intCast('0' + (v4 % 10)));
+}
+
+pub fn write1Or2Digits(writer: anytype, value: anytype) !void {
+    const v: u64 = @intCast(value);
+    if (v < 10) {
+        try writer.writeByte(@intCast('0' + v));
+    } else {
+        try write2Digits(writer, v);
+    }
+}
+
+pub fn write4Hex(writer: anytype, value: u16) !void {
+    const hex = "0123456789abcdef";
+    try writer.writeByte(hex[(value >> 12) & 0xF]);
+    try writer.writeByte(hex[(value >> 8) & 0xF]);
+    try writer.writeByte(hex[(value >> 4) & 0xF]);
+    try writer.writeByte(hex[value & 0xF]);
+}
+pub fn writeInt(writer: anytype, value: anytype) !void {
+    try writer.print("{d}", .{value});
 }
