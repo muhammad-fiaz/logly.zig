@@ -63,59 +63,9 @@ export default defineConfig({
     // Canonical URL
     ["link", { rel: "canonical", href: SITE_URL }],
 
-    // JSON-LD Schema for Software Application
-    [
-      "script",
-      { type: "application/ld+json" },
-      JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Logly.zig",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "Cross-platform",
-        "programmingLanguage": "Zig",
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        },
-        "author": {
-          "@type": "Person",
-          "name": "Muhammad Fiaz",
-          "url": "https://github.com/muhammad-fiaz"
-        },
-        "description": SITE_DESCRIPTION,
-        "url": SITE_URL,
-        "downloadUrl": "https://github.com/muhammad-fiaz/logly.zig",
-        "softwareVersion": "0.0.9",
-        "license": "https://opensource.org/licenses/MIT"
-      })
-    ],
 
-    // JSON-LD Schema for Documentation
-    [
-      "script",
-      { type: "application/ld+json" },
-      JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "TechArticle",
-        "headline": "Logly.zig Documentation",
-        "description": SITE_DESCRIPTION,
-        "author": {
-          "@type": "Person",
-          "name": "Muhammad Fiaz"
-        },
-        "publisher": {
-          "@type": "Person",
-          "name": "Muhammad Fiaz"
-        },
-        "mainEntityOfPage": {
-          "@type": "WebPage",
-          "@id": SITE_URL
-        },
-        "image": `${SITE_URL}/cover.png`
-      })
-    ],
+
+
 
     // Favicons
     ["link", { rel: "icon", href: "/logly.zig/favicon.ico" }],
@@ -167,7 +117,7 @@ gtag('config', '${GA_ID}');`,
     // Dynamic OG image generation based on page title
     const pageTitle = pageData.title || SITE_NAME;
     const pageDescription = pageData.description || SITE_DESCRIPTION;
-    const canonicalUrl = `${SITE_URL}${pageData.relativePath.replace(/\.md$/, '.html').replace(/index\.html$/, '')}`;
+    const canonicalUrl = `${SITE_URL}/${pageData.relativePath.replace(/((^|\/)index)?\.md$/, '$2').replace(/\.md$/, '')}`;
 
     pageData.frontmatter.head ??= [];
     pageData.frontmatter.head.push(
@@ -182,6 +132,136 @@ gtag('config', '${GA_ID}');`,
         ["meta", { name: "description", content: pageData.frontmatter.description }]
       );
     }
+
+    // Dynamic JSON-LD Schema
+    const isHome = pageData.relativePath === 'index.md';
+    const lastUpdated = pageData.lastUpdated
+      ? new Date(pageData.lastUpdated).toISOString()
+      : new Date().toISOString();
+    
+    // Base Graph
+    const graph: any[] = [];
+
+    // 1. WebSite Schema (Global, but usually best on Home)
+    if (isHome) {
+      graph.push({
+        "@type": "WebSite",
+        "name": SITE_NAME,
+        "url": SITE_URL,
+        "description": SITE_DESCRIPTION,
+        "author": {
+          "@type": "Person",
+          "name": "Muhammad Fiaz",
+          "url": "https://github.com/muhammad-fiaz"
+        }
+      });
+    }
+
+    // 2. Main Entity Schema (SoftwareApplication or TechArticle)
+    const authorSchema = {
+      "@type": "Person",
+      "name": "Muhammad Fiaz",
+      "url": "https://muhammadfiaz.com",
+      "sameAs": [
+        "https://github.com/muhammad-fiaz",
+        "https://www.linkedin.com/in/muhammad-fiaz-",
+        "https://x.com/muhammadfiaz_"
+      ]
+    };
+
+    const primarySchema: Record<string, any> = {
+      "@type": isHome ? "SoftwareApplication" : "TechArticle",
+      "name": isHome ? SITE_NAME : pageTitle,
+      "description": pageDescription,
+      "url": canonicalUrl,
+      "image": `${SITE_URL}/cover.png`,
+      "author": authorSchema,
+      "publisher": {
+        "@type": "Organization",
+        "name": "Logly.zig",
+        "url": SITE_URL,
+        "logo": {
+          "@type": "ImageObject",
+          "url": `${SITE_URL}/logo.png`
+        }
+      }
+    };
+
+    if (isHome) {
+      Object.assign(primarySchema, {
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Cross-platform",
+        "programmingLanguage": "Zig",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "downloadUrl": "https://github.com/muhammad-fiaz/logly.zig",
+        "softwareVersion": "0.1.0", // Updated to match likely version
+        "license": "https://opensource.org/licenses/MIT"
+      });
+    } else {
+      // Extract section from path (e.g. guide/getting-started -> Guide)
+      const pathParts = pageData.relativePath.split('/');
+      const section = pathParts.length > 1 
+        ? pathParts[0].charAt(0).toUpperCase() + pathParts[0].slice(1) 
+        : 'Documentation';
+
+      Object.assign(primarySchema, {
+        "headline": pageTitle,
+        "articleSection": section,
+        "mainEntityOfPage": {
+          "@type": "WebPage",
+          "@id": canonicalUrl
+        },
+        "datePublished": "2025-01-01T00:00:00Z", // Approximate launch date
+        "dateModified": lastUpdated
+      });
+    }
+    graph.push(primarySchema);
+
+    // 3. BreadcrumbList Schema
+    const breadcrumbs: any[] = [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": SITE_URL
+      }
+    ];
+
+    if (!isHome) {
+      const pathParts = pageData.relativePath.replace(/\.md$/, '').split('/');
+      let currentPath = SITE_URL;
+      
+      pathParts.forEach((part, index) => {
+        currentPath += `/${part}`;
+        // Best effort capitalization
+        const name = part.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+        
+        breadcrumbs.push({
+          "@type": "ListItem",
+          "position": index + 2,
+          "name": name,
+          "item": index === pathParts.length - 1 ? canonicalUrl : currentPath // Ensure last item points to canonical
+        });
+      });
+    }
+
+    graph.push({
+      "@type": "BreadcrumbList",
+      "itemListElement": breadcrumbs
+    });
+
+    pageData.frontmatter.head.push([
+      "script",
+      { type: "application/ld+json" },
+      JSON.stringify({
+        "@context": "https://schema.org",
+        "@graph": graph
+      })
+    ]);
   },
 
   themeConfig: {

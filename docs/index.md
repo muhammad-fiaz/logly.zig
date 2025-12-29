@@ -52,29 +52,7 @@ head:
   - - meta
     - name: twitter:image
       content: https://muhammad-fiaz.github.io/logly.zig/cover.png
-  - - script
-    - type: application/ld+json
-    - children: |
-        {
-          "@context": "https://schema.org",
-          "@type": "SoftwareApplication",
-          "name": "Logly.Zig",
-          "description": "High-Performance Logging Library for Zig - Production-ready structured logging with a clean, simple API.",
-          "url": "https://muhammad-fiaz.github.io/logly.zig/",
-          "applicationCategory": "DeveloperApplication",
-          "operatingSystem": "Linux, Windows, macOS",
-          "programmingLanguage": "Zig",
-          "author": {
-            "@type": "Person",
-            "name": "Muhammad Fiaz"
-          },
-          "license": "https://opensource.org/licenses/MIT",
-          "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "USD"
-          }
-        }
+
 
 hero:
   name: Logly.Zig
