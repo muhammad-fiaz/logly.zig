@@ -10,6 +10,9 @@ export const SITE_DESCRIPTION = "High-performance structured logging library for
 export const GA_ID = "G-6BVYCRK57P";
 export const GTM_ID = "GTM-P4M9T8ZR";
 
+// Google AdSense Client ID
+export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
+
 // SEO Keywords
 export const KEYWORDS = "zig, logging, logger, structured logging, async logging, json logging, file rotation, log rotation, thread pool, metrics, tracing, redaction, filtering, sampling, compression, network logging, zig library, production logging, enterprise logging";
 
@@ -109,6 +112,16 @@ gtag('config', '${GA_ID}');`,
           ],
         ] as [string, Record<string, string>, string][])
       : []),
+
+    // Google AdSense
+    [
+      "script",
+      {
+        async: "",
+        src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT_ID}`,
+        crossorigin: "anonymous",
+      },
+    ],
   ],
 
   ignoreDeadLinks: [/.*\.zig$/],
