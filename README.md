@@ -149,6 +149,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 - 🌐 **Service Context**: Configure service name, environment, and region for distributed logs.
 - ⚡ **Performance**: Optimized string builders and allocation patterns.
 - 🧵 **Thread Pool Enhancements**: Improved work stealing and task scheduling.
+- 📃 **Rules System Template**: Improved rules formatting and display options.
 
 ---
 
