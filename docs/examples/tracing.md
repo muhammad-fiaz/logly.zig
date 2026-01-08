@@ -14,35 +14,72 @@ head:
 
 Distributed tracing support for tracking requests across services.
 
-## Basic Trace Context
+## Distributed Configuration
+
+To enable service identification and distributed features:
+
+```zig
+var config = logly.Config.production();
+config.distributed = .{
+    .enabled = true,
+    .service_name = "payment-service",
+    .environment = "production",
+    .region = "us-east-1",
+};
+const logger = try logly.Logger.initWithConfig(allocator, config);
+```
+
+## Trace Propagation (Recommended)
+
+In concurrent environments, use `withTrace()` to create lightweight logger handles with bound context.
 
 ```zig
 const std = @import("std");
 const logly = @import("logly");
+const Config = logly.Config;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+    // Configure Service
+    var config = Config.default();
+    config.distributed = .{
+        .enabled = true,
+        .service_name = "tracing-example",
+    };
 
-    const logger = try logly.Logger.init(allocator);
+    const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    // Set trace context for distributed tracing
-    try logger.setTraceContext("trace-abc123", "span-001");
-    try logger.setCorrelationId("request-789");
+    // Simulate Request Handling
+    const trace_id = "trace-uuid-v4";
+    const span_id = "span-001";
+    
+    // Create scoped logger for this request
+    const req_logger = logger.withTrace(trace_id, span_id);
+    
+    // Logs automatically include service name, trace_id, and span_id
+    try req_logger.info("Processing request", @src());
+    try req_logger.warn("Simulated latency", @src());
+}
+```
 
+## Legacy Trace Context (Global)
+
+For single-threaded scripts or tools:
+
+```zig
+    // Set trace context for distributed tracing globally
+    try logger.setTraceContext("trace-legacy-global", "span-global");
+    
     // All logs will now include trace info
     try logger.info("Processing request", @src());
     try logger.debug("Validating input", @src());
-    try logger.info("Request completed", @src());
-
+    
     // Clear trace context
     logger.clearTraceContext();
-}
 ```
 
 ## Child Spans

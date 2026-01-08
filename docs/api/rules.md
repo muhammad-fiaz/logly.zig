@@ -72,9 +72,9 @@ pub fn main() !void {
 **Output:**
 ```
 [2024-12-24 12:00:00.000] [ERROR] Database connection timeout
-    ↳ ⦿ cause: Database connection pool exhausted
-    ↳ ✦ fix: Increase max_connections or implement connection pooling
-    ↳ 📖 docs: Connection Guide: See documentation (https://docs.example.com/db)
+    >> [ERROR] Database connection pool exhausted
+    >> [FIX] Increase max_connections or implement connection pooling
+    >> [DOC] Connection Guide: See documentation (https://docs.example.com/db)
 ```
 
 ## Rules Struct
@@ -386,13 +386,14 @@ const config = logly.Config.RulesConfig{
     .builtin_rules_enabled = true,      // Enable built-in rules (reserved)
 
     // Display options
-    .use_unicode = true,                // Use Unicode symbols (set false for ASCII)
+    .use_unicode = false,               // Use Unicode symbols (deprecated, use 'symbols' to configure custom characters)
     .enable_colors = true,              // ANSI colors in output
     .show_rule_id = false,              // Show rule IDs in output
     .include_rule_id_prefix = false,    // Include "R0001:" prefix
     .rule_id_format = "R{d}",           // Custom rule ID format
     .indent = "    ",                   // Message indent
-    .message_prefix = "↳",              // Prefix character
+    .message_prefix = "↳",              // Prefix character (deprecated)
+    .symbols = .{},                     // Custom symbols (see RuleSymbols)
 
     // Output control (respects global switches)
     .console_output = true,             // Output to console (AND'd with global_console_display)

@@ -57,6 +57,13 @@ const Rules = @import("rules.zig").Rules;
 /// - Uses std.Thread.Mutex for protecting mutable state
 /// - Atomic operations for counters and statistics
 pub const Logger = struct {
+    /// Trace context for distributed request tracking.
+    pub const TraceContext = struct {
+        trace_id: ?[]const u8 = null,
+        span_id: ?[]const u8 = null,
+        parent_span_id: ?[]const u8 = null,
+    };
+
     /// Logger statistics for monitoring and diagnostics.
     pub const LoggerStats = struct {
         total_records_logged: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
@@ -98,7 +105,7 @@ pub const Logger = struct {
     module_levels: std.StringHashMap(Level),
     enabled: bool = true,
     atomic_level: std.atomic.Value(u8) = std.atomic.Value(u8).init(@intFromEnum(Level.info)),
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Thread.RwLock = .{},
     log_callback: ?*const fn (*const Record) anyerror!void = null,
     color_callback: ?*const fn (Level, []const u8) []const u8 = null,
 
@@ -412,15 +419,22 @@ pub const Logger = struct {
     ///     trace_id: The trace identifier.
     ///     span_id: The span identifier (optional).
     pub fn setTraceContext(self: *Logger, trace_id: []const u8, span_id: ?[]const u8) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        {
+            self.mutex.lock();
+            defer self.mutex.unlock();
 
-        if (self.trace_id) |t| self.allocator.free(t);
-        self.trace_id = try self.allocator.dupe(u8, trace_id);
+            if (self.trace_id) |t| self.allocator.free(t);
+            self.trace_id = try self.allocator.dupe(u8, trace_id);
 
-        if (span_id) |s| {
-            if (self.span_id) |old| self.allocator.free(old);
-            self.span_id = try self.allocator.dupe(u8, s);
+            if (span_id) |s| {
+                if (self.span_id) |old| self.allocator.free(old);
+                self.span_id = try self.allocator.dupe(u8, s);
+            }
+        }
+
+        // Trigger callback if configured
+        if (self.config.distributed.on_trace_created) |callback| {
+            callback(trace_id);
         }
     }
 
@@ -463,13 +477,16 @@ pub const Logger = struct {
     /// Returns:
     ///     A SpanContext that automatically restores the previous span on completion.
     pub fn startSpan(self: *Logger, name: []const u8) !SpanContext {
-        _ = name;
         const parent_span = self.span_id;
         const new_span = try Record.generateSpanId(self.allocator);
 
         self.mutex.lock();
         self.span_id = new_span;
         self.mutex.unlock();
+
+        if (self.config.distributed.on_span_created) |callback| {
+            callback(new_span, name);
+        }
 
         return SpanContext{
             .logger = self,
@@ -584,8 +601,8 @@ pub const Logger = struct {
     /// Returns the number of sinks.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn getSinkCount(self: *Logger) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockShared();
+        defer self.mutex.unlockShared();
         return self.sinks.items.len;
     }
 
@@ -602,8 +619,8 @@ pub const Logger = struct {
     /// Returns:
     ///     A pointer to the Sink, or null if the index is out of bounds.
     pub fn getSink(self: *Logger, id: usize) ?*Sink {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockShared();
+        defer self.mutex.unlockShared();
 
         if (id < self.sinks.items.len) {
             return self.sinks.items[id];
@@ -620,8 +637,8 @@ pub const Logger = struct {
     /// Returns:
     ///     The sink stats, or null if the index is out of bounds.
     pub fn getSinkStats(self: *Logger, id: usize) ?Sink.SinkStats {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockShared();
+        defer self.mutex.unlockShared();
 
         if (id < self.sinks.items.len) {
             return self.sinks.items[id].stats;
@@ -632,8 +649,8 @@ pub const Logger = struct {
     /// Checks if a sink is enabled by index.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn isSinkEnabled(self: *Logger, id: usize) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockShared();
+        defer self.mutex.unlockShared();
 
         if (id < self.sinks.items.len) {
             return self.sinks.items[id].enabled;
@@ -732,15 +749,15 @@ pub const Logger = struct {
 
     /// Checks if a custom level with the given name exists.
     pub fn hasCustomLevel(self: *Logger, name: []const u8) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockShared();
+        defer self.mutex.unlockShared();
         return self.custom_levels.contains(name);
     }
 
     /// Returns the count of custom levels.
     pub fn getCustomLevelCount(self: *Logger) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockShared();
+        defer self.mutex.unlockShared();
         return self.custom_levels.count();
     }
 
@@ -856,6 +873,14 @@ pub const Logger = struct {
         return ContextLogger.init(self);
     }
 
+    pub fn withTrace(self: *Logger, trace_id: []const u8, span_id: ?[]const u8) DistributedLogger {
+        return DistributedLogger{
+            .logger = self,
+            .trace_id = trace_id,
+            .span_id = span_id,
+        };
+    }
+
     /// Returns a persistent context logger that maintains context across calls.
     /// The returned logger must be manually deinited.
     pub fn with(self: *Logger) PersistentContextLogger {
@@ -897,6 +922,11 @@ pub const Logger = struct {
     }
 
     pub fn logWithContext(self: *Logger, level: Level, message: []const u8, module: ?[]const u8, src: ?std.builtin.SourceLocation, extra_context: ?*std.StringHashMap(std.json.Value)) !void {
+        return self.logInternal(level, message, module, src, extra_context, null);
+    }
+
+    /// Internal log function with extended capabilities.
+    pub fn logInternal(self: *Logger, level: Level, message: []const u8, module: ?[]const u8, src: ?std.builtin.SourceLocation, extra_context: ?*std.StringHashMap(std.json.Value), trace_ctx: ?TraceContext) !void {
         if (!self.enabled) return;
 
         // Fast path: check global level if no module is specified
@@ -907,8 +937,11 @@ pub const Logger = struct {
             }
         }
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        // Optimization: Use Shared lock if arena is not used, allowing concurrent logging.
+        // If arena is used, we must use exclusive lock because arena allocation modifies state.
+        const use_arena = self.config.use_arena_allocator;
+        if (use_arena) self.mutex.lock() else self.mutex.lockShared();
+        defer if (use_arena) self.mutex.unlock() else self.mutex.unlockShared();
 
         // Check level filtering
         var effective_min_level = self.config.level;
@@ -945,6 +978,19 @@ pub const Logger = struct {
 
         if (module) |m| {
             record.module = m;
+        }
+
+        // Distributed Tracing Context
+        if (self.config.enable_tracing or self.config.distributed.enabled) {
+            if (trace_ctx) |tctx| {
+                if (tctx.trace_id) |tid| record.trace_id = tid;
+                if (tctx.span_id) |sid| record.span_id = sid;
+                if (tctx.parent_span_id) |pid| record.parent_span_id = pid;
+            } else {
+                // Legacy/Global Trace Context
+                record.trace_id = self.trace_id;
+                record.span_id = self.span_id;
+            }
         }
 
         // Capture stack trace for Error/Fatal levels if configured
@@ -1000,13 +1046,6 @@ pub const Logger = struct {
             }
         }
 
-        // Add trace context
-        if (self.trace_id) |t| {
-            record.trace_id = t;
-        }
-        if (self.span_id) |s| {
-            record.span_id = s;
-        }
         if (self.correlation_id) |c| {
             record.correlation_id = c;
         }
@@ -1875,25 +1914,106 @@ pub const PersistentContextLogger = struct {
     }
 };
 
+/// Logger handle for distributed systems that maintains trace context.
+pub const DistributedLogger = struct {
+    logger: *Logger,
+    trace_id: ?[]const u8,
+    span_id: ?[]const u8,
+    parent_span_id: ?[]const u8 = null,
+    module: ?[]const u8 = null,
+
+    pub fn log(self: *const DistributedLogger, level: Level, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.logger.logInternal(level, message, self.module, src, null, .{
+            .trace_id = self.trace_id,
+            .span_id = self.span_id,
+            .parent_span_id = self.parent_span_id,
+        });
+    }
+
+    pub fn trace(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.trace, message, src);
+    }
+
+    pub fn debug(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.debug, message, src);
+    }
+
+    pub fn info(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.info, message, src);
+    }
+
+    pub fn warn(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.warning, message, src);
+    }
+
+    pub fn err(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.err, message, src);
+    }
+
+    pub fn critical(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.critical, message, src);
+    }
+};
+
 test "logger basic" {
     // Create logger with auto_sink disabled for testing
     var config = Config.default();
     config.auto_sink = false;
+    config.check_for_updates = false;
 
-    const logger = try Logger.init(std.testing.allocator);
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
     defer logger.deinit();
-    logger.configure(config);
 
-    // Note: auto_sink is created during init(), before configure() is called
-    // So even though we disable it, the sink was already created
-    try std.testing.expect(logger.sinks.items.len == 1);
+    // Note: providing config to initWithConfig prevents auto_sink creation if disabled
+    try std.testing.expect(logger.sinks.items.len == 0);
 }
 
 test "logger with auto sink" {
     // Default config has auto_sink = true
-    const logger = try Logger.init(std.testing.allocator);
+    var config = Config.default();
+    config.check_for_updates = false;
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
     defer logger.deinit();
 
     // Should have 1 auto-created console sink
     try std.testing.expect(logger.sinks.items.len == 1);
+}
+
+test "distributed logger context" {
+    // Verify that DistributedLogger correctly propagates context
+    var config = Config.default();
+    config.auto_sink = false; // Disable auto-sink to test logic only
+    config.check_for_updates = false;
+
+    // Setup a memory sink to inspect records
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    const trace_id = "test-trace-id";
+    const span_id = "test-span-id";
+
+    const dist_logger = logger.withTrace(trace_id, span_id);
+
+    // We are testing logical correctness of the struct init
+    // A full e2e test would require mocking a sink which is complex in this unit test block
+    // But we can verify the struct fields
+    try std.testing.expectEqualStrings(trace_id, dist_logger.trace_id.?);
+    try std.testing.expectEqualStrings(span_id, dist_logger.span_id.?);
+}
+
+test "global trace context" {
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    try logger.setTraceContext("global-trace", "global-span");
+
+    // We can't easily inspect private state 'trace_id' but we can verify no crash
+    // and subsequent logging doesn't fail
+    try logger.info("Test message", null);
+
+    logger.clearTraceContext();
 }

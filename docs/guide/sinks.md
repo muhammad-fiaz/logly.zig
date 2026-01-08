@@ -104,6 +104,17 @@ sink_config.compression = .{
 _ = try logger.addSink(sink_config);
 ```
 
+### Distributed Context
+
+Network sinks are ideal for distributed environments. When used with `DistributedConfig`, logs sent over the network automatically include:
+- `service_name`
+- `region`
+- `environment`
+- `trace_id`
+- `span_id`
+
+This makes integration with aggregators (ELK, Splunk, Datadog) seamless as correlation IDs are already present in the JSON payload.
+
 ## System Event Log
 
 You can enable logging to the system event log (Windows Event Log or Syslog).

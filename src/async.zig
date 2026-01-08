@@ -147,17 +147,16 @@ pub const AsyncLogger = struct {
     /// Note: This implementation is thread-safe when used with the AsyncLogger's mutex.
     pub const RingBuffer = struct {
         allocator: std.mem.Allocator,
-        entries: []?BufferEntry,
+        entries: []BufferEntry,
         head: usize = 0,
         tail: usize = 0,
         count: usize = 0,
         capacity: usize,
 
         /// Initialize ring buffer with specified capacity
-        /// Performance: O(capacity) - allocates and zeros memory
+        /// Performance: O(capacity) - allocates memory
         pub fn init(allocator: std.mem.Allocator, capacity: usize) !RingBuffer {
-            const entries = try allocator.alloc(?BufferEntry, capacity);
-            @memset(entries, null);
+            const entries = try allocator.alloc(BufferEntry, capacity);
             return .{
                 .allocator = allocator,
                 .entries = entries,
@@ -167,11 +166,13 @@ pub const AsyncLogger = struct {
 
         /// Free all resources including any owned entries
         pub fn deinit(self: *RingBuffer) void {
-            for (self.entries) |entry_opt| {
-                if (entry_opt) |entry| {
-                    if (entry.owned) {
-                        self.allocator.free(entry.formatted_message);
-                    }
+            // Only free valid entries
+            var i: usize = 0;
+            while (i < self.count) : (i += 1) {
+                const idx = (self.tail + i) % self.capacity;
+                const entry = self.entries[idx];
+                if (entry.owned) {
+                    self.allocator.free(entry.formatted_message);
                 }
             }
             self.allocator.free(self.entries);
@@ -196,25 +197,30 @@ pub const AsyncLogger = struct {
         pub fn pop(self: *RingBuffer) ?BufferEntry {
             if (self.count == 0) return null;
             const entry = self.entries[self.tail];
-            self.entries[self.tail] = null;
             self.tail = (self.tail + 1) % self.capacity;
             self.count -= 1;
             return entry;
         }
 
         /// Remove up to 'batch.len' entries and fill batch array
-        /// Performance: O(batch_size) - single scan
+        /// Performance: O(1) - memcpy approaches peak bandwidth
         pub fn popBatch(self: *RingBuffer, batch: []BufferEntry) usize {
-            var count: usize = 0;
-            while (count < batch.len) {
-                if (self.pop()) |entry| {
-                    batch[count] = entry;
-                    count += 1;
-                } else {
-                    break;
-                }
+            if (self.count == 0) return 0;
+            const n = @min(self.count, batch.len);
+
+            // First chunk: from tail to end of buffer or split point
+            const chunk1_size = @min(n, self.capacity - self.tail);
+            @memcpy(batch[0..chunk1_size], self.entries[self.tail .. self.tail + chunk1_size]);
+
+            // Second chunk: wrap around if needed
+            if (n > chunk1_size) {
+                const chunk2_size = n - chunk1_size;
+                @memcpy(batch[chunk1_size..n], self.entries[0..chunk2_size]);
             }
-            return count;
+
+            self.tail = (self.tail + n) % self.capacity;
+            self.count -= n;
+            return n;
         }
 
         /// Check if buffer is at capacity

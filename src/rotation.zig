@@ -390,8 +390,10 @@ pub const Rotation = struct {
                     const m = (ds.secs % 3600) / 60;
                     const s = ds.secs % 60;
 
-                    // Allocating worst-case size for simplicity or using multiple passes
-                    var res: std.ArrayList(u8) = .empty;
+                    // Optimization: Pre-allocate buffer to minimize reallocations
+                    // Estimate size: format length + extra space for replacements (timestamp, etc.)
+                    var res = std.ArrayList(u8){};
+                    try res.ensureTotalCapacity(self.allocator, fmt.len + 64);
                     defer res.deinit(self.allocator);
 
                     var i: usize = 0;

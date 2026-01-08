@@ -75,6 +75,7 @@ pub const SinkConfig = @import("sink.zig").SinkConfig;
 pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;
 pub const Rotation = @import("rotation.zig").Rotation;
+pub const utils = @import("utils.zig");
 
 // Nested config types (convenience re-exports from Config)
 pub const ThreadPoolConfig = Config.ThreadPoolConfig;
@@ -105,6 +106,7 @@ pub const RulesConfig = Rules.RulesConfig;
 pub const RuleMessage = Rules.RuleMessage;
 pub const RuleMessageBuilder = @import("rules.zig").RuleMessageBuilder;
 pub const LevelMatchBuilder = @import("rules.zig").LevelMatchBuilder;
+pub const UpdateChecker = @import("update_checker.zig"); // Added alias
 
 // Advanced I/O components
 pub const Compression = @import("compression.zig").Compression;

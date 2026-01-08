@@ -78,6 +78,24 @@ Optional global root path for all log files. If set, file sinks will be stored r
 
 If set, system diagnostics will be stored at this path. Default: `null`.
 
+### Distributed Logging
+
+#### `distributed: DistributedConfig`
+
+Configuration for distributed tracing and service identification. Contains:
+*   `enabled: bool`: Enable distributed context features.
+*   `service_name: ?[]const u8`: Name of the service (e.g. "auth-service").
+*   `service_version: ?[]const u8`: Version of the service.
+*   `environment: ?[]const u8`: Environment (e.g. "production", "staging").
+*   `datacenter: ?[]const u8`: Datacenter identifier.
+*   `region: ?[]const u8`: Cloud region (e.g. "us-east-1").
+*   `instance_id: ?[]const u8`: Unique instance identifier.
+*   `trace_header: []const u8`: HTTP header for Trace ID (default: "X-Trace-ID").
+*   `span_header: []const u8`: HTTP header for Span ID (default: "X-Span-ID").
+*   `parent_header: []const u8`: HTTP header for Parent Span ID (default: "X-Parent-ID").
+*   `baggage_header: []const u8`: HTTP header for Baggage/Correlation Context (default: "Correlation-Context").
+*   `trace_sampling_rate: f64`: Sampling rate for distributed tracing 0.0 to 1.0 (default: 1.0).
+
 ### Display Options
 
 #### `show_time: bool`
@@ -314,13 +332,14 @@ Rules system configuration. The rules system **respects global switches** (`glob
 - `enabled`: Master switch for rules system. Default: `false`.
 - `client_rules_enabled`: Enable client-defined rules. Default: `true`.
 - `builtin_rules_enabled`: Enable built-in rules (reserved). Default: `true`.
-- `use_unicode`: Use Unicode symbols (set false for ASCII). Default: `true`.
+- `use_unicode`: Use Unicode symbols (set false for ASCII). Default: `false`.
 - `enable_colors`: ANSI colors in output. Default: `true`.
 - `show_rule_id`: Show rule IDs in output. Default: `false`.
 - `include_rule_id_prefix`: Include "R0001:" prefix. Default: `false`.
 - `rule_id_format`: Custom rule ID format. Default: `"R{d}"`.
 - `indent`: Message indent. Default: `"    "`.
-- `message_prefix`: Prefix character. Default: `"↳"`.
+- `message_prefix`: Prefix character (deprecated, use `symbols`). Default: `"↳"`.
+- `symbols`: Custom symbols for message categories. See [RuleSymbols](#rulesymbols).
 - `console_output`: Output to console (AND'd with `global_console_display`). Default: `true`.
 - `file_output`: Output to files (AND'd with `global_file_storage`). Default: `true`.
 - `include_in_json`: Include in JSON output. Default: `true`.
@@ -337,6 +356,20 @@ Rules system configuration. The rules system **respects global switches** (`glob
 - `RulesConfig.silent()`: Rules evaluate but don't output.
 - `RulesConfig.consoleOnly()`: No file output.
 - `RulesConfig.fileOnly()`: No console output.
+
+#### `RuleSymbols`
+
+Customizable symbols for rule message categories. Defaults are ASCII-compatible.
+
+- `error_analysis`: Default `">> [ERROR]"`
+- `solution_suggestion`: Default `">> [FIX]"`
+- `performance_hint`: Default `">> [PERF]"`
+- `security_alert`: Default `">> [SEC]"`
+- `deprecation_warning`: Default `">> [DEP]"`
+- `best_practice`: Default `">> [HINT]"`
+- `accessibility`: Default `">> [A11Y]"`
+- `documentation`: Default `">> [DOC]"`
+- `default`: Default `">>"`
 
 #### `thread_pool: ThreadPoolConfig`
 

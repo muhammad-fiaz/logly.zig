@@ -218,6 +218,9 @@ pub const Config = struct {
     /// Level-specific color customization.
     level_colors: LevelColorConfig = .{},
 
+    /// Distributed systems configuration.
+    distributed: DistributedConfig = .{},
+
     /// Highlighter and alert configuration.
     highlighters: HighlighterConfig = .{},
 
@@ -248,6 +251,51 @@ pub const Config = struct {
         /// Custom placeholder prefix/suffix (default: {}, can be changed to [[]], etc.)
         placeholder_open: []const u8 = "{",
         placeholder_close: []const u8 = "}",
+    };
+
+    /// Distributed configuration for microservices and cluster environments.
+    pub const DistributedConfig = struct {
+        /// Enable distributed logging features.
+        enabled: bool = false,
+
+        /// Service name/Application identifier.
+        service_name: ?[]const u8 = null,
+
+        /// Service version/Semantic version of the running artifact.
+        service_version: ?[]const u8 = null,
+
+        /// Environment name (e.g., "prod", "staging", "dev").
+        environment: ?[]const u8 = null,
+
+        /// Datacenter or Availability Zone identifier (e.g., "us-east-1a").
+        datacenter: ?[]const u8 = null,
+
+        /// Region identifier (e.g., "us-east-1").
+        region: ?[]const u8 = null,
+
+        /// Unique Instance ID (e.g., Kubernetes Pod ID, EC2 Instance ID).
+        instance_id: ?[]const u8 = null,
+
+        /// HTTP header name for Trace ID propagation.
+        trace_header: []const u8 = "X-Trace-ID",
+
+        /// HTTP header name for Span ID propagation.
+        span_header: []const u8 = "X-Span-ID",
+
+        /// HTTP header name for Parent Span ID propagation.
+        parent_header: []const u8 = "X-Parent-ID",
+
+        /// HTTP header name for Baggage/Correlation Context.
+        baggage_header: []const u8 = "Correlation-Context",
+
+        /// Sampling rate for distributed tracing (0.0 to 1.0).
+        trace_sampling_rate: f64 = 1.0,
+
+        /// Optional callback when a new trace is initialized.
+        on_trace_created: ?*const fn (trace_id: []const u8) void = null,
+
+        /// Optional callback when a new span is started.
+        on_span_created: ?*const fn (span_id: []const u8, name: []const u8) void = null,
     };
 
     /// Per-level color customization.
@@ -822,6 +870,23 @@ pub const Config = struct {
         };
     };
 
+    /// Customizable symbols for rule message categories.
+    pub const RuleSymbols = struct {
+        error_analysis: []const u8 = ">> [ERROR]",
+        solution_suggestion: []const u8 = ">> [FIX]",
+        performance_hint: []const u8 = ">> [PERF]",
+        security_alert: []const u8 = ">> [SEC]",
+        deprecation_warning: []const u8 = ">> [DEP]",
+        best_practice: []const u8 = ">> [HINT]",
+        accessibility: []const u8 = ">> [A11Y]",
+        documentation: []const u8 = ">> [DOC]",
+        action_required: []const u8 = ">> [ACTION]",
+        bug_report: []const u8 = ">> [BUG]",
+        general_information: []const u8 = ">> [INFO]",
+        warning_explanation: []const u8 = ">> [WARN]",
+        default: []const u8 = ">>",
+    };
+
     /// Rules system configuration for compiler-style guided diagnostics.
     pub const RulesConfig = struct {
         /// Master switch for rules system.
@@ -834,7 +899,7 @@ pub const Config = struct {
         builtin_rules_enabled: bool = true,
 
         /// Use Unicode symbols in output (set to false for ASCII-only terminals).
-        use_unicode: bool = true,
+        use_unicode: bool = false,
 
         /// Enable ANSI colors in rule message output.
         enable_colors: bool = true,
@@ -851,8 +916,11 @@ pub const Config = struct {
         /// Indent string for rule messages.
         indent: []const u8 = "    ",
 
-        /// Message prefix character/string.
+        /// Message prefix character/string (deprecated, use symbols).
         message_prefix: []const u8 = "↳",
+
+        /// Custom symbols for message categories.
+        symbols: RuleSymbols = .{},
 
         /// Include rule messages in JSON output.
         include_in_json: bool = true,

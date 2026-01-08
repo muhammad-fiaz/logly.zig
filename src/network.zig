@@ -106,7 +106,7 @@ pub fn formatSyslog(
     const priority = (@as(u8, @intFromEnum(facility)) * 8) + @as(u8, @intFromEnum(severity));
     const timestamp = std.time.timestamp();
 
-    var res: std.ArrayList(u8) = .{};
+    var res = std.ArrayList(u8){};
     errdefer res.deinit(allocator);
     const w = res.writer(allocator);
 

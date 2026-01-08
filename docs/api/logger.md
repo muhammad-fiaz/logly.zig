@@ -107,6 +107,27 @@ Deinitializes the logger, freeing all allocated resources including sinks, conte
 
 Updates the global configuration of the logger in a thread-safe manner.
 
+## Distributed Logging
+
+### `withTrace(trace_id: ?[]const u8, span_id: ?[]const u8) DistributedLogger`
+
+Creates a lightweight `DistributedLogger` handle that wraps the main logger but automatically injects the specified trace context into every log message. This is the preferred way to handle distributed tracing in concurrent environments (like request handlers).
+
+```zig
+// In a request handler
+const req_logger = logger.withTrace(header_trace_id, header_span_id);
+try req_logger.info("Processing request"); 
+// Result: { "trace_id": "...", "span_id": "...", "message": "Processing request" }
+```
+
+### `setTraceContext(trace_id: []const u8, span_id: ?[]const u8) !void`
+
+**Legacy**. Sets the global trace context for the logger. This affects *all* subsequent logs from this logger instance. Not recommended for multi-threaded applications where different threads handle different requests.
+
+### `clearTraceContext() void`
+
+**Legacy**. Clears the global trace context.
+
 ## Arena Allocator Methods
 
 When `use_arena_allocator` is enabled in config, the logger uses an arena allocator for temporary allocations, improving performance.

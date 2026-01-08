@@ -265,6 +265,10 @@ pub const Formatter = struct {
                         if (record.line) |l| try Utils.writeInt(writer, l);
                     } else if (std.mem.eql(u8, tag, "thread")) {
                         if (record.thread_id) |tid| try Utils.writeInt(writer, tid);
+                    } else if (std.mem.eql(u8, tag, "trace_id")) {
+                        if (record.trace_id) |tid| try writer.writeAll(tid);
+                    } else if (std.mem.eql(u8, tag, "span_id")) {
+                        if (record.span_id) |sid| try writer.writeAll(sid);
                     } else {
                         // Unknown tag, print as is
                         try writer.writeAll(fmt_str[i .. end + 1]);
@@ -591,6 +595,66 @@ pub const Formatter = struct {
             try Utils.writeInt(writer, self.pid);
         }
 
+        // Distributed Context
+        if (@hasField(@TypeOf(config), "distributed")) {
+            if (config.distributed.enabled) {
+                if (config.distributed.service_name) |s| {
+                    try writer.writeAll(comma);
+                    try writer.writeAll(indent);
+                    try writer.writeAll("\"service\"");
+                    try writer.writeAll(sep);
+                    try writer.writeByte('"');
+                    try escapeJsonString(writer, s);
+                    try writer.writeByte('"');
+                }
+                if (config.distributed.service_version) |v| {
+                    try writer.writeAll(comma);
+                    try writer.writeAll(indent);
+                    try writer.writeAll("\"version\"");
+                    try writer.writeAll(sep);
+                    try writer.writeByte('"');
+                    try escapeJsonString(writer, v);
+                    try writer.writeByte('"');
+                }
+                if (config.distributed.environment) |e| {
+                    try writer.writeAll(comma);
+                    try writer.writeAll(indent);
+                    try writer.writeAll("\"env\"");
+                    try writer.writeAll(sep);
+                    try writer.writeByte('"');
+                    try escapeJsonString(writer, e);
+                    try writer.writeByte('"');
+                }
+                if (config.distributed.region) |r| {
+                    try writer.writeAll(comma);
+                    try writer.writeAll(indent);
+                    try writer.writeAll("\"region\"");
+                    try writer.writeAll(sep);
+                    try writer.writeByte('"');
+                    try escapeJsonString(writer, r);
+                    try writer.writeByte('"');
+                }
+                if (config.distributed.datacenter) |d| {
+                    try writer.writeAll(comma);
+                    try writer.writeAll(indent);
+                    try writer.writeAll("\"datacenter\"");
+                    try writer.writeAll(sep);
+                    try writer.writeByte('"');
+                    try escapeJsonString(writer, d);
+                    try writer.writeByte('"');
+                }
+                if (config.distributed.instance_id) |i| {
+                    try writer.writeAll(comma);
+                    try writer.writeAll(indent);
+                    try writer.writeAll("\"instance_id\"");
+                    try writer.writeAll(sep);
+                    try writer.writeByte('"');
+                    try escapeJsonString(writer, i);
+                    try writer.writeByte('"');
+                }
+            }
+        }
+
         // Stack Trace
         if (record.stack_trace) |st| {
             try writer.writeAll(comma);
@@ -642,6 +706,39 @@ pub const Formatter = struct {
                 }
             }
             try writer.writeAll("]");
+        }
+
+        // Trace ID
+        if (record.trace_id) |tid| {
+            try writer.writeAll(comma);
+            try writer.writeAll(indent);
+            try writer.writeAll("\"trace_id\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
+            try escapeJsonString(writer, tid);
+            try writer.writeByte('"');
+        }
+
+        // Span ID
+        if (record.span_id) |sid| {
+            try writer.writeAll(comma);
+            try writer.writeAll(indent);
+            try writer.writeAll("\"span_id\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
+            try escapeJsonString(writer, sid);
+            try writer.writeByte('"');
+        }
+
+        // Parent Span ID
+        if (record.parent_span_id) |pid| {
+            try writer.writeAll(comma);
+            try writer.writeAll(indent);
+            try writer.writeAll("\"parent_span_id\"");
+            try writer.writeAll(sep);
+            try writer.writeByte('"');
+            try escapeJsonString(writer, pid);
+            try writer.writeByte('"');
         }
 
         // Context fields
@@ -835,4 +932,33 @@ test "formatter json" {
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"level\":\"ERROR\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"message\":\"Error occurred\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"module\":\"api\"") != null);
+}
+
+test "formatter json distributed fields" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "Distributed log");
+    defer record.deinit();
+
+    // Set trace context
+    record.trace_id = "trace-123";
+    record.span_id = "span-456";
+
+    var config = Config{};
+    config.distributed.enabled = true;
+    config.distributed.service_name = "test-service";
+    config.distributed.region = "us-east-1";
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+    const output_str = buf.items;
+
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\"service\":\"test-service\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\"region\":\"us-east-1\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\"trace_id\":\"trace-123\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\"span_id\":\"span-456\"") != null);
 }

@@ -48,6 +48,10 @@ The JSON output contains the following fields:
   "level": "INFO",
   "module": "main",
   "message": "Application started",
+  "service": "my-service",
+  "region": "us-east-1",
+  "trace_id": "trace-12345",
+  "span_id": "span-6789",
   "user_id": "12345",
   "request_id": "abc-123"
 }
@@ -55,6 +59,9 @@ The JSON output contains the following fields:
 
 - `timestamp`: Unix timestamp in milliseconds
 - `level`: Log level string (uses custom level name if set)
+- `service`: Service name (if `distributed.service_name` is set)
+- `trace_id`: Distributed Trace ID (if present)
+- `span_id`: Distributed Span ID (if present)
 - `module`: Module name (if enabled)
 - `function`: Function name (if enabled)
 - `file`: Filename (if enabled)

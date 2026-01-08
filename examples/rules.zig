@@ -85,12 +85,12 @@ pub fn main() !void {
     try rules.add(.{
         .id = 4,
         .name = "startup-notice",
-        .once = true,
+        .once = false,
         .level_match = .{ .exact = .info },
         .message_contains = "started",
         .messages = &init_messages,
     });
-    std.debug.print("[OK] Added Rule #4: One-time startup notice\n", .{});
+    std.debug.print("[OK] Added Rule #4: Startup notice (always fires)\n", .{});
 
     std.debug.print("\n   Total rules: {}\n\n", .{rules.count()});
 
@@ -115,11 +115,11 @@ pub fn main() !void {
     try logger.critical("Authentication bypass detected", @src());
     std.debug.print("\n", .{});
 
-    std.debug.print("Test 4: INFO with 'started' (triggers Rule #4 ONCE):\n", .{});
+    std.debug.print("Test 4: INFO with 'started' (triggers Rule #4):\n", .{});
     try logger.info("Application started successfully", @src());
     std.debug.print("\n", .{});
 
-    std.debug.print("Test 5: INFO again (Rule #4 should NOT fire - once rule):\n", .{});
+    std.debug.print("Test 5: INFO again (Rule #4 fires AGAIN):\n", .{});
     try logger.info("Service started on port 8080", @src());
     std.debug.print("\n", .{});
 

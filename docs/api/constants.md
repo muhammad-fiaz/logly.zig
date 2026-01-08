@@ -151,13 +151,13 @@ Rules system configuration values.
 ```zig
 pub const RulesConstants = struct {
     pub const default_indent: []const u8 = "    ";
-    pub const default_prefix: []const u8 = "↳";
-    pub const default_prefix_ascii: []const u8 = "|--";
+    pub const default_prefix: []const u8 = "↳"; // Deprecated
+    pub const default_prefix_ascii: []const u8 = "|--"; // Deprecated
     pub const default_max_rules: usize = 1000;
     pub const default_max_messages: usize = 10;
 
-    /// Unicode prefixes for message categories
-    pub const Prefixes: struct { ... };
+    /// Default symbols for message categories (ASCII)
+    pub const Symbols: struct { ... };
     /// ASCII prefixes for message categories
     pub const PrefixesAscii: struct { ... };
     /// ANSI color codes for message categories

@@ -193,35 +193,41 @@ pub const ThreadPool = struct {
         }
     };
 
-    /// Work queue implementation.
+    /// Work queue implementation using a Ring Deque for efficient FIFO/LIFO access.
     pub const WorkQueue = struct {
         allocator: std.mem.Allocator,
-        items: std.ArrayList(WorkItem),
+        items: []WorkItem,
+        head: usize = 0,
+        tail: usize = 0,
+        count: usize = 0,
+        capacity: usize,
         mutex: std.Thread.Mutex = .{},
         condition: std.Thread.Condition = .{},
-        capacity: usize,
 
-        pub fn init(allocator: std.mem.Allocator, capacity: usize) WorkQueue {
+        pub fn init(allocator: std.mem.Allocator, capacity: usize) !WorkQueue {
+            const items = try allocator.alloc(WorkItem, capacity);
             return .{
                 .allocator = allocator,
-                .items = .empty,
+                .items = items,
                 .capacity = capacity,
             };
         }
 
         pub fn deinit(self: *WorkQueue) void {
-            self.items.deinit(self.allocator);
+            self.allocator.free(self.items);
         }
 
         pub fn push(self: *WorkQueue, item: WorkItem) bool {
             self.mutex.lock();
             defer self.mutex.unlock();
 
-            if (self.items.items.len >= self.capacity) {
+            if (self.count >= self.capacity) {
                 return false;
             }
 
-            self.items.append(self.allocator, item) catch return false;
+            self.items[self.tail] = item;
+            self.tail = (self.tail + 1) % self.capacity;
+            self.count += 1;
             self.condition.signal();
             return true;
         }
@@ -235,33 +241,50 @@ pub const ThreadPool = struct {
 
         /// Internal pop without locking - caller must hold mutex
         fn popUnlocked(self: *WorkQueue) ?WorkItem {
-            if (self.items.items.len == 0) return null;
+            if (self.count == 0) return null;
 
-            // For most logging, priority is "normal" so FIFO is fine
-            // Only search for priority if we have critical/high priority items
-            // This is O(n) worst case but O(1) for typical logging
-            var best_idx: usize = 0;
-            var best_priority: u8 = @intFromEnum(self.items.items[0].priority);
+            // Fast path: if strict FIFO is ok or just check head
+            // Priority support: Scan for highest priority
+            // If head is critical/highest, return it.
+            const head_item = self.items[self.head];
+            var best_priority = @intFromEnum(head_item.priority);
 
-            // Quick check: if first item is critical, just take it
             if (best_priority >= @intFromEnum(WorkItem.Priority.critical)) {
-                return self.items.swapRemove(0);
+                self.head = (self.head + 1) % self.capacity;
+                self.count -= 1;
+                return head_item;
             }
 
-            // Only scan if we might have higher priority items
-            for (self.items.items[1..], 1..) |item, i| {
+            // O(N) scan.
+            var best_idx: usize = 0;
+            var best_offset: usize = 0;
+
+            var i: usize = 1;
+            while (i < self.count) : (i += 1) {
+                const idx = (self.head + i) % self.capacity;
+                const item = self.items[idx];
                 const p = @intFromEnum(item.priority);
                 if (p > best_priority) {
                     best_priority = p;
-                    best_idx = i;
-                    // Early exit if critical found
+                    best_idx = idx;
+                    best_offset = i;
                     if (p >= @intFromEnum(WorkItem.Priority.critical)) break;
                 }
             }
 
-            // Use swapRemove for O(1) removal instead of orderedRemove O(n)
-            // Order within same priority level doesn't need to be preserved
-            return self.items.swapRemove(best_idx);
+            if (best_offset == 0) {
+                self.head = (self.head + 1) % self.capacity;
+                self.count -= 1;
+                return head_item;
+            } else {
+                // Determine item to return
+                const best_item = self.items[best_idx];
+                // Move head to empty slot
+                self.items[best_idx] = head_item;
+                self.head = (self.head + 1) % self.capacity;
+                self.count -= 1;
+                return best_item;
+            }
         }
 
         pub fn popWait(self: *WorkQueue, timeout_ns: u64) ?WorkItem {
@@ -269,7 +292,7 @@ pub const ThreadPool = struct {
             defer self.mutex.unlock();
 
             // Wait for items if queue is empty
-            if (self.items.items.len == 0) {
+            if (self.count == 0) {
                 self.condition.timedWait(&self.mutex, timeout_ns) catch {};
             }
 
@@ -281,22 +304,36 @@ pub const ThreadPool = struct {
             self.mutex.lock();
             defer self.mutex.unlock();
 
-            if (self.items.items.len < 1) return null;
+            if (self.count == 0) return null;
 
-            // Steal from the back
-            return self.items.pop();
+            // Steal from the back (tail)
+            // Tail points to next empty, so decrement
+            const idx = if (self.tail == 0) self.capacity - 1 else self.tail - 1;
+            const item = self.items[idx];
+
+            self.tail = idx;
+            self.count -= 1;
+            return item;
         }
 
         pub fn size(self: *WorkQueue) usize {
             self.mutex.lock();
             defer self.mutex.unlock();
-            return self.items.items.len;
+            return self.count;
+        }
+
+        pub fn isFull(self: *WorkQueue) bool {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            return self.count >= self.capacity;
         }
 
         pub fn clear(self: *WorkQueue) void {
             self.mutex.lock();
             defer self.mutex.unlock();
-            self.items.clearRetainingCapacity();
+            self.head = 0;
+            self.tail = 0;
+            self.count = 0;
         }
     };
 
@@ -350,7 +387,7 @@ pub const ThreadPool = struct {
         for (workers, 0..) |*worker, i| {
             worker.* = .{
                 .id = i,
-                .local_queue = WorkQueue.init(allocator, config.queue_size),
+                .local_queue = try WorkQueue.init(allocator, config.queue_size),
                 .pool = self,
             };
         }
@@ -359,7 +396,7 @@ pub const ThreadPool = struct {
             .allocator = allocator,
             .config = config,
             .workers = workers,
-            .work_queue = WorkQueue.init(allocator, config.queue_size * num_threads),
+            .work_queue = try WorkQueue.init(allocator, config.queue_size * num_threads),
             .stats = .{},
         };
 
@@ -476,19 +513,20 @@ pub const ThreadPool = struct {
         defer self.work_queue.mutex.unlock();
 
         for (tasks) |task| {
-            if (self.work_queue.items.items.len >= self.work_queue.capacity) {
+            if (self.work_queue.count >= self.work_queue.capacity) {
                 _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
                 continue;
             }
 
-            self.work_queue.items.append(self.work_queue.allocator, .{
+            const item = WorkItem{
                 .task = task,
                 .submitted_at = now,
                 .priority = priority,
-            }) catch {
-                _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
-                continue;
             };
+
+            self.work_queue.items[self.work_queue.tail] = item;
+            self.work_queue.tail = (self.work_queue.tail + 1) % self.work_queue.capacity;
+            self.work_queue.count += 1;
 
             submitted += 1;
             _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
@@ -511,19 +549,20 @@ pub const ThreadPool = struct {
         }
         defer self.work_queue.mutex.unlock();
 
-        if (self.work_queue.items.items.len >= self.work_queue.capacity) {
+        if (self.work_queue.count >= self.work_queue.capacity) {
             _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
             return false;
         }
 
-        self.work_queue.items.append(self.work_queue.allocator, .{
+        const item = WorkItem{
             .task = task,
             .submitted_at = std.time.milliTimestamp(),
             .priority = priority,
-        }) catch {
-            _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
-            return false;
         };
+
+        self.work_queue.items[self.work_queue.tail] = item;
+        self.work_queue.tail = (self.work_queue.tail + 1) % self.work_queue.capacity;
+        self.work_queue.count += 1;
 
         _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
         self.work_queue.condition.signal();
@@ -1086,7 +1125,7 @@ test "thread pool basic" {
 test "work queue" {
     const allocator = std.testing.allocator;
 
-    var queue = ThreadPool.WorkQueue.init(allocator, 10);
+    var queue = try ThreadPool.WorkQueue.init(allocator, 10);
     defer queue.deinit();
 
     const item = ThreadPool.WorkItem{

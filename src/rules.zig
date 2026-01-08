@@ -84,34 +84,34 @@ pub const Rules = struct {
         /// Returns the default prefix with symbol for this category (Unicode).
         pub fn prefix(self: MessageCategory) []const u8 {
             return switch (self) {
-                .error_analysis => "    -> [cause]",
-                .solution_suggestion => "    -> [fix]",
-                .best_practice => "    -> [suggest]",
-                .action_required => "    -> [action]",
-                .documentation_link => "    -> [docs]",
-                .bug_report => "    -> [report]",
-                .general_information => "    -> [note]",
-                .warning_explanation => "    -> [caution]",
-                .performance_tip => "    -> [perf]",
-                .security_notice => "    -> [security]",
-                .custom => "    -> [custom]",
+                .error_analysis => "    » 🔍 [cause]",
+                .solution_suggestion => "    » 💡 [fix]",
+                .best_practice => "    » ✨ [suggest]",
+                .action_required => "    » ⚡ [action]",
+                .documentation_link => "    » 📚 [docs]",
+                .bug_report => "    » 🐛 [report]",
+                .general_information => "    » 📝 [note]",
+                .warning_explanation => "    » ⚠️  [caution]",
+                .performance_tip => "    » 🚀 [perf]",
+                .security_notice => "    » 🔒 [security]",
+                .custom => "    » 🔹 [custom]",
             };
         }
 
         /// Returns the ASCII-only prefix (for non-UTF8 terminals).
         pub fn prefixAscii(self: MessageCategory) []const u8 {
             return switch (self) {
-                .error_analysis => "    |-- [cause]",
-                .solution_suggestion => "    |-- [fix]",
-                .best_practice => "    |-- [suggest]",
-                .action_required => "    |-- [action]",
-                .documentation_link => "    |-- [docs]",
-                .bug_report => "    |-- [report]",
-                .general_information => "    |-- [note]",
-                .warning_explanation => "    |-- [caution]",
-                .performance_tip => "    |-- [perf]",
-                .security_notice => "    |-- [security]",
-                .custom => "    |-- [custom]",
+                .error_analysis => "    >> [cause]",
+                .solution_suggestion => "    >> [fix]",
+                .best_practice => "    >> [suggest]",
+                .action_required => "    >> [action]",
+                .documentation_link => "    >> [docs]",
+                .bug_report => "    >> [report]",
+                .general_information => "    >> [note]",
+                .warning_explanation => "    >> [caution]",
+                .performance_tip => "    >> [perf]",
+                .security_notice => "    >> [security]",
+                .custom => "    >> [custom]",
             };
         }
 
@@ -174,9 +174,21 @@ pub const Rules = struct {
             return self.custom_color orelse self.category.defaultColor();
         }
 
-        pub fn getPrefix(self: *const RuleMessage, use_unicode: bool) []const u8 {
+        pub fn getPrefix(self: *const RuleMessage, symbols: Config.RuleSymbols) []const u8 {
             if (self.custom_prefix) |cp| return cp;
-            return if (use_unicode) self.category.prefix() else self.category.prefixAscii();
+            return switch (self.category) {
+                .error_analysis => symbols.error_analysis,
+                .solution_suggestion => symbols.solution_suggestion,
+                .best_practice => symbols.best_practice,
+                .action_required => symbols.action_required,
+                .documentation_link => symbols.documentation,
+                .bug_report => symbols.bug_report,
+                .general_information => symbols.general_information,
+                .warning_explanation => symbols.warning_explanation,
+                .performance_tip => symbols.performance_hint,
+                .security_notice => symbols.security_alert,
+                .custom => symbols.default,
+            };
         }
 
         // Convenience constructors
@@ -358,6 +370,7 @@ pub const Rules = struct {
                 .message_prefix = rules_cfg.message_prefix,
                 .include_in_json = rules_cfg.include_in_json,
                 .max_rules = rules_cfg.max_rules,
+                .symbols = rules_cfg.symbols,
             },
         };
     }
@@ -376,6 +389,7 @@ pub const Rules = struct {
         self.config.message_prefix = rules_cfg.message_prefix;
         self.config.include_in_json = rules_cfg.include_in_json;
         self.config.max_rules = rules_cfg.max_rules;
+        self.config.symbols = rules_cfg.symbols;
     }
 
     // Initialization
@@ -727,11 +741,11 @@ pub const Rules = struct {
 
     // Formatting
     pub fn formatMessages(self: *Rules, messages: []const RuleMessage, writer: anytype, use_color: bool) !void {
-        const use_unicode = self.config.use_unicode;
         const enable_colors = use_color and self.config.enable_colors;
 
         for (messages) |msg| {
             try writer.writeAll("\n");
+            try writer.writeAll(self.config.indent);
 
             if (enable_colors) {
                 if (msg.use_background and msg.background_color != null) {
@@ -747,7 +761,7 @@ pub const Rules = struct {
                 }
             }
 
-            try writer.writeAll(msg.getPrefix(use_unicode));
+            try writer.writeAll(msg.getPrefix(self.config.symbols));
             try writer.writeAll(" ");
 
             if (msg.title) |title| {

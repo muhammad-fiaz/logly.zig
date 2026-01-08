@@ -17,7 +17,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| Current Version | 0.1.0 | 0.7.2 | 0.0.0 | Built-in |
+| Current Version | 0.1.1 | 0.7.2 | 0.0.0 | Built-in |
 | Min Zig Version | 0.15.0+ | 0.14, 0.15-dev | 0.11+ | Any |
 | API Style | User-friendly | Builder/Fluent | Pool/Fluent | Basic/Manual |
 | Structured Logging | ✅ Automatic | ✅ JSON/logfmt | ✅ JSON/logfmt | ❌ Manual |
@@ -34,7 +34,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Stack Traces | ✅ Automatic | ❌ | ❌ | ❌ Manual |
 | Redaction (PII) | ✅ Automatic | ❌ | ❌ | ❌ |
 | Sampling/Rate Limit | ✅ Automatic | ❌ | ❌ | ❌ |
-| Distributed Tracing | ✅ Automatic (Trace/Span/Correlation IDs) | ⚠ Context only | ❌ | ❌ |
+| Distributed Tracing | ✅ Automatic (Trace/Span/Correlation IDs) + Callbacks | ⚠ Context only | ❌ | ❌ |
 | Metrics | ✅ Automatic | ❌ | ⚠ Prometheus | ❌ |
 | System Diagnostics | ✅ Automatic | ❌ | ❌ | ❌ |
 | Filtering | ✅ Automatic | ❌ | ❌ | ✅ Manual |
@@ -42,7 +42,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Dynamic Path | ✅ Automatic | ❌ | ❌ | ❌ |
 | Module-level Config | ✅ | ❌ | ❌ | ✅ Manual |
 | Custom Log Levels | ✅ | ❌ | ❌ | ❌ |
-| Rules System (v0.0.9+) | ✅ Template-triggered messages | ❌ | ❌ | ❌ |
+| Rules System (v0.1.0+) | ✅ Template-triggered messages | ❌ | ❌ | ❌ |
 | Bare-Metal Support | ✅ | ❌ | ❌ | ✅ |
 | Prebuilt Libraries | ✅ | ❌ | ❌ | ✅ |
 | Documentation Site | ✅ | ❌ | ❌ | ✅ |
@@ -126,9 +126,9 @@ try logger.err("Database connection timeout", @src());
 
 // Output:
 // [ERROR] Database connection timeout
-//     ↳ ⦿ cause: Connection pool exhausted
-//     ↳ ✦ fix: Increase max_connections in config
-//     ↳ 📖 docs: DB Guide (https://docs.example.com/db)
+//     >> [ERROR] Connection pool exhausted
+//     >> [FIX] Increase max_connections in config
+//     >> [DOC] DB Guide (https://docs.example.com/db)
 ```
 
 This feature is **not available** in std.log, nexlog, or log.zig.

@@ -85,6 +85,20 @@ logger.configure(config);
 
 The `Config` struct provides settings for various logging modules. Each module can be enabled and configured through its respective config section:
 
+### Distributed Configuration (Microservices)
+
+```zig
+var config = logly.Config.default();
+config.distributed = .{
+    .enabled = true,
+    .service_name = "payment-service",  // Your service name
+    .region = "us-east-1",              // Deployment region
+    .environment = "production",        // Service environment (dev/prod/staging)
+    .trace_header = "X-Trace-ID",       // Header key for Trace ID
+    .span_header = "X-Span-ID",         // Header key for Span ID
+};
+```
+
 ### Thread Pool Configuration
 
 ```zig
@@ -575,6 +589,17 @@ Custom level names appear in JSON output:
 try logger.addCustomLevel("audit", 35, "35");
 try logger.custom("audit", "Security event");
 // Output: {"timestamp":"...","level":"AUDIT","message":"Security event"}
+```
+
+## Rules System Configuration
+
+The Rules System provides guided diagnostics and can be customized with specific symbols.
+
+```zig
+var config = logly.Config.default();
+config.rules.enabled = true;
+// Define custom symbols (supports Emoji if terminal allows)
+config.rules.symbols.error_analysis = "🛑 Cause:";
 ```
 
 ## Advanced Features

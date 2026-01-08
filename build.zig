@@ -48,6 +48,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "scheduler_demo", .path = "examples/scheduler_demo.zig" },
         .{ .name = "thread_pool_arena", .path = "examples/thread_pool_arena.zig" },
         .{ .name = "dynamic_path", .path = "examples/dynamic_path.zig" },
+        .{ .name = "distributed_json", .path = "examples/distributed_json.zig" },
         .{ .name = "customizations", .path = "examples/customizations.zig" },
         .{ .name = "sink_write_modes", .path = "examples/sink_write_modes.zig" },
         .{ .name = "network_logging", .path = "examples/network_logging.zig", .skip_run_all = true },
@@ -57,6 +58,10 @@ pub fn build(b: *std.Build) void {
         .{ .name = "config_presets", .path = "examples/config_presets.zig" },
         .{ .name = "rules", .path = "examples/rules.zig" },
     };
+
+    // Create run-all-examples step that runs all examples sequentially
+    const run_all_examples = b.step("run-all-examples", "Run all examples sequentially");
+    var previous_run_step: ?*std.Build.Step = null;
 
     inline for (examples) |example| {
         const exe = b.addExecutable(.{
@@ -84,39 +89,17 @@ pub fn build(b: *std.Build) void {
         run_exe.step.dependOn(&install_exe.step);
         const run_step = b.step("run-" ++ example.name, "Run " ++ example.name ++ " example");
         run_step.dependOn(&run_exe.step);
-    }
 
-    // Create run-all-examples step that runs all examples sequentially
-    const run_all_examples = b.step("run-all-examples", "Run all examples sequentially");
-    var previous_run_step: ?*std.Build.Step = null;
+        if (!example.skip_run_all) {
+            // Re-use the same executable artifact for run-all sequence
+            const run_all_exe = b.addRunArtifact(exe);
 
-    inline for (examples) |example| {
-        if (example.skip_run_all) continue;
-        const exe = b.addExecutable(.{
-            .name = "run-all-" ++ example.name,
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(example.path),
-                .target = target,
-                .optimize = optimize,
-            }),
-        });
-        exe.root_module.addImport("logly", logly_module);
-        exe.linkLibC();
-
-        // Link ws2_32 on Windows for networking examples
-        if (target.result.os.tag == .windows) {
-            exe.linkSystemLibrary("ws2_32");
+            // Make each run step depend on the previous run step to ensure sequential execution
+            if (previous_run_step) |prev| {
+                run_all_exe.step.dependOn(prev);
+            }
+            previous_run_step = &run_all_exe.step;
         }
-
-        const install_exe = b.addInstallArtifact(exe, .{});
-        const run_exe = b.addRunArtifact(exe);
-        run_exe.step.dependOn(&install_exe.step);
-
-        // Make each run step depend on the previous run step to ensure sequential execution
-        if (previous_run_step) |prev| {
-            run_exe.step.dependOn(prev);
-        }
-        previous_run_step = &run_exe.step;
     }
 
     if (previous_run_step) |last| {
@@ -163,6 +146,23 @@ pub fn build(b: *std.Build) void {
 
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // Docs generation
+    const docs_step = b.step("docs", "Generate documentation");
+    const docs_obj = b.addObject(.{
+        .name = "logly",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/logly.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    docs_step.dependOn(&install_docs.step);
 
     // Create comprehensive test-all step that runs everything sequentially
     const test_all_step = b.step("test-all", "Run all tests, benchmarks, and examples sequentially");

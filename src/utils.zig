@@ -646,3 +646,58 @@ pub fn write4Hex(writer: anytype, value: u16) !void {
 pub fn writeInt(writer: anytype, value: anytype) !void {
     try writer.print("{d}", .{value});
 }
+
+/// Generates a random 128-bit Trace ID as a hex string (32 chars).
+/// Allocator is required to allocate the string.
+pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
+    var bytes: [16]u8 = undefined;
+    std.crypto.random.bytes(&bytes);
+    const hex_chars = "0123456789abcdef";
+    var result = try allocator.alloc(u8, 32);
+    for (bytes, 0..) |b, i| {
+        result[i * 2] = hex_chars[b >> 4];
+        result[i * 2 + 1] = hex_chars[b & 0xF];
+    }
+    return result;
+}
+
+/// Generates a random 64-bit Span ID as a hex string (16 chars).
+/// Allocator is required to allocate the string.
+pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
+    var bytes: [8]u8 = undefined;
+    std.crypto.random.bytes(&bytes);
+    const hex_chars = "0123456789abcdef";
+    var result = try allocator.alloc(u8, 16);
+    for (bytes, 0..) |b, i| {
+        result[i * 2] = hex_chars[b >> 4];
+        result[i * 2 + 1] = hex_chars[b & 0xF];
+    }
+    return result;
+}
+
+/// Determines if a trace should be sampled based on the sampling rate.
+/// rate: 0.0 to 1.0 (0% to 100%)
+pub fn shouldSample(rate: f64) bool {
+    if (rate >= 1.0) return true;
+    if (rate <= 0.0) return false;
+    return std.crypto.random.float(f64) < rate;
+}
+
+test "generateTraceId" {
+    const allocator = std.testing.allocator;
+    const trace_id = try generateTraceId(allocator);
+    defer allocator.free(trace_id);
+    try std.testing.expectEqual(trace_id.len, 32);
+}
+
+test "generateSpanId" {
+    const allocator = std.testing.allocator;
+    const span_id = try generateSpanId(allocator);
+    defer allocator.free(span_id);
+    try std.testing.expectEqual(span_id.len, 16);
+}
+
+test "shouldSample" {
+    try std.testing.expect(shouldSample(1.0));
+    try std.testing.expect(!shouldSample(0.0));
+}

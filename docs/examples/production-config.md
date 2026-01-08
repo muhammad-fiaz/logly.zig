@@ -77,6 +77,21 @@ logger.configure(config);
 // - No hostname/PID in output (privacy)
 ```
 
+### Distributed System Preset
+
+For microservices, you may also want to manually configure distributed settings:
+
+```zig
+var config = Config.production();
+config.distributed = .{
+    .enabled = true,
+    .service_name = "order-service",
+    .environment = getEnv("APP_ENV") orelse "production", // Helper to get env var
+    .region = "us-west-2",
+};
+logger.configure(config);
+```
+
 ## Custom Production Configuration
 
 ```zig

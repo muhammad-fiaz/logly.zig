@@ -31,7 +31,40 @@ A unique identifier for a single operation within a trace.
 ### Correlation ID
 A business-level identifier for grouping related requests.
 
-## Basic Usage
+## Configuration
+
+To enable distributed features, configure `DistributedConfig` in your global configuration:
+
+```zig
+var config = logly.Config.production();
+config.distributed = .{
+    .enabled = true,
+    .service_name = "payment-service",
+    .region = "us-east-1",
+    .environment = "production",
+};
+const logger = try logly.Logger.init(allocator, config);
+```
+
+## Trace Propagation (Recommended)
+
+In concurrent applications (like web servers), use `withTrace()` to create a lightweight, context-aware logger for each request.
+
+```zig
+// In your request handler
+const trace_id = request.headers.get("X-Trace-ID") orelse "generated-id";
+const span_id = request.headers.get("X-Span-ID");
+
+// Create a scoped logger
+const req_logger = logger.withTrace(trace_id, span_id);
+
+// Logs will include trace_id, span_id, and service context
+try req_logger.info("Processing payment"); 
+```
+
+## Legacy Usage (Global State)
+
+For single-threaded scripts, you can set global context:
 
 ```zig
 const logly = @import("logly");

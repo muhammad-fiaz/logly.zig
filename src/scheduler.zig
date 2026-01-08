@@ -620,7 +620,7 @@ pub const Scheduler = struct {
             self.worker_thread = null;
         }
 
-        // Wait for running tasks (with a simple timeout)
+        // Wait for running tasks to complete (with a 5-second graceful shutdown timeout)
         var wait_loops: u8 = 0;
         while (wait_loops < 50) : (wait_loops += 1) { // 5 second max wait
             var any_running = false;

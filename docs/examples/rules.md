@@ -137,19 +137,19 @@ zig build run-rules
 ╚══════════════════════════════════════════════════════════════╝
 
 [2024-12-24 12:00:00.000] [ERROR] Database connection timeout after 30s
-    ↳ ⦿ cause: Database connection pool exhausted
-    ↳ ✦ fix: Increase max_connections in database.yml or implement connection pooling
-    ↳ 📖 docs: Connection Guide: See documentation (https://docs.example.com/db-pooling)
+    >> [ERROR] Database connection pool exhausted
+    >> [FIX] Increase max_connections in database.yml or implement connection pooling
+    >> [DOC] Connection Guide: See documentation (https://docs.example.com/db-pooling)
 
 [2024-12-24 12:00:00.001] [WARNING] Query took 2.5s to execute
-    ↳ ⚠ caution: Operation exceeded performance threshold
-    ↳ ⚡ perf: Consider caching frequently accessed data
-    ↳ → suggest: Use async operations for I/O bound tasks
+    >> [WARN] Operation exceeded performance threshold
+    >> [PERF] Consider caching frequently accessed data
+    >> [HINT] Use async operations for I/O bound tasks
 
 [2024-12-24 12:00:00.002] [CRITICAL] Authentication bypass detected
-    ↳ 🛡 security: Critical security event detected
-    ↳ ▸ action: Immediately review security logs and audit trail
-    ↳ 🔗 report: Security Team: Report issue (https://internal.example.com/security/report)
+    >> [SEC] Critical security event detected
+    >> [ACTION] Immediately review security logs and audit trail
+    >> [BUG] Security Team: Report issue (https://internal.example.com/security/report)
 
 === Rules Statistics ===
 Rules evaluated: 3

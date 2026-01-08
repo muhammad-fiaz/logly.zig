@@ -17,9 +17,9 @@ Traditional logging tells you *what* happened. Rules tell you *why* it happened 
 
 ```
 [ERROR] Database connection timeout
-    ↳ ⦿ cause: Connection pool exhausted
-    ↳ ✦ fix: Increase max_connections in database.yml
-    ↳ 📖 docs: See https://docs.example.com/db-pooling
+    >> [ERROR] Connection pool exhausted
+    >> [FIX] Increase max_connections in database.yml
+    >> [DOC] See https://docs.example.com/db-pooling
 ```
 
 This transforms logs from passive records into active developer assistance.
@@ -457,6 +457,31 @@ Output:
         "url": "https://docs.example.com/db"
     }
 ]
+```
+
+## Customization
+
+The Rules system is highly customizable. You can change the symbols used for each message category to match your terminal or styling preferences.
+
+### Configuring Symbols and Indentation
+
+You can override the default symbols and indentation in your configuration:
+
+```zig
+var config = logly.Config.default();
+config.rules.enabled = true;
+
+// Configure indentation (default is 4 spaces "    ")
+config.rules.indent = "  ";
+
+// Define custom symbols (supports Emoji if terminal allows)
+config.rules.symbols.error_analysis = "🛑 Cause:";
+config.rules.symbols.solution_suggestion = "💡 Try:";
+config.rules.symbols.best_practice = "✨ Hint:";
+config.rules.symbols.documentation = "📚 Read:";
+config.rules.symbols.default = "👉";
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
 
 ## Best Practices
