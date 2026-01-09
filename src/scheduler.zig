@@ -121,8 +121,14 @@ pub const Scheduler = struct {
             min_age_seconds: u64 = 0,
             /// File pattern to match (e.g., "*.log")
             file_pattern: ?[]const u8 = null,
-            /// Compress files before cleanup
+            /// Compress files before cleanup (compress then delete)
             compress_before_delete: bool = false,
+            /// Compress files and keep both original and compressed (archive mode)
+            compress_and_keep: bool = false,
+            /// Only compress files, don't delete any (pure archival)
+            compress_only: bool = false,
+            /// Skip files that are already compressed (.gz, .lgz, .zst)
+            skip_already_compressed: bool = true,
             /// Recursive directory processing
             recursive: bool = false,
             /// Trigger task only if disk usage exceeds this percentage (0-100, null to disable)
@@ -896,22 +902,51 @@ pub const Scheduler = struct {
         var deleted_indices = std.DynamicBitSet.initEmpty(self.allocator, files.items.len) catch return result;
         defer deleted_indices.deinit();
 
-        // 1. Delete files based on age
+        // Helper to check if file is already compressed
+        const isCompressed = struct {
+            fn check(name: []const u8) bool {
+                return std.mem.endsWith(u8, name, ".gz") or
+                    std.mem.endsWith(u8, name, ".lgz") or
+                    std.mem.endsWith(u8, name, ".zst") or
+                    std.mem.endsWith(u8, name, ".deflate");
+            }
+        }.check;
+
+        // 1. Delete files based on age (or compress based on mode)
         for (files.items, 0..) |fi, i| {
             if (fi.age > max_age) {
-                // Optionally compress before delete
-                if (config.compress_before_delete and self.compression_initialized) {
-                    // Skip already compressed files
-                    if (!std.mem.endsWith(u8, fi.name, ".gz") and
-                        !std.mem.endsWith(u8, fi.name, ".lgz"))
-                    {
+                const already_compressed = isCompressed(fi.name);
+                const should_skip_compressed = config.skip_already_compressed and already_compressed;
+
+                // Mode: Compress only (no deletion)
+                if (config.compress_only) {
+                    if (self.compression_initialized and !should_skip_compressed) {
                         const full_path = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
                         defer self.allocator.free(full_path);
                         _ = self.compression.compressFile(full_path, null) catch {};
                         result.files_compressed += 1;
                     }
+                    continue; // Don't delete anything
                 }
 
+                // Mode: Compress and keep both original and compressed
+                if (config.compress_and_keep and self.compression_initialized and !should_skip_compressed) {
+                    const full_path = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
+                    defer self.allocator.free(full_path);
+                    _ = self.compression.compressFile(full_path, null) catch {};
+                    result.files_compressed += 1;
+                    continue; // Keep original, don't delete
+                }
+
+                // Mode: Compress before delete (compress then delete original)
+                if (config.compress_before_delete and self.compression_initialized and !should_skip_compressed) {
+                    const full_path = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
+                    defer self.allocator.free(full_path);
+                    _ = self.compression.compressFile(full_path, null) catch {};
+                    result.files_compressed += 1;
+                }
+
+                // Default: Delete the file
                 dir.deleteFile(fi.name) catch {
                     result.errors += 1;
                     continue;
@@ -1232,6 +1267,67 @@ pub const SchedulerPresets = struct {
     /// Creates a weekly cleanup config.
     pub fn weeklyCleanupConfig(path: []const u8, max_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
         return dailyCleanup(path, max_age_days);
+    }
+
+    /// Compress files older than N days, then delete originals.
+    /// Use this to archive logs before cleanup.
+    pub fn compressThenDelete(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .file_pattern = "*.log",
+            .compress_before_delete = true,
+            .skip_already_compressed = true,
+        };
+    }
+
+    /// Compress files older than N days, keep both original and compressed.
+    /// Use this for redundant archival where you need both versions.
+    pub fn compressAndKeep(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .file_pattern = "*.log",
+            .compress_and_keep = true,
+            .skip_already_compressed = true,
+        };
+    }
+
+    /// Only compress files, never delete anything.
+    /// Use this for pure archival without any deletion.
+    pub fn compressOnly(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .file_pattern = "*.log",
+            .compress_only = true,
+            .skip_already_compressed = true,
+        };
+    }
+
+    /// Archive old logs: compress files older than N days, delete originals after compression.
+    /// Similar to compressThenDelete but with max_age enforcement.
+    pub fn archiveOldLogs(path: []const u8, compress_after_days: u64, delete_after_days: u64) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .min_age_seconds = compress_after_days * 24 * 60 * 60,
+            .max_age_seconds = delete_after_days * 24 * 60 * 60,
+            .file_pattern = "*.log",
+            .compress_before_delete = true,
+            .skip_already_compressed = true,
+        };
+    }
+
+    /// Aggressive cleanup: compress and delete files older than N days, enforce max file count.
+    pub fn aggressiveCleanup(path: []const u8, max_age_days: u64, max_files: usize) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .max_age_seconds = max_age_days * 24 * 60 * 60,
+            .max_files = max_files,
+            .file_pattern = "*.log",
+            .compress_before_delete = true,
+            .skip_already_compressed = true,
+        };
     }
 };
 

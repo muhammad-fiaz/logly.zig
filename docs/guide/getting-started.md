@@ -23,7 +23,7 @@ Get started with Logly.zig in minutes.
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.1.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz
 ```
 
 or
@@ -58,7 +58,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
 
 To get the hash manually, run:
 ```bash
-zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.1.tar.gz
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz
 ```
 
 Copy the output hash (e.g., `1220abcd23f9f0c8...`) into your `build.zig.zon`.
@@ -239,13 +239,24 @@ _ = try logger.addSink(.{
 });
 ```
 
+## Coding Style & Aliases
+
+Logly.zig supports two naming conventions for core lifecycle methods. You can use whichever fits your project's style:
+
+| Convention | Constructor | Destructor | Log Method |
+| :--- | :--- | :--- | :--- |
+| **Standard (Zig)** | `init()` | `deinit()` | `log()` |
+| **Alternative** | `create()` | `destroy()` | `record()` |
+
+Both sets of methods are functionally identical.
+
 ## Troubleshooting
 
 ### Hash Mismatch Error
 
 If you see a hash mismatch error, run:
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.1.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz
 ```
 
 ### Colors Not Displaying on Windows

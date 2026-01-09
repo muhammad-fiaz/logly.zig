@@ -14,6 +14,13 @@ head:
 
 The `Metrics` struct provides comprehensive observability into the logging system's performance and health.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize metrics |
+| `deinit()` | `destroy()` | Deinitialize metrics |
+
 ## Overview
 
 Metrics tracks record counts, throughput, errors, and per-sink statistics. It uses thread-safe atomic operations for all counters, making it safe for concurrent access without locks on hot paths.

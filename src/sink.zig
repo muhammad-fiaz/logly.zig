@@ -128,6 +128,8 @@ const SystemLog = struct {
         return self;
     }
 
+    pub const create = init;
+
     pub fn deinit(self: *SystemLog) void {
         switch (platform) {
             .windows => {
@@ -144,6 +146,8 @@ const SystemLog = struct {
         }
     }
 
+    pub const destroy = deinit;
+
     pub fn log(self: *SystemLog, level: Level, message: []const u8) !void {
         if (comptime platform == .windows) {
             return self.logWindows(level, message);
@@ -153,6 +157,8 @@ const SystemLog = struct {
             return self.logOther(level, message);
         }
     }
+
+    pub const record = log;
 
     fn logWindows(self: *SystemLog, level: Level, message: []const u8) !void {
         if (self.handle) |h| {
@@ -567,19 +573,8 @@ pub const Sink = struct {
         const writer = buf.writer(allocator);
 
         const now_ms = std.time.milliTimestamp();
-        const seconds = @as(u64, @intCast(@divFloor(now_ms, 1000)));
-        const millis = @as(u64, @intCast(@mod(now_ms, 1000)));
-
-        const epoch = std.time.epoch.EpochSeconds{ .secs = seconds };
-        const day_seconds = epoch.getDaySeconds();
-        const year_day = epoch.getEpochDay();
-        const yd = year_day.calculateYearDay();
-        const month_day = yd.calculateMonthDay();
-
-        const seconds_in_day = day_seconds.secs;
-        const hours = seconds_in_day / 3600;
-        const minutes = (seconds_in_day % 3600) / 60;
-        const secs = seconds_in_day % 60;
+        const tc = Utils.fromMilliTimestamp(now_ms);
+        const millis = @mod(if (now_ms < 0) 0 else @as(u64, @intCast(now_ms)), 1000);
 
         var i: usize = 0;
         while (i < path_pattern.len) {
@@ -592,19 +587,19 @@ pub const Sink = struct {
                 const tag = path_pattern[i + 1 .. end];
 
                 if (std.mem.eql(u8, tag, "date")) {
-                    try Utils.write4Digits(writer, yd.year);
+                    try Utils.write4Digits(writer, tc.year);
                     try writer.writeByte('-');
-                    try Utils.write2Digits(writer, month_day.month.numeric());
+                    try Utils.write2Digits(writer, tc.month);
                     try writer.writeByte('-');
-                    try Utils.write2Digits(writer, month_day.day_index + 1);
+                    try Utils.write2Digits(writer, tc.day);
                 } else if (std.mem.eql(u8, tag, "time")) {
-                    try Utils.write2Digits(writer, hours);
+                    try Utils.write2Digits(writer, tc.hour);
                     try writer.writeByte('-');
-                    try Utils.write2Digits(writer, minutes);
+                    try Utils.write2Digits(writer, tc.minute);
                     try writer.writeByte('-');
-                    try Utils.write2Digits(writer, secs);
+                    try Utils.write2Digits(writer, tc.second);
                 } else {
-                    try Utils.formatDatePattern(writer, tag, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs, millis);
+                    try Utils.formatDatePattern(writer, tag, tc.year, tc.month, tc.day, tc.hour, tc.minute, tc.second, millis);
                 }
                 i = end + 1;
             } else {

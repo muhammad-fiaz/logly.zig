@@ -197,6 +197,58 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
+### Version 0.1.2
+
+**New Features:**
+
+- **File Name Customization**: Full control over compressed and rotated file names
+  - `file_prefix`: Add custom prefix to file names (e.g., "archive_")
+  - `file_suffix`: Add custom suffix before extension (e.g., "_v1")
+  - `naming_pattern`: Custom naming with placeholders ({base}, {date}, {time}, {timestamp}, {index})
+  
+- **Archive Root Directory**: Centralized location for all compressed/archived files
+  - `archive_root_dir`: Set a root directory for all compressed files
+  - `create_date_subdirs`: Organize by date with YYYY/MM/DD structure
+  - `preserve_dir_structure`: Optionally preserve or flatten original directory structure
+
+- **CompressionConfig Presets**: One-liner compression setup
+  - `enable()` / `basic()`: Simple enabled compression
+  - `implicit()`: Automatic compression on rotation
+  - `explicit()`: Manual compression control
+  - `fast()`, `balanced()`, `best()`: Performance presets
+  - `forLogs()`, `archive()`, `production()`, `development()`: Use-case presets
+  - `backgroundMode()`, `streamingMode()`: Mode presets
+  - `onSize(bytes)`: Size-threshold triggers
+
+- **Compression Instance Presets**: Direct compressor creation
+  - `Compression.enable(allocator)`, `Compression.basic(allocator)`
+  - `Compression.implicit(allocator)`, `Compression.explicit(allocator)`
+  - `Compression.fast(allocator)`, `Compression.best(allocator)`
+  - `Compression.production(allocator)`, `Compression.development(allocator)`
+
+- **Enhanced SchedulerConfig**: Comprehensive compression options
+  - `archive_root_dir`: Centralized archive location
+  - `compression_algorithm`, `compression_level`: Control algorithm and level
+  - `archive_file_prefix`, `archive_file_suffix`: File name customization
+  - `keep_originals`: Preserve original files
+  - `min_age_days_for_compression`: Minimum age before compression
+  - `max_concurrent_compressions`: Parallel compression limit
+  - `clean_empty_dirs`: Remove empty directories after cleanup
+
+- **Enhanced RotationConfig**: Additional compression fields
+  - `archive_root_dir`, `create_date_subdirs`: Archive organization
+  - `file_prefix`, `file_suffix`: File name customization
+  - `compression_algorithm`, `compression_level`: Compression settings
+  - `compress_on_retention`: Compress instead of delete during retention
+  - `delete_after_retention_compress`: Control post-compression behavior
+
+**Documentation:**
+- Updated API reference for compression, scheduler, and rotation modules
+- New file customization guide with examples
+- Updated examples with new preset methods
+
+---
+
 ### Version 0.1.1
 
 **New Features:**
@@ -216,7 +268,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.1.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -265,7 +317,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.1.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

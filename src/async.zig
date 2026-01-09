@@ -5,43 +5,29 @@ const Sink = @import("sink.zig").Sink;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
 
-/// Asynchronous logging infrastructure for non-blocking operations.
+/// Asynchronous logging subsystem for non-blocking I/O operations.
 ///
-/// Provides non-blocking log operations with configurable buffering,
-/// background processing threads, and batch writing for high-throughput scenarios.
+/// Decouples log submission from persistence using a concurrent ring buffer and background workers.
+/// Designed for low-latency applications where the main execution path cannot be blocked by I/O.
 ///
-/// Features:
-/// - High-performance ring buffer for minimal contention
-/// - Background worker thread for batch processing
-/// - Configurable overflow policies (drop, block, or custom callback)
-/// - Comprehensive statistics tracking
+/// Core Capabilities:
+/// - Lock-free ring buffer usage patterns for reduced contention.
+/// - Configurable overflow strategies ensuring system stability under load.
+/// - Batch processing to amortize I/O syscall overhead.
+/// - Detailed telemetry for monitoring logger health and throughput.
 ///
 /// Usage:
 /// ```zig
 /// var async_logger = try logly.AsyncLogger.init(allocator);
 /// defer async_logger.deinit();
 ///
-/// // Add a sink (e.g., file sink)
+/// // Configure and attach sinks
 /// const sink = try logly.Sink.init(allocator, .file("app.log"));
 /// try async_logger.addSink(sink);
 ///
-/// // Queue a log message
-/// _ = async_logger.queue("Log message", 1);
+/// // Enqueue logs (non-blocking)
+/// _ = async_logger.queue("Application started", 1);
 /// ```
-///
-/// Callbacks:
-/// - `on_overflow`: Called when buffer overflows
-/// - `on_flush`: Called when buffer is flushed
-/// - `on_worker_start`: Called when worker thread starts
-/// - `on_worker_stop`: Called when worker thread stops
-/// - `on_batch_processed`: Called after processing a batch
-/// - `on_latency_threshold_exceeded`: Called when latency exceeds threshold
-///
-/// Performance:
-/// - Low CPU overhead for typical workloads
-/// - Sub-millisecond latency from enqueue to worker processing
-/// - Batch processing reduces syscalls and I/O operations
-/// - Optimized buffer access
 pub const AsyncLogger = struct {
     allocator: std.mem.Allocator,
     config: AsyncConfig,
@@ -51,52 +37,50 @@ pub const AsyncLogger = struct {
     condition: std.Thread.Condition = .{},
     worker_thread: ?std.Thread = null,
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    sinks: std.ArrayList(*Sink),
+    sinks: std.ArrayList(*Sink) = .empty,
 
-    /// Optional arena allocator for batch processing (reduces malloc overhead)
+    /// Arena allocator optimized for batch operations to reduce fragmentation and allocation overhead.
     arena: ?std.heap.ArenaAllocator = null,
 
-    /// Callback invoked when buffer overflows (depends on overflow policy)
-    /// Parameters: (dropped_count: u64)
+    /// Callback triggered when the internal buffer exceeds its capacity.
+    /// Provides the number of dropped records for monitoring.
     overflow_callback: ?*const fn (dropped_count: u64) void = null,
 
-    /// Callback invoked when buffer is flushed
-    /// Parameters: (records_flushed: u64, bytes_flushed: u64, elapsed_ms: u64)
+    /// Callback triggered upon completion of a flush operation.
+    /// Provides metrics: records flushed, total bytes, and elapsed time in ms.
     flush_callback: ?*const fn (u64, u64, u64) void = null,
 
-    /// Callback invoked when worker thread starts
+    /// Callback triggered when the background worker thread initializes.
     on_worker_start: ?*const fn () void = null,
 
-    /// Callback invoked when worker thread stops
-    /// Parameters: (records_processed: u64, uptime_ms: u64)
+    /// Callback triggered when the background worker thread terminates.
+    /// Provides total records processed and worker uptime in ms.
     on_worker_stop: ?*const fn (u64, u64) void = null,
 
-    /// Callback invoked after processing a batch
-    /// Parameters: (batch_size: usize, processing_time_us: u64)
+    /// Callback triggered after a batch of logs is successfully written.
+    /// Provides batch size and processing time in microseconds.
     on_batch_processed: ?*const fn (usize, u64) void = null,
 
-    /// Callback invoked when latency exceeds threshold
-    /// Parameters: (actual_latency_us: u64, threshold_us: u64)
+    /// Callback triggered when log processing latency exceeds the configured threshold.
+    /// Useful for detecting I/O bottlenecks.
     on_latency_threshold_exceeded: ?*const fn (u64, u64) void = null,
 
-    /// Callback invoked when buffer becomes full
+    /// Callback triggered when the buffer reaches full capacity.
     on_full: ?*const fn () void = null,
 
-    /// Callback invoked when buffer becomes empty
+    /// Callback triggered when the buffer becomes completely empty.
     on_empty: ?*const fn () void = null,
 
-    /// Callback invoked when an error occurs
+    /// Callback triggered when an internal error occurs during logging.
     on_error: ?*const fn (err: anyerror) void = null,
 
-    /// Configuration for async logging behavior.
-    /// Re-exports centralized config for convenience.
+    /// Configuration parameters for async behavior.
     pub const AsyncConfig = Config.AsyncConfig;
 
-    /// What to do when the buffer is full.
-    /// Re-exports centralized overflow policy for convenience.
+    /// enumerated policies for handling buffer overflow conditions.
     pub const OverflowPolicy = Config.AsyncConfig.OverflowPolicy;
 
-    /// Worker thread priority levels for resource management.
+    /// Priority levels for the background worker thread.
     pub const WorkerPriority = enum {
         low,
         normal,
@@ -104,7 +88,7 @@ pub const AsyncLogger = struct {
         realtime,
     };
 
-    /// Statistics for async operations with comprehensive metrics.
+    /// Runtime statistics for monitoring logger performance and health.
     pub const AsyncStats = struct {
         records_queued: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         records_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
@@ -115,8 +99,8 @@ pub const AsyncLogger = struct {
         max_queue_depth: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         last_flush_timestamp: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
-        /// Calculate average latency in nanoseconds
-        /// Performance: O(1) - atomic load
+        /// Computes the average latency per record processing.
+        /// Complexity: O(1)
         pub fn averageLatencyNs(self: *const AsyncStats) u64 {
             const written = @as(u64, self.records_written.load(.monotonic));
             if (written == 0) return 0;
@@ -124,8 +108,8 @@ pub const AsyncLogger = struct {
             return total / written;
         }
 
-        /// Calculate drop rate (0.0 - 1.0)
-        /// Performance: O(1) - atomic loads
+        /// Computes the reliable drop rate as a ratio of dropped vs queued records.
+        /// Complexity: O(1)
         pub fn dropRate(self: *const AsyncStats) f64 {
             const total = @as(u64, self.records_queued.load(.monotonic));
             if (total == 0) return 0;
@@ -134,7 +118,7 @@ pub const AsyncLogger = struct {
         }
     };
 
-    /// Entry in the ring buffer.
+    /// Represents a single log entry within the ring buffer.
     pub const BufferEntry = struct {
         timestamp: i64,
         formatted_message: []const u8,
@@ -143,8 +127,7 @@ pub const AsyncLogger = struct {
         owned: bool = false,
     };
 
-    /// High-performance ring buffer for enqueue/dequeue with overflow protection.
-    /// Note: This implementation is thread-safe when used with the AsyncLogger's mutex.
+    /// High-performance circular buffer logic for thread-safe enqueuing and batch dequeuing.
     pub const RingBuffer = struct {
         allocator: std.mem.Allocator,
         entries: []BufferEntry,
@@ -153,8 +136,8 @@ pub const AsyncLogger = struct {
         count: usize = 0,
         capacity: usize,
 
-        /// Initialize ring buffer with specified capacity
-        /// Performance: O(capacity) - allocates memory
+        /// Allocates and initializes the ring buffer.
+        /// Complexity: O(N) where N is capacity (allocation).
         pub fn init(allocator: std.mem.Allocator, capacity: usize) !RingBuffer {
             const entries = try allocator.alloc(BufferEntry, capacity);
             return .{
@@ -164,7 +147,7 @@ pub const AsyncLogger = struct {
             };
         }
 
-        /// Free all resources including any owned entries
+        /// Releases all resources, ensuring deep cleanup of owned entries.
         pub fn deinit(self: *RingBuffer) void {
             // Only free valid entries
             var i: usize = 0;
@@ -248,13 +231,10 @@ pub const AsyncLogger = struct {
         }
     };
 
-    /// Initializes a new AsyncLogger.
+    /// Initializes an AsyncLogger with default configuration.
     ///
-    /// Arguments:
-    ///     allocator: Memory allocator for internal operations.
-    ///
-    /// Returns:
-    ///     A new AsyncLogger instance with default configuration.
+    /// - allocator: Managing allocator for the logger lifecycle.
+    /// - Returns: Initialized logger instance.
     pub fn init(allocator: std.mem.Allocator) !*AsyncLogger {
         return initWithConfig(allocator, .{});
     }
@@ -262,14 +242,13 @@ pub const AsyncLogger = struct {
     /// Alias for init().
     pub const create = init;
 
-    /// Initializes an AsyncLogger with custom configuration.
+    /// Initializes an AsyncLogger with specific configuration parameters.
     ///
-    /// Arguments:
-    ///     allocator: Memory allocator.
-    ///     config: Custom async configuration.
+    /// - allocator: Managing allocator.
+    /// - config: Operational parameters (buffer size, worker threads, policies).
+    /// - Returns: Initialized logger or error.
     ///
-    /// Returns:
-    ///     A new AsyncLogger instance.
+    /// Complexity: O(1) mostly, O(N) for buffer allocation.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: AsyncConfig) !*AsyncLogger {
         const self = try allocator.create(AsyncLogger);
         errdefer allocator.destroy(self);
@@ -294,7 +273,8 @@ pub const AsyncLogger = struct {
         return self;
     }
 
-    /// Releases all resources.
+    /// Terminates the logger and releases all resources.
+    /// Blocks until the worker thread has completely stopped and flushed pending operations.
     pub fn deinit(self: *AsyncLogger) void {
         self.stop();
 
@@ -331,33 +311,39 @@ pub const AsyncLogger = struct {
         }
     }
 
-    /// Adds a sink for async writing.
+    /// Registers a new sink for log output.
+    /// Thread-safe.
     pub fn addSink(self: *AsyncLogger, sink: *Sink) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
         try self.sinks.append(self.allocator, sink);
     }
 
-    /// Adds a sink using SinkConfig for convenience.
+    /// Convenience wrapper to initialize and add a sink from configuration.
     pub fn addSinkConfig(self: *AsyncLogger, config: SinkConfig) !*Sink {
         const sink = try Sink.init(self.allocator, config);
         try self.addSink(sink);
         return sink;
     }
 
-    /// Adds a console sink with default settings.
+    /// Convenience wrapper to add a standard console sink.
     pub fn addConsoleSink(self: *AsyncLogger) !*Sink {
         return self.addSinkConfig(SinkConfig.console());
     }
 
-    /// Queues a log record for async processing.
+    /// Enqueues a log record for asynchronous processing.
     ///
-    /// Arguments:
-    ///     message: The formatted log message.
-    ///     level_priority: Priority of the log level.
+    /// Strategy:
+    /// 1. Pre-allocates message copy to minimize critical section time.
+    /// 2. Acquires lock to access ring buffer.
+    /// 3. Applies overflow policy if buffer is full (Drop/Block).
+    /// 4. Pushes entry if space available.
     ///
-    /// Returns:
-    ///     true if queued successfully, false if dropped.
+    /// - message: Pre-formatted log message.
+    /// - level_priority: numeric priority level.
+    /// - Returns: true if enqueued, false if dropped/failure.
+    ///
+    /// Complexity: O(1) amortized.
     pub fn queue(self: *AsyncLogger, message: []const u8, level_priority: u8) bool {
         // Optimization: Allocate outside the lock to reduce contention
         const owned_message = self.allocator.dupe(u8, message) catch {
@@ -380,6 +366,7 @@ pub const AsyncLogger = struct {
 
                 switch (self.config.overflow_policy) {
                     .drop_oldest => {
+                        // Attempt to make space by removing oldest entry
                         if (self.buffer.pop()) |old_entry| {
                             if (old_entry.owned) {
                                 message_to_free = old_entry.formatted_message;
@@ -388,6 +375,7 @@ pub const AsyncLogger = struct {
                         }
                     },
                     .drop_newest => {
+                        // Drop the current incoming message
                         _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
                         _ = self.stats.buffer_overflows.fetchAdd(1, .monotonic);
                         if (self.overflow_callback) |cb| {
@@ -434,9 +422,10 @@ pub const AsyncLogger = struct {
                         }
                     }
 
-                    // Signal worker
+                    // Signal worker regarding new data
                     self.condition.signal();
                 } else {
+                    // This creates a failsafe if unexpected full state occurs
                     message_to_free = owned_message;
                     dropped = true;
                 }
@@ -450,7 +439,7 @@ pub const AsyncLogger = struct {
         return !dropped;
     }
 
-    /// Starts the background worker thread.
+    /// Spawns the background worker thread if not already running.
     pub fn startWorker(self: *AsyncLogger) !void {
         if (self.running.load(.acquire)) return;
 
@@ -458,7 +447,7 @@ pub const AsyncLogger = struct {
         self.worker_thread = try std.Thread.spawn(.{}, workerLoop, .{self});
     }
 
-    /// Stops the background worker thread.
+    /// Signals the background worker to stop and waits for it to join.
     pub fn stop(self: *AsyncLogger) void {
         if (!self.running.load(.acquire)) return;
 
@@ -471,7 +460,8 @@ pub const AsyncLogger = struct {
         }
     }
 
-    /// Flushes all pending entries synchronously.
+    /// Synchronously processes all pending messages in the buffer.
+    /// This is typically called during shutdown or panic.
     pub fn flushSync(self: *AsyncLogger) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -504,11 +494,13 @@ pub const AsyncLogger = struct {
         }
     }
 
-    /// Triggers an async flush.
+    /// Signals the worker thread to perform a flush immediately.
     pub fn flush(self: *AsyncLogger) void {
         self.condition.signal();
     }
 
+    /// Main loop for the background worker thread.
+    /// Handles batch retrieval from buffer and writing to sinks.
     fn workerLoop(self: *AsyncLogger) void {
         if (self.on_worker_start) |cb| cb();
 
@@ -589,6 +581,8 @@ pub const AsyncLogger = struct {
         }
     }
 
+    /// Distributes a single entry to all registered sinks.
+    /// Internal errors in sinks are caught and reported via on_error callback.
     fn writeToSinks(self: *AsyncLogger, entry: BufferEntry) void {
         for (self.sinks.items) |sink| {
             sink.writeRaw(entry.formatted_message) catch |err| {
@@ -749,6 +743,8 @@ pub const AsyncFileWriter = struct {
         return self;
     }
 
+    pub const create = init;
+
     pub fn deinit(self: *AsyncFileWriter) void {
         self.stop();
         self.flushSync();
@@ -756,6 +752,8 @@ pub const AsyncFileWriter = struct {
         self.file.close();
         self.allocator.destroy(self);
     }
+
+    pub const destroy = deinit;
 
     pub fn write(self: *AsyncFileWriter, data: []const u8) !void {
         self.mutex.lock();

@@ -42,6 +42,9 @@ The `RotationConfig` struct provides the following fields:
 | `naming_strategy` | `NamingStrategy` | Default naming strategy (`timestamp`, `date`, `iso_datetime`, `index`). |
 | `archive_dir` | `?[]const u8` | Directory to automatically move rotated files into. |
 | `clean_empty_dirs` | `bool` | Whether to delete the archive directory if it becomes empty. |
+| `keep_original` | `bool` | Keep original file after compression (default: false). |
+| `compress_on_retention` | `bool` | Compress files during retention cleanup instead of deleting. |
+| `delete_after_retention_compress` | `bool` | Delete originals after retention compression (default: true). |
 
 ### Example
 
@@ -121,11 +124,61 @@ try logger.add(.{
 To control the *active* file naming (e.g. writing directly to a date-stamped file), refer to the [Dynamic Path](../examples/dynamic-path.md) documentation.
 
 ## Compression
-Logly can automatically compress old log files to save space (`.gz` or `.zst`).
+Logly can automatically compress old log files to save space (`.gz` or `.lgz`).
+
+### Compress on Rotation
+Compress files immediately after rotation:
 
 ```zig
 var rot = try Rotation.init(allocator, "app.log", "daily", null, 30);
 try rot.withCompression(.{ .algorithm = .deflate });
+```
+
+### Keep Original After Compression
+By default, the original file is deleted after compression. To keep both:
+
+```zig
+var rot = try Rotation.init(allocator, "app.log", "daily", null, 30);
+try rot.withCompression(.{ .algorithm = .gzip });
+rot.withKeepOriginal(true); // Keep both app.log.2025-01-09 AND app.log.2025-01-09.gz
+```
+
+### Compress During Retention (Instead of Delete)
+Instead of deleting old files during retention cleanup, compress them:
+
+```zig
+var rot = try Rotation.init(allocator, "app.log", "daily", null, 7);
+try rot.withCompression(.{ .algorithm = .deflate });
+rot.withCompressOnRetention(true); // Old files are compressed, not deleted
+```
+
+### Compression Modes Summary
+
+| Mode | Behavior | Use Case |
+| :--- | :--- | :--- |
+| **Default** | Compress on rotation, delete original | Standard archival |
+| `keep_original = true` | Compress on rotation, keep both files | Redundant backup |
+| `compress_on_retention = true` | Compress during cleanup instead of delete | Archive before purge |
+| Both enabled | Compress on rotation + compress during retention | Maximum archival |
+
+### Global Compression Settings
+
+```zig
+const config = Config{
+    .rotation = .{
+        .enabled = true,
+        .interval = "daily",
+        .retention_count = 30,
+        .keep_original = false,           // Delete originals after compression
+        .compress_on_retention = true,    // Compress files during retention cleanup
+        .delete_after_retention_compress = true, // Delete after retention compress
+    },
+    .compression = .{
+        .enabled = true,
+        .algorithm = .gzip,
+        .level = .default,
+    },
+};
 ```
 
 ## Retention Policies

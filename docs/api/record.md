@@ -14,6 +14,13 @@ head:
 
 The `Record` struct represents a single log event.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize record |
+| `deinit()` | `destroy()` | Deinitialize record |
+
 ## Core Fields
 
 ### `level: Level`

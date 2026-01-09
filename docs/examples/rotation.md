@@ -62,6 +62,8 @@ const config = logly.Config{
         .retention_count = 50,            // Max 50 files total
         .clean_empty_dirs = true,         // Clean up archive dir if empty
         .interval = "hourly",             // Default interval
+        .keep_original = false,           // Delete originals after compression
+        .compress_on_retention = true,    // Compress during retention cleanup
     }
 };
 
@@ -74,7 +76,7 @@ var logger = try logly.Logger.init(allocator, config);
 ## Advanced Scenarios
 
 ### Archiving and Compression
-Rotate files, compress them with Zstd, and move them to an archive folder.
+Rotate files, compress them, and move them to an archive folder.
 
 ```zig
 const Rotation = logly.Rotation;
@@ -82,9 +84,9 @@ const Rotation = logly.Rotation;
 // Manually configure a Rotation instance
 var rot = try Rotation.init(allocator, "logs/access.log", "daily", null, 60);
 
-// 1. Enable Zstd compression (high ratio)
+// 1. Enable compression
 try rot.withCompression(.{ 
-    .algorithm = .zstd, 
+    .algorithm = .gzip, 
     .level = .best 
 });
 
@@ -93,9 +95,37 @@ rot.withNaming(.iso_datetime);
 
 // 3. Move rotated files to a dedicated archive folder
 try rot.withArchiveDir("logs/archive/access");
+```
 
-// Note: To use this manually configured Rotation with a Sink, you would integrate it 
-// into a custom Sink implementation or ensure your SinkConfig supports applying these settings.
+### Compress Instead of Delete
+During retention cleanup, compress old files instead of deleting them:
+
+```zig
+var rot = try Rotation.init(allocator, "logs/app.log", "daily", null, 7);
+try rot.withCompression(.{ .algorithm = .deflate });
+rot.withCompressOnRetention(true);  // Compress files exceeding retention limits
+rot.withDeleteAfterRetentionCompress(true);  // Delete originals after compression
+```
+
+### Keep Both Original and Compressed
+Keep both versions of files after compression:
+
+```zig
+var rot = try Rotation.init(allocator, "logs/app.log", "hourly", null, 24);
+try rot.withCompression(.{ .algorithm = .gzip });
+rot.withKeepOriginal(true);  // Keep app.log.timestamp AND app.log.timestamp.gz
+```
+
+### Full Archival Pipeline
+Compress on rotation, compress during retention, keep archives indefinitely:
+
+```zig
+var rot = try Rotation.init(allocator, "logs/audit.log", "daily", null, 365);
+try rot.withCompression(.{ .algorithm = .gzip, .level = .best });
+try rot.withArchiveDir("logs/archive/audit");
+rot.withKeepOriginal(false);              // Delete original after rotation compression
+rot.withCompressOnRetention(true);        // Also compress during retention
+rot.withDeleteAfterRetentionCompress(false); // Keep everything in archive
 ```
 
 ### Complex Retention (Age AND Count)

@@ -14,6 +14,13 @@ head:
 
 The scheduler module provides automatic log maintenance with scheduled cleanup, compression, rotation, and custom tasks. It runs in the background using either a dedicated worker thread or by submitting tasks to a shared `ThreadPool`.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize scheduler |
+| `deinit()` | `destroy()` | Deinitialize scheduler |
+
 ## Overview
 
 ```zig
@@ -77,8 +84,51 @@ pub const SchedulerConfig = struct {
     compress_before_cleanup: bool = false,
     /// Default file pattern for cleanup.
     file_pattern: []const u8 = "*.log",
+    /// Root directory for compressed/archived files.
+    archive_root_dir: ?[]const u8 = null,
+    /// Create date-based subdirectories (YYYY/MM/DD).
+    create_date_subdirs: bool = false,
+    /// Compression algorithm for scheduled compression tasks.
+    compression_algorithm: CompressionConfig.CompressionAlgorithm = .gzip,
+    /// Compression level for scheduled tasks.
+    compression_level: CompressionConfig.CompressionLevel = .default,
+    /// Keep original files after scheduled compression.
+    keep_originals: bool = false,
+    /// Custom prefix for archived file names.
+    archive_file_prefix: ?[]const u8 = null,
+    /// Custom suffix for archived file names.
+    archive_file_suffix: ?[]const u8 = null,
+    /// Preserve directory structure in archive root.
+    preserve_dir_structure: bool = true,
+    /// Delete empty directories after cleanup.
+    clean_empty_dirs: bool = false,
+    /// Minimum file age in days before compression.
+    min_age_days_for_compression: u64 = 1,
+    /// Maximum concurrent compression tasks.
+    max_concurrent_compressions: usize = 2,
 };
 ```
+
+### SchedulerConfig Field Reference
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable the scheduler |
+| `cleanup_max_age_days` | `u64` | `7` | Max age for cleanup tasks |
+| `max_files` | `?usize` | `null` | Max files to retain |
+| `compress_before_cleanup` | `bool` | `false` | Compress before deleting |
+| `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
+| `archive_root_dir` | `?[]const u8` | `null` | Centralized archive location |
+| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression |
+| `compression_level` | `CompressionLevel` | `.default` | Compression level |
+| `keep_originals` | `bool` | `false` | Keep originals after compression |
+| `archive_file_prefix` | `?[]const u8` | `null` | Prefix for archived files |
+| `archive_file_suffix` | `?[]const u8` | `null` | Suffix for archived files |
+| `preserve_dir_structure` | `bool` | `true` | Keep directory structure |
+| `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
+| `min_age_days_for_compression` | `u64` | `1` | Min age before compression |
+| `max_concurrent_compressions` | `usize` | `2` | Max parallel compressions |
 
 ### ScheduledTask
 
@@ -173,8 +223,14 @@ pub const TaskConfig = struct {
     min_age_seconds: u64 = 0,
     /// File pattern to match (e.g., "*.log")
     file_pattern: ?[]const u8 = null,
-    /// Compress files before cleanup
+    /// Compress files before cleanup (compress then delete)
     compress_before_delete: bool = false,
+    /// Compress files and keep both original and compressed (archive mode)
+    compress_and_keep: bool = false,
+    /// Only compress files, don't delete any (pure archival)
+    compress_only: bool = false,
+    /// Skip files that are already compressed (.gz, .lgz, .zst)
+    skip_already_compressed: bool = true,
     /// Recursive directory processing
     recursive: bool = false,
     /// Trigger task only if disk usage exceeds this percentage (0-100)
@@ -183,6 +239,14 @@ pub const TaskConfig = struct {
     min_free_space_bytes: ?u64 = null,
 };
 ```
+
+#### TaskConfig Compression Modes
+
+| Field | Behavior |
+|-------|----------|
+| `compress_before_delete` | Compress file, then delete original |
+| `compress_and_keep` | Compress file, keep both versions |
+| `compress_only` | Compress file, never delete anything |
 
 ### Schedule
 

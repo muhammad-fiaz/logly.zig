@@ -14,6 +14,14 @@ head:
 
 The `Sink` struct represents a destination for log messages. Sinks can write to console, files, or custom outputs with individual configuration options.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize sink |
+| `deinit()` | `destroy()` | Deinitialize sink |
+| `log()` | `record()` | Log a record |
+
 ## SinkConfig
 
 Configuration for a sink.

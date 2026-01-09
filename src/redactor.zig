@@ -146,6 +146,9 @@ pub const Redactor = struct {
         return initWithConfig(allocator, .{});
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Initializes a new Redactor instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: RedactionConfig) Redactor {
         var redactor = Redactor{
@@ -178,6 +181,9 @@ pub const Redactor = struct {
         }
         self.fields.deinit();
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Sets the callback for redaction applied events.
     pub fn setCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {

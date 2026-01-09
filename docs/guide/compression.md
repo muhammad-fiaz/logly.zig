@@ -49,6 +49,188 @@ pub fn main() !void {
 }
 ```
 
+## Minimal Configuration (One-Liner Setup)
+
+Logly provides preset configurations for the simplest possible compression setup. Use these when you don't need custom settings.
+
+### Config Builder Methods (Logger Integration)
+
+```zig
+const logly = @import("logly");
+
+// Simplest - just enable compression
+var config = logly.Config.default().withCompressionEnabled();
+
+// Implicit (automatic) - compress on rotation
+var config2 = logly.Config.default().withImplicitCompression();
+
+// Explicit (manual) - you control when to compress
+var config3 = logly.Config.default().withExplicitCompression();
+
+// Fast compression - prioritize speed
+var config4 = logly.Config.default().withFastCompression();
+
+// Best compression - prioritize ratio
+var config5 = logly.Config.default().withBestCompression();
+
+// Background - non-blocking compression
+var config6 = logly.Config.default().withBackgroundCompression();
+
+// Log-optimized - text strategy for log files
+var config7 = logly.Config.default().withLogCompression();
+
+// Production-ready - balanced with checksums
+var config8 = logly.Config.default().withProductionCompression();
+```
+
+### CompressionConfig Presets
+
+```zig
+const CompressionConfig = logly.Config.CompressionConfig;
+
+// Preset configurations
+const enable_cfg = CompressionConfig.enable();        // Basic enabled
+const basic_cfg = CompressionConfig.basic();          // Alias for enable()
+const implicit_cfg = CompressionConfig.implicit();    // Auto on rotation
+const explicit_cfg = CompressionConfig.explicit();    // Manual control
+const fast_cfg = CompressionConfig.fast();            // Speed priority
+const balanced_cfg = CompressionConfig.balanced();    // Default balance
+const best_cfg = CompressionConfig.best();            // Ratio priority
+const for_logs_cfg = CompressionConfig.forLogs();     // Log optimized
+const archive_cfg = CompressionConfig.archive();      // Archival mode
+const keep_cfg = CompressionConfig.keepOriginals();   // Keep original files
+const prod_cfg = CompressionConfig.production();      // Production ready
+const dev_cfg = CompressionConfig.development();      // Development mode
+const disable_cfg = CompressionConfig.disable();      // Disabled
+const bg_cfg = CompressionConfig.backgroundMode();    // Background thread
+const stream_cfg = CompressionConfig.streamingMode(); // Streaming mode
+
+// Size-based trigger (compress when file exceeds 5MB)
+const size_cfg = CompressionConfig.onSize(5 * 1024 * 1024);
+
+// Use with Config
+var config = logly.Config.default().withCompression(prod_cfg);
+```
+
+### Compression Instance Presets
+
+```zig
+const allocator = std.heap.page_allocator;
+
+// One-liner compression instances
+var comp1 = logly.Compression.enable(allocator);       // Basic enabled
+var comp2 = logly.Compression.basic(allocator);        // Alias for enable()
+var comp3 = logly.Compression.implicit(allocator);     // Auto on rotation
+var comp4 = logly.Compression.explicit(allocator);     // Manual control
+var comp5 = logly.Compression.fast(allocator);         // Speed priority
+var comp6 = logly.Compression.balanced(allocator);     // Default balance
+var comp7 = logly.Compression.best(allocator);         // Ratio priority
+var comp8 = logly.Compression.forLogs(allocator);      // Log optimized
+var comp9 = logly.Compression.archive(allocator);      // Archival mode
+var comp10 = logly.Compression.production(allocator);  // Production ready
+var comp11 = logly.Compression.development(allocator); // Development mode
+var comp12 = logly.Compression.background(allocator);  // Background thread
+var comp13 = logly.Compression.streaming(allocator);   // Streaming mode
+
+defer comp1.deinit();
+// ... defer for others
+```
+
+## File Name Customization
+
+Customize compressed file names, locations, and archive structure:
+
+### Customization Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `file_prefix` | Prefix for file names | `"archive_"` → `archive_app.log.gz` |
+| `file_suffix` | Suffix before extension | `"_old"` → `app_old.log.gz` |
+| `archive_root_dir` | Centralized archive location | `"logs/archive"` |
+| `create_date_subdirs` | Create YYYY/MM/DD structure | `logs/archive/2026/01/09/` |
+| `preserve_dir_structure` | Keep original folder structure | Original: `src/logs/` → `archive/src/logs/` |
+| `naming_pattern` | Custom naming with placeholders | `"{base}_{date}{ext}"` |
+
+### Naming Pattern Placeholders
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{base}` | Original file name | `app` from `app.log` |
+| `{ext}` | Original extension | `.log` |
+| `{date}` | Current date | `2026-01-09` |
+| `{time}` | Current time | `14-30-45` |
+| `{timestamp}` | Unix timestamp | `1736433045` |
+| `{index}` | Incremental index | `001`, `002` |
+
+### Configuration Example
+
+```zig
+const cfg = logly.Config.CompressionConfig{
+    .enabled = true,
+    .algorithm = .gzip,
+    .level = .best,
+    // File name customization
+    .file_prefix = "archived_",
+    .file_suffix = "_v1",
+    // Centralized archive
+    .archive_root_dir = "logs/compressed",
+    .create_date_subdirs = true,
+    .preserve_dir_structure = true,
+    // Custom naming
+    .naming_pattern = "{base}_{date}{ext}",
+};
+
+// Result: logs/compressed/2026/01/09/archived_app_2026-01-09_v1.log.gz
+```
+
+### Archive Root Directory
+
+Store all compressed files in a centralized location:
+
+```zig
+var config = logly.Config.default();
+config.compression = .{
+    .enabled = true,
+    .archive_root_dir = "logs/archive",      // All compressed files go here
+    .create_date_subdirs = true,              // Organize by date
+    .preserve_dir_structure = false,          // Flatten directory structure
+};
+
+// Input:  logs/app/server.log
+// Output: logs/archive/2026/01/09/server.log.gz
+```
+
+### Implicit vs Explicit Compression
+
+| Feature | Implicit | Explicit |
+|---------|----------|----------|
+| **Control** | Automatic | Manual |
+| **Trigger** | On rotation, size threshold, or schedule | User calls compress methods |
+| **Config** | `withImplicitCompression()` | `withExplicitCompression()` |
+| **Use Case** | Set-and-forget log management | Fine-grained control |
+| **Methods** | Automatic via rotation/scheduler | `compressFile()`, `compressDirectory()`, `compressStream()` |
+
+**Implicit Example:**
+```zig
+// Automatic compression - library handles everything
+var config = logly.Config.default()
+    .withImplicitCompression()
+    .withRotation(.{ .enabled = true, .interval = "daily" });
+// Logs are compressed automatically when rotated
+```
+
+**Explicit Example:**
+```zig
+// Manual compression - you control when
+var config = logly.Config.default().withExplicitCompression();
+var compression = logly.Compression.explicit(allocator);
+defer compression.deinit();
+
+// Compress when YOU decide
+try compression.compressFile("logs/app.log", null);
+try compression.compressDirectory("logs/archive/");
+```
+
 ## Logger Configuration
 
 Enable compression through the Config struct:
@@ -78,6 +260,7 @@ var config2 = logly.Config.default().withCompression(.{ .algorithm = .deflate })
 | `.deflate` | Standard DEFLATE (gzip compatible) | ~200 MB/s | 3-5x | General logs |
 | `.zlib` | ZLIB format with headers | ~180 MB/s | 3-5x | Network transport |
 | `.raw_deflate` | Raw DEFLATE without headers | ~220 MB/s | 3-5x | Custom formats |
+| `.gzip` | GZIP format (standard compression) | ~190 MB/s | 3-5x | Standard file compatibility |
 
 ## Compression Strategies
 
@@ -173,6 +356,43 @@ config.compression.level = .default;
 config.compression.level = .best;
 ```
 
+## File Compression Methods
+
+Logly offers two approaches for file compression: **Implicit** (automated) and **Explicit** (manual stream control).
+
+### Implicit File Creation (Recommended)
+
+Use `compressFile` or `compressDirectory`. The library automatically handles:
+- File creation and path management
+- Creating parent directories (like `mkdir -p`) if they don't exist
+- Opening/Closing file handles safely
+
+```zig
+// 1. Single File Compression
+// Automatically creates "archive/app.log.gz", creating the 'archive' folder if needed
+try compression.compressFile("app.log", "archive/app.log.gz");
+
+// 2. Directory Batch Compression
+// Compresses every file in "logs/" to a corresponding .gz file
+try compression.compressDirectory("logs/");
+```
+
+### Explicit File Creation (Advanced)
+
+Use `compressStream` when you need fine-grained control, such as using existing file handles, sockets, or custom permissions. You are responsible for opening and closing the files.
+
+```zig
+// 1. Manually create/open files
+var out_file = try std.fs.cwd().createFile("custom_output.gz", .{});
+defer out_file.close();
+
+var in_file = try std.fs.cwd().openFile("input.log", .{});
+defer in_file.close();
+
+// 2. Stream compression
+try compression.compressStream(in_file.reader(), out_file.writer());
+```
+
 ## Compression Modes
 
 Control when and how compression happens:
@@ -226,15 +446,30 @@ if (compression.shouldCompress("app.log")) {
 
 ### Streaming Mode
 
-Compress data as it's being written (real-time):
+Compress data directly to a file stream as it is generated. This is useful for large datasets where you don't want to buffer the entire content in memory.
+
+**Note:** This mode requires manual management of the output stream.
 
 ```zig
-var compression = logly.Compression.initWithConfig(allocator, .{
-    .mode = .streaming,
-    .streaming = true,
-    .buffer_size = 16 * 1024,
-    .level = .fast,
-});
+var stream_comp = logly.Compression.init(allocator);
+defer stream_comp.deinit();
+
+// 1. Create the output file (compressed destination)
+var file = try std.fs.cwd().createFile("data.gz", .{});
+defer file.close();
+
+// 2. Prepare input stream (e.g., from a network socket or another file)
+// Here we use a fixed buffer for demonstration
+const data = "Log data to be streamed..." ** 100;
+var input_stream = std.io.fixedBufferStream(data);
+
+// 3. Compress directly to the file
+// The data flows: input_stream -> compressor -> file
+try stream_comp.compressStream(input_stream.reader(), file.writer());
+
+// 4. Verify file creation
+const stat = try file.stat();
+std.debug.print("Created data.gz: {d} bytes\n", .{stat.size});
 ```
 
 ### Scheduled Mode
@@ -286,12 +521,22 @@ const maximum = logly.CompressionPresets.maximum();
 
 ## File Compression
 
-Compress entire log files:
+Compress entire log files. Logly automatically handles creating necessary directories for the output file.
 
 ```zig
 // Compress a file
-try compression.compressFile("logs/app.log");
-// Creates logs/app.log.gz
+// If logs/archive does not exist, it will be created automatically.
+try compression.compressFile("logs/app.log", "logs/archive/app.log.gz");
+```
+
+### Batch Compression
+
+Compress all log files in a directory:
+
+```zig
+// Scan directory and compress all eligible files
+const count = try compression.compressDirectory("logs/");
+std.debug.print("Batch compressed {d} files\n", .{count});
 ```
 
 ### Configuration Options

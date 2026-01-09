@@ -14,6 +14,14 @@ head:
 
 The `Diagnostics` module collects comprehensive host information including OS, CPU, memory, and storage details for logging and monitoring.
 
+## Quick Reference: Method Aliases
+
+For developers preferring a different naming convention, Logly.zig provides standard aliases:
+
+| Original Method | Alias    | Description                    |
+| :-------------- | :------- | :----------------------------- |
+| `deinit`        | `destroy`| Releases diagnostic resources. |
+
 ## Overview
 
 Diagnostics provides:

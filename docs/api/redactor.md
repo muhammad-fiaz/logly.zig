@@ -14,6 +14,13 @@ head:
 
 The `Redactor` struct handles the masking of sensitive data in log messages and context fields.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize redactor |
+| `deinit()` | `destroy()` | Deinitialize redactor |
+
 ## Overview
 
 Redactors ensure compliance and security by preventing sensitive information (like passwords, API keys, or PII) from being written to logs. Supports pattern-based and field-based redaction with multiple masking types.

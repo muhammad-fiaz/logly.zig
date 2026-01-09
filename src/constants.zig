@@ -44,6 +44,11 @@ pub const NativeInt = switch (builtin.target.cpu.arch) {
 };
 
 /// Default buffer sizes for various operations.
+///
+/// Usage:
+///   Use these constants to size internal buffers for logging, formatting, and I/O.
+///
+/// Complexity: O(1)
 pub const BufferSizes = struct {
     /// Default log message buffer size.
     pub const message: usize = 4096;
@@ -60,6 +65,11 @@ pub const BufferSizes = struct {
 };
 
 /// Default thread pool settings.
+///
+/// Usage:
+///   Use these defaults when configuring the internal thread pool.
+///
+/// Complexity: O(1)
 pub const ThreadDefaults = struct {
     /// Default number of threads (0 = auto-detect).
     pub const thread_count: usize = 0;
@@ -73,22 +83,54 @@ pub const ThreadDefaults = struct {
     pub const max_tasks: usize = 10000;
 
     /// Returns recommended thread count for current CPU.
+    ///
+    /// Algorithm:
+    ///   - Attempts to get CPU count from OS.
+    ///   - Fallbacks to 4 if detection fails.
+    ///
+    /// Return Value:
+    ///   - `usize`: Number of logical cores.
+    ///
+    /// Complexity: O(1)
     pub fn recommendedThreadCount() usize {
         return std.Thread.getCpuCount() catch 4;
     }
 
     /// Returns recommended thread count for I/O bound workloads.
+    ///
+    /// Algorithm:
+    ///   - Returns `2 * logical_cores`.
+    ///   - Useful for network/disk intensive logging.
+    ///
+    /// Return Value:
+    ///   - `usize`: 2x logical cores.
+    ///
+    /// Complexity: O(1)
     pub fn ioBoundThreadCount() usize {
         return (std.Thread.getCpuCount() catch 4) * 2;
     }
 
     /// Returns recommended thread count for CPU bound workloads.
+    ///
+    /// Algorithm:
+    ///   - Returns `logical_cores`.
+    ///   - Useful for heavy compression or complex formatting.
+    ///
+    /// Return Value:
+    ///   - `usize`: Logical cores.
+    ///
+    /// Complexity: O(1)
     pub fn cpuBoundThreadCount() usize {
         return std.Thread.getCpuCount() catch 4;
     }
 };
 
 /// Log level count and priorities.
+///
+/// Usage:
+///   Reference constants for defining new log levels or validating priority ranges.
+///
+/// Complexity: O(1)
 pub const LevelConstants = struct {
     /// Total number of built-in log levels.
     pub const count: usize = 10;
@@ -101,6 +143,11 @@ pub const LevelConstants = struct {
 };
 
 /// Time-related constants.
+///
+/// Usage:
+///   Unit conversions and default time intervals.
+///
+/// Complexity: O(1)
 pub const TimeConstants = struct {
     /// Milliseconds per second.
     pub const ms_per_second: u64 = 1000;
@@ -115,6 +162,11 @@ pub const TimeConstants = struct {
 };
 
 /// File rotation constants.
+///
+/// Usage:
+///   Defaults for file size limits and retention policies.
+///
+/// Complexity: O(1)
 pub const RotationConstants = struct {
     /// Default max file size before rotation (10MB).
     pub const default_max_size: u64 = 10 * 1024 * 1024;
@@ -125,6 +177,11 @@ pub const RotationConstants = struct {
 };
 
 /// Network logging constants.
+///
+/// Usage:
+///   Buffer sizes and timeouts for network sinks.
+///
+/// Complexity: O(1)
 pub const NetworkConstants = struct {
     /// Default TCP buffer size.
     pub const tcp_buffer_size: usize = 8192;
@@ -137,6 +194,11 @@ pub const NetworkConstants = struct {
 };
 
 /// Rules system constants for diagnostic message formatting.
+///
+/// Usage:
+///   Definitions for formatting rule-based diagnostics (prefixes, colors).
+///
+/// Complexity: O(1)
 pub const RulesConstants = struct {
     /// Default indentation for rule messages.
     pub const default_indent: []const u8 = "    ";

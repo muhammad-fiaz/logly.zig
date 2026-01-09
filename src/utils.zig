@@ -57,10 +57,10 @@ pub fn writeSize(writer: anytype, bytes: u64) !void {
 /// Formats a byte size into a human-readable string.
 /// Uses the most appropriate unit (B, KB, MB, GB, TB).
 pub fn formatSize(allocator: std.mem.Allocator, bytes: u64) ![]u8 {
-    var list = std.ArrayList(u8).init(allocator);
-    errdefer list.deinit();
-    try writeSize(list.writer(), bytes);
-    return list.toOwnedSlice();
+    var list = std.ArrayList(u8).empty;
+    errdefer list.deinit(allocator);
+    try writeSize(list.writer(allocator), bytes);
+    return list.toOwnedSlice(allocator);
 }
 
 /// Parses a duration string (e.g., "30s", "5m", "2h") into milliseconds.
@@ -114,10 +114,10 @@ pub fn writeDuration(writer: anytype, ms: i64) !void {
 
 /// Formats a duration in milliseconds into a human-readable string.
 pub fn formatDuration(allocator: std.mem.Allocator, ms: i64) ![]u8 {
-    var list = std.ArrayList(u8).init(allocator);
-    errdefer list.deinit();
-    try writeDuration(list.writer(), ms);
-    return list.toOwnedSlice();
+    var list = std.ArrayList(u8).empty;
+    errdefer list.deinit(allocator);
+    try writeDuration(list.writer(allocator), ms);
+    return list.toOwnedSlice(allocator);
 }
 
 /// Time components extracted from an epoch timestamp.

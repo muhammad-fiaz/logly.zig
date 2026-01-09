@@ -135,6 +135,9 @@ pub const Record = struct {
         };
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Creates a new log record with custom level information.
     ///
     /// Arguments:
@@ -212,6 +215,9 @@ pub const Record = struct {
             self.allocator.free(messages);
         }
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Sets the trace ID for distributed tracing.
     ///

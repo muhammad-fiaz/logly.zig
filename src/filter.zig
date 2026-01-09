@@ -11,16 +11,19 @@ const Constants = @import("constants.zig");
 /// They can be combined to create complex filtering logic based on level,
 /// message content, module, or custom predicates.
 ///
-/// Callbacks:
-/// - `on_record_allowed`: Called when a record passes filtering
-/// - `on_record_denied`: Called when a record is blocked by filter
-/// - `on_filter_created`: Called when filter is created/initialized
-/// - `on_rule_added`: Called when a new filter rule is added
+/// Usage:
+///   Create a filter, add rules using `addRule` or helpers like `addMinLevel`,
+///   and check records using `shouldLog`.
 ///
-/// Performance:
-/// - O(n) filter evaluation where n = number of rules
-/// - Early exit optimization when first deny rule matches
-/// - Minimal memory overhead per rule
+/// Callbacks:
+///   - `on_record_allowed`: Called when a record passes filtering
+///   - `on_record_denied`: Called when a record is blocked by filter
+///   - `on_filter_created`: Called when filter is created/initialized
+///   - `on_rule_added`: Called when a new filter rule is added
+///
+/// Complexity:
+///   - Evaluation: O(N) where N is number of rules.
+///   - Space: O(N) where N is number of rules.
 pub const Filter = struct {
     /// Filter statistics for monitoring and diagnostics.
     pub const FilterStats = struct {
@@ -95,10 +98,12 @@ pub const Filter = struct {
     /// Initializes a new Filter instance.
     ///
     /// Arguments:
-    ///     allocator: Memory allocator for internal storage.
+    ///   - `allocator`: Memory allocator for internal storage.
     ///
-    /// Returns:
-    ///     A new Filter instance.
+    /// Return Value:
+    ///   - A new `Filter` instance.
+    ///
+    /// Complexity: O(1)
     pub fn init(allocator: std.mem.Allocator) Filter {
         return .{
             .allocator = allocator,
@@ -106,7 +111,13 @@ pub const Filter = struct {
         };
     }
 
+    pub const create = init;
+
     /// Releases all resources associated with the filter.
+    ///
+    /// Frees all rules and character patterns.
+    ///
+    /// Complexity: O(N) where N is the number of rules.
     pub fn deinit(self: *Filter) void {
         for (self.rules.items) |rule| {
             if (rule.pattern) |p| {
@@ -115,6 +126,8 @@ pub const Filter = struct {
         }
         self.rules.deinit(self.allocator);
     }
+
+    pub const destroy = deinit;
 
     /// Adds a new filter rule.
     pub fn addRule(self: *Filter, rule: FilterRule) !void {
@@ -127,7 +140,7 @@ pub const Filter = struct {
             new_rule.pattern = try self.allocator.dupe(u8, p);
         }
 
-        try self.rules.append(new_rule);
+        try self.rules.append(self.allocator, new_rule);
 
         if (self.on_rule_added) |cb| {
             cb(@intFromEnum(rule.rule_type), @intCast(self.rules.items.len));
@@ -175,7 +188,9 @@ pub const Filter = struct {
     /// Records with a level below the minimum will be filtered out.
     ///
     /// Arguments:
-    ///     level: The minimum level to allow.
+    ///   - `level`: The minimum level to allow.
+    ///
+    /// Complexity: O(1) (Amortized append)
     pub fn addMinLevel(self: *Filter, level: Level) !void {
         try self.rules.append(self.allocator, .{
             .rule_type = .level_min,
@@ -189,7 +204,9 @@ pub const Filter = struct {
     /// Records with a level above the maximum will be filtered out.
     ///
     /// Arguments:
-    ///     level: The maximum level to allow.
+    ///   - `level`: The maximum level to allow.
+    ///
+    /// Complexity: O(1) (Amortized append)
     pub fn addMaxLevel(self: *Filter, level: Level) !void {
         try self.rules.append(self.allocator, .{
             .rule_type = .level_max,
@@ -203,7 +220,9 @@ pub const Filter = struct {
     /// Only records from modules matching the prefix will be allowed.
     ///
     /// Arguments:
-    ///     prefix: The module prefix to match.
+    ///   - `prefix`: The module prefix to match (copied internally).
+    ///
+    /// Complexity: O(M) where M is prefix length.
     pub fn addModulePrefix(self: *Filter, prefix: []const u8) !void {
         const owned_prefix = try self.allocator.dupe(u8, prefix);
         try self.rules.append(self.allocator, .{
@@ -215,11 +234,13 @@ pub const Filter = struct {
 
     /// Adds a message content filter rule.
     ///
-    /// Records containing the specified substring will be filtered.
+    /// Records containing the specified substring will be filtered according to `action`.
     ///
     /// Arguments:
-    ///     substring: The substring to search for.
-    ///     action: Whether to allow or deny matching records.
+    ///   - `substring`: The substring to search for (copied internally).
+    ///   - `action`: Whether to allow or deny matching records.
+    ///
+    /// Complexity: O(S) where S is substring length.
     pub fn addMessageFilter(self: *Filter, substring: []const u8, action: FilterRule.Action) !void {
         const owned_substring = try self.allocator.dupe(u8, substring);
         try self.rules.append(self.allocator, .{
@@ -229,13 +250,21 @@ pub const Filter = struct {
         });
     }
 
-    /// Evaluates whether a record should be processed.
+    /// Evaluates whether a record should be processed based on configured rules.
+    ///
+    /// Algorithm:
+    ///   - Iterates through all rules.
+    ///   - If any rule blocks the record, returns false immediately.
+    ///   - For `allow` rules, condition must match to proceed (implicit AND logic for some types).
+    ///   - Note: Logic here implements a mix of "allow-list" and "block-list" behavior depending on rule types.
     ///
     /// Arguments:
-    ///     record: The log record to evaluate.
+    ///   - `record`: The log record to evaluate.
     ///
-    /// Returns:
-    ///     true if the record should be processed, false otherwise.
+    /// Return Value:
+    ///   - `true` if the record should be processed, `false` otherwise.
+    ///
+    /// Complexity: O(N * M) where N is rules and M is message/module length.
     pub fn shouldLog(self: *const Filter, record: *const Record) bool {
         if (self.rules.items.len == 0) return true;
 

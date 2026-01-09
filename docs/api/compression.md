@@ -14,13 +14,20 @@ head:
 
 Comprehensive log file compression with multiple algorithms, streaming support, and advanced monitoring.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize compression |
+| `deinit()` | `destroy()` | Deinitialize compression |
+
 ## Overview
 
 The Compression module provides high-performance log file compression with:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, ZSTD simulation, RAW
+- **Multiple Algorithms**: DEFLATE, GZIP, RAW
 - **Compression Strategies**: Text-optimized, binary, RLE, adaptive
-- **Streaming Compression**: Compress while writing logs
+- **Streaming Support**: `compressStream` and `decompressStream` helpers
 - **Background Compression**: Offload compression to background threads
 - **Advanced Monitoring**: Detailed statistics and callbacks
 - **Memory Efficient**: Configurable buffer sizes and memory limits
@@ -156,7 +163,162 @@ pub const Algorithm = enum {
     zlib,
     /// Raw DEFLATE (no headers)
     raw_deflate,
+    /// GZIP format (standard compression)
+    gzip,
 };
+```
+
+## CompressionConfig Preset Methods
+
+The `CompressionConfig` struct provides preset factory methods for minimal configuration:
+
+### Basic Presets
+
+| Method | Description |
+|--------|-------------|
+| `enable()` | Basic enabled compression with defaults |
+| `basic()` | Alias for enable() |
+| `disable()` | Explicitly disabled compression |
+| `implicit()` | Automatic compression on rotation |
+| `explicit()` | Manual compression control |
+
+### Performance Presets
+
+| Method | Description |
+|--------|-------------|
+| `fast()` | Speed priority (level: fastest) |
+| `balanced()` | Default speed/ratio tradeoff |
+| `best()` | Ratio priority (level: best, gzip) |
+
+### Mode Presets
+
+| Method | Description |
+|--------|-------------|
+| `backgroundMode()` | Background thread compression |
+| `streamingMode()` | Real-time streaming compression |
+| `onSize(bytes)` | Compress when file exceeds size |
+
+### Use Case Presets
+
+| Method | Description |
+|--------|-------------|
+| `forLogs()` | Optimized for log files (text strategy) |
+| `archive()` | Archival mode (best compression, delete original) |
+| `keepOriginals()` | Keep original files after compression |
+| `production()` | Production-ready (balanced, background, checksums) |
+| `development()` | Development mode (fast, keep originals) |
+
+## File Name Customization Options
+
+CompressionConfig supports extensive file name and path customization:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `file_prefix` | `?[]const u8` | `null` | Prefix for compressed file names (e.g., "archive_") |
+| `file_suffix` | `?[]const u8` | `null` | Suffix before extension (e.g., "_compressed") |
+| `archive_root_dir` | `?[]const u8` | `null` | Root directory for all compressed files |
+| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirectories in archive |
+| `preserve_dir_structure` | `bool` | `true` | Preserve original directory structure in archive |
+| `naming_pattern` | `?[]const u8` | `null` | Custom naming pattern with placeholders |
+
+### Naming Pattern Placeholders
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{base}` | Original file name without extension |
+| `{ext}` | Original file extension |
+| `{date}` | Current date (YYYY-MM-DD) |
+| `{time}` | Current time (HH-MM-SS) |
+| `{timestamp}` | Unix timestamp |
+| `{index}` | Incremental index |
+
+**Example: Custom Archive Configuration**
+
+```zig
+const cfg = logly.Config.CompressionConfig{
+    .enabled = true,
+    .file_prefix = "archive_",
+    .file_suffix = "_compressed",
+    .archive_root_dir = "logs/archive",
+    .create_date_subdirs = true,
+    .naming_pattern = "{base}_{date}{ext}",
+};
+
+// Result: logs/archive/2026/01/09/archive_app_2026-01-09_compressed.log.gz
+```
+
+**Usage Examples:**
+
+```zig
+const CompressionConfig = logly.Config.CompressionConfig;
+
+// One-liner presets
+const cfg1 = CompressionConfig.enable();
+const cfg2 = CompressionConfig.production();
+const cfg3 = CompressionConfig.fast();
+const cfg4 = CompressionConfig.onSize(5 * 1024 * 1024); // 5MB threshold
+
+// Use with Config builder
+var config = logly.Config.default().withCompression(CompressionConfig.production());
+```
+
+## Config Quick-Enable Methods
+
+The `Config` struct provides quick-enable methods for compression:
+
+| Method | Description |
+|--------|-------------|
+| `withCompressionEnabled()` | Simplest one-liner to enable |
+| `withImplicitCompression()` | Automatic on rotation |
+| `withExplicitCompression()` | Manual control |
+| `withFastCompression()` | Speed priority |
+| `withBestCompression()` | Ratio priority |
+| `withBackgroundCompression()` | Background thread |
+| `withLogCompression()` | Log-optimized |
+| `withProductionCompression()` | Production-ready |
+
+**Usage Examples:**
+
+```zig
+// Quick-enable compression
+var config = logly.Config.default().withCompressionEnabled();
+
+// Production-ready in one line
+var config2 = logly.Config.default().withProductionCompression();
+
+// Chain with other settings
+var config3 = logly.Config.default()
+    .withFastCompression()
+    .withRotation(.{ .enabled = true });
+```
+
+## Compression Instance Presets
+
+The `Compression` struct provides preset factory methods for direct instantiation:
+
+| Method | Description |
+|--------|-------------|
+| `basic(allocator)` | Basic enabled compressor |
+| `implicit(allocator)` | Auto compression on rotation |
+| `explicit(allocator)` | Manual compression control |
+| `fast(allocator)` | Speed priority |
+| `balanced(allocator)` | Default balance |
+| `best(allocator)` | Ratio priority |
+| `forLogs(allocator)` | Log-optimized |
+| `archive(allocator)` | Archival mode |
+| `production(allocator)` | Production-ready |
+| `development(allocator)` | Development mode |
+| `background(allocator)` | Background thread |
+| `streaming(allocator)` | Streaming mode |
+
+**Usage Examples:**
+
+```zig
+// One-liner compression instances
+var compressor = logly.Compression.production(allocator);
+defer compressor.deinit();
+
+try compressor.compressFile("logs/app.log", null);
 ```
 
 **Algorithm Comparison:**
@@ -167,6 +329,8 @@ pub const Algorithm = enum {
 | `deflate` | 3-5x | ~200 MB/s | General purpose logs |
 | `zlib` | 3-5x | ~180 MB/s | Network transport |
 | `raw_deflate` | 3-5x | ~220 MB/s | Custom headers |
+| `gzip` | 3-5x | ~190 MB/s | Standard file compatibility |
+
 
 ### Level
 
@@ -436,6 +600,7 @@ pub fn compressFile(self: *Compression, input_path: []const u8, output_path: ?[]
 
 **Features:**
 - Automatic output path generation
+- Automatic creation of output directories
 - Optional original file deletion
 - Detailed compression statistics
 - Callback notifications
@@ -470,6 +635,66 @@ const success = try compression.decompressFile("app.log.gz", "app.log");
 if (success) {
     std.debug.print("Decompressed successfully\n", .{});
 }
+```
+
+### compressDirectory
+
+Compresses all eligible files in a directory.
+
+```zig
+pub fn compressDirectory(self: *Compression, dir_path: []const u8) !u64
+```
+
+**Features:**
+- Scans directory for files
+- Checks eligibility with `shouldCompress`
+- Skips already compressed files
+
+**Example:**
+```zig
+const count = try compression.compressDirectory("logs/");
+std.debug.print("Compressed {d} files\n", .{count});
+```
+
+### compressStream
+
+Streaming compression from a reader to a writer.
+
+```zig
+pub fn compressStream(self: *Compression, reader: anytype, writer: anytype) !void
+```
+
+**Features:**
+- Low memory footprint (no large buffers)
+- Compatible with `std.io.Reader` and `std.io.Writer`
+- Supports GZIP and Deflate algorithms
+
+**Example:**
+
+```zig
+var input_stream = std.io.fixedBufferStream(data);
+var output_buffer = std.ArrayList(u8).init(allocator);
+defer output_buffer.deinit();
+
+try compression.compressStream(input_stream.reader(), output_buffer.writer(allocator));
+```
+
+### decompressStream
+
+Streaming decompression from a reader to a writer.
+
+```zig
+pub fn decompressStream(self: *Compression, reader: anytype, writer: anytype) !void
+```
+
+**Example:**
+
+```zig
+var input_stream = std.io.fixedBufferStream(compressed_data);
+var output_buffer = std.ArrayList(u8).init(allocator);
+defer output_buffer.deinit();
+
+try compression.decompressStream(input_stream.reader(), output_buffer.writer(allocator));
 ```
 
 ### shouldCompress

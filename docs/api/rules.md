@@ -14,6 +14,13 @@ head:
 
 The Rules module provides a powerful compiler-style diagnostic system for log messages. It enables attaching contextual guidance, solutions, documentation links, and best practices to log entries based on configurable conditions.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize rules engine |
+| `deinit()` | `destroy()` | Deinitialize rules engine |
+
 ## Overview
 
 The rules system augments logging with intelligent diagnostics:

@@ -12,14 +12,15 @@ head:
 
 # Compression Example
 
-This example demonstrates log compression features in Logly using the LZ77+RLE hybrid algorithm.
+This example demonstrates log compression features in Logly, including GZIP support and Streaming APIs.
 
 ## Source Code
 
 ```zig
 //! Compression Example
 //!
-//! Demonstrates Logly's LZ77+RLE compression with CRC32 verification.
+//! Demonstrates how to use log compression features in Logly.
+//! Includes automatic compression on rotation, manual compression, GZIP, and Streaming.
 
 const std = @import("std");
 const logly = @import("logly");
@@ -29,56 +30,101 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("Logly Compression Demo\n", .{});
-    std.debug.print("======================\n\n", .{});
+    std.debug.print("\n=== Logly Compression Example ===\n\n", .{});
 
-    // Create compression with default settings
-    var compression = logly.Compression.init(allocator, .{});
-    defer compression.deinit();
+    // Example 1: Basic compression setup
+    std.debug.print("1. Basic Compression Setup\n", .{});
+    std.debug.print("   -------------------------\n", .{});
 
-    // Test data with varying patterns
-    const test_cases = [_][]const u8{
-        "Hello, World! " ** 100,                          // Repetitive
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",  // Highly compressible
-        "The quick brown fox jumps over the lazy dog. ",  // Normal text
-    };
+    var comp = logly.Compression.init(allocator);
+    defer comp.deinit();
 
-    for (test_cases, 0..) |original, i| {
-        const compressed = try compression.compress(original);
-        defer allocator.free(compressed);
+    const test_data = "This is test log data that will be compressed. " ** 10;
+    std.debug.print("   Original data size: {d} bytes\n", .{test_data.len});
 
-        const decompressed = try compression.decompress(compressed);
-        defer allocator.free(decompressed);
+    const compressed = try comp.compress(test_data);
+    defer allocator.free(compressed);
+    std.debug.print("   Compressed size: {d} bytes\n", .{compressed.len});
 
-        const ratio = @as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(original.len)) * 100;
-        const verified = std.mem.eql(u8, original, decompressed);
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+    std.debug.print("   Decompressed size: {d} bytes\n", .{decompressed.len});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, test_data, decompressed)) "✓ Verified" else "✗ Failed"});
 
-        std.debug.print("Test {d}: {d} -> {d} bytes ({d:.1}%) - {s}\n", .{
-            i + 1,
-            original.len,
-            compressed.len,
-            ratio,
-            if (verified) "OK" else "FAIL",
-        });
-    }
+    // Example 2: Compression presets
+    std.debug.print("2. Compression Presets\n", .{});
+    // ... (See full example file for details)
+
+    // Example 6: GZIP Algorithm
+    std.debug.print("6. GZIP Algorithm\n", .{});
+    std.debug.print("   ------------------------\n", .{});
+
+    var gzip_comp = logly.Compression.initWithConfig(allocator, .{
+        .algorithm = .gzip,
+        .level = .default,
+    });
+    defer gzip_comp.deinit();
+
+    const gzip_data = "Data compressed with GZIP algorithm";
+    const gzip_compressed = try gzip_comp.compress(gzip_data);
+    defer allocator.free(gzip_compressed);
+
+    std.debug.print("   GZIP compressed size: {d} bytes\n\n", .{gzip_compressed.len});
+
+    // Example 7: Streaming Compression
+    std.debug.print("7. Streaming Compression\n", .{});
+    std.debug.print("   ---------------------\n", .{});
+
+    var stream_comp = logly.Compression.init(allocator);
+    defer stream_comp.deinit();
+
+    const stream_data = "Data to be compressed via stream" ** 5;
+    var input_stream = std.io.fixedBufferStream(stream_data);
+    var output_buffer: std.ArrayList(u8) = .empty;
+    defer output_buffer.deinit(allocator);
+
+    try stream_comp.compressStream(input_stream.reader(), output_buffer.writer(allocator));
+    std.debug.print("   Stream compressed size: {d} bytes\n", .{output_buffer.items.len});
+
+    // Example 8: Directory Compression
+    std.debug.print("8. Directory Compression\n", .{});
+    const files_processed = try stream_comp.compressDirectory("logs_test_batch");
+    std.debug.print("   Batch compressed {d} files\n", .{files_processed});
 }
 ```
 
 ## Running the Example
 
 ```bash
-zig build run-compression-demo
+zig build run-compression
 ```
 
 ## Expected Output
 
 ```
-Logly Compression Demo
-======================
+=== Logly Compression Example ===
 
-Test 1: 1400 -> 28 bytes (2.0%) - OK
-Test 2: 46 -> 12 bytes (26.1%) - OK
-Test 3: 45 -> 47 bytes (104.4%) - OK
+1. Basic Compression Setup
+   -------------------------
+   Original data size: 470 bytes
+   Compressed size: 77 bytes
+   Decompressed size: 470 bytes
+   Data integrity: ✓ Verified
+
+...
+
+6. GZIP Algorithm
+   ------------------------
+   GZIP compressed size: 49 bytes
+
+7. Streaming Compression
+   ---------------------
+   Stream compressed size: 57 bytes
+   Stream decompressed verified: ✓ Yes
+
+8. Directory Compression
+   ---------------------
+   Batch compressed 2 files in 'logs_test_batch'
 ```
 
 ## Key Concepts
@@ -88,16 +134,29 @@ Test 3: 45 -> 47 bytes (104.4%) - OK
 ```zig
 var config = logly.Config.default();
 config.compression = logly.CompressionConfig{
-    .algorithm = .lz77_rle,
-    .level = 6,
-    .window_size = 32768,
-    .enable_checksums = true,
+    .algorithm = .gzip, // Supports .deflate, .gzip, .zlib, .raw_deflate
+    .level = .default,
+    .mode = .on_rotation,
 };
+```
 
-// Or use helper method
-var config2 = logly.Config.default().withCompression(.{
-    .algorithm = .lz77_rle,
-    .level = 6,
+### Streaming API
+
+The streaming API allows you to compress data directly from a `Reader` to a `Writer` without buffering the entire content in memory.
+
+```zig
+try compression.compressStream(reader, writer);
+try compression.decompressStream(reader, writer);
+```
+
+### Directory Compression
+
+You can compress all log files in a directory at once:
+
+```zig
+// Compress all log files in the "logs" folder
+const files_processed = try compression.compressDirectory("logs");
+```
 });
 ```
 

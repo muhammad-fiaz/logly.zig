@@ -14,6 +14,13 @@ head:
 
 The `Filter` struct provides fine-grained control over which log records are processed.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize filter |
+| `deinit()` | `destroy()` | Deinitialize filter |
+
 ## Overview
 
 Filters evaluate log records against a set of rules with thread-safe operations. Rules can filter based on log level, module name, message content, or custom logic. Filters support callbacks for allowed/denied records and comprehensive statistics tracking.

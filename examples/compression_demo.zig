@@ -153,9 +153,30 @@ pub fn main() !void {
         std.debug.print("  Compression failed: {s}\n", .{file_result.error_message orelse "Unknown error"});
     }
 
-    // Cleanup test files
-    std.fs.cwd().deleteFile("test_compression.log") catch {};
-    std.fs.cwd().deleteFile("test_compression.log.lgz") catch {};
+    // Test 7: Streaming Compression
+    std.debug.print("\n--- Test 7: Streaming Compression ---\n", .{});
+    const stream_data = "Streaming compression test data " ** 20;
+
+    var in_stream = std.io.fixedBufferStream(stream_data);
+    var out_buffer: std.ArrayList(u8) = .empty;
+    defer out_buffer.deinit(allocator);
+
+    try comp.compressStream(in_stream.reader(), out_buffer.writer(allocator));
+
+    std.debug.print("  Streamed Input: {} bytes\n", .{stream_data.len});
+    std.debug.print("  Streamed Output: {} bytes\n", .{out_buffer.items.len});
+
+    var result_buffer: std.ArrayList(u8) = .empty;
+    defer result_buffer.deinit(allocator);
+    var compressed_stream = std.io.fixedBufferStream(out_buffer.items);
+
+    try comp.decompressStream(compressed_stream.reader(), result_buffer.writer(allocator));
+    const stream_match = std.mem.eql(u8, stream_data, result_buffer.items);
+    std.debug.print("  Stream Roundtrip: {s}\n", .{if (stream_match) "OK" else "FAILED"});
+
+    // Cleanup test files - Commented out so you can inspect them
+    // std.fs.cwd().deleteFile("test_compression.log") catch {};
+    // std.fs.cwd().deleteFile("test_compression.log.lgz") catch {};
 
     std.debug.print("\n========================================\n", .{});
     std.debug.print("  Compression Demo Complete!\n", .{});

@@ -14,6 +14,13 @@ head:
 
 The `Sampler` struct controls log throughput by selectively processing records.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize sampler |
+| `deinit()` | `destroy()` | Deinitialize sampler |
+
 ## Overview
 
 Samplers reduce log volume in high-throughput systems using various strategies like probability sampling, rate limiting, every-n sampling, and adaptive sampling. All operations are thread-safe with atomic counters.

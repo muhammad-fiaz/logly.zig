@@ -14,6 +14,13 @@ head:
 
 The async module provides non-blocking asynchronous logging with configurable buffering, background processing, and high-throughput capabilities.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize async logger |
+| `deinit()` | `destroy()` | Deinitialize async logger |
+
 ## Overview
 
 ```zig

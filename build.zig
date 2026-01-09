@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "color_options", .path = "examples/color_options.zig" },
         .{ .name = "custom_levels_full", .path = "examples/custom_levels_full.zig" },
         .{ .name = "compression", .path = "examples/compression.zig" },
+        .{ .name = "compression_minimal", .path = "examples/compression_minimal.zig" },
         .{ .name = "thread_pool", .path = "examples/thread_pool.zig" },
         .{ .name = "scheduler", .path = "examples/scheduler.zig" },
         .{ .name = "async_advanced", .path = "examples/async_advanced.zig" },

@@ -162,6 +162,34 @@ Task 1: log_compression (compression)
 }},
 ```
 
+### Compression Modes
+
+```zig
+// Mode 1: Compress then delete original
+.config = .{
+    .path = "logs",
+    .file_pattern = "*.log",
+    .compress_before_delete = true,
+    .skip_already_compressed = true,
+},
+
+// Mode 2: Compress and keep both versions
+.config = .{
+    .path = "logs",
+    .file_pattern = "*.log",
+    .compress_and_keep = true,
+    .skip_already_compressed = true,
+},
+
+// Mode 3: Only compress, never delete
+.config = .{
+    .path = "logs",
+    .file_pattern = "*.log",
+    .compress_only = true,
+    .skip_already_compressed = true,
+},
+```
+
 ### Using Presets
 
 ```zig
@@ -179,6 +207,27 @@ _ = try scheduler.addTask(
 _ = try scheduler.addTask(
     logly.SchedulerPresets.weeklyDeepClean("logs"),
 );
+```
+
+### Compression Presets
+
+```zig
+const Presets = logly.SchedulerPresets;
+
+// Compress files older than 7 days, then delete originals
+const archive = Presets.compressThenDelete("logs", 7);
+
+// Compress files older than 3 days, keep both versions
+const backup = Presets.compressAndKeep("logs", 3);
+
+// Only compress, never delete anything
+const pure_archive = Presets.compressOnly("logs", 1);
+
+// Archive: compress after 7 days, delete after 30 days
+const tiered = Presets.archiveOldLogs("logs", 7, 30);
+
+// Aggressive: compress & delete, max 100 files
+const aggressive = Presets.aggressiveCleanup("logs", 30, 100);
 ```
 
 ### Task Management

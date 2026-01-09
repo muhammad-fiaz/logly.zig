@@ -41,6 +41,53 @@ config.scheduler = .{
 var config2 = logly.Config.default().withScheduler(.{ .cleanup_max_age_days = 7 });
 ```
 
+### Advanced Configuration
+
+```zig
+var config = logly.Config.default();
+config.scheduler = .{
+    .enabled = true,
+    .cleanup_max_age_days = 7,
+    .compress_before_cleanup = true,
+    // Archive root directory for all compressed files
+    .archive_root_dir = "logs/archive",
+    .create_date_subdirs = true,        // Organize by YYYY/MM/DD
+    // Compression settings
+    .compression_algorithm = .gzip,
+    .compression_level = .best,
+    .keep_originals = false,
+    // File naming customization
+    .archive_file_prefix = "archived_",
+    .archive_file_suffix = "_v1",
+    .preserve_dir_structure = true,
+    // Cleanup settings
+    .clean_empty_dirs = true,
+    .min_age_days_for_compression = 1,
+    .max_concurrent_compressions = 4,
+};
+```
+
+### Scheduler Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable the scheduler |
+| `cleanup_max_age_days` | `u64` | `7` | Max age for cleanup tasks |
+| `max_files` | `?usize` | `null` | Max files to retain |
+| `compress_before_cleanup` | `bool` | `false` | Compress before deleting |
+| `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
+| `archive_root_dir` | `?[]const u8` | `null` | Root directory for archives |
+| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD structure |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Compression algorithm |
+| `compression_level` | `CompressionLevel` | `.default` | Compression level |
+| `keep_originals` | `bool` | `false` | Keep original files |
+| `archive_file_prefix` | `?[]const u8` | `null` | Prefix for file names |
+| `archive_file_suffix` | `?[]const u8` | `null` | Suffix for file names |
+| `preserve_dir_structure` | `bool` | `true` | Preserve directory structure |
+| `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
+| `min_age_days_for_compression` | `u64` | `1` | Min age before compression |
+| `max_concurrent_compressions` | `usize` | `2` | Max parallel compressions |
+
 ## Quick Start
 
 ```zig
@@ -193,6 +240,47 @@ _ = try scheduler.addTask(.{
 | `delete_originals` | true | Delete after compression |
 | `skip_compressed` | true | Skip .gz files |
 
+#### Compression Modes
+
+The scheduler supports multiple compression strategies:
+
+| Mode | Field | Behavior |
+|------|-------|----------|
+| **Compress & Delete** | `compress_before_delete = true` | Compress file, then delete original |
+| **Compress & Keep** | `compress_and_keep = true` | Compress file, keep both versions |
+| **Compress Only** | `compress_only = true` | Compress file, never delete anything |
+
+**Example: Compress and Keep Both**
+```zig
+_ = try scheduler.addTask(.{
+    .name = "archive_logs",
+    .task_type = .cleanup,
+    .schedule = logly.Schedule.daily(2, 0),
+    .config = .{
+        .path = "logs",
+        .file_pattern = "*.log",
+        .min_age_seconds = 24 * 60 * 60, // 1 day
+        .compress_and_keep = true,       // Keep both original and compressed
+        .skip_already_compressed = true,
+    },
+});
+```
+
+**Example: Compress Only (No Deletion)**
+```zig
+_ = try scheduler.addTask(.{
+    .name = "pure_archive",
+    .task_type = .cleanup,
+    .schedule = logly.Schedule.daily(3, 0),
+    .config = .{
+        .path = "logs",
+        .file_pattern = "*.log",
+        .compress_only = true,           // Only compress, never delete
+        .skip_already_compressed = true,
+    },
+});
+```
+
 ### Rotation Tasks
 
 Force log rotation:
@@ -324,6 +412,37 @@ _ = try scheduler.addTask(
     logly.SchedulerPresets.weeklyDeepClean("logs"),
 );
 ```
+
+### Compression Presets
+
+```zig
+const Presets = logly.SchedulerPresets;
+
+// Compress then delete originals (files older than 7 days)
+const archive_config = Presets.compressThenDelete("logs", 7);
+
+// Compress and keep both versions (files older than 3 days)
+const backup_config = Presets.compressAndKeep("logs", 3);
+
+// Only compress, never delete anything (files older than 1 day)
+const pure_archive = Presets.compressOnly("logs", 1);
+
+// Archive old logs: compress after 7 days, delete after 30 days
+const tiered_config = Presets.archiveOldLogs("logs", 7, 30);
+
+// Aggressive cleanup: compress & delete, max 100 files
+const aggressive_config = Presets.aggressiveCleanup("logs", 30, 100);
+```
+
+### Preset Summary
+
+| Preset | Compress | Delete | Keep Both | Use Case |
+|--------|----------|--------|-----------|----------|
+| `compressThenDelete` | ✓ | ✓ | ✗ | Standard archival |
+| `compressAndKeep` | ✓ | ✗ | ✓ | Redundant backup |
+| `compressOnly` | ✓ | ✗ | ✗ | Pure archival |
+| `archiveOldLogs` | ✓ | ✓ (aged) | ✗ | Tiered retention |
+| `aggressiveCleanup` | ✓ | ✓ | ✗ | Space-constrained |
 
 ## Statistics
 

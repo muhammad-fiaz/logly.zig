@@ -14,6 +14,13 @@ head:
 
 The `Formatter` struct handles the conversion of log records into string output. It supports custom formats, JSON output, and color themes.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize formatter |
+| `deinit()` | `destroy()` | Deinitialize formatter |
+
 ## Formatter
 
 The `Formatter` is typically managed internally by sinks, but can be customized via callbacks and themes.

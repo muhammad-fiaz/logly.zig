@@ -17,6 +17,17 @@ head:
 
 The thread pool module provides parallel log processing capabilities with work stealing, priority queues, and concurrent sink writing.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize thread pool |
+| `deinit()` | `destroy()` | Deinitialize thread pool |
+| `start()` | `begin()` | Start worker threads |
+| `shutdown()` | `stop()`, `halt()` | Stop worker threads |
+| `submit()` | `add()` | Submit task to pool |
+| `getStats()` | `statistics()` | Get pool statistics |
+
 ## Overview
 
 ```zig

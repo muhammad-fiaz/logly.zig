@@ -1794,9 +1794,15 @@ pub const ContextLogger = struct {
         };
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     pub fn deinit(self: *ContextLogger) void {
         self.context.deinit();
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     pub fn str(self: *ContextLogger, key: []const u8, value: []const u8) *ContextLogger {
         self.context.put(key, .{ .string = value }) catch {};
@@ -1822,6 +1828,8 @@ pub const ContextLogger = struct {
         defer self.deinit();
         try self.logger.logWithContext(level, message, null, src, &self.context);
     }
+
+    pub const record = log;
 
     pub fn trace(self: *ContextLogger, message: []const u8) !void {
         try self.log(.trace, message, null);
@@ -1861,6 +1869,11 @@ pub const PersistentContextLogger = struct {
         };
     }
 
+    /// Alias for init().
+    pub const create = init;
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
     pub fn deinit(self: *PersistentContextLogger) void {
         self.context.deinit();
     }
@@ -1888,6 +1901,8 @@ pub const PersistentContextLogger = struct {
     pub fn log(self: *PersistentContextLogger, level: Level, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.logWithContext(level, message, null, src, &self.context);
     }
+
+    pub const record = log;
 
     pub fn trace(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.trace, message, src);
@@ -1929,6 +1944,8 @@ pub const DistributedLogger = struct {
             .parent_span_id = self.parent_span_id,
         });
     }
+
+    pub const record = log;
 
     pub fn trace(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.trace, message, src);

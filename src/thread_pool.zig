@@ -213,9 +213,15 @@ pub const ThreadPool = struct {
             };
         }
 
+        /// Alias for init().
+        pub const create = @This().init;
+
         pub fn deinit(self: *WorkQueue) void {
             self.allocator.free(self.items);
         }
+
+        /// Alias for deinit().
+        pub const destroy = @This().deinit;
 
         pub fn push(self: *WorkQueue, item: WorkItem) bool {
             self.mutex.lock();
@@ -800,6 +806,9 @@ pub const ParallelSinkWriter = struct {
         return initWithConfig(allocator, pool, .{});
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     /// Initialize with custom ParallelConfig.
     pub fn initWithConfig(allocator: std.mem.Allocator, pool: *ThreadPool, config: ParallelConfig) !*ParallelSinkWriter {
         const self = try allocator.create(ParallelSinkWriter);
@@ -825,6 +834,9 @@ pub const ParallelSinkWriter = struct {
         self.sinks.deinit(self.allocator);
         self.allocator.destroy(self);
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     /// Add a sink for parallel writing.
     pub fn addSink(self: *ParallelSinkWriter, handle: SinkHandle) !void {

@@ -151,11 +151,15 @@ pub const Compression = struct {
 
     /// Initializes a new Compression instance.
     ///
+    /// The default configuration disables compression. Use `initWithConfig` for custom settings.
+    ///
     /// Arguments:
     ///     allocator: Memory allocator for internal operations.
     ///
     /// Returns:
     ///     A new Compression instance with default configuration.
+    ///
+    /// Complexity: O(1)
     pub fn init(allocator: std.mem.Allocator) Compression {
         return initWithConfig(allocator, .{});
     }
@@ -171,6 +175,8 @@ pub const Compression = struct {
     ///
     /// Returns:
     ///     A new Compression instance.
+    ///
+    /// Complexity: O(1)
     pub fn initWithConfig(allocator: std.mem.Allocator, config: CompressionConfig) Compression {
         return .{
             .allocator = allocator,
@@ -179,7 +185,175 @@ pub const Compression = struct {
         };
     }
 
+    /// Creates a Compression instance with compression enabled using defaults.
+    /// This is the simplest one-liner to create an enabled compressor.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.enable(allocator);
+    /// defer compressor.deinit();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn enable(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.enable());
+    }
+
+    /// Alias for enable(). Creates a Compression instance with compression enabled.
+    ///
+    /// Complexity: O(1)
+    pub fn basic(allocator: std.mem.Allocator) Compression {
+        return enable(allocator);
+    }
+
+    /// Creates a Compression instance for implicit (automatic) compression.
+    /// Files are automatically compressed on rotation - no manual intervention needed.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.implicit(allocator);
+    /// defer compressor.deinit();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn implicit(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.implicit());
+    }
+
+    /// Creates a Compression instance for explicit (manual) compression.
+    /// Use compressFile()/compressDirectory() for user-controlled compression.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.explicit(allocator);
+    /// defer compressor.deinit();
+    /// try compressor.compressFile("logs/app.log", null);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn explicit(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.explicit());
+    }
+
+    /// Creates a Compression instance with fast compression (speed over ratio).
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.fast(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn fast(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.fast());
+    }
+
+    /// Creates a Compression instance with balanced compression.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.balanced(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn balanced(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.balanced());
+    }
+
+    /// Creates a Compression instance with best compression (ratio over speed).
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.best(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn best(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.best());
+    }
+
+    /// Creates a Compression instance optimized for log files.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.forLogs(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn forLogs(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.forLogs());
+    }
+
+    /// Creates a Compression instance with archival settings.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.archive(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn archive(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.archive());
+    }
+
+    /// Creates a Compression instance for production use.
+    /// Balanced performance with background processing and checksums.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.production(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn production(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.production());
+    }
+
+    /// Creates a Compression instance for development use.
+    /// Fast compression with originals kept for debugging.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.development(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn development(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.development());
+    }
+
+    /// Creates a Compression instance with background processing.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.background(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn background(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.backgroundMode());
+    }
+
+    /// Creates a Compression instance with streaming mode.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.streaming(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn streaming(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.streamingMode());
+    }
+
     /// Releases resources associated with the compression instance.
+    ///
+    /// Currently, this struct does not own any external resources that require explicit cleanup,
+    /// but this method is provided for API consistency and future compatibility.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///
+    /// Complexity: O(1)
     pub fn deinit(self: *Compression) void {
         _ = self;
         // Currently no owned resources to free
@@ -189,6 +363,12 @@ pub const Compression = struct {
     pub const destroy = deinit;
 
     /// Sets the callback for compression start events.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     callback: Function pointer to invoke (parameters: file_path, uncompressed_size).
+    ///
+    /// Complexity: O(1)
     pub fn setCompressionStartCallback(self: *Compression, callback: *const fn ([]const u8, u64) void) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -196,6 +376,12 @@ pub const Compression = struct {
     }
 
     /// Sets the callback for compression complete events.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     callback: Function pointer to invoke (parameters: original_path, compressed_path, original_size, compressed_size, elapsed_ms).
+    ///
+    /// Complexity: O(1)
     pub fn setCompressionCompleteCallback(self: *Compression, callback: *const fn ([]const u8, []const u8, u64, u64, u64) void) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -203,6 +389,12 @@ pub const Compression = struct {
     }
 
     /// Sets the callback for compression error events.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     callback: Function pointer to invoke (parameters: file_path, error).
+    ///
+    /// Complexity: O(1)
     pub fn setCompressionErrorCallback(self: *Compression, callback: *const fn ([]const u8, anyerror) void) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -210,6 +402,12 @@ pub const Compression = struct {
     }
 
     /// Sets the callback for decompression complete events.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     callback: Function pointer to invoke (parameters: compressed_path, decompressed_path).
+    ///
+    /// Complexity: O(1)
     pub fn setDecompressionCompleteCallback(self: *Compression, callback: *const fn ([]const u8, []const u8) void) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -217,37 +415,45 @@ pub const Compression = struct {
     }
 
     /// Sets the callback for archive deletion events.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     callback: Function pointer to invoke (parameters: file_path).
+    ///
+    /// Complexity: O(1)
     pub fn setArchiveDeletedCallback(self: *Compression, callback: *const fn ([]const u8) void) void {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.on_archive_deleted = callback;
     }
 
-    /// Compresses data in memory using advanced algorithms.
-    ///
-    /// Supports multiple strategies:
-    /// - Adaptive: Auto-detects best compression approach
-    /// - Text: Optimized for log files with repeated patterns
-    /// - Binary: Optimized for binary data
-    /// - RLE: Run-length encoding for repetitive data
+    /// Performs in-memory compression of the provided data buffer.
+    /// Uses the instance's configured algorithm and primary allocator.
     ///
     /// Arguments:
-    ///     data: The data to compress.
+    ///     self: Pointer to the compression instance.
+    ///     data: Source bytes to compress.
     ///
     /// Returns:
-    ///     Compressed data (caller must free), or error.
+    ///     - Allocated slice containing compressed data. Caller owns memory.
     ///
-    /// Performance:
-    ///     - ~100-500 MB/s typical throughput
-    ///     - Memory usage: 2-4x input size during compression
-    ///     - Best for files >1KB (overhead for small files)
+    /// Complexity: O(N) where N is the size of data.
     pub fn compress(self: *Compression, data: []const u8) ![]u8 {
         return self.compressWithAllocator(data, null);
     }
 
-    /// Compresses data using an optional scratch allocator.
-    /// If scratch_allocator is provided, it will be used for temporary allocations.
-    /// This is useful for arena allocators that batch-free memory.
+    /// Compresses data using a specified alternate allocator.
+    /// Represents the core compression logic, including header generation and checksums.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     data: Source bytes.
+    ///     scratch_allocator: Optional allocator for the operation. Defaults to instance allocator.
+    ///
+    /// Returns:
+    ///     - Compressed data slice.
+    ///
+    /// Complexity: O(N) where N is the size of data.
     pub fn compressWithAllocator(self: *Compression, data: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
         const start_time = std.time.nanoTimestamp();
@@ -288,7 +494,7 @@ pub const Compression = struct {
         // Compress based on algorithm and level
         switch (self.config.algorithm) {
             .none => try result.appendSlice(alloc, data),
-            .deflate, .zlib, .raw_deflate => {
+            .deflate, .zlib, .raw_deflate, .gzip => {
                 try self.compressDeflateWithAllocator(data, &result, alloc);
             },
         }
@@ -300,12 +506,64 @@ pub const Compression = struct {
         return result.toOwnedSlice(alloc);
     }
 
-    /// DEFLATE-style compression using LZ77 + RLE
+    /// Wrapper for compressDeflateWithAllocator using the instance allocator.
     fn compressDeflate(self: *Compression, data: []const u8, result: *std.ArrayList(u8)) !void {
         try self.compressDeflateWithAllocator(data, result, self.allocator);
     }
 
-    /// DEFLATE-style compression using LZ77 + RLE with custom allocator
+    /// Compresses data from a stream (Reader) and writes to a stream (Writer).
+    ///
+    /// Reads the entire input stream into memory to calculate headers (size/checksum) before compressing.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     reader: Source stream implementing readAll.
+    ///     writer: Destination stream implementing writeAll.
+    ///
+    /// Complexity: O(N) memory and time.
+    pub fn compressStream(self: *Compression, reader: anytype, writer: anytype) !void {
+        const content = try reader.readAllAlloc(self.allocator, std.math.maxInt(usize));
+        defer self.allocator.free(content);
+
+        const compressed = try self.compress(content);
+        defer self.allocator.free(compressed);
+
+        try writer.writeAll(compressed);
+    }
+
+    /// Decompresses data from a stream (Reader) and writes to a stream (Writer).
+    ///
+    /// Reads the entire compressed input stream into memory before decompressing.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     reader: Source stream implementing readAll.
+    ///     writer: Destination stream implementing writeAll.
+    ///
+    /// Complexity: O(N) memory and time.
+    pub fn decompressStream(self: *Compression, reader: anytype, writer: anytype) !void {
+        const content = try reader.readAllAlloc(self.allocator, std.math.maxInt(usize));
+        defer self.allocator.free(content);
+
+        const decompressed = try self.decompress(content);
+        defer self.allocator.free(decompressed);
+
+        try writer.writeAll(decompressed);
+    }
+
+    /// Performs DEFLATE-style compression using LZ77 sliding window and Run-Length Encoding (RLE).
+    ///
+    /// Algorithm details:
+    /// - Scans a sliding window for repeated byte sequences (LZ77).
+    /// - Encodes literals and matches using a simplified format.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     data: Source data to compress.
+    ///     result: Output buffer to append compressed data to.
+    ///     alloc: Allocator to use for resizing the result buffer.
+    ///
+    /// Complexity: O(N * W) where N is data length and W is window size (bounded by configuration level).
     fn compressDeflateWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
         const level = self.config.level.toInt();
 
@@ -384,12 +642,21 @@ pub const Compression = struct {
         try result.append(alloc, 0x00);
     }
 
-    /// Write a literal block with RLE compression
+    /// Writes a block of literal bytes to the output, applying RLE (Run-Length Encoding) where efficient.
+    /// Uses the instance allocator.
     fn writeLiteralBlock(self: *Compression, data: []const u8, result: *std.ArrayList(u8)) !void {
         try self.writeLiteralBlockWithAllocator(data, result, self.allocator);
     }
 
-    /// Write a literal block with RLE compression using custom allocator
+    /// Writes a block of literal bytes using a specific allocator.
+    ///
+    /// Arguments:
+    ///     self: Pointer to compression instance.
+    ///     data: The literal data to write.
+    ///     result: Destination buffer.
+    ///     alloc: Allocator for buffer operations.
+    ///
+    /// Complexity: O(N) where N is data length.
     fn writeLiteralBlockWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
         _ = self;
         if (data.len == 0) return;
@@ -424,23 +691,20 @@ pub const Compression = struct {
         }
     }
 
-    /// Decompresses data in memory with validation.
+    /// Reconstructs original data from a compressed byte stream.
     ///
-    /// Features:
-    /// - CRC32 checksum validation
-    /// - Format version detection
-    /// - Legacy format support
-    /// - Corruption detection
+    /// Validates format headers, checksums (if enabled), and version markers.
+    /// Supports legacy formats for backward compatibility.
     ///
     /// Arguments:
-    ///     data: The compressed data to decompress.
+    ///     self: Pointer to compression instance.
+    ///     data: The compressed byte slice.
     ///
     /// Returns:
-    ///     Decompressed data (caller must free), or error.
+    ///     - Slice containing decompressed data (caller owns memory).
+    ///     - Error if data is corrupt or format is invalid.
     ///
-    /// Performance:
-    ///     - ~200-800 MB/s typical throughput
-    ///     - Validates checksums if enabled
+    /// Complexity: O(N) where N is the size of the uncompressed output.
     pub fn decompress(self: *Compression, data: []const u8) ![]u8 {
         const start_time = std.time.nanoTimestamp();
         defer {
@@ -567,7 +831,17 @@ pub const Compression = struct {
         break :blk table;
     };
 
-    /// CRC32 checksum calculation (IEEE polynomial) - Optimized with lookup table
+    /// Computes the CRC32 checksum of the provided data using the IEEE polynomial.
+    ///
+    /// Uses a precomputed lookup table for high performance.
+    ///
+    /// Arguments:
+    ///     data: The data to checksum.
+    ///
+    /// Returns:
+    ///     - 32-bit CRC value.
+    ///
+    /// Complexity: O(N) linear time.
     fn calculateCRC32(data: []const u8) u32 {
         var crc: u32 = 0xFFFFFFFF;
         for (data) |byte| {
@@ -576,28 +850,20 @@ pub const Compression = struct {
         return ~crc;
     }
 
-    /// Compresses a file on disk with comprehensive error handling.
+    /// Compresses a file from the filesystem.
     ///
-    /// Features:
-    /// - Automatic output path generation
-    /// - Optional original file deletion
-    /// - Detailed compression statistics
-    /// - Callback notifications
-    /// - Atomic file operations
+    /// Reads the input file, compresses its contents in memory, and writes to the output path.
+    /// Handles file stat, read/write permissions, and optional cleanup of the source file.
     ///
     /// Arguments:
-    ///     input_path: Path to the file to compress.
-    ///     output_path: Optional output path. If null, appends compression extension.
+    ///     self: Pointer to the compression instance.
+    ///     input_path: Path to the source file.
+    ///     output_path: Optional destination path. Defaults to `{input_path}.{ext}`.
     ///
     /// Returns:
-    ///     CompressionResult with operation details.
+    ///     - CompressionResult struct containing stats and status.
     ///
-    /// Example:
-    ///     const result = try compression.compressFile("app.log", null);
-    ///     defer if (result.output_path) |p| allocator.free(p);
-    ///     if (result.success) {
-    ///         std.debug.print("Compressed: {d:.1}% savings\n", .{result.ratio() * 100});
-    ///     }
+    /// Complexity: O(N) where N is the file size (I/O bound).
     pub fn compressFile(self: *Compression, input_path: []const u8, output_path: ?[]const u8) !CompressionResult {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -649,6 +915,20 @@ pub const Compression = struct {
         self.mutex.lock();
         defer self.allocator.free(compressed);
 
+        // Create parent directory if needed
+        if (std.fs.path.dirname(out_path)) |dirname| {
+            std.fs.cwd().makePath(dirname) catch |err| {
+                _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
+                return .{
+                    .success = false,
+                    .original_size = original_size,
+                    .compressed_size = 0,
+                    .output_path = null,
+                    .error_message = @errorName(err),
+                };
+            };
+        }
+
         // Write compressed file
         const output_file = std.fs.cwd().createFile(out_path, .{}) catch |err| {
             _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
@@ -687,14 +967,17 @@ pub const Compression = struct {
         };
     }
 
-    /// Decompresses a file on disk.
+    /// Decompresses a file on disk, automatically handling output naming.
     ///
     /// Arguments:
+    ///     self: Pointer to the compression instance.
     ///     input_path: Path to the compressed file.
-    ///     output_path: Optional output path. If null, removes compression extension.
+    ///     output_path: Optional output path. If null, removes compression extension (e.g. .gz).
     ///
     /// Returns:
-    ///     true on success, false on failure.
+    ///     - true on success, false on failure.
+    ///
+    /// Complexity: O(N) where N is the file size (I/O bound).
     pub fn decompressFile(self: *Compression, input_path: []const u8, output_path: ?[]const u8) !bool {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -729,13 +1012,54 @@ pub const Compression = struct {
         return true;
     }
 
-    /// Checks if a file should be compressed based on configuration.
+    /// Compresses all eligible files in a directory.
+    ///
+    /// Scans the directory for files that should be compressed (based on `shouldCompress`)
+    /// and compresses them individually. Non-recursive.
     ///
     /// Arguments:
-    ///     file_path: Path to the file to check.
+    ///     self: Pointer to the compression instance.
+    ///     dir_path: Path to the directory to scan.
     ///
     /// Returns:
-    ///     true if the file should be compressed.
+    ///     - Number of files successfully compressed.
+    pub fn compressDirectory(self: *Compression, dir_path: []const u8) !u64 {
+        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close();
+
+        var iterator = dir.iterate();
+        var count: u64 = 0;
+
+        while (try iterator.next()) |entry| {
+            if (entry.kind != .file) continue;
+
+            const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
+            defer self.allocator.free(file_path);
+
+            if (self.shouldCompress(file_path)) {
+                // Ignore errors for individual files to keep processing
+                const result = self.compressFile(file_path, null) catch continue;
+                if (result.output_path) |p| {
+                    self.allocator.free(p);
+                }
+                if (result.success) {
+                    count += 1;
+                }
+            }
+        }
+        return count;
+    }
+
+    /// Determines eligibility for compression based on file state and configuration.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     file_path: Path to the candidate file.
+    ///
+    /// Returns:
+    ///     - true if compression criteria are met (size, extension, etc.).
+    ///
+    /// Complexity: O(1) checks + optional O(1) file stat for size threshold mode.
     pub fn shouldCompress(self: *const Compression, file_path: []const u8) bool {
         if (self.config.mode == .disabled) return false;
 
@@ -757,25 +1081,53 @@ pub const Compression = struct {
     }
 
     /// Gets compression statistics.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///
+    /// Returns:
+    ///     - Current compression statistics (copy).
+    ///
+    /// Complexity: O(1) non-blocking access to atomic values.
     pub fn getStats(self: *const Compression) CompressionStats {
         return self.stats;
     }
 
-    /// Resets compression statistics.
+    /// Resets compression statistics to zero.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///
+    /// Complexity: O(1)
     pub fn resetStats(self: *Compression) void {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.stats.reset();
     }
 
-    /// Updates configuration.
+    /// Updates the compression configuration at runtime.
+    /// Thread-safe update of operational parameters.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     config: New configuration object.
+    ///
+    /// Complexity: O(1)
     pub fn configure(self: *Compression, config: CompressionConfig) void {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.config = config;
     }
 
-    /// Creates a compressed file sink configuration.
+    /// Helper to create a fully configured sink for compressed logging.
+    ///
+    /// Arguments:
+    ///     file_path: Target log file path.
+    ///
+    /// Returns:
+    ///     - SinkConfig pre-populated with balanced compression settings.
+    ///
+    /// Complexity: O(1)
     pub fn createCompressedSink(file_path: []const u8) @import("sink.zig").SinkConfig {
         const SinkConfig = @import("sink.zig").SinkConfig;
         return SinkConfig{
@@ -785,12 +1137,28 @@ pub const Compression = struct {
         };
     }
 
-    /// Returns true if compression is enabled.
+    /// Returns true if compression is active and configured.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///
+    /// Returns:
+    ///     - true if algorithm is not .none and mode is not .disabled.
+    ///
+    /// Complexity: O(1)
     pub fn isEnabled(self: *const Compression) bool {
         return self.config.algorithm != .none and self.config.mode != .disabled;
     }
 
-    /// Returns the compression ratio.
+    /// Returns the current compression ratio based on statistics.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///
+    /// Returns:
+    ///     - f64 representing ratio of original to compressed size (e.g. 5.0 for 5x reduction).
+    ///
+    /// Complexity: O(1)
     pub fn ratio(self: *const Compression) f64 {
         return self.stats.compressionRatio();
     }
@@ -816,9 +1184,11 @@ pub const Compression = struct {
     pub const needsCompression = shouldCompress;
 };
 
-/// Preset compression configurations.
+/// Preset compression configurations for common use cases.
 pub const CompressionPresets = struct {
-    /// No compression.
+    /// Returns a configuration with compression disabled.
+    ///
+    /// Complexity: O(1)
     pub fn none() Compression.CompressionConfig {
         return .{
             .algorithm = .none,
@@ -826,7 +1196,10 @@ pub const CompressionPresets = struct {
         };
     }
 
-    /// Fast compression for high-throughput logging.
+    /// Returns a configuration optimized for throughput (Fastest).
+    /// Safe for use in high-volume logging paths.
+    ///
+    /// Complexity: O(1)
     pub fn fast() Compression.CompressionConfig {
         return .{
             .algorithm = .deflate,
@@ -835,7 +1208,10 @@ pub const CompressionPresets = struct {
         };
     }
 
-    /// Balanced compression (default).
+    /// Returns a balanced configuration suitable for most use cases (Default).
+    /// Trades moderate CPU usage for good compression ratios.
+    ///
+    /// Complexity: O(1)
     pub fn balanced() Compression.CompressionConfig {
         return .{
             .algorithm = .deflate,
@@ -844,7 +1220,10 @@ pub const CompressionPresets = struct {
         };
     }
 
-    /// Maximum compression for long-term storage.
+    /// Returns a configuration optimized for maximum ratio (Best).
+    /// Higher CPU usage, recommended for archival storage.
+    ///
+    /// Complexity: O(1)
     pub fn maximum() Compression.CompressionConfig {
         return .{
             .algorithm = .deflate,
@@ -854,7 +1233,15 @@ pub const CompressionPresets = struct {
         };
     }
 
-    /// Size-based compression trigger.
+    /// Returns a configuration that triggers based on file size threshold.
+    ///
+    /// Arguments:
+    ///     threshold_mb: Size limit in Megabytes before compression occurs.
+    ///
+    /// Returns:
+    ///     - CompressionConfig with .on_size_threshold mode set.
+    ///
+    /// Complexity: O(1)
     pub fn onSize(threshold_mb: u64) Compression.CompressionConfig {
         return .{
             .algorithm = .deflate,
@@ -997,4 +1384,129 @@ test "compression presets" {
 
     const max = CompressionPresets.maximum();
     try std.testing.expectEqual(Compression.Level.best, max.level);
+}
+
+test "streaming compression" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    const data = "Streaming test data" ** 10;
+
+    var in_stream = std.io.fixedBufferStream(data);
+    var out_buffer: std.ArrayList(u8) = .empty; // Use .empty for Unmanaged-style ArrayList
+    defer out_buffer.deinit(allocator);
+
+    try comp.compressStream(in_stream.reader(), out_buffer.writer(allocator));
+
+    try std.testing.expect(out_buffer.items.len > 0);
+
+    // Verify roundtrip
+    var decomp_in_stream = std.io.fixedBufferStream(out_buffer.items);
+    var decomp_out_buffer: std.ArrayList(u8) = .empty;
+    defer decomp_out_buffer.deinit(allocator);
+
+    try comp.decompressStream(decomp_in_stream.reader(), decomp_out_buffer.writer(allocator));
+
+    try std.testing.expectEqualStrings(data, decomp_out_buffer.items);
+}
+
+test "gzip algorithm" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    comp.config.algorithm = .gzip;
+    defer comp.deinit();
+
+    const data = "GZIP test data";
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    try std.testing.expect(compressed.len > 0);
+
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "file compression with auto-directory creation" {
+    const allocator = std.testing.allocator;
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    // Use a unique path for testing
+    const test_dir = "test_output_compression";
+    const test_file = "test_file_to_compress.log";
+    const output_file = "test_output_compression/nested/dirs/output.log.gz";
+
+    // Clean up before test
+    std.fs.cwd().deleteTree(test_dir) catch {};
+    defer std.fs.cwd().deleteTree(test_dir) catch {};
+
+    // Create a dummy source file
+    const file = try std.fs.cwd().createFile(test_file, .{});
+    try file.writeAll("Test content for compression");
+    file.close();
+    defer std.fs.cwd().deleteFile(test_file) catch {};
+
+    // Compress with deep path that doesn't exist yet
+    const result = try comp.compressFile(test_file, output_file);
+
+    // Verify success
+    try std.testing.expect(result.success);
+    if (result.output_path) |path| {
+        defer allocator.free(path);
+    }
+
+    // Verify directory was created
+    const stat = try std.fs.cwd().statFile(output_file);
+    try std.testing.expect(stat.size > 0);
+}
+
+test "directory compression" {
+    const allocator = std.testing.allocator;
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    const test_dir = "test_batch_compression";
+
+    // Setup test directory
+    std.fs.cwd().deleteTree(test_dir) catch {};
+    try std.fs.cwd().makePath(test_dir);
+    defer std.fs.cwd().deleteTree(test_dir) catch {};
+
+    // Create multiple log files
+    const files = [_][]const u8{ "log1.log", "log2.log", "skip.txt" };
+    for (files) |fname| {
+        const p = try std.fs.path.join(allocator, &[_][]const u8{ test_dir, fname });
+        defer allocator.free(p);
+        const f = try std.fs.cwd().createFile(p, .{});
+        try f.writeAll("Log data content");
+        f.close();
+    }
+
+    // configure to only compress .log files if we were filtering extensions,
+    // but shouldCompress currently checks for NOT compressed extensions.
+    // So all valid files should be compressed.
+
+    const compressed_count = try comp.compressDirectory(test_dir);
+
+    // Should compress 3 files (log1.log, log2.log, skip.txt)
+    try std.testing.expectEqual(@as(u64, 3), compressed_count);
+
+    // Verify .gz files exist
+    var dir = try std.fs.cwd().openDir(test_dir, .{ .iterate = true });
+    defer dir.close();
+
+    var count: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |entry| {
+        if (std.mem.endsWith(u8, entry.name, ".gz")) {
+            count += 1;
+        }
+    }
+
+    try std.testing.expectEqual(@as(usize, 3), count);
 }

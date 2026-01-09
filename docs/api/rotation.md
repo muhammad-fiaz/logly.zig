@@ -2,6 +2,13 @@
 
 The `Rotation` module provides enterprise-grade log rotation capabilities, including time-based and size-based rotation, retention policies, compression, and flexible naming strategies.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize rotation |
+| `deinit()` | `destroy()` | Deinitialize rotation |
+
 ## Rotation Struct
 
 The core struct managing rotation logic.
@@ -84,6 +91,42 @@ pub fn withArchiveDir(self: *Rotation, dir: []const u8) !void
 try rot.withArchiveDir("logs/archive");
 ```
 
+#### `withKeepOriginal`
+Set whether to keep original files after compression.
+
+```zig
+pub fn withKeepOriginal(self: *Rotation, keep: bool) void
+```
+
+**Example:**
+```zig
+rot.withKeepOriginal(true); // Keep both original and compressed files
+```
+
+#### `withCompressOnRetention`
+Enable compression during retention cleanup instead of deletion.
+
+```zig
+pub fn withCompressOnRetention(self: *Rotation, enable: bool) void
+```
+
+**Example:**
+```zig
+rot.withCompressOnRetention(true); // Compress old files instead of deleting
+```
+
+#### `withDeleteAfterRetentionCompress`
+Set whether to delete original files after retention compression.
+
+```zig
+pub fn withDeleteAfterRetentionCompress(self: *Rotation, delete: bool) void
+```
+
+**Example:**
+```zig
+rot.withDeleteAfterRetentionCompress(false); // Keep originals after compression
+```
+
 #### `applyConfig`
 Applies global configuration settings to the rotation instance.
 
@@ -110,10 +153,43 @@ pub const RotationConfig = struct {
     retention_count: ?usize = null,
     max_age_seconds: ?i64 = null,
     naming_strategy: NamingStrategy = .timestamp,
+    naming_format: ?[]const u8 = null,
     archive_dir: ?[]const u8 = null,
     clean_empty_dirs: bool = false,
+    async_cleanup: bool = false,
+    keep_original: bool = false,                    // Keep original after compression
+    compress_on_retention: bool = false,            // Compress instead of delete during retention
+    delete_after_retention_compress: bool = true,   // Delete originals after retention compression
+    archive_root_dir: ?[]const u8 = null,           // Root directory for all archives
+    create_date_subdirs: bool = false,              // Create YYYY/MM/DD subdirectories
+    file_prefix: ?[]const u8 = null,                // Custom prefix for rotated files
+    file_suffix: ?[]const u8 = null,                // Custom suffix for rotated files
+    compression_algorithm: CompressionAlgorithm = .gzip,
+    compression_level: CompressionLevel = .default,
 };
 ```
+
+### RotationConfig Field Reference
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable rotation |
+| `interval` | `?[]const u8` | `null` | Time-based interval (e.g., "daily") |
+| `size_limit` | `?u64` | `null` | Size-based rotation threshold (bytes) |
+| `retention_count` | `?usize` | `null` | Max files to retain |
+| `max_age_seconds` | `?i64` | `null` | Max age for rotated files |
+| `naming_strategy` | `NamingStrategy` | `.timestamp` | File naming strategy |
+| `archive_dir` | `?[]const u8` | `null` | Directory for rotated files |
+| `archive_root_dir` | `?[]const u8` | `null` | Centralized archive root |
+| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
+| `file_prefix` | `?[]const u8` | `null` | Prefix for rotated file names |
+| `file_suffix` | `?[]const u8` | `null` | Suffix for rotated file names |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression |
+| `compression_level` | `CompressionLevel` | `.default` | Compression level |
+| `keep_original` | `bool` | `false` | Keep original after compression |
+| `compress_on_retention` | `bool` | `false` | Compress instead of delete |
+| `delete_after_retention_compress` | `bool` | `true` | Delete after retention compression |
+| `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
 
 ## Enums
 

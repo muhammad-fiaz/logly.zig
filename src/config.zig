@@ -501,10 +501,17 @@ pub const Config = struct {
             custom,
         };
 
+        /// Returns default redaction settings (disabled).
+        ///
+        /// Complexity: O(1)
         pub fn default() RedactionConfig {
             return .{};
         }
 
+        /// Returns redaction settings compliant with PCI-DSS standards.
+        /// Enables middle masking for credit cards etc.
+        ///
+        /// Complexity: O(1)
         pub fn pciDss() RedactionConfig {
             return .{
                 .enabled = true,
@@ -514,6 +521,10 @@ pub const Config = struct {
             };
         }
 
+        /// Returns redaction settings compliant with HIPAA standards.
+        /// Uses secure hashing (SHA-256) for identifiers.
+        ///
+        /// Complexity: O(1)
         pub fn hipaa() RedactionConfig {
             return .{
                 .enabled = true,
@@ -524,6 +535,10 @@ pub const Config = struct {
             };
         }
 
+        /// Returns redaction settings compliant with GDPR.
+        /// Uses partial redaction to balance utility and privacy.
+        ///
+        /// Complexity: O(1)
         pub fn gdpr() RedactionConfig {
             return .{
                 .enabled = true,
@@ -532,6 +547,10 @@ pub const Config = struct {
             };
         }
 
+        /// Returns strict redaction settings (full redaction).
+        /// Case-insensitive matching enabled.
+        ///
+        /// Complexity: O(1)
         pub fn strict() RedactionConfig {
             return .{
                 .enabled = true,
@@ -609,10 +628,17 @@ pub const Config = struct {
         /// Buffer size for buffered writes.
         buffer_size: usize = 64,
 
+        /// Returns default parallel configuration.
+        ///
+        /// Complexity: O(1)
         pub fn default() ParallelConfig {
             return .{};
         }
 
+        /// Returns configuration optimized for high throughput.
+        /// Increases concurrency and buffering, disables retries.
+        ///
+        /// Complexity: O(1)
         pub fn highThroughput() ParallelConfig {
             return .{
                 .max_concurrent = 16,
@@ -623,6 +649,10 @@ pub const Config = struct {
             };
         }
 
+        /// Returns configuration optimized for low latency.
+        /// Low concurrency, no buffering, short timeouts.
+        ///
+        /// Complexity: O(1)
         pub fn lowLatency() ParallelConfig {
             return .{
                 .max_concurrent = 4,
@@ -633,6 +663,10 @@ pub const Config = struct {
             };
         }
 
+        /// Returns configuration optimized for reliability.
+        /// Enabled retries and longer timeouts.
+        ///
+        /// Complexity: O(1)
         pub fn reliable() ParallelConfig {
             return .{
                 .max_concurrent = 8,
@@ -656,6 +690,28 @@ pub const Config = struct {
         compress_before_cleanup: bool = false,
         /// Default file pattern for cleanup.
         file_pattern: []const u8 = "*.log",
+        /// Root directory for compressed/archived files.
+        archive_root_dir: ?[]const u8 = null,
+        /// Create date-based subdirectories (YYYY/MM/DD).
+        create_date_subdirs: bool = false,
+        /// Compression algorithm for scheduled compression tasks.
+        compression_algorithm: CompressionConfig.CompressionAlgorithm = .gzip,
+        /// Compression level for scheduled tasks.
+        compression_level: CompressionConfig.CompressionLevel = .default,
+        /// Keep original files after scheduled compression.
+        keep_originals: bool = false,
+        /// Custom prefix for archived file names.
+        archive_file_prefix: ?[]const u8 = null,
+        /// Custom suffix for archived file names.
+        archive_file_suffix: ?[]const u8 = null,
+        /// Preserve directory structure in archive root.
+        preserve_dir_structure: bool = true,
+        /// Delete empty directories after cleanup.
+        clean_empty_dirs: bool = false,
+        /// Minimum file age in days before compression.
+        min_age_days_for_compression: u64 = 1,
+        /// Maximum concurrent compression tasks.
+        max_concurrent_compressions: usize = 2,
     };
 
     /// Metrics collection configuration.
@@ -694,10 +750,17 @@ pub const Config = struct {
             statsd,
         };
 
+        /// Returns default metrics configuration (disabled).
+        ///
+        /// Complexity: O(1)
         pub fn default() MetricsConfig {
             return .{};
         }
 
+        /// Returns metrics configuration suitable for production monitoring.
+        /// Tracks throughput, levels, and sinks with specific error thresholds.
+        ///
+        /// Complexity: O(1)
         pub fn production() MetricsConfig {
             return .{
                 .enabled = true,
@@ -709,6 +772,10 @@ pub const Config = struct {
             };
         }
 
+        /// Returns minimal metrics configuration.
+        /// Enables system but disables per-level/sink tracking to save memory.
+        ///
+        /// Complexity: O(1)
         pub fn minimal() MetricsConfig {
             return .{
                 .enabled = true,
@@ -718,6 +785,10 @@ pub const Config = struct {
             };
         }
 
+        /// Returns detailed metrics configuration for debugging/profiling.
+        /// Enables latency tracking, histograms, and history retention.
+        ///
+        /// Complexity: O(1)
         pub fn detailed() MetricsConfig {
             return .{
                 .enabled = true,
@@ -768,12 +839,27 @@ pub const Config = struct {
         parallel: bool = false,
         /// Memory limit for compression (bytes, 0 = unlimited).
         memory_limit: usize = 0,
+        /// Custom prefix for compressed file names (e.g., "archive_" -> "archive_app.log.gz").
+        file_prefix: ?[]const u8 = null,
+        /// Custom suffix before extension (e.g., "_compressed" -> "app_compressed.log.gz").
+        file_suffix: ?[]const u8 = null,
+        /// Root directory for all compressed files (centralized archive location).
+        /// If set, all compressed files will be stored here instead of alongside originals.
+        archive_root_dir: ?[]const u8 = null,
+        /// Create date-based subdirectories in archive root (YYYY/MM/DD structure).
+        create_date_subdirs: bool = false,
+        /// Preserve original directory structure when archiving to root dir.
+        preserve_dir_structure: bool = true,
+        /// Custom naming pattern for compressed files.
+        /// Placeholders: {base}, {ext}, {date}, {time}, {timestamp}, {index}
+        naming_pattern: ?[]const u8 = null,
 
         pub const CompressionAlgorithm = enum {
             none,
             deflate,
             zlib,
             raw_deflate,
+            gzip,
         };
 
         pub const CompressionLevel = enum {
@@ -783,6 +869,12 @@ pub const Config = struct {
             default,
             best,
 
+            /// Converts the enum to its corresponding zlib/deflate compression integer level (0-9).
+            ///
+            /// Returns:
+            /// - u4 integer representation.
+            ///
+            /// Complexity: O(1)
             pub fn toInt(self: CompressionLevel) u4 {
                 return switch (self) {
                     .none => 0,
@@ -810,6 +902,276 @@ pub const Config = struct {
             rle_only,
             adaptive,
         };
+
+        /// Returns a minimal compression config with compression enabled.
+        /// Use this for the simplest one-liner compression setup.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.enable());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn enable() CompressionConfig {
+            return .{ .enabled = true };
+        }
+
+        /// Alias for enable(). Returns a minimal compression config with compression enabled.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.basic());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn basic() CompressionConfig {
+            return enable();
+        }
+
+        /// Returns an implicit compression config (automatic compression on rotation).
+        /// The library automatically compresses files during rotation - no manual intervention needed.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.implicit());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn implicit() CompressionConfig {
+            return .{
+                .enabled = true,
+                .mode = .on_rotation,
+                .on_rotation = true,
+                .background = false,
+            };
+        }
+
+        /// Returns an explicit compression config (manual compression control).
+        /// Use compressFile() and compressDirectory() for user-controlled compression.
+        /// Disables automatic rotation-based compression.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.explicit());
+        /// // Then manually: compression.compressFile("logs/app.log", null);
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn explicit() CompressionConfig {
+            return .{
+                .enabled = true,
+                .mode = .disabled,
+                .on_rotation = false,
+            };
+        }
+
+        /// Returns a streaming compression config.
+        /// Compresses data as it's written - useful for real-time compression.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.streaming());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn streamingMode() CompressionConfig {
+            return .{
+                .enabled = true,
+                .mode = .streaming,
+                .streaming = true,
+                .on_rotation = false,
+            };
+        }
+
+        /// Returns a background compression config.
+        /// Compression runs in a separate thread for non-blocking operation.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.background());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn backgroundMode() CompressionConfig {
+            return .{
+                .enabled = true,
+                .background = true,
+                .on_rotation = true,
+            };
+        }
+
+        /// Returns a fast compression config (prioritize speed over ratio).
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.fast());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn fast() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .fastest,
+                .algorithm = .deflate,
+            };
+        }
+
+        /// Returns a balanced compression config (default speed/ratio tradeoff).
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.balanced());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn balanced() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .default,
+                .algorithm = .deflate,
+            };
+        }
+
+        /// Returns a best compression config (prioritize ratio over speed).
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.best());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn best() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .best,
+                .algorithm = .gzip,
+            };
+        }
+
+        /// Returns a compression config optimized for text/log files.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.forLogs());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn forLogs() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .default,
+                .algorithm = .gzip,
+                .strategy = .text,
+                .on_rotation = true,
+            };
+        }
+
+        /// Returns a compression config with archival settings (compress + delete original).
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.archive());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn archive() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .best,
+                .algorithm = .gzip,
+                .keep_original = false,
+                .on_rotation = true,
+            };
+        }
+
+        /// Returns a compression config that keeps originals after compression.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.keepOriginals());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn keepOriginals() CompressionConfig {
+            return .{
+                .enabled = true,
+                .keep_original = true,
+                .on_rotation = true,
+            };
+        }
+
+        /// Returns a compression config with size-threshold trigger.
+        /// Compresses files when they exceed the specified size.
+        ///
+        /// Arguments:
+        ///   - `threshold_bytes`: Size in bytes that triggers compression.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.onSize(5 * 1024 * 1024)); // 5MB
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn onSize(threshold_bytes: u64) CompressionConfig {
+            return .{
+                .enabled = true,
+                .mode = .on_size_threshold,
+                .size_threshold = threshold_bytes,
+                .on_rotation = false,
+            };
+        }
+
+        /// Returns a production-ready compression config.
+        /// Balanced performance with background processing and checksums.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.production());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn production() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .default,
+                .algorithm = .gzip,
+                .background = true,
+                .checksum = true,
+                .on_rotation = true,
+                .keep_original = false,
+            };
+        }
+
+        /// Returns a development compression config.
+        /// Fast compression with originals kept for debugging.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.development());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn development() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .fastest,
+                .algorithm = .deflate,
+                .keep_original = true,
+                .checksum = true,
+            };
+        }
+
+        /// Returns a disabled compression config.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.disable());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        pub fn disable() CompressionConfig {
+            return .{ .enabled = false };
+        }
     };
 
     /// Rotation and retention configuration.
@@ -855,6 +1217,29 @@ pub const Config = struct {
 
         /// Whether to perform cleanup asynchronously.
         async_cleanup: bool = false,
+
+        /// Keep original file after compression (default: false - delete original).
+        keep_original: bool = false,
+
+        /// Compress files during retention cleanup instead of deleting them.
+        /// When true, old files exceeding retention limits are compressed rather than deleted.
+        compress_on_retention: bool = false,
+
+        /// Delete files after compression during retention (only applies when compress_on_retention is true).
+        /// When false, compressed files are kept; when true, originals are deleted after compression.
+        delete_after_retention_compress: bool = true,
+        /// Root directory for all rotated/compressed files (centralized archive).
+        archive_root_dir: ?[]const u8 = null,
+        /// Create date-based subdirectories in archive (YYYY/MM/DD structure).
+        create_date_subdirs: bool = false,
+        /// Custom prefix for rotated file names.
+        file_prefix: ?[]const u8 = null,
+        /// Custom suffix for rotated file names (before extension).
+        file_suffix: ?[]const u8 = null,
+        /// Compression algorithm for rotation.
+        compression_algorithm: CompressionConfig.CompressionAlgorithm = .gzip,
+        /// Compression level for rotation.
+        compression_level: CompressionConfig.CompressionLevel = .default,
 
         pub const NamingStrategy = enum {
             /// Append timestamp: logly.log -> logly.log.1678888888
@@ -943,13 +1328,19 @@ pub const Config = struct {
         /// Sort messages by severity.
         sort_by_severity: bool = false,
 
-        /// Preset configurations
-        /// Minimal configuration with rules enabled.
+        /// Preset configurations for various environments.
+        /// Returns minimal rule configuration.
+        /// Enables rules with basic settings.
+        ///
+        /// Complexity: O(1)
         pub fn minimal() RulesConfig {
             return .{ .enabled = true, .use_unicode = true, .enable_colors = true };
         }
 
-        /// Production configuration: no colors, no verbose, minimal output.
+        /// Returns production rule configuration.
+        /// No colors, no verbose output, minimal overhead.
+        ///
+        /// Complexity: O(1)
         pub fn production() RulesConfig {
             return .{
                 .enabled = true,
@@ -960,7 +1351,10 @@ pub const Config = struct {
             };
         }
 
-        /// Development configuration: full debugging with colors and Unicode.
+        /// Returns development rule configuration.
+        /// Full debugging info, colors, Unicode support, and verbose output.
+        ///
+        /// Complexity: O(1)
         pub fn development() RulesConfig {
             return .{
                 .enabled = true,
@@ -971,27 +1365,40 @@ pub const Config = struct {
             };
         }
 
-        /// ASCII-only configuration for terminals without Unicode support.
+        /// Returns ASCII-only rule configuration.
+        /// Useful for legacy terminals or environments without Unicode support.
+        ///
+        /// Complexity: O(1)
         pub fn ascii() RulesConfig {
             return .{ .enabled = true, .use_unicode = false, .enable_colors = true };
         }
 
-        /// Disabled configuration: zero overhead.
+        /// Returns disabled rule configuration.
+        /// Zero overhead as rules system is bypassed.
+        ///
+        /// Complexity: O(1)
         pub fn disabled() RulesConfig {
             return .{ .enabled = false };
         }
 
-        /// Silent mode: rules evaluate but don't output.
+        /// Returns silent rule configuration.
+        /// Rules are evaluated but no output is generated (silent evaluation).
+        ///
+        /// Complexity: O(1)
         pub fn silent() RulesConfig {
             return .{ .enabled = true, .console_output = false, .file_output = false };
         }
 
-        /// Console only: no file output.
+        /// Returns console-only rule configuration.
+        ///
+        /// Complexity: O(1)
         pub fn consoleOnly() RulesConfig {
             return .{ .enabled = true, .console_output = true, .file_output = false };
         }
 
-        /// File only: no console output.
+        /// Returns file-only rule configuration.
+        ///
+        /// Complexity: O(1)
         pub fn fileOnly() RulesConfig {
             return .{ .enabled = true, .console_output = false, .file_output = true };
         }
@@ -1027,11 +1434,13 @@ pub const Config = struct {
 
     /// Returns the default configuration.
     ///
-    /// The default configuration is:
+    /// Defaults:
     ///   - Level: INFO
     ///   - Output: Console with colors
     ///   - Format: Standard text
     ///   - Features: Callbacks and exception handling enabled
+    ///
+    /// Complexity: O(1)
     pub fn default() Config {
         return .{};
     }
@@ -1046,6 +1455,8 @@ pub const Config = struct {
     ///   - Metrics enabled
     ///   - Compression enabled (on rotation)
     ///   - Scheduler enabled (auto cleanup)
+    ///
+    /// Complexity: O(1)
     pub fn production() Config {
         return .{
             .level = .info,
@@ -1080,6 +1491,8 @@ pub const Config = struct {
     ///   - Colors enabled
     ///   - Source location shown
     ///   - Debug mode enabled
+    ///
+    /// Complexity: O(1)
     pub fn development() Config {
         return .{
             .level = .debug,
@@ -1100,6 +1513,8 @@ pub const Config = struct {
     ///   - Adaptive sampling
     ///   - Thread pool enabled
     ///   - Async logging enabled
+    ///
+    /// Complexity: O(1)
     pub fn highThroughput() Config {
         return .{
             .level = .warning,
@@ -1135,6 +1550,8 @@ pub const Config = struct {
     ///   - Redaction enabled
     ///   - No sensitive data in output
     ///   - Structured logging
+    ///
+    /// Complexity: O(1)
     pub fn secure() Config {
         return .{
             .redaction = .{ .enabled = true },
@@ -1146,13 +1563,20 @@ pub const Config = struct {
 
     /// Merges another configuration into this one.
     ///
-    /// Non-default values from the other configuration will override this one.
+    /// The `other` configuration takes precedence for non-default values.
+    /// Used to layer configurations (e.g., specific override over base profile).
+    ///
+    /// Algorithm:
+    ///   - Checks each field in `other`.
+    ///   - If `other` has a non-default or active configuration for a component, it replaces the one in `self`.
     ///
     /// Arguments:
-    ///     other: The configuration to merge from.
+    ///   - `other`: The configuration to merge from.
     ///
-    /// Returns:
-    ///     A new configuration with merged values.
+    /// Return Value:
+    ///   - A new `Config` struct with merged values.
+    ///
+    /// Complexity: O(1)
     pub fn merge(self: Config, other: Config) Config {
         var result = self;
         if (other.level != .info) result.level = other.level;
@@ -1173,6 +1597,16 @@ pub const Config = struct {
     }
 
     /// Returns a configuration with async logging enabled.
+    ///
+    /// Builder pattern method to enable async logging with a specific configuration.
+    ///
+    /// Arguments:
+    ///   - `config`: Custom `AsyncConfig`.
+    ///
+    /// Return Value:
+    ///   - Modified `Config` with async enabled.
+    ///
+    /// Complexity: O(1)
     pub fn withAsync(self: Config, config: AsyncConfig) Config {
         var result = self;
         result.async_config = config;
@@ -1181,6 +1615,16 @@ pub const Config = struct {
     }
 
     /// Returns a configuration with compression enabled.
+    ///
+    /// Builder pattern method to enable compression.
+    ///
+    /// Arguments:
+    ///   - `config`: Custom `CompressionConfig`.
+    ///
+    /// Return Value:
+    ///   - Modified `Config` with compression enabled.
+    ///
+    /// Complexity: O(1)
     pub fn withCompression(self: Config, config: CompressionConfig) Config {
         var result = self;
         result.compression = config;
@@ -1188,7 +1632,118 @@ pub const Config = struct {
         return result;
     }
 
+    /// Returns a configuration with compression enabled using defaults.
+    /// This is the simplest one-liner to enable compression.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withCompressionEnabled();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withCompressionEnabled(self: Config) Config {
+        return self.withCompression(CompressionConfig.basic());
+    }
+
+    /// Returns a configuration with implicit (automatic) compression.
+    /// Files are automatically compressed on rotation - no manual intervention needed.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withImplicitCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withImplicitCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.implicit());
+    }
+
+    /// Returns a configuration for explicit (manual) compression.
+    /// Use compressFile()/compressDirectory() for user-controlled compression.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withExplicitCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withExplicitCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.explicit());
+    }
+
+    /// Returns a configuration with fast compression (speed over ratio).
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withFastCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withFastCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.fast());
+    }
+
+    /// Returns a configuration with best compression (ratio over speed).
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withBestCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withBestCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.best());
+    }
+
+    /// Returns a configuration with background compression.
+    /// Compression runs in a separate thread for non-blocking operation.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withBackgroundCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withBackgroundCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.backgroundMode());
+    }
+
+    /// Returns a configuration optimized for log file compression.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withLogCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withLogCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.forLogs());
+    }
+
+    /// Returns a configuration for production compression.
+    /// Balanced performance with background processing and checksums.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withProductionCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    pub fn withProductionCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.production());
+    }
+
     /// Returns a configuration with thread pool enabled.
+    ///
+    /// Builder pattern method to enable thread pool support.
+    ///
+    /// Arguments:
+    ///   - `config`: Custom `ThreadPoolConfig`.
+    ///
+    /// Return Value:
+    ///   - Modified `Config` with thread pool enabled.
+    ///
+    /// Complexity: O(1)
     pub fn withThreadPool(self: Config, config: ThreadPoolConfig) Config {
         var result = self;
         result.thread_pool = config;
@@ -1197,6 +1752,16 @@ pub const Config = struct {
     }
 
     /// Returns a configuration with scheduler enabled.
+    ///
+    /// Builder pattern method to enable the background scheduler.
+    ///
+    /// Arguments:
+    ///   - `config`: Custom `SchedulerConfig`.
+    ///
+    /// Return Value:
+    ///   - Modified `Config` with scheduler enabled.
+    ///
+    /// Complexity: O(1)
     pub fn withScheduler(self: Config, config: SchedulerConfig) Config {
         var result = self;
         result.scheduler = config;
@@ -1205,8 +1770,17 @@ pub const Config = struct {
     }
 
     /// Returns a configuration with arena allocator hint enabled.
-    /// When set, the logger will use an arena for internal temporary allocations
-    /// which can improve performance by reducing allocation overhead.
+    ///
+    /// Optimization helper. When enabled, the logger may use an arena allocator
+    /// for request-scoped or temporary allocations to improve performance.
+    ///
+    /// Arguments:
+    ///   - None
+    ///
+    /// Return Value:
+    ///   - Modified `Config` with `use_arena_allocator` set to true.
+    ///
+    /// Complexity: O(1)
     pub fn withArenaAllocation(self: Config) Config {
         var result = self;
         result.use_arena_allocator = true;
@@ -1214,8 +1788,11 @@ pub const Config = struct {
     }
 
     /// Returns a configuration for log-only mode (no console display, only file storage).
+    ///
     /// Disables console output while keeping file storage enabled.
     /// Useful for production environments where logs should only be written to files.
+    ///
+    /// Complexity: O(1)
     pub fn logOnly() Config {
         var result = Config.default();
         result.global_console_display = false;
@@ -1225,8 +1802,11 @@ pub const Config = struct {
     }
 
     /// Returns a configuration for display-only mode (console display, no file storage).
+    ///
     /// Enables console output while disabling file storage.
     /// Useful for development or debugging where you only want to see logs in the console.
+    ///
+    /// Complexity: O(1)
     pub fn displayOnly() Config {
         var result = Config.default();
         result.global_console_display = true;
@@ -1236,12 +1816,18 @@ pub const Config = struct {
     }
 
     /// Returns a configuration with custom display and storage settings.
+    ///
     /// Allows fine-grained control over console display and file storage.
     ///
     /// Arguments:
-    ///     console: Enable/disable console display
-    ///     file: Enable/disable file storage
-    ///     auto_sink: Enable/disable automatic console sink creation
+    ///   - `console`: Enable/disable console display.
+    ///   - `file`: Enable/disable file storage.
+    ///   - `auto_sink`: Enable/disable automatic console sink creation.
+    ///
+    /// Return Value:
+    ///   - A `Config` with the specified display/storage settings.
+    ///
+    /// Complexity: O(1)
     pub fn withDisplayStorage(console: bool, file: bool, auto_sink: bool) Config {
         var result = Config.default();
         result.global_console_display = console;
@@ -1409,4 +1995,170 @@ test "config global switches affect rules" {
     try std.testing.expect(!config.rules.console_output);
     try std.testing.expect(!config.rules.file_output);
     try std.testing.expect(!config.rules.enable_colors);
+}
+
+test "compression config presets" {
+    // Test enable() preset
+    const enable_cfg = Config.CompressionConfig.enable();
+    try std.testing.expect(enable_cfg.enabled);
+
+    // Test basic() is alias for enable()
+    const basic_cfg = Config.CompressionConfig.basic();
+    try std.testing.expect(basic_cfg.enabled);
+
+    // Test implicit() preset
+    const implicit_cfg = Config.CompressionConfig.implicit();
+    try std.testing.expect(implicit_cfg.enabled);
+    try std.testing.expect(implicit_cfg.on_rotation);
+    try std.testing.expectEqual(implicit_cfg.mode, .on_rotation);
+
+    // Test explicit() preset
+    const explicit_cfg = Config.CompressionConfig.explicit();
+    try std.testing.expect(explicit_cfg.enabled);
+    try std.testing.expect(!explicit_cfg.on_rotation);
+    try std.testing.expectEqual(explicit_cfg.mode, .disabled);
+
+    // Test fast() preset
+    const fast_cfg = Config.CompressionConfig.fast();
+    try std.testing.expect(fast_cfg.enabled);
+    try std.testing.expectEqual(fast_cfg.level, .fastest);
+
+    // Test balanced() preset
+    const balanced_cfg = Config.CompressionConfig.balanced();
+    try std.testing.expect(balanced_cfg.enabled);
+    try std.testing.expectEqual(balanced_cfg.level, .default);
+
+    // Test best() preset
+    const best_cfg = Config.CompressionConfig.best();
+    try std.testing.expect(best_cfg.enabled);
+    try std.testing.expectEqual(best_cfg.level, .best);
+    try std.testing.expectEqual(best_cfg.algorithm, .gzip);
+
+    // Test forLogs() preset
+    const logs_cfg = Config.CompressionConfig.forLogs();
+    try std.testing.expect(logs_cfg.enabled);
+    try std.testing.expectEqual(logs_cfg.strategy, .text);
+
+    // Test archive() preset
+    const archive_cfg = Config.CompressionConfig.archive();
+    try std.testing.expect(archive_cfg.enabled);
+    try std.testing.expect(!archive_cfg.keep_original);
+    try std.testing.expectEqual(archive_cfg.level, .best);
+
+    // Test keepOriginals() preset
+    const keep_cfg = Config.CompressionConfig.keepOriginals();
+    try std.testing.expect(keep_cfg.enabled);
+    try std.testing.expect(keep_cfg.keep_original);
+
+    // Test onSize() preset
+    const size_cfg = Config.CompressionConfig.onSize(5 * 1024 * 1024);
+    try std.testing.expect(size_cfg.enabled);
+    try std.testing.expectEqual(size_cfg.mode, .on_size_threshold);
+    try std.testing.expectEqual(size_cfg.size_threshold, 5 * 1024 * 1024);
+
+    // Test production() preset
+    const prod_cfg = Config.CompressionConfig.production();
+    try std.testing.expect(prod_cfg.enabled);
+    try std.testing.expect(prod_cfg.background);
+    try std.testing.expect(prod_cfg.checksum);
+
+    // Test development() preset
+    const dev_cfg = Config.CompressionConfig.development();
+    try std.testing.expect(dev_cfg.enabled);
+    try std.testing.expect(dev_cfg.keep_original);
+    try std.testing.expectEqual(dev_cfg.level, .fastest);
+
+    // Test disable() preset
+    const disable_cfg = Config.CompressionConfig.disable();
+    try std.testing.expect(!disable_cfg.enabled);
+
+    // Test streamingMode() preset
+    const stream_cfg = Config.CompressionConfig.streamingMode();
+    try std.testing.expect(stream_cfg.enabled);
+    try std.testing.expect(stream_cfg.streaming);
+    try std.testing.expectEqual(stream_cfg.mode, .streaming);
+
+    // Test backgroundMode() preset
+    const bg_cfg = Config.CompressionConfig.backgroundMode();
+    try std.testing.expect(bg_cfg.enabled);
+    try std.testing.expect(bg_cfg.background);
+}
+
+test "compression config customization fields" {
+    // Test file name customization options
+    const cfg = Config.CompressionConfig{
+        .enabled = true,
+        .file_prefix = "archive_",
+        .file_suffix = "_compressed",
+        .archive_root_dir = "logs/archive",
+        .create_date_subdirs = true,
+        .preserve_dir_structure = false,
+        .naming_pattern = "{base}_{date}{ext}",
+    };
+
+    try std.testing.expect(cfg.enabled);
+    try std.testing.expectEqualStrings("archive_", cfg.file_prefix.?);
+    try std.testing.expectEqualStrings("_compressed", cfg.file_suffix.?);
+    try std.testing.expectEqualStrings("logs/archive", cfg.archive_root_dir.?);
+    try std.testing.expect(cfg.create_date_subdirs);
+    try std.testing.expect(!cfg.preserve_dir_structure);
+    try std.testing.expectEqualStrings("{base}_{date}{ext}", cfg.naming_pattern.?);
+}
+
+test "scheduler config customization fields" {
+    // Test scheduler compression customization options
+    const cfg = Config.SchedulerConfig{
+        .enabled = true,
+        .archive_root_dir = "logs/scheduled_archive",
+        .create_date_subdirs = true,
+        .compression_algorithm = .gzip,
+        .compression_level = .best,
+        .keep_originals = true,
+        .archive_file_prefix = "scheduled_",
+        .archive_file_suffix = "_archived",
+        .preserve_dir_structure = false,
+        .clean_empty_dirs = true,
+        .min_age_days_for_compression = 3,
+        .max_concurrent_compressions = 4,
+    };
+
+    try std.testing.expect(cfg.enabled);
+    try std.testing.expectEqualStrings("logs/scheduled_archive", cfg.archive_root_dir.?);
+    try std.testing.expect(cfg.create_date_subdirs);
+    try std.testing.expectEqual(cfg.compression_algorithm, .gzip);
+    try std.testing.expectEqual(cfg.compression_level, .best);
+    try std.testing.expect(cfg.keep_originals);
+    try std.testing.expectEqualStrings("scheduled_", cfg.archive_file_prefix.?);
+    try std.testing.expectEqualStrings("_archived", cfg.archive_file_suffix.?);
+    try std.testing.expect(!cfg.preserve_dir_structure);
+    try std.testing.expect(cfg.clean_empty_dirs);
+    try std.testing.expectEqual(cfg.min_age_days_for_compression, 3);
+    try std.testing.expectEqual(cfg.max_concurrent_compressions, 4);
+}
+
+test "rotation config customization fields" {
+    // Test rotation compression customization options
+    const cfg = Config.RotationConfig{
+        .enabled = true,
+        .archive_root_dir = "logs/rotated_archive",
+        .create_date_subdirs = true,
+        .file_prefix = "rotated_",
+        .file_suffix = "_old",
+        .compression_algorithm = .deflate,
+        .compression_level = .fast,
+        .keep_original = true,
+        .compress_on_retention = true,
+        .delete_after_retention_compress = false,
+    };
+
+    try std.testing.expect(cfg.enabled);
+    try std.testing.expectEqualStrings("logs/rotated_archive", cfg.archive_root_dir.?);
+    try std.testing.expect(cfg.create_date_subdirs);
+    try std.testing.expectEqualStrings("rotated_", cfg.file_prefix.?);
+    try std.testing.expectEqualStrings("_old", cfg.file_suffix.?);
+    try std.testing.expectEqual(cfg.compression_algorithm, .deflate);
+    try std.testing.expectEqual(cfg.compression_level, .fast);
+    try std.testing.expect(cfg.keep_original);
+    try std.testing.expect(cfg.compress_on_retention);
+    try std.testing.expect(!cfg.delete_after_retention_compress);
 }

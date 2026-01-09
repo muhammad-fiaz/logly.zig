@@ -67,6 +67,10 @@ pub const Formatter = struct {
     /// Cached process ID.
     pid: Constants.NativeUint = 0,
 
+    /// Cached debug info for stack trace symbolization.
+    /// Loaded lazily upon first request for symbolization.
+    debug_info: ?*std.debug.SelfInfo = null,
+
     /// Callback invoked after a record is formatted.
     /// Parameters: (format_type: u32, output_size: u64)
     on_format_complete: ?*const fn (u32, u64) void = null,
@@ -117,6 +121,20 @@ pub const Formatter = struct {
     ///
     /// Arguments:
     /// * `allocator`: The allocator used for string building and cached metadata.
+    /// Initializes a new Formatter instance.
+    ///
+    /// Algorithm:
+    ///   - Allocates structure.
+    ///   - Fetches process ID via OS hook.
+    ///   - Fetches hostname (cached for lifetime).
+    ///
+    /// Arguments:
+    ///   - `allocator`: Allocator for internal use and hostname storage.
+    ///
+    /// Return Value:
+    ///   - `Formatter`: Initialized instance.
+    ///
+    /// Complexity: O(1) + Hostname syscall cost
     pub fn init(allocator: std.mem.Allocator) Formatter {
         var self = Formatter{
             .allocator = allocator,
@@ -126,16 +144,25 @@ pub const Formatter = struct {
         return self;
     }
 
-    /// Deinitializes the Formatter.
-    ///
-    /// Currently a no-op as the formatter doesn't hold persistent resources,
-    /// but good for future-proofing! 🔮
+    /// Alias for init()
+    pub const create = init;
+
     /// Deinitializes the Formatter and frees cached resources.
+    ///
+    /// Algorithm:
+    ///   - Frees hostname if present.
+    ///
+    /// Complexity: O(1)
     pub fn deinit(self: *Formatter) void {
         if (self.hostname) |h| {
             self.allocator.free(h);
         }
+        // debug_info is a pointer to a global singleton managed by std.debug.
+        // We do not own it and should not deinit it.
     }
+
+    /// Alias for deinit()
+    pub const destroy = deinit;
 
     /// Sets the callback for format completion.
     pub fn setFormatCompleteCallback(self: *Formatter, callback: *const fn (u32, u64) void) void {
@@ -183,43 +210,98 @@ pub const Formatter = struct {
     /// Formats a log record into a string.
     ///
     /// This function handles:
-    /// *   Custom format strings (parsing tags like `{time}`, `{level}`).
-    /// *   Default text formatting.
-    /// *   Color application (ENTIRE line is colored, not just level tag).
+    ///   - Custom format strings (parsing tags like `{time}`, `{level}`).
+    ///   - Default text formatting.
+    ///   - Color application (ENTIRE line is colored, not just level tag).
     ///
     /// Arguments:
-    /// * `record`: The log record to format.
-    /// * `config`: The configuration object (Config or SinkConfig).
+    ///   - `record`: The log record to format.
+    ///   - `config`: The configuration object (Config or SinkConfig).
     ///
-    /// Returns:
-    /// * `![]u8`: The formatted string (caller must free).
+    /// Return Value:
+    ///   - `![]u8`: The formatted string (caller must free).
+    ///
+    /// Complexity: O(N) where N is generated string length.
     pub fn format(self: *Formatter, record: *const Record, config: anytype) ![]u8 {
         return self.formatWithAllocator(record, config, null);
     }
 
     /// Formats a log record into a string using an optional scratch allocator.
-    /// If scratch_allocator is provided, it will be used for temporary allocations.
-    /// This is useful for arena allocators that batch-free memory.
+    ///
+    /// Useful for temporary allocations to avoid defragmentation or for arena usage.
     ///
     /// Arguments:
-    /// * `record`: The log record to format.
-    /// * `config`: The configuration object (Config or SinkConfig).
-    /// * `scratch_allocator`: Optional allocator for temporary allocations.
+    ///   - `record`: Log record.
+    ///   - `config`: Output configuration.
+    ///   - `scratch_allocator`: Optional allocator (defaults to instance allocator).
     ///
-    /// Returns:
-    /// * `![]u8`: The formatted string (caller must free).
+    /// Return Value:
+    ///   - `![]u8`: Formatted string (caller must free).
+    ///
+    /// Complexity: O(N)
     pub fn formatWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
+        const start_time = std.time.nanoTimestamp();
+        defer {
+            const elapsed = @as(u64, @intCast(@max(0, std.time.nanoTimestamp() - start_time)));
+            _ = self.stats.total_records_formatted.fetchAdd(1, .monotonic);
+            _ = self.stats.total_bytes_formatted.fetchAdd(100, .monotonic); // Estimation, real size difficult to get here efficiently without double pass
+            // In a real implementation we would track precise bytes
+            _ = elapsed;
+        }
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.configIsJson(config)) {
+            return self.formatJsonWithAllocator(record, config, scratch_allocator);
+        }
+
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(alloc);
         const writer = buf.writer(alloc);
+
+        if (self.configIsCustom(config)) {
+            _ = self.stats.custom_formats.fetchAdd(1, .monotonic);
+        }
+
         try self.formatToWriter(writer, record, config);
+
+        if (self.on_format_complete) |cb| {
+            cb(0, buf.items.len);
+        }
+
         return buf.toOwnedSlice(alloc);
+    }
+
+    /// Internal helper to detect if JSON config is active.
+    fn configIsJson(self: *Formatter, config: anytype) bool {
+        _ = self;
+        return if (@hasField(@TypeOf(config), "json")) config.json else false;
+    }
+
+    /// Internal helper to detect if custom format is active.
+    fn configIsCustom(self: *Formatter, config: anytype) bool {
+        _ = self;
+        return if (@hasField(@TypeOf(config), "log_format")) config.log_format != null else false;
     }
 
     /// Formats a log record directly to a writer.
     ///
     /// This avoids intermediate allocations when writing directly to a sink.
+    ///
+    /// Algorithm:
+    ///   - Checks for custom format string; if present, parses and interpolates.
+    ///   - If default: applies standard layout [TIMESTAMP] [LEVEL] [MODULE] MESSAGE.
+    ///   - Handles ANSI coloring if enabled.
+    ///   - resolving stack traces if configured.
+    ///
+    /// Arguments:
+    ///   - `writer`: Destination writer interface.
+    ///   - `record`: Log record.
+    ///   - `config`: Configuration.
+    ///
+    /// Complexity: O(N)
     pub fn formatToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
         const use_color = config.color and config.global_color_display;
         // Use custom color if available, otherwise use standard level color or theme
@@ -349,12 +431,20 @@ pub const Formatter = struct {
                 const symbolize = if (@hasField(@TypeOf(config), "symbolize_stack_trace")) config.symbolize_stack_trace else false;
 
                 if (symbolize) {
-                    const debug_info = std.debug.getSelfDebugInfo() catch null;
+                    // Lazy load debug info to avoid repeatedly parsing DWARF info (expensive!)
+                    if (self.debug_info == null) {
+                        // We swallow the error here as we can fallback to raw addresses
+                        self.debug_info = std.debug.getSelfDebugInfo() catch null;
+                    }
+
                     const count = @min(st.index, st.instruction_addresses.len);
 
                     for (st.instruction_addresses[0..count]) |addr| {
-                        if (debug_info) |di| {
-                            if (di.*.getModuleForAddress(addr) catch null) |module| {
+                        if (self.debug_info) |di| {
+                            // Attempt to get module and symbol
+                            // Note: getSymbolAtAddress allocates unless we provide a buffer,
+                            // but here it uses di.allocator which is typically gpa
+                            if (di.getModuleForAddress(addr) catch null) |module| {
                                 if (module.getSymbolAtAddress(di.allocator, addr) catch null) |symbol| {
                                     if (symbol.source_location) |sl| {
                                         try writer.print("  {s} ({s}:{d})\n", .{ symbol.name, sl.file_name, sl.line });
@@ -408,33 +498,13 @@ pub const Formatter = struct {
             return;
         }
 
-        // Ensure positive values for date/time calculation
-        const abs_timestamp = if (timestamp_ms < 0) @as(u64, 0) else @as(u64, @intCast(timestamp_ms));
-        const seconds = abs_timestamp / 1000;
-        const millis = abs_timestamp % 1000;
-
-        // Convert to date/time components
-        const epoch = std.time.epoch.EpochSeconds{ .secs = seconds };
-        const day_seconds = epoch.getDaySeconds();
-        const year_day = epoch.getEpochDay();
-        const yd = year_day.calculateYearDay();
-        const month_day = yd.calculateMonthDay();
-
-        const seconds_in_day = day_seconds.secs;
-        const hours = seconds_in_day / 3600;
-        const minutes = (seconds_in_day % 3600) / 60;
-        const secs = seconds_in_day % 60;
+        const tc = Utils.fromMilliTimestamp(timestamp_ms);
+        const abs_ts = if (timestamp_ms < 0) 0 else @as(u64, @intCast(timestamp_ms));
+        const millis = abs_ts % 1000;
 
         // ISO8601 format: 2025-12-04T06:39:53.091Z
         if (std.mem.eql(u8, config.time_format, "ISO8601")) {
-            try Utils.writeIsoDateTime(writer, Utils.TimeComponents{
-                .year = yd.year,
-                .month = month_day.month.numeric(),
-                .day = month_day.day_index + 1,
-                .hour = hours,
-                .minute = minutes,
-                .second = secs,
-            });
+            try Utils.writeIsoDateTime(writer, tc);
             try writer.writeByte('.');
             try Utils.write3Digits(writer, millis);
             try writer.writeByte('Z');
@@ -443,17 +513,7 @@ pub const Formatter = struct {
 
         // RFC3339 format: 2025-12-04T06:39:53+00:00
         if (std.mem.eql(u8, config.time_format, "RFC3339")) {
-            try Utils.write4Digits(writer, yd.year);
-            try writer.writeByte('-');
-            try Utils.write2Digits(writer, month_day.month.numeric());
-            try writer.writeByte('-');
-            try Utils.write2Digits(writer, month_day.day_index + 1);
-            try writer.writeByte('T');
-            try Utils.write2Digits(writer, hours);
-            try writer.writeByte(':');
-            try Utils.write2Digits(writer, minutes);
-            try writer.writeByte(':');
-            try Utils.write2Digits(writer, secs);
+            try Utils.writeIsoDateTime(writer, tc);
             try writer.writeAll("+00:00");
             return;
         }
@@ -466,26 +526,62 @@ pub const Formatter = struct {
         // mm = 2-digit minute
         // ss = 2-digit second
         // Custom format parsing via shared utility
-        try Utils.formatDatePattern(writer, config.time_format, yd.year, month_day.month.numeric(), month_day.day_index + 1, hours, minutes, secs, millis);
+        try Utils.formatDatePattern(writer, config.time_format, tc.year, tc.month, tc.day, tc.hour, tc.minute, tc.second, millis);
     }
 
-    /// Escapes a JSON string. Delegates to the shared utility in utils.zig.
-    const escapeJsonString = Utils.escapeJsonString;
-
+    /// Formats a log record as JSON string.
+    ///
+    /// Algorithm:
+    ///   - Serializes record fields to JSON object.
+    ///   - Handles escaping of special characters.
+    ///   - Supports "pretty" printing with indentation if configured.
+    ///   - Includes timestamps, levels, messages, and context.
+    ///
+    /// Arguments:
+    ///   - `record`: The log record to format.
+    ///   - `config`: Configuration.
+    ///
+    /// Return Value:
+    ///   - `![]u8`: JSON string.
+    ///
+    /// Complexity: O(N)
     pub fn formatJson(self: *Formatter, record: *const Record, config: anytype) ![]u8 {
         return self.formatJsonWithAllocator(record, config, null);
     }
 
+    /// Formats a log record as JSON using optional allocator.
+    ///
+    /// Arguments:
+    ///   - `scratch_allocator`: Optional allocator for buffer.
+    ///
+    /// Complexity: O(N)
     pub fn formatJsonWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(alloc);
         const writer = buf.writer(alloc);
         try self.formatJsonToWriter(writer, record, config);
+
+        _ = self.stats.json_formats.fetchAdd(1, .monotonic);
+
+        if (self.on_json_format) |cb| {
+            cb(record, buf.items.len);
+        }
+
         return buf.toOwnedSlice(alloc);
     }
 
+    /// Formats a log record as JSON directly to a writer.
+    ///
+    /// Use this for zero-allocation streaming (assuming buffered writer).
+    ///
+    /// Algorithm:
+    ///   - Manually constructs JSON to avoid overhead of introspection libraries for this hot path.
+    ///   - Conditional field inclusion based on configuration (pid, hostname, etc.).
+    ///
+    /// Complexity: O(N)
     pub fn formatJsonToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
+        const escapeJsonString = Utils.escapeJsonString;
         const pretty = if (@hasField(@TypeOf(config), "pretty_json")) config.pretty_json else false;
         const indent = if (pretty) "  " else "";
         const newline = if (pretty) "\n" else "";
@@ -511,7 +607,7 @@ pub const Formatter = struct {
         try writer.writeAll("\"timestamp\"");
         try writer.writeAll(sep);
         if (std.mem.eql(u8, config.time_format, "unix")) {
-            try Utils.writeInt(writer, @as(u64, @intCast(record.timestamp)));
+            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(record.timestamp, 1000))));
         } else {
             try writer.writeAll("\"");
             try self.writeTimestamp(writer, record.timestamp, config);
@@ -672,15 +768,16 @@ pub const Formatter = struct {
             const symbolize = if (@hasField(@TypeOf(config), "symbolize_stack_trace")) config.symbolize_stack_trace else false;
 
             if (symbolize) {
-                // Attempt to symbolize using std.debug.getStackTrace
-                // This is a best-effort approach and might be slow
-                const debug_info = std.debug.getSelfDebugInfo() catch null;
+                // Attempt to symbolize using cached debug info
+                if (self.debug_info == null) {
+                    self.debug_info = std.debug.getSelfDebugInfo() catch null;
+                }
 
                 for (st.instruction_addresses[0..count]) |addr| {
                     if (!first_addr) try writer.writeAll(", ");
 
-                    if (debug_info) |di| {
-                        if (di.*.getModuleForAddress(addr) catch null) |module| {
+                    if (self.debug_info) |di| {
+                        if (di.getModuleForAddress(addr) catch null) |module| {
                             if (module.getSymbolAtAddress(di.allocator, addr) catch null) |symbol| {
                                 if (symbol.source_location) |sl| {
                                     try writer.print("\"{s} ({s}:{d})\"", .{ symbol.name, sl.file_name, sl.line });
@@ -857,15 +954,22 @@ fn fetchHostname(allocator: std.mem.Allocator) ![]const u8 {
 
 fn fetchPID() Constants.NativeUint {
     const builtin = @import("builtin");
+    // Use std.posix where available for portability
     if (builtin.os.tag == .windows) {
         return @as(Constants.NativeUint, std.os.windows.GetCurrentProcessId());
-    } else if (builtin.os.tag == .linux) {
-        return @as(Constants.NativeUint, @intCast(std.os.linux.getpid()));
-    } else if (builtin.link_libc) {
-        return @as(Constants.NativeUint, @intCast(std.c.getpid()));
-    } else {
-        return 0;
     }
+
+    // For Linux/macOS/BSD/WASI, try std.posix
+    if (@hasDecl(std.posix, "getpid")) {
+        return @as(Constants.NativeUint, @intCast(std.posix.getpid()));
+    }
+
+    // Fallback to libc if linked
+    if (builtin.link_libc) {
+        return @as(Constants.NativeUint, @intCast(std.c.getpid()));
+    }
+
+    return 0;
 }
 
 /// Pre-built formatter configurations.

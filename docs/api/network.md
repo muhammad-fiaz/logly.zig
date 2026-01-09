@@ -14,6 +14,13 @@ head:
 
 The `Network` module provides utilities for network-based logging, including TCP, UDP connections, HTTP requests, and Syslog support.
 
+## Quick Reference: Method Aliases
+
+| Full Method | Alias(es) | Description |
+|-------------|-----------|-------------|
+| `init()` | `create()` | Initialize network server |
+| `deinit()` | `destroy()` | Deinitialize network server |
+
 ## Overview
 
 This module is primarily used by network sinks but can be used directly for custom network operations. It includes statistics tracking and callback support for monitoring network operations.

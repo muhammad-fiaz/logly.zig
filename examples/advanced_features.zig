@@ -37,12 +37,10 @@ pub fn main() !void {
     try logger.info("Global message (no scope)", @src());
 
     // 3. Advanced Redaction
-    // We need to access the redactor. Logger doesn't expose it directly easily?
     // Logger has setRedactor.
-    // Let's create a redactor.
     var redactor = logly.Redactor.init(allocator);
-    // defer redactor.deinit(); // Logger doesn't own redactor, but we need to keep it alive?
-    // Actually Logger doesn't own it.
+    // defer redactor.deinit(); 
+    // Logger does not take ownership of the thread pool.
 
     try redactor.addPattern("secret", .contains, "secret", "[HIDDEN]");
     logger.setRedactor(&redactor);

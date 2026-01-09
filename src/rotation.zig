@@ -103,6 +103,17 @@ pub const Rotation = struct {
     archive_dir: ?[]const u8 = null,
     clean_empty_dirs: bool = false,
 
+    /// Keep original file after compression (default: false - delete original)
+    keep_original: bool = false,
+
+    /// Compress files during retention cleanup instead of deleting them
+    /// When true, old files exceeding retention limits are compressed rather than deleted
+    compress_on_retention: bool = false,
+
+    /// Delete files after compression during retention (only applies when compress_on_retention is true)
+    /// When false, compressed files are kept; when true, originals are deleted after compression
+    delete_after_retention_compress: bool = true,
+
     // Callbacks
     on_rotation_start: ?*const fn (old_path: []const u8, new_path: []const u8) void = null,
     on_rotation_complete: ?*const fn (old_path: []const u8, new_path: []const u8, elapsed_ms: u64) void = null,
@@ -143,6 +154,9 @@ pub const Rotation = struct {
         return r;
     }
 
+    /// Alias for init().
+    pub const create = init;
+
     pub fn withCompression(self: *Rotation, config: CompressionConfig) !void {
         self.compression = config;
         // Pre-initialize compressor if needed
@@ -172,6 +186,23 @@ pub const Rotation = struct {
         self.clean_empty_dirs = clean;
     }
 
+    /// Set whether to keep original files after compression.
+    pub fn withKeepOriginal(self: *Rotation, keep: bool) void {
+        self.keep_original = keep;
+    }
+
+    /// Enable compression during retention cleanup instead of deletion.
+    /// Old files will be compressed rather than deleted when they exceed retention limits.
+    pub fn withCompressOnRetention(self: *Rotation, enable: bool) void {
+        self.compress_on_retention = enable;
+    }
+
+    /// Set whether to delete original files after retention compression.
+    /// Only applies when compress_on_retention is true.
+    pub fn withDeleteAfterRetentionCompress(self: *Rotation, delete: bool) void {
+        self.delete_after_retention_compress = delete;
+    }
+
     /// Applies global rotation configuration where local settings are missing.
     pub fn applyConfig(self: *Rotation, config: RotationConfig) !void {
         if (self.interval == null and config.interval != null) {
@@ -188,6 +219,9 @@ pub const Rotation = struct {
         if (config.naming_format) |f| try self.withNamingFormat(f);
         if (config.archive_dir) |d| try self.withArchiveDir(d);
         self.clean_empty_dirs = config.clean_empty_dirs;
+        self.keep_original = config.keep_original;
+        self.compress_on_retention = config.compress_on_retention;
+        self.delete_after_retention_compress = config.delete_after_retention_compress;
     }
 
     pub fn deinit(self: *Rotation) void {
@@ -195,6 +229,9 @@ pub const Rotation = struct {
         if (self.archive_dir) |d| self.allocator.free(d);
         // Compressor doesn't strictly need deinit if it holds no state
     }
+
+    /// Alias for deinit().
+    pub const destroy = deinit;
 
     pub fn getStats(self: *const Rotation) RotationStats {
         return self.stats;
@@ -309,8 +346,10 @@ pub const Rotation = struct {
                     // On failure, we keep the uncompressed file
                 };
 
-                // If successful, remove uncompressed rotated file
-                std.fs.cwd().deleteFile(rotated_path) catch {};
+                // If successful and keep_original is false, remove uncompressed rotated file
+                if (!self.keep_original) {
+                    std.fs.cwd().deleteFile(rotated_path) catch {};
+                }
 
                 self.allocator.free(final_path);
                 final_path = try self.allocator.dupe(u8, compressed_path);
@@ -513,7 +552,7 @@ pub const Rotation = struct {
         var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return;
         defer dir.close();
 
-        const FileInfo = struct { name: []u8, mtime: i128 };
+        const FileInfo = struct { name: []u8, mtime: i128, is_compressed: bool };
         var files: std.ArrayList(FileInfo) = .empty;
         defer {
             for (files.items) |f| self.allocator.free(f.name);
@@ -530,16 +569,26 @@ pub const Rotation = struct {
 
                 const stat = std.fs.cwd().statFile(full_path) catch continue;
 
+                // Check if already compressed
+                const is_compressed = std.mem.endsWith(u8, entry.name, ".gz") or
+                    std.mem.endsWith(u8, entry.name, ".lgz") or
+                    std.mem.endsWith(u8, entry.name, ".zst") or
+                    std.mem.endsWith(u8, entry.name, ".deflate");
+
                 // Age check
                 if (self.max_age_seconds) |max_age| {
                     const age = std.time.nanoTimestamp() - stat.mtime;
                     if (age > max_age * std.time.ns_per_s) {
-                        try self.deleteFile(full_path);
-                        continue; // deleted, don't add to list
+                        try self.handleRetentionFile(full_path, is_compressed);
+                        continue; // handled, don't add to list
                     }
                 }
 
-                try files.append(self.allocator, .{ .name = try self.allocator.dupe(u8, entry.name), .mtime = stat.mtime });
+                try files.append(self.allocator, .{
+                    .name = try self.allocator.dupe(u8, entry.name),
+                    .mtime = stat.mtime,
+                    .is_compressed = is_compressed,
+                });
             }
         }
 
@@ -557,7 +606,7 @@ pub const Rotation = struct {
                 for (files.items[0..to_delete]) |item| {
                     const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, item.name });
                     defer self.allocator.free(full_path);
-                    try self.deleteFile(full_path);
+                    try self.handleRetentionFile(full_path, item.is_compressed);
                 }
             }
         }
@@ -569,6 +618,40 @@ pub const Rotation = struct {
                 std.fs.cwd().deleteDir(archive_path) catch {};
             }
         }
+    }
+
+    /// Handle a file during retention cleanup - either compress or delete based on settings.
+    fn handleRetentionFile(self: *Rotation, path: []const u8, is_compressed: bool) !void {
+        // If compress_on_retention is enabled and file is not already compressed
+        if (self.compress_on_retention and !is_compressed) {
+            if (self.compressor) |*comp| {
+                const algo = if (self.compression) |c| c.algorithm else .deflate;
+                const compressed_path = try uniqueCompressedPath(self.allocator, path, algo);
+                defer self.allocator.free(compressed_path);
+
+                // Compress the file
+                _ = comp.compressFile(path, compressed_path) catch |err| {
+                    _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
+                    // On failure, fall back to deletion if delete_after_retention_compress is true
+                    if (self.delete_after_retention_compress) {
+                        try self.deleteFile(path);
+                    }
+                    return err;
+                };
+
+                _ = self.stats.files_archived.fetchAdd(1, .monotonic);
+                if (self.on_file_archived) |cb| cb(path, compressed_path);
+
+                // Delete original after successful compression if configured
+                if (self.delete_after_retention_compress) {
+                    std.fs.cwd().deleteFile(path) catch {};
+                }
+                return;
+            }
+        }
+
+        // Default behavior: delete the file
+        try self.deleteFile(path);
     }
 
     fn deleteFile(self: *Rotation, path: []const u8) !void {
