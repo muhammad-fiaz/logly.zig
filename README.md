@@ -206,8 +206,6 @@ Logly.Zig supports a wide range of platforms and architectures:
 - **Refactored Statistics**: Shared utility functions for error rate, average, and throughput calculations across all modules.
 - **Improved Docstrings**: Enhanced documentation for Filter, Formatter, Sink, Compression, Rotation, Sampler, Scheduler, ThreadPool, Network, Metrics, Diagnostics, Rules, and Redactor modules for `zig build docs` generation.
 
----
-
 ### Version 0.1.2
 
 **New Features:**
