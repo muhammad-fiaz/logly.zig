@@ -21,7 +21,7 @@
 //! defer diag.deinit(allocator);
 //! std.debug.print("OS: {s}, Cores: {d}\n", .{diag.os_tag, diag.logical_cores});
 //! ```
-//! 
+//!
 /// All collected data is owned by the caller and must be freed with deinit().
 const std = @import("std");
 const builtin = @import("builtin");

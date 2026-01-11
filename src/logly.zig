@@ -58,7 +58,7 @@
 //! ```
 //!
 //! For detailed documentation, visit: https://muhammad-fiaz.github.io/logly.zig/
-//! 
+//!
 //! For source code and examples, visit: https://github.com/muhammad-fiaz/logly.zig
 
 pub const version = @import("version.zig").version;
