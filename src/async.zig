@@ -1,3 +1,25 @@
+//! Asynchronous Logging Module
+//!
+//! Provides non-blocking I/O for high-performance logging scenarios.
+//! Decouples log submission from persistence using concurrent data structures.
+//!
+//! Components:
+//! - AsyncLogger: Main async logging interface with ring buffer
+//! - AsyncFileWriter: Buffered file writer with async flush
+//! - RingBuffer: Lock-free circular buffer for log entries
+//!
+//! Features:
+//! - Lock-free ring buffer for minimal contention
+//! - Configurable overflow strategies (block, drop, grow)
+//! - Batch processing for I/O efficiency
+//! - Background worker threads for persistence
+//! - Comprehensive statistics and monitoring
+//!
+//! Performance:
+//! - Sub-microsecond log submission in typical cases
+//! - Minimal memory copies through buffer pooling
+//! - Automatic batch size tuning
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
@@ -7,36 +29,26 @@ const Constants = @import("constants.zig");
 
 /// Asynchronous logging subsystem for non-blocking I/O operations.
 ///
-/// Decouples log submission from persistence using a concurrent ring buffer and background workers.
-/// Designed for low-latency applications where the main execution path cannot be blocked by I/O.
-///
-/// Core Capabilities:
-/// - Lock-free ring buffer usage patterns for reduced contention.
-/// - Configurable overflow strategies ensuring system stability under load.
-/// - Batch processing to amortize I/O syscall overhead.
-/// - Detailed telemetry for monitoring logger health and throughput.
-///
-/// Usage:
-/// ```zig
-/// var async_logger = try logly.AsyncLogger.init(allocator);
-/// defer async_logger.deinit();
-///
-/// // Configure and attach sinks
-/// const sink = try logly.Sink.init(allocator, .file("app.log"));
-/// try async_logger.addSink(sink);
-///
-/// // Enqueue logs (non-blocking)
-/// _ = async_logger.queue("Application started", 1);
-/// ```
+/// Decouples log submission from persistence using a concurrent ring buffer
+/// and background workers. Designed for low-latency applications.
 pub const AsyncLogger = struct {
+    /// Memory allocator for async operations.
     allocator: std.mem.Allocator,
+    /// Async configuration options.
     config: AsyncConfig,
+    /// Ring buffer for queuing log messages.
     buffer: RingBuffer,
+    /// Async logger statistics.
     stats: AsyncStats,
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
+    /// Condition variable for worker thread signaling.
     condition: std.Thread.Condition = .{},
+    /// Background worker thread.
     worker_thread: ?std.Thread = null,
+    /// Whether the async logger is running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// List of sinks to write to.
     sinks: std.ArrayList(*Sink) = .empty,
 
     /// Arena allocator optimized for batch operations to reduce fragmentation and allocation overhead.
@@ -77,26 +89,38 @@ pub const AsyncLogger = struct {
     /// Configuration parameters for async behavior.
     pub const AsyncConfig = Config.AsyncConfig;
 
-    /// enumerated policies for handling buffer overflow conditions.
+    /// Enumerated policies for handling buffer overflow conditions.
     pub const OverflowPolicy = Config.AsyncConfig.OverflowPolicy;
 
     /// Priority levels for the background worker thread.
     pub const WorkerPriority = enum {
+        /// Low priority worker.
         low,
+        /// Normal priority worker.
         normal,
+        /// High priority worker.
         high,
+        /// Realtime priority worker.
         realtime,
     };
 
     /// Runtime statistics for monitoring logger performance and health.
     pub const AsyncStats = struct {
+        /// Total records queued for async processing.
         records_queued: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total records successfully written.
         records_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total records dropped due to overflow.
         records_dropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of buffer overflow events.
         buffer_overflows: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of flush operations performed.
         flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total latency in nanoseconds.
         total_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Maximum queue depth observed.
         max_queue_depth: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Timestamp of last flush operation.
         last_flush_timestamp: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
         /// Computes the average latency per record processing.

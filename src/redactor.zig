@@ -1,23 +1,39 @@
+//! Sensitive Data Redaction Module
+//!
+//! Provides pattern-based and field-based redaction to prevent sensitive
+//! information from appearing in log output.
+//!
+//! Redaction Patterns:
+//! - Password fields: password, passwd, secret, key, token
+//! - Credentials: auth, authorization, cookie
+//! - Personal data: email, phone, ssn, credit_card
+//! - Network: ip_address, hostname
+//! - Custom: User-defined regex patterns
+//!
+//! Strategies:
+//! - Fixed mask: Replace with "***" or custom string
+//! - Partial mask: Show first/last N characters
+//! - Hash: Replace with hash of original value
+//! - Truncate: Show only first N characters
+//!
+//! Configuration:
+//! - Field names to redact
+//! - Pattern-based matching
+//! - Mask character customization
+//! - JSON key redaction
+//!
+//! Performance:
+//! - O(n) pattern evaluation
+//! - Early exit on first match
+//! - Pre-compiled patterns
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Redaction utilities for masking sensitive data in logs.
-///
-/// Provides pattern-based and field-based redaction to prevent
-/// sensitive information from appearing in log output.
-///
-/// Callbacks:
-/// - `on_redaction_applied`: Called when redaction is applied to a value
-/// - `on_pattern_matched`: Called when a redaction pattern matches
-/// - `on_redactor_initialized`: Called when redactor is created
-/// - `on_redaction_error`: Called when redaction processing fails
-///
-/// Performance:
-/// - O(n) pattern evaluation where n = number of patterns
-/// - Early exit on first matching pattern
-/// - Minimal memory overhead for pattern storage
 pub const Redactor = struct {
     /// Redactor statistics for monitoring and diagnostics.
     pub const RedactorStats = struct {
@@ -29,29 +45,35 @@ pub const Redactor = struct {
 
         /// Calculate redaction rate (0.0 - 1.0)
         pub fn redactionRate(self: *const RedactorStats) f64 {
-            const total = @as(u64, self.total_values_processed.load(.monotonic));
-            if (total == 0) return 0;
-            const redacted = @as(u64, self.values_redacted.load(.monotonic));
-            return @as(f64, @floatFromInt(redacted)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateRate(
+                Utils.atomicLoadU64(&self.values_redacted),
+                Utils.atomicLoadU64(&self.total_values_processed),
+            );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const RedactorStats) f64 {
-            const total = @as(u64, self.total_values_processed.load(.monotonic));
-            if (total == 0) return 0;
-            const errors = @as(u64, self.redaction_errors.load(.monotonic));
-            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateErrorRate(
+                Utils.atomicLoadU64(&self.redaction_errors),
+                Utils.atomicLoadU64(&self.total_values_processed),
+            );
         }
     };
 
     /// Re-export RedactionConfig from global config.
     pub const RedactionConfig = Config.RedactionConfig;
 
+    /// Memory allocator for redactor operations.
     allocator: std.mem.Allocator,
+    /// Redaction configuration.
     config: RedactionConfig = .{},
+    /// List of redaction patterns.
     patterns: std.ArrayList(RedactionPattern),
+    /// Map of specific fields to redaction types.
     fields: std.StringHashMap(RedactionType),
+    /// Redactor statistics.
     stats: RedactorStats = .{},
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
 
     /// Callback invoked when redaction is applied.

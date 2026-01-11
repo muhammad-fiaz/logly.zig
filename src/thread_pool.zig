@@ -1,3 +1,31 @@
+//! Thread Pool Module
+//!
+//! Provides concurrent execution of logging tasks with configurable
+//! thread count, work stealing, and comprehensive monitoring.
+//!
+//! Features:
+//! - Auto CPU count detection
+//! - Work stealing for load balancing
+//! - Thread affinity support (pin to CPU cores)
+//! - Per-worker arena allocators
+//! - Priority queue support (low, normal, high, critical)
+//! - Batch task submission
+//!
+//! Task Types:
+//! - Function tasks: Simple function pointer execution
+//! - Callback tasks: Function with context pointer
+//!
+//! Configuration:
+//! - thread_count: Number of worker threads (0 = auto-detect)
+//! - queue_size: Work queue capacity per thread
+//! - work_stealing: Enable task stealing between workers
+//! - enable_arena: Per-worker arena allocators
+//!
+//! Performance:
+//! - Lock-free fast path for task submission
+//! - Cache-aware work stealing algorithm
+//! - Minimal context switching overhead
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
@@ -6,79 +34,47 @@ const Constants = @import("constants.zig");
 ///
 /// Provides concurrent execution of logging tasks with configurable
 /// thread count, work stealing, load balancing, and comprehensive monitoring.
-///
-/// Usage:
-/// ```zig
-/// var pool = try ThreadPool.init(allocator, .{ .thread_count = 4 });
-/// defer pool.deinit();
-///
-/// try pool.start();
-///
-/// // Submit a task
-/// const MyTask = struct {
-///     fn run(ctx: *anyopaque, allocator: ?std.mem.Allocator) void {
-///         // ... work ...
-///     }
-/// };
-/// _ = pool.submitCallback(MyTask.run, context_ptr);
-/// ```
-///
-/// Features:
-/// - Auto CPU count detection
-/// - Work stealing for load balancing
-/// - Thread affinity support (pin to CPU cores)
-/// - Per-worker arena allocators
-/// - Priority queue support
-/// - Comprehensive metrics and callbacks
-///
-/// Callbacks:
-/// - `on_thread_start`: Called when a worker thread starts
-/// - `on_thread_stop`: Called when a worker thread stops
-/// - `on_task_submitted`: Called when task is submitted
-/// - `on_task_dequeued`: Called when task is removed from queue
-/// - `on_task_executed`: Called after task execution
-/// - `on_work_stolen`: Called when work stealing occurs
-/// - `on_queue_overflow`: Called when queue reaches capacity
-///
-/// Performance:
-/// - Low overhead for typical workloads
-/// - Lock-free fast path for task submission
-/// - Cache-aware work stealing algorithm
-/// - Minimal context switching
 pub const ThreadPool = struct {
+    /// Memory allocator for pool operations.
     allocator: std.mem.Allocator,
+    /// Thread pool configuration.
     config: ThreadPoolConfig,
+    /// Worker threads array.
     workers: []Worker,
+    /// Work queue for pending tasks.
     work_queue: WorkQueue,
+    /// Thread pool statistics.
     stats: ThreadPoolStats,
+    /// Whether the pool is currently running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// Whether shutdown has completed.
     shutdown_complete: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
-    /// Callback invoked when worker thread starts
+    /// Callback invoked when worker thread starts.
     /// Parameters: (thread_id: usize)
     on_thread_start: ?*const fn (usize) void = null,
 
-    /// Callback invoked when worker thread stops
+    /// Callback invoked when worker thread stops.
     /// Parameters: (thread_id: usize, tasks_processed: u64, uptime_ms: u64)
     on_thread_stop: ?*const fn (usize, u64, u64) void = null,
 
-    /// Callback invoked when task is submitted
+    /// Callback invoked when task is submitted.
     /// Parameters: (priority: u8, queue_depth: usize)
     on_task_submitted: ?*const fn (u8, usize) void = null,
 
-    /// Callback invoked when task is dequeued
+    /// Callback invoked when task is dequeued.
     /// Parameters: (priority: u8, wait_time_us: u64)
     on_task_dequeued: ?*const fn (u8, u64) void = null,
 
-    /// Callback invoked after task execution
+    /// Callback invoked after task execution.
     /// Parameters: (execution_time_us: u64, success: bool)
     on_task_executed: ?*const fn (u64, bool) void = null,
 
-    /// Callback invoked when work stealing occurs
+    /// Callback invoked when work stealing occurs.
     /// Parameters: (victim_thread: usize, thief_thread: usize)
     on_work_stolen: ?*const fn (usize, usize) void = null,
 
-    /// Callback invoked when queue reaches capacity
+    /// Callback invoked when queue reaches capacity.
     /// Parameters: (queue_size: usize, capacity: usize)
     on_queue_overflow: ?*const fn (usize, usize) void = null,
 
@@ -119,8 +115,11 @@ pub const ThreadPool = struct {
 
     /// Statistics for thread pool operations with detailed tracking.
     pub const ThreadPoolStats = struct {
+        /// Total tasks submitted to the pool.
         tasks_submitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total tasks completed.
         tasks_completed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of tasks stolen via work stealing.
         tasks_stolen: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         tasks_dropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         total_wait_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),

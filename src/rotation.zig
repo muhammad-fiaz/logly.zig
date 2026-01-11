@@ -1,3 +1,30 @@
+//! Log File Rotation Module
+//!
+//! Handles automatic log file rotation with comprehensive features
+//! for enterprise use including time-based, size-based, and hybrid rotation.
+//!
+//! Rotation Triggers:
+//! - Time-based: Minutely, hourly, daily, weekly, monthly, yearly
+//! - Size-based: Rotate when file exceeds specified size
+//! - Hybrid: Combine time and size triggers
+//!
+//! Naming Strategies:
+//! - timestamp: Unix timestamp suffix (app.log.1704067200)
+//! - date: Date suffix (app.log.2024-01-01)
+//! - iso_datetime: ISO 8601 datetime (app.log.2024-01-01T120000)
+//! - index: Numbered suffix with shifting (app.log.1, app.log.2)
+//! - custom: User-defined format string
+//!
+//! Features:
+//! - Automatic compression of rotated files
+//! - Retention policies (max files, max age)
+//! - Archive directory support
+//! - Configurable callbacks for rotation events
+//!
+//! Performance:
+//! - Minimal I/O during rotation checks
+//! - Background compression option
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
@@ -8,24 +35,23 @@ const RotationConfig = Config.RotationConfig;
 const Utils = @import("utils.zig");
 
 /// Handles log file rotation logic with comprehensive features for enterprise use.
-///
-/// Features:
-/// - Time-based rotation (Daily, Hourly, etc.)
-/// - Size-based rotation (e.g., 10MB)
-/// - Retention policies (Max files, Max age)
-/// - Automatic Compression (Gzip, Zstd, etc.)
-/// - Flexible naming strategies (Timestamp, Date, Index)
-/// - Robust error handling and callbacks
 pub const Rotation = struct {
     /// Defines the time interval for rotation.
     pub const RotationInterval = enum {
+        /// Rotate every minute.
         minutely,
+        /// Rotate every hour.
         hourly,
+        /// Rotate every day.
         daily,
+        /// Rotate every week.
         weekly,
+        /// Rotate every 30 days.
         monthly,
+        /// Rotate every 365 days.
         yearly,
 
+        /// Returns the interval duration in seconds.
         pub fn seconds(self: RotationInterval) i64 {
             return switch (self) {
                 .minutely => 60,
@@ -37,6 +63,7 @@ pub const Rotation = struct {
             };
         }
 
+        /// Parses an interval from string (e.g., "daily", "hourly").
         pub fn fromString(s: []const u8) ?RotationInterval {
             if (std.mem.eql(u8, s, "minutely")) return .minutely;
             if (std.mem.eql(u8, s, "hourly")) return .hourly;
@@ -47,6 +74,7 @@ pub const Rotation = struct {
             return null;
         }
 
+        /// Returns a human-readable name for the interval.
         pub fn name(self: RotationInterval) []const u8 {
             return switch (self) {
                 .minutely => "Minutely",
@@ -64,13 +92,20 @@ pub const Rotation = struct {
 
     /// Rotation statistics for monitoring.
     pub const RotationStats = struct {
+        /// Total number of rotations performed.
         total_rotations: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of files moved to archive.
         files_archived: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of files deleted during cleanup.
         files_deleted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Timestamp of last rotation in milliseconds.
         last_rotation_time_ms: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of rotation errors.
         rotation_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of compression errors during rotation.
         compression_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
+        /// Resets all statistics to zero.
         pub fn reset(self: *RotationStats) void {
             self.total_rotations.store(0, .monotonic);
             self.files_archived.store(0, .monotonic);
@@ -80,48 +115,69 @@ pub const Rotation = struct {
             self.compression_errors.store(0, .monotonic);
         }
 
+        /// Returns total rotation count.
         pub fn rotationCount(self: *const RotationStats) u64 {
             return @as(u64, self.total_rotations.load(.monotonic));
         }
 
+        /// Returns total error count.
         pub fn errorCount(self: *const RotationStats) u64 {
             return @as(u64, self.rotation_errors.load(.monotonic));
         }
     };
 
+    /// Memory allocator for file operations.
     allocator: std.mem.Allocator,
+    /// Base path of the log file to rotate.
     base_path: []const u8,
+    /// Time-based rotation interval (null to disable).
     interval: ?RotationInterval = null,
+    /// Size-based rotation limit in bytes (null to disable).
     size_limit: ?u64 = null,
+    /// Maximum number of rotated files to keep.
     retention: ?usize = null,
-    max_age_seconds: ?i64 = null, // Retention by age
+    /// Maximum age of rotated files in seconds.
+    max_age_seconds: ?i64 = null,
+    /// Timestamp of last rotation.
     last_rotation: i64,
+    /// Naming strategy for rotated files.
     naming: NamingStrategy = .timestamp,
+    /// Custom naming format string.
     naming_format: ?[]const u8 = null,
+    /// Compression configuration for rotated files.
     compression: ?CompressionConfig = null,
+    /// Compression engine instance.
     compressor: ?Compression = null,
+    /// Directory for archived/compressed files.
     archive_dir: ?[]const u8 = null,
+    /// Clean empty directories after rotation.
     clean_empty_dirs: bool = false,
 
-    /// Keep original file after compression (default: false - delete original)
+    /// Keep original file after compression (default: false - delete original).
     keep_original: bool = false,
 
-    /// Compress files during retention cleanup instead of deleting them
-    /// When true, old files exceeding retention limits are compressed rather than deleted
+    /// Compress files during retention cleanup instead of deleting them.
+    /// When true, old files exceeding retention limits are compressed rather than deleted.
     compress_on_retention: bool = false,
 
-    /// Delete files after compression during retention (only applies when compress_on_retention is true)
-    /// When false, compressed files are kept; when true, originals are deleted after compression
+    /// Delete files after compression during retention (only applies when compress_on_retention is true).
+    /// When false, compressed files are kept; when true, originals are deleted after compression.
     delete_after_retention_compress: bool = true,
 
-    // Callbacks
+    /// Callback invoked when rotation starts.
     on_rotation_start: ?*const fn (old_path: []const u8, new_path: []const u8) void = null,
+    /// Callback invoked when rotation completes successfully.
     on_rotation_complete: ?*const fn (old_path: []const u8, new_path: []const u8, elapsed_ms: u64) void = null,
+    /// Callback invoked when rotation encounters an error.
     on_rotation_error: ?*const fn (path: []const u8, err: anyerror) void = null,
+    /// Callback invoked when a file is archived.
     on_file_archived: ?*const fn (original_path: []const u8, archive_path: []const u8) void = null,
+    /// Callback invoked during retention cleanup.
     on_retention_cleanup: ?*const fn (path: []const u8) void = null,
 
+    /// Rotation statistics.
     stats: RotationStats = .{},
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
 
     pub fn init(

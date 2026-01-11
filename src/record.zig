@@ -1,19 +1,24 @@
+//! Log Record Module
+//!
+//! Defines the Record struct representing a single log event with all associated
+//! metadata. Records are the core data structure passed through the logging pipeline.
+//!
+//! A Record contains:
+//! - Timestamp: Unix timestamp in milliseconds
+//! - Level: Severity level of the log entry
+//! - Message: The actual log message text
+//! - Source Location: Module, function, file, line, column
+//! - Tracing: Trace ID, span ID, parent span ID, correlation ID
+//! - Context: Key-value pairs for structured logging
+//! - Error Info: Optional error details and stack traces
+//! - Duration: Optional timing information
+//!
+//! Records are typically created by the Logger and passed to Formatters and Sinks.
+
 const std = @import("std");
 const Level = @import("level.zig").Level;
 
 /// Represents a single log event.
-///
-/// Contains all the metadata associated with a log message, including
-/// timestamp, level, message content, source location, and tracing information.
-///
-/// Usage:
-/// ```zig
-/// var record = Record.init(allocator, .info, "Log message");
-/// defer record.deinit();
-///
-/// try record.addContext("user_id", "12345");
-/// record.trace_id = "trace-abc-123";
-/// ```
 pub const Record = struct {
     /// Unix timestamp in milliseconds.
     timestamp: i64,

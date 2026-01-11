@@ -1,10 +1,29 @@
+//! Logly Constants Module
+//!
+//! Provides compile-time constants and configuration defaults for the
+//! Logly logging library. All values are tuned for optimal performance
+//! across different platforms and use cases.
+//!
+//! Categories:
+//! - Atomic Types: Cross-platform atomic integer types
+//! - Buffer Sizes: Default buffer sizes for various operations
+//! - Thread Pool: Thread pool configuration defaults
+//! - Level Constants: Log level priority ranges
+//! - Time Constants: Time-related conversion factors
+//! - Rotation Constants: File rotation defaults
+//! - Network Constants: Network I/O settings
+//! - Rules System: Diagnostic rules formatting
+
 const builtin = @import("builtin");
 const std = @import("std");
 
-/// Architecture-dependent atomic integer sizes.
-/// Use these aliases for any atomic counters to ensure compatibility
-/// across 32-bit and 64-bit targets (e.g., x86 vs x86_64).
-/// fixes: https://github.com/muhammad-fiaz/logly.zig/issues/11
+/// Architecture-dependent unsigned atomic integer type.
+///
+/// Provides the optimal atomic integer size for the target architecture.
+/// Use this type for all atomic counters to ensure compatibility across
+/// 32-bit and 64-bit targets (e.g., x86 vs x86_64).
+///
+/// Fixes: https://github.com/muhammad-fiaz/logly.zig/issues/11
 pub const AtomicUnsigned = switch (builtin.target.cpu.arch) {
     .x86_64 => u64,
     .aarch64 => u64,
@@ -15,6 +34,10 @@ pub const AtomicUnsigned = switch (builtin.target.cpu.arch) {
     else => u32,
 };
 
+/// Architecture-dependent signed atomic integer type.
+///
+/// Provides the optimal atomic signed integer size for the target architecture.
+/// Use this type for atomic counters that may hold negative values.
 pub const AtomicSigned = switch (builtin.target.cpu.arch) {
     .x86_64 => i64,
     .aarch64 => i64,
@@ -25,7 +48,7 @@ pub const AtomicSigned = switch (builtin.target.cpu.arch) {
     else => i32,
 };
 
-// For convenience expose the native pointer-sized unsigned integer
+/// Native pointer-sized unsigned integer for the target architecture.
 pub const NativeUint = switch (builtin.target.cpu.arch) {
     .x86_64 => u64,
     .aarch64 => u64,
@@ -34,7 +57,7 @@ pub const NativeUint = switch (builtin.target.cpu.arch) {
     else => u32,
 };
 
-// For convenience expose the native pointer-sized signed integer
+/// Native pointer-sized signed integer for the target architecture.
 pub const NativeInt = switch (builtin.target.cpu.arch) {
     .x86_64 => i64,
     .aarch64 => i64,

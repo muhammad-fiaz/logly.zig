@@ -71,14 +71,14 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(example.path),
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
             }),
         });
         exe.root_module.addImport("logly", logly_module);
-        exe.linkLibC();
 
         // Link ws2_32 on Windows for networking examples
         if (target.result.os.tag == .windows) {
-            exe.linkSystemLibrary("ws2_32");
+            exe.root_module.linkSystemLibrary("ws2_32", .{});
         }
 
         const install_exe = b.addInstallArtifact(exe, .{});
@@ -113,12 +113,12 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/logly.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
-    tests.linkLibC();
 
     if (target.result.os.tag == .windows) {
-        tests.linkSystemLibrary("ws2_32");
+        tests.root_module.linkSystemLibrary("ws2_32", .{});
     }
 
     const run_tests = b.addRunArtifact(tests);
@@ -132,13 +132,13 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("bench/benchmark.zig"),
             .target = target,
             .optimize = .ReleaseFast,
+            .link_libc = true,
         }),
     });
     bench_exe.root_module.addImport("logly", logly_module);
-    bench_exe.linkLibC();
 
     if (target.result.os.tag == .windows) {
-        bench_exe.linkSystemLibrary("ws2_32");
+        bench_exe.root_module.linkSystemLibrary("ws2_32", .{});
     }
 
     const install_bench = b.addInstallArtifact(bench_exe, .{});

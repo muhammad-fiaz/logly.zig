@@ -1,3 +1,26 @@
+//! Log Formatter Module
+//!
+//! Converts log records into formatted output strings for display or storage.
+//! Supports multiple output formats and customizable layouts.
+//!
+//! Output Formats:
+//! - Plain Text: Human-readable formatted output
+//! - JSON: Structured JSON for log aggregation systems
+//! - Custom Pattern: User-defined format strings
+//!
+//! Features:
+//! - ANSI color support for console output
+//! - Configurable timestamp formats
+//! - Source location (file, line, column)
+//! - Context/metadata inclusion
+//! - Trace ID and span ID formatting
+//! - Level-specific styling
+//!
+//! Performance:
+//! - Buffer pooling for reduced allocations
+//! - Streaming output to writers
+//! - Template caching for patterns
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
@@ -6,31 +29,6 @@ const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
 /// Handles the formatting of log records into strings or JSON.
-///
-/// The Formatter is responsible for taking a `Record` and converting it into a final
-/// output string based on the configuration (e.g., JSON, plain text, custom patterns).
-///
-/// Usage:
-/// ```zig
-/// var formatter = Formatter.init(allocator);
-/// defer formatter.deinit();
-///
-/// var buf = std.ArrayList(u8).init(allocator);
-/// defer buf.deinit();
-///
-/// try formatter.formatToWriter(buf.writer(), &record, config);
-/// ```
-///
-/// Callbacks:
-/// - `on_format_complete`: Called after a record is formatted
-/// - `on_json_format`: Called when formatting as JSON
-/// - `on_custom_format`: Called when using custom format string
-/// - `on_format_error`: Called when formatting fails
-///
-/// Performance:
-/// - O(n) where n = output string length
-/// - Minimal allocations with StringBuilder pattern
-/// - Lock-free formatting operations
 pub const Formatter = struct {
     /// Formatter statistics for monitoring and diagnostics.
     pub const FormatterStats = struct {
@@ -42,23 +40,26 @@ pub const Formatter = struct {
 
         /// Calculate average format size
         pub fn avgFormatSize(self: *const FormatterStats) f64 {
-            const total = @as(u64, self.total_records_formatted.load(.monotonic));
-            if (total == 0) return 0;
-            const bytes = @as(u64, self.total_bytes_formatted.load(.monotonic));
-            return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateAverage(
+                Utils.atomicLoadU64(&self.total_bytes_formatted),
+                Utils.atomicLoadU64(&self.total_records_formatted),
+            );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const FormatterStats) f64 {
-            const total = @as(u64, self.total_records_formatted.load(.monotonic));
-            if (total == 0) return 0;
-            const errors = @as(u64, self.format_errors.load(.monotonic));
-            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateErrorRate(
+                Utils.atomicLoadU64(&self.format_errors),
+                Utils.atomicLoadU64(&self.total_records_formatted),
+            );
         }
     };
 
+    /// Memory allocator for formatting operations.
     allocator: std.mem.Allocator,
+    /// Formatter statistics.
     stats: FormatterStats = .{},
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
 
     /// Cached hostname of the current machine.

@@ -1,25 +1,30 @@
+//! Logger Configuration Module
+//!
+//! Defines the Config struct that controls all aspects of the logging system.
+//! Configuration can be applied at initialization or updated at runtime.
+//!
+//! Configuration Categories:
+//! - Log Levels: Minimum level filtering
+//! - Display: Colors, console output, ANSI support
+//! - Output Format: JSON, text, custom patterns
+//! - Time: Formats, timezones, timestamps
+//! - Metadata: Hostname, PID, source location, traces
+//! - Features: Sampling, rate limiting, redaction
+//! - Async: Buffer sizes, thread pools, schedulers
+//! - Rotation: Size/time-based file rotation
+//! - Compression: Archived log compression
+//!
+//! Presets are available for common use cases:
+//! - Config.default(): Standard development settings
+//! - Config.production(): Optimized for production
+//! - Config.development(): Verbose debugging
+//! - Config.highThroughput(): Maximum performance
+//! - Config.secure(): Security-focused logging
+
 const std = @import("std");
 const Level = @import("level.zig").Level;
 
 /// Configuration options for the Logger.
-///
-/// This struct controls the global behavior of the logging system, including:
-///   - Log levels and filtering.
-///   - Output formatting (JSON, text, custom patterns).
-///   - Display options (colors, timestamps, file info).
-///   - Feature toggles (callbacks, exception handling).
-///   - Enterprise features (sampling, rate limiting, redaction).
-///
-/// Usage:
-/// ```zig
-/// const config = logly.Config{
-///     .level = .debug,
-///     .json = true,
-///     .include_hostname = true,
-///     .time_format = "YYYY-MM-DD HH:mm:ss",
-/// };
-/// var logger = try logly.Logger.init(allocator, config);
-/// ```
 pub const Config = struct {
     /// Minimum log level. Only logs at this level or higher will be processed.
     level: Level = .info,
@@ -396,9 +401,14 @@ pub const Config = struct {
         utc,
     };
 
-    /// Sampling configuration.
+    /// Sampling configuration for controlling log volume.
+    ///
+    /// Sampling allows reducing the volume of logs by dropping a percentage
+    /// of records based on various strategies (probability, rate limiting, etc.).
     pub const SamplingConfig = struct {
+        /// Enable sampling.
         enabled: bool = false,
+        /// The sampling strategy to use.
         strategy: Strategy = .{ .probability = 1.0 },
 
         /// Sampling strategy configuration.
@@ -420,32 +430,40 @@ pub const Config = struct {
             adaptive: AdaptiveConfig,
         };
 
-        /// Configuration for rate limiting strategy
+        /// Configuration for rate limiting strategy.
         pub const SamplingRateLimitConfig = struct {
-            /// Maximum records allowed per window
+            /// Maximum records allowed per window.
             max_records: u32,
-            /// Time window in milliseconds
+            /// Time window in milliseconds.
             window_ms: u64,
         };
 
-        /// Configuration for adaptive sampling strategy
+        /// Configuration for adaptive sampling strategy.
+        ///
+        /// Automatically adjusts the sampling rate based on the current
+        /// record throughput to maintain a target rate.
         pub const AdaptiveConfig = struct {
-            /// Target records per second
+            /// Target records per second.
             target_rate: u32,
-            /// Minimum sample rate (don't drop below this)
+            /// Minimum sample rate (don't drop below this).
             min_sample_rate: f64 = 0.01,
-            /// Maximum sample rate (don't go above this)
+            /// Maximum sample rate (don't go above this).
             max_sample_rate: f64 = 1.0,
-            /// How often to adjust rate (milliseconds)
+            /// How often to adjust rate (milliseconds).
             adjustment_interval_ms: u64 = 1000,
         };
     };
 
     /// Rate limiting configuration.
+    /// Rate limiting configuration for loggers (not sampling).
     pub const RateLimitConfig = struct {
+        /// Enable rate limiting.
         enabled: bool = false,
+        /// Maximum requests per second.
         max_per_second: u32 = 1000,
+        /// Burst size (token bucket capacity).
         burst_size: u32 = 100,
+        /// Whether to apply limits per log level independently.
         per_level: bool = false,
     };
 
@@ -478,26 +496,43 @@ pub const Config = struct {
         /// Compliance preset to use (null for custom).
         compliance_preset: ?CompliancePreset = null,
 
+        /// Enum defining the method used for redacting content.
         pub const RedactionType = enum {
+            /// Replaces the entire value with "[REDACTED]" or similar.
             full,
+            /// Shows the start of the string, masking the rest.
             partial_start,
+            /// Shows the end of the string, masking the beginning.
             partial_end,
+            /// Replaces the value with a cryptographic hash.
             hash,
+            /// Masks the middle part of the string (e.g. for credit cards).
             mask_middle,
+            /// Truncates the string to a fixed length.
             truncate,
         };
 
+        /// Enum determining the algorithm used for hashing redaction.
         pub const HashAlgorithm = enum {
+            /// SHA-256 algorithm (secure default).
             sha256,
+            /// SHA-512 algorithm (more secure, slower).
             sha512,
+            /// MD5 algorithm (fast, less secure).
             md5,
         };
 
+        /// Predefined compliance presets to automatically configure redaction rules.
         pub const CompliancePreset = enum {
+            /// Payment Card Industry Data Security Standard (PCI-DSS).
             pci_dss,
+            /// Health Insurance Portability and Accountability Act (HIPAA).
             hipaa,
+            /// General Data Protection Regulation (GDPR).
             gdpr,
+            /// Sarbanes-Oxley Act (SOX).
             sox,
+            /// Custom user-defined compliance rules.
             custom,
         };
 

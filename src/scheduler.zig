@@ -1,3 +1,29 @@
+//! Task Scheduler Module
+//!
+//! Provides automated scheduling for log maintenance tasks such as
+//! cleanup, rotation, compression, and custom operations.
+//!
+//! Task Types:
+//! - cleanup: Remove old log files based on age or count
+//! - rotation: Rotate log files on schedule
+//! - compression: Compress archived log files
+//! - flush: Flush all sink buffers
+//! - health_check: System health monitoring
+//! - metrics_snapshot: Periodic metrics collection
+//! - custom: User-defined callback tasks
+//!
+//! Schedule Types:
+//! - once: Run once after delay
+//! - interval: Run at fixed intervals
+//! - daily: Run at specific time each day
+//! - cron: Cron-like flexible scheduling
+//!
+//! Features:
+//! - Priority-based task execution
+//! - Retry policies with exponential backoff
+//! - Task dependencies
+//! - Thread pool integration
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Compression = @import("compression.zig").Compression;
@@ -7,31 +33,32 @@ const ThreadPool = @import("thread_pool.zig").ThreadPool;
 /// Scheduler for automated log maintenance tasks.
 ///
 /// Provides scheduled execution of tasks like log cleanup, rotation,
-/// compression, and custom maintenance operations.
-///
-/// Callbacks:
-/// - `on_task_started`: Called when a scheduled task starts execution
-/// - `on_task_completed`: Called when a task completes successfully
-/// - `on_task_error`: Called when a task fails
-/// - `on_schedule_tick`: Called on each scheduler cycle
-/// - `on_health_check`: Called when health status is checked
-///
-/// Performance:
-/// - O(n) per cycle where n = number of tasks
-/// - Minimal overhead: only active tasks are evaluated
-/// - Lock-free read operations for task status
+/// compression, and custom maintenance operations. Supports multiple
+/// schedule types including one-time, interval, daily, and cron-like.
 pub const Scheduler = struct {
+    /// Memory allocator for internal operations.
     allocator: std.mem.Allocator,
+    /// List of scheduled tasks.
     tasks: std.ArrayList(ScheduledTask),
+    /// Whether the scheduler is currently running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// Background worker thread for task execution.
     worker_thread: ?std.Thread = null,
+    /// Mutex for thread-safe access to tasks.
     mutex: std.Thread.Mutex = .{},
+    /// Condition variable for worker thread signaling.
     condition: std.Thread.Condition = .{},
+    /// Scheduler statistics (tasks executed, failed, etc.).
     stats: SchedulerStats,
+    /// Compression utility for compression tasks.
     compression: Compression,
+    /// Whether compression has been initialized.
     compression_initialized: bool = false,
+    /// Optional thread pool for parallel task execution.
     thread_pool: ?*ThreadPool = null,
+    /// Callback for health status checks.
     health_callback: ?*const fn () HealthStatus = null,
+    /// Callback for metrics collection.
     metrics_callback: ?*const fn () MetricsSnapshot = null,
 
     /// Callback invoked when a task starts execution.

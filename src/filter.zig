@@ -1,29 +1,39 @@
+//! Log Filter Module
+//!
+//! Provides conditional processing of log records based on configurable rules.
+//! Filters can be combined to create complex filtering logic.
+//!
+//! Filter Types:
+//! - Level-based: Minimum/maximum level, level ranges
+//! - Content-based: Message contains/matches patterns
+//! - Module-based: Allow/deny specific modules
+//! - Custom: User-defined predicate functions
+//!
+//! Combinators:
+//! - AND: All rules must match
+//! - OR: Any rule must match
+//! - NOT: Invert rule result
+//!
+//! Use Cases:
+//! - Development: Show all logs
+//! - Production: Errors and warnings only
+//! - Debugging: Focus on specific modules
+//! - Security: Filter sensitive information
+//!
+//! Performance:
+//! - O(n) where n is number of rules
+//! - Short-circuit evaluation for OR/AND
+//! - Cached regex patterns
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Filter for conditionally processing log records.
-///
-/// Filters allow fine-grained control over which log records are processed.
-/// They can be combined to create complex filtering logic based on level,
-/// message content, module, or custom predicates.
-///
-/// Usage:
-///   Create a filter, add rules using `addRule` or helpers like `addMinLevel`,
-///   and check records using `shouldLog`.
-///
-/// Callbacks:
-///   - `on_record_allowed`: Called when a record passes filtering
-///   - `on_record_denied`: Called when a record is blocked by filter
-///   - `on_filter_created`: Called when filter is created/initialized
-///   - `on_rule_added`: Called when a new filter rule is added
-///
-/// Complexity:
-///   - Evaluation: O(N) where N is number of rules.
-///   - Space: O(N) where N is number of rules.
 pub const Filter = struct {
     /// Filter statistics for monitoring and diagnostics.
     pub const FilterStats = struct {
@@ -35,18 +45,18 @@ pub const Filter = struct {
 
         /// Calculate allow rate (0.0 - 1.0)
         pub fn allowRate(self: *const FilterStats) f64 {
-            const total = @as(u64, self.total_records_evaluated.load(.monotonic));
-            if (total == 0) return 0;
-            const allowed = @as(u64, self.records_allowed.load(.monotonic));
-            return @as(f64, @floatFromInt(allowed)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateRate(
+                Utils.atomicLoadU64(&self.records_allowed),
+                Utils.atomicLoadU64(&self.total_records_evaluated),
+            );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const FilterStats) f64 {
-            const total = @as(u64, self.total_records_evaluated.load(.monotonic));
-            if (total == 0) return 0;
-            const errors = @as(u64, self.evaluation_errors.load(.monotonic));
-            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateErrorRate(
+                Utils.atomicLoadU64(&self.evaluation_errors),
+                Utils.atomicLoadU64(&self.total_records_evaluated),
+            );
         }
     };
 
@@ -72,25 +82,44 @@ pub const Filter = struct {
     on_rule_added: ?*const fn (u32, u32) void = null,
 
     /// A single filter rule that determines whether a record should pass.
+    ///
+    /// Filter rules are evaluated in order and can allow or deny records
+    /// based on level, module, message content, or custom criteria.
     pub const FilterRule = struct {
+        /// The type of rule to apply (level, module, message, etc.).
         rule_type: RuleType,
+        /// Pattern to match against (for module/message rules).
         pattern: ?[]const u8 = null,
+        /// Log level for level-based rules.
         level: ?Level = null,
+        /// Action to take when rule matches (allow or deny).
         action: Action = .allow,
 
+        /// Types of filter rules available.
         pub const RuleType = enum {
+            /// Only allow records at or above minimum level.
             level_min,
+            /// Only allow records at or below maximum level.
             level_max,
+            /// Only allow records at exact level.
             level_exact,
+            /// Match records from specific module name.
             module_match,
+            /// Match records from modules starting with prefix.
             module_prefix,
+            /// Match records containing specified text.
             message_contains,
+            /// Match records using regex pattern.
             message_regex,
+            /// Custom predicate-based filtering.
             custom,
         };
 
+        /// Action to take when a filter rule matches.
         pub const Action = enum {
+            /// Allow the record to pass through.
             allow,
+            /// Deny/block the record.
             deny,
         };
     };

@@ -1,3 +1,30 @@
+//! Metrics Collection Module
+//!
+//! Provides observability and performance monitoring for the logging system.
+//! Tracks record counts, throughput, latency, and error rates.
+//!
+//! Tracked Metrics:
+//! - Record Counts: Total, per-level, dropped, errors
+//! - Throughput: Records/bytes per second
+//! - Latency: Min/max/average processing time
+//! - Per-Sink: Individual sink statistics
+//!
+//! Export Formats:
+//! - Text: Human-readable format
+//! - JSON: Structured JSON output
+//! - Prometheus: Prometheus exposition format
+//! - StatsD: StatsD metric format
+//!
+//! Features:
+//! - Lock-free atomic counters for hot paths
+//! - Configurable history retention
+//! - Threshold-based alerting callbacks
+//! - Histogram for latency distribution
+//!
+//! Performance:
+//! - Minimal overhead (1-2% CPU for enabled metrics)
+//! - Atomic operations for thread safety
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
@@ -5,53 +32,53 @@ const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
 /// Metrics collection for logging system observability and performance monitoring.
+/// Metrics collection for logging system observability and performance monitoring.
 ///
-/// Tracks various statistics about logging operations including:
-/// - Record counts by level
-/// - Throughput (records/bytes per second)
-/// - Latency statistics
-/// - Per-sink metrics
-/// - Error rates and dropped records
-///
-/// Callbacks:
-/// - `on_record_logged`: Called for each record processed
-/// - `on_metrics_snapshot`: Called when metrics snapshot is taken
-/// - `on_threshold_exceeded`: Called when metrics exceed thresholds
-/// - `on_error_detected`: Called when errors or dropped records occur
-///
-/// Performance:
-/// - Lock-free atomic operations for hot paths
-/// - Minimal overhead: typical ~1-2% CPU for enabled metrics
-/// - Batch updates to reduce contention
-/// - Per-level atomic counters avoid false sharing
+/// Tracks various statistics about logging operations including record counts,
+/// throughput, latency, and per-sink metrics.
 pub const Metrics = struct {
-    /// Metric types for threshold notifications
+    /// Metric types for threshold notifications.
     pub const MetricType = enum {
+        /// Total records logged.
         total_records,
+        /// Total bytes written.
         total_bytes,
+        /// Records dropped due to overflow.
         dropped_records,
+        /// Total error count.
         error_count,
+        /// Records per second throughput.
         records_per_second,
+        /// Bytes per second throughput.
         bytes_per_second,
     };
 
-    /// Error event types
+    /// Error event types for callbacks.
     pub const ErrorEvent = enum {
+        /// Records dropped due to capacity.
         records_dropped,
+        /// Sink write failure.
         sink_write_error,
+        /// Buffer overflow occurred.
         buffer_overflow,
+        /// Record dropped by sampling.
         sampling_drop,
     };
 
     /// Per-sink metrics for fine-grained observability.
     pub const SinkMetrics = struct {
+        /// Sink name identifier.
         name: []const u8,
+        /// Total records written to this sink.
         records_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total bytes written to this sink.
         bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of write errors for this sink.
         write_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of flush operations for this sink.
         flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
-        /// Get write error rate for this sink
+        /// Get write error rate for this sink.
         pub fn getErrorRate(self: *const SinkMetrics) f64 {
             const written = @as(u64, self.records_written.load(.monotonic));
             if (written == 0) return 0;
@@ -62,16 +89,24 @@ pub const Metrics = struct {
 
     /// Snapshot of current metrics for reporting.
     pub const Snapshot = struct {
+        /// Total records logged.
         total_records: u64,
+        /// Total bytes written.
         total_bytes: u64,
+        /// Records dropped due to overflow.
         dropped_records: u64,
+        /// Total error count.
         error_count: u64,
+        /// Time since metrics start in milliseconds.
         uptime_ms: i64,
+        /// Current records per second.
         records_per_second: f64,
+        /// Current bytes per second.
         bytes_per_second: f64,
+        /// Record counts per level (indexed by LevelIndex).
         level_counts: [10]u64,
 
-        /// Get drop rate (0.0 - 1.0)
+        /// Get drop rate (0.0 - 1.0).
         pub fn getDropRate(self: *const Snapshot) f64 {
             if (self.total_records == 0) return 0;
             return @as(f64, @floatFromInt(self.dropped_records)) / @as(f64, @floatFromInt(self.total_records));
@@ -95,31 +130,44 @@ pub const Metrics = struct {
     /// Re-export MetricsConfig from global config.
     pub const MetricsConfig = Config.MetricsConfig;
 
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
+    /// Metrics configuration.
     config: MetricsConfig = .{},
 
+    /// Total records logged.
     total_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    /// Total bytes written.
     total_bytes: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    /// Records dropped due to overflow.
     dropped_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    /// Total error count.
     error_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
+    /// Per-level record counts.
     level_counts: [10]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 10,
 
+    /// Metrics collection start time.
     start_time: i64,
+    /// Timestamp of last record logged.
     last_record_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
-    /// Latency tracking
+    /// Total latency in nanoseconds (for average calculation).
     total_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    /// Minimum latency observed in nanoseconds.
     min_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(std.math.maxInt(Constants.AtomicUnsigned)),
+    /// Maximum latency observed in nanoseconds.
     max_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
-    /// Histogram buckets (for latency distribution)
+    /// Histogram buckets for latency distribution.
     histogram: [20]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 20,
 
-    /// Snapshot history
+    /// Snapshot history for trend analysis.
     history: std.ArrayList(Snapshot),
 
+    /// Per-sink metrics list.
     sink_metrics: std.ArrayList(SinkMetrics),
+    /// Memory allocator.
     allocator: std.mem.Allocator,
 
     /// Callback invoked when a record is logged.

@@ -1,3 +1,22 @@
+//! Network Logging Module
+//!
+//! Provides network-based log transport for distributed logging systems.
+//! Supports TCP, UDP, and Syslog protocols for remote log collection.
+//!
+//! Components:
+//! - TCP/UDP Connections: Direct network connections for log streaming
+//! - Syslog Support: RFC 5424 compliant syslog message formatting
+//! - LogServer: Simple TCP/UDP log receiver for testing
+//! - Network Statistics: Throughput and error monitoring
+//!
+//! Protocols:
+//! - tcp://host:port - TCP stream connection
+//! - udp://host:port - UDP datagram connection
+//! - Syslog (UDP port 514) - Standard syslog protocol
+//!
+//! Thread Safety:
+//! All network operations are thread-safe with atomic statistics.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const http = std.http;

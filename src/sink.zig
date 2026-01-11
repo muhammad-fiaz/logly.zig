@@ -1,3 +1,30 @@
+//! Log Sink Module
+//!
+//! Defines output destinations for log records. Sinks handle the final
+//! step of the logging pipeline: writing formatted output to storage.
+//!
+//! Sink Types:
+//! - Console: Standard output/error stream
+//! - File: Local file with optional rotation
+//! - Network: TCP/UDP stream to remote server
+//! - Buffered: Memory buffer with periodic flush
+//!
+//! Features:
+//! - Automatic file rotation (size/time-based)
+//! - Buffered writes for performance
+//! - Async write support
+//! - Compression integration
+//! - Level-based routing (e.g., errors to separate file)
+//!
+//! Configuration:
+//! - Path: File path or network URI
+//! - Rotation: Interval and retention settings
+//! - Buffer: Size and flush interval
+//! - Format: JSON, text, or custom
+//!
+//! Thread Safety:
+//! All sink operations are thread-safe with internal locking.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const Config = @import("config.zig").Config;
@@ -416,53 +443,75 @@ pub const SinkConfig = struct {
     }
 };
 
+/// Log output destination (console, file, network, etc.).
+///
+/// Sinks handle the final step of the logging pipeline: writing formatted
+/// output to storage or network destinations.
 pub const Sink = struct {
     /// Sink statistics for monitoring and diagnostics.
     pub const SinkStats = struct {
+        /// Total number of records written.
         total_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total bytes written to the sink.
         bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of write errors encountered.
         write_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of flush operations performed.
         flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of file rotations performed.
         rotation_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
-        /// Calculate throughput (bytes per second)
+        /// Calculate throughput (bytes per second).
         pub fn throughputBytesPerSecond(self: *const SinkStats, elapsed_seconds: f64) f64 {
-            if (elapsed_seconds == 0) return 0;
-            const bytes = @as(u64, self.bytes_written.load(.monotonic));
-            return @as(f64, @floatFromInt(bytes)) / elapsed_seconds;
+            return Utils.safeFloatDiv(
+                @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.bytes_written))),
+                elapsed_seconds,
+            );
         }
 
-        /// Calculate error rate (0.0 - 1.0)
+        /// Calculate error rate (0.0 - 1.0).
         pub fn errorRate(self: *const SinkStats) f64 {
-            const total = @as(u64, self.total_written.load(.monotonic));
-            const errors = @as(u64, self.write_errors.load(.monotonic));
-            const total_ops = total + errors;
-            if (total_ops == 0) return 0;
-            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total_ops));
+            const total = Utils.atomicLoadU64(&self.total_written);
+            const errors = Utils.atomicLoadU64(&self.write_errors);
+            return Utils.calculateErrorRate(errors, total + errors);
         }
 
-        /// Calculate average bytes per write
+        /// Calculate average bytes per write.
         pub fn avgBytesPerWrite(self: *const SinkStats) f64 {
-            const total = @as(u64, self.total_written.load(.monotonic));
-            if (total == 0) return 0;
-            const bytes = @as(u64, self.bytes_written.load(.monotonic));
-            return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateAverage(
+                Utils.atomicLoadU64(&self.bytes_written),
+                Utils.atomicLoadU64(&self.total_written),
+            );
         }
     };
 
+    /// Memory allocator for sink operations.
     allocator: std.mem.Allocator,
+    /// Sink configuration options.
     config: SinkConfig,
+    /// File handle for file-based sinks.
     file: ?std.fs.File = null,
+    /// TCP stream for network sinks.
     stream: ?std.net.Stream = null,
+    /// UDP socket for network sinks.
     udp_socket: ?std.posix.socket_t = null,
+    /// UDP destination address.
     udp_addr: ?std.net.Address = null,
+    /// System log handle (Windows Event Log / Syslog).
     system_log: ?SystemLog = null,
+    /// Formatter for converting records to output.
     formatter: Formatter,
+    /// Rotation handler for file-based sinks.
     rotation: ?Rotation = null,
+    /// Internal write buffer.
     buffer: std.ArrayList(u8),
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
+    /// Whether the sink is enabled.
     enabled: bool = true,
-    json_first_entry: bool = true, // Track if this is the first JSON entry for file output
+    /// Track if this is the first JSON entry for file output.
+    json_first_entry: bool = true,
+    /// Sink statistics.
     stats: SinkStats = .{},
 
     /// Callback invoked when a record is written to the sink.
@@ -485,6 +534,14 @@ pub const Sink = struct {
     /// Parameters: (is_enabled: bool)
     on_state_change: ?*const fn (bool) void = null,
 
+    /// Initializes a new sink with the provided configuration.
+    ///
+    /// Arguments:
+    ///     allocator: Memory allocator for sink operations.
+    ///     config: Sink configuration options.
+    ///
+    /// Returns:
+    ///     A pointer to the initialized Sink or an error.
     pub fn init(allocator: std.mem.Allocator, config: SinkConfig) !*Sink {
         const sink = try allocator.create(Sink);
         sink.* = .{
@@ -610,6 +667,8 @@ pub const Sink = struct {
         return buf.toOwnedSlice(allocator);
     }
 
+    /// Deinitializes the sink and releases resources.
+    /// Flushes any pending data before closing.
     pub fn deinit(self: *Sink) void {
         self.flush() catch {};
 
@@ -730,10 +789,21 @@ pub const Sink = struct {
     /// Alias for getName() - shorter form.
     pub const name = getName;
 
+    /// Writes a log record to the sink.
+    ///
+    /// Arguments:
+    ///     record: The log record to write.
+    ///     global_config: Global configuration to merge with sink config.
     pub fn write(self: *Sink, record: *const Record, global_config: anytype) !void {
         return self.writeWithAllocator(record, global_config, null);
     }
 
+    /// Writes a log record using a specific allocator.
+    ///
+    /// Arguments:
+    ///     record: The log record to write.
+    ///     global_config: Global configuration.
+    ///     scratch_allocator: Optional allocator for temporary formatting.
     pub fn writeWithAllocator(self: *Sink, record: *const Record, global_config: anytype, scratch_allocator: ?std.mem.Allocator) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -865,6 +935,10 @@ pub const Sink = struct {
         }
     }
 
+    /// Writes raw data directly to the sink bypassing formatting.
+    ///
+    /// Arguments:
+    ///     data: The raw string data to write.
     pub fn writeRaw(self: *Sink, data: []const u8) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -909,6 +983,7 @@ pub const Sink = struct {
         return false;
     }
 
+    /// Flushes the internal buffer to storage.
     pub fn flush(self: *Sink) !void {
         if (self.buffer.items.len == 0) return;
 

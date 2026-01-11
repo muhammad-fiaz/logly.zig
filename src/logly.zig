@@ -1,8 +1,6 @@
 //! # Logly
 //!
-//! A high-performance, enterprise-grade structured logging library for Zig.
-//!
-//! recent fixes in v0.0.8 : https://github.com/muhammad-fiaz/logly.zig/issues/11
+//! A fast, high-performance structured logging library for Zig.
 //!
 //! Logly provides a clean, intuitive API for logging with support for:
 //! - Colored console output with customizable themes
@@ -58,6 +56,10 @@
 //! try logger.setTraceContext("trace-123", "span-456");
 //! try logger.info("Request processed");
 //! ```
+//!
+//! For detailed documentation, visit: https://muhammad-fiaz.github.io/logly.zig/
+//! 
+//! For source code and examples, visit: https://github.com/muhammad-fiaz/logly.zig
 
 pub const version = @import("version.zig").version;
 

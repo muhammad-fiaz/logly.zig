@@ -1,3 +1,23 @@
+//! Utility Functions Module
+//!
+//! Provides common utility functions used throughout the Logly logging library.
+//! All functions are designed for high performance with minimal allocations.
+//!
+//! Categories:
+//! - Size Parsing/Formatting: Parse "10MB" to bytes, format bytes to "10 MB"
+//! - Duration Parsing/Formatting: Parse "30s" to milliseconds
+//! - Time Utilities: Epoch conversion, time components, elapsed time
+//! - Date/Time Formatting: ISO 8601, custom patterns, RFC 3339
+//! - JSON Utilities: String escaping for JSON output
+//! - Math Utilities: Rate calculations, averages, clamping
+//! - ID Generation: Trace IDs, span IDs for distributed tracing
+//! - Statistics: Error rates, throughput, averages
+//!
+//! Performance Characteristics:
+//! - Most functions are O(1) or O(n) where n is string length
+//! - Zero allocations for formatting to writers
+//! - Thread-safe (no global state)
+
 const std = @import("std");
 
 /// Parses a size string (e.g., "10MB", "5GB") into bytes.
@@ -700,4 +720,160 @@ test "generateSpanId" {
 test "shouldSample" {
     try std.testing.expect(shouldSample(1.0));
     try std.testing.expect(!shouldSample(0.0));
+}
+
+/// Calculates an error rate from atomic counter values.
+/// This is a common pattern used in stats structs across the codebase.
+///
+/// Arguments:
+///     errors: Number of errors (or numerator)
+///     total: Total number of operations (or denominator)
+///
+/// Returns:
+///     Error rate as a float between 0.0 and 1.0
+///
+/// Performance: O(1)
+pub fn calculateErrorRate(errors: u64, total: u64) f64 {
+    if (total == 0) return 0.0;
+    return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+}
+
+/// Calculates an average value from a sum and count.
+/// Safely handles division by zero.
+///
+/// Arguments:
+///     sum: Total sum of values
+///     count: Number of values
+///
+/// Returns:
+///     Average as a float
+///
+/// Performance: O(1)
+pub fn calculateAverage(sum: u64, count: u64) f64 {
+    if (count == 0) return 0.0;
+    return @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(count));
+}
+
+/// Safe floating-point division that returns 0.0 for division by zero.
+///
+/// Arguments:
+///     numerator: The dividend
+///     denominator: The divisor
+///
+/// Returns:
+///     Result of division, or 0.0 if denominator is 0
+///
+/// Performance: O(1)
+pub fn safeFloatDiv(numerator: f64, denominator: f64) f64 {
+    if (denominator == 0.0) return 0.0;
+    return numerator / denominator;
+}
+
+/// Loads a u64 value from an atomic counter, handling different atomic unsigned types.
+/// This is useful for cross-platform compatibility where atomic types vary.
+///
+/// Arguments:
+///     atomic: Pointer to the atomic value
+///
+/// Returns:
+///     The loaded value as u64
+///
+/// Performance: O(1)
+pub fn atomicLoadU64(atomic: anytype) u64 {
+    return @as(u64, atomic.load(.monotonic));
+}
+
+/// Calculates bytes per second throughput.
+///
+/// Arguments:
+///     bytes: Total bytes transferred
+///     elapsed_ms: Elapsed time in milliseconds
+///
+/// Returns:
+///     Bytes per second as a float
+///
+/// Performance: O(1)
+pub fn calculateBytesPerSecond(bytes: u64, elapsed_ms: i64) f64 {
+    if (elapsed_ms <= 0) return 0.0;
+    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
+    return @as(f64, @floatFromInt(bytes)) / seconds;
+}
+
+/// Calculates records per second throughput.
+///
+/// Arguments:
+///     records: Total records processed
+///     elapsed_ms: Elapsed time in milliseconds
+///
+/// Returns:
+///     Records per second as a float
+///
+/// Performance: O(1)
+pub fn calculateRecordsPerSecond(records: u64, elapsed_ms: i64) f64 {
+    return calculateBytesPerSecond(records, elapsed_ms);
+}
+
+/// Creates a nanosecond duration from a start time to now.
+///
+/// Arguments:
+///     start_time: The start timestamp in nanoseconds
+///
+/// Returns:
+///     Duration in nanoseconds as u64
+///
+/// Performance: O(1)
+pub fn durationSinceNs(start_time: i128) u64 {
+    const now = std.time.nanoTimestamp();
+    if (now < start_time) return 0;
+    return @intCast(@max(0, now - start_time));
+}
+
+/// Formats a nanosecond duration to a human-readable string.
+///
+/// Arguments:
+///     writer: Output writer
+///     ns: Duration in nanoseconds
+///
+/// Performance: O(1)
+pub fn writeDurationNs(writer: anytype, ns: u64) !void {
+    if (ns < 1000) {
+        try writer.print("{d}ns", .{ns});
+    } else if (ns < 1_000_000) {
+        try writer.print("{d:.2}µs", .{@as(f64, @floatFromInt(ns)) / 1000.0});
+    } else if (ns < 1_000_000_000) {
+        try writer.print("{d:.2}ms", .{@as(f64, @floatFromInt(ns)) / 1_000_000.0});
+    } else {
+        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ns)) / 1_000_000_000.0});
+    }
+}
+
+test "calculateErrorRate" {
+    try std.testing.expectEqual(@as(f64, 0.0), calculateErrorRate(0, 0));
+    try std.testing.expectEqual(@as(f64, 0.0), calculateErrorRate(0, 100));
+    try std.testing.expectEqual(@as(f64, 0.1), calculateErrorRate(10, 100));
+    try std.testing.expectEqual(@as(f64, 1.0), calculateErrorRate(100, 100));
+}
+
+test "calculateAverage" {
+    try std.testing.expectEqual(@as(f64, 0.0), calculateAverage(0, 0));
+    try std.testing.expectEqual(@as(f64, 50.0), calculateAverage(500, 10));
+    try std.testing.expectEqual(@as(f64, 100.0), calculateAverage(100, 1));
+}
+
+test "safeFloatDiv" {
+    try std.testing.expectEqual(@as(f64, 0.0), safeFloatDiv(100.0, 0.0));
+    try std.testing.expectEqual(@as(f64, 2.0), safeFloatDiv(100.0, 50.0));
+}
+
+test "calculateBytesPerSecond" {
+    try std.testing.expectEqual(@as(f64, 0.0), calculateBytesPerSecond(100, 0));
+    try std.testing.expectEqual(@as(f64, 100.0), calculateBytesPerSecond(100, 1000));
+}
+
+test "durationSinceNs" {
+    const start = std.time.nanoTimestamp();
+    // Simple test - just verify duration is non-negative without sleep
+    const duration = durationSinceNs(start);
+    // Duration should be very small (microseconds to milliseconds) since we just started
+    try std.testing.expect(duration < 1_000_000_000); // Less than 1 second
 }

@@ -1,3 +1,19 @@
+//! Automatic Update Checker Module
+//!
+//! Provides background version checking against GitHub releases.
+//! Runs asynchronously to avoid blocking application startup.
+//!
+//! Features:
+//! - Semantic version comparison (MAJOR.MINOR.PATCH)
+//! - Background thread execution (non-blocking)
+//! - Single execution per process (prevents duplicate checks)
+//! - Silent failure handling (graceful degradation)
+//! - Console notifications for available updates
+//!
+//! The update checker queries the GitHub API for the latest release
+//! and compares it against the current version to notify users of
+//! available updates or warn about running development builds.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const http = std.http;
@@ -5,24 +21,45 @@ const SemanticVersion = std.SemanticVersion;
 const version_info = @import("version.zig");
 const Network = @import("network.zig");
 
+/// GitHub repository owner for update checks.
 const REPO_OWNER = "muhammad-fiaz";
+
+/// GitHub repository name for update checks.
 const REPO_NAME = "logly.zig";
+
+/// Current version string from version.zig.
 const CURRENT_VERSION: []const u8 = version_info.version;
 
-/// Static flag to ensure update check runs only once per process
+/// Flag to ensure update check runs only once per process lifetime.
 var update_check_done = false;
+
+/// Mutex protecting the update check flag.
 var update_check_mutex = std.Thread.Mutex{};
 
+/// Strips leading 'v' or 'V' prefix from version tags.
+/// GitHub releases often use "v1.0.0" format.
 fn stripVersionPrefix(tag: []const u8) []const u8 {
     if (tag.len == 0) return tag;
     return if (tag[0] == 'v' or tag[0] == 'V') tag[1..] else tag;
 }
 
+/// Parses a version string into SemanticVersion.
+/// Returns null if parsing fails.
 fn parseSemver(text: []const u8) ?SemanticVersion {
     return SemanticVersion.parse(text) catch null;
 }
 
-const VersionRelation = enum { local_newer, equal, remote_newer, unknown };
+/// Version comparison result indicating relative version ordering.
+const VersionRelation = enum {
+    /// Local version is newer than remote (dev/nightly build).
+    local_newer,
+    /// Versions are equal (up to date).
+    equal,
+    /// Remote version is newer (update available).
+    remote_newer,
+    /// Version comparison failed (unknown format).
+    unknown,
+};
 
 fn compareVersions(latest_raw: []const u8) VersionRelation {
     const latest = stripVersionPrefix(latest_raw);

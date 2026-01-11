@@ -1,11 +1,27 @@
-/// System diagnostics collection module.
-///
-/// Collects and provides access to host system information including:
-/// - Operating system and CPU architecture
-/// - CPU model name and logical core count
-/// - Physical memory (total and available)
-/// - Drive/volume information (Windows/Linux)
-///
+//! System Diagnostics Module
+//!
+//! Collects and provides access to host system information for logging
+//! context enrichment and system monitoring.
+//!
+//! Collected Information:
+//! - Operating system and CPU architecture
+//! - CPU model name and logical core count
+//! - Physical memory (total and available)
+//! - Drive/volume information (capacity, free space)
+//! - Process resource usage (RSS, CPU time)
+//!
+//! Platform Support:
+//! - Windows: Uses kernel32 APIs (GlobalMemoryStatusEx, GetDiskFreeSpaceEx)
+//! - Linux: Reads /proc/meminfo and /proc/mounts
+//! - macOS: Uses sysctl and getmntinfo
+//!
+//! Usage:
+//! ```zig
+//! var diag = try Diagnostics.collect(allocator, true);
+//! defer diag.deinit(allocator);
+//! std.debug.print("OS: {s}, Cores: {d}\n", .{diag.os_tag, diag.logical_cores});
+//! ```
+//! 
 /// All collected data is owned by the caller and must be freed with deinit().
 const std = @import("std");
 const builtin = @import("builtin");

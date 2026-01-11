@@ -43,6 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
+  - [Version 0.1.3](#version-013)
   - [Version 0.1.2](#version-012)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended)](#method-1-zig-fetch-recommended)
@@ -197,6 +198,16 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
+### Version 0.1.3
+
+**Improvements:**
+
+- **Code Optimization**: Consolidated common utility functions in `utils.zig` for better code reuse.
+- **Refactored Statistics**: Shared utility functions for error rate, average, and throughput calculations across all modules.
+- **Improved Docstrings**: Enhanced documentation for Filter, Formatter, Sink, Compression, Rotation, Sampler, Scheduler, ThreadPool, Network, Metrics, Diagnostics, Rules, and Redactor modules for `zig build docs` generation.
+
+---
+
 ### Version 0.1.2
 
 **New Features:**
@@ -218,7 +229,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.3.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -267,7 +278,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.3.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

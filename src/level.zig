@@ -1,55 +1,56 @@
+//! Log Level Module
+//!
+//! Defines the standard logging levels and their priorities for the Logly library.
+//! Levels are ordered by severity, enabling filtering and conditional logging.
+//!
+//! Priority Order (lowest to highest):
+//! - trace (5): Detailed tracing information
+//! - debug (10): Debugging information
+//! - info (20): General informational messages
+//! - notice (22): Notable events
+//! - success (25): Successful operation completion
+//! - warning (30): Warning conditions
+//! - err (40): Error conditions
+//! - fail (45): Failure conditions
+//! - critical (50): Critical failures
+//! - fatal (55): Fatal system errors
+//!
+//! Custom levels can be created with arbitrary priorities and colors.
+
 const std = @import("std");
 
 /// Defines the standard logging levels and their priorities.
 ///
 /// Levels are ordered by priority, where higher values indicate higher severity.
-/// *   `trace` (5): Detailed tracing information.
-/// *   `debug` (10): Debugging information.
-/// *   `info` (20): General informational messages.
-/// *   `notice` (22): Notice messages.
-/// *   `success` (25): Successful operations (often green).
-/// *   `warning` (30): Warning conditions.
-/// *   `err` (40): Error conditions.
-/// *   `fail` (45): Failure conditions (often red).
-/// *   `critical` (50): Critical failures (often bold red/background).
-/// *   `fatal` (55): Fatal system errors (highest severity).
-///
-/// Usage:
-/// ```zig
-/// // Check if a level is enabled
-/// if (level.priority() >= config.level.priority()) {
-///     // Log message
-/// }
-///
-/// // Convert to string
-/// const str = level.asString();
-/// ```
+/// Each level has a numeric priority, string representation, and default color.
 pub const Level = enum(u8) {
-    // 🔍 Detailed tracing information
+    /// Detailed tracing information (priority: 5).
     trace = 5,
-    // 🐛 Debugging information
+    /// Debugging information (priority: 10).
     debug = 10,
-    // ℹ️ General information
+    /// General informational messages (priority: 20).
     info = 20,
-    // 📢 Notice messages
+    /// Notice messages (priority: 22).
     notice = 22,
-    // ✅ Success messages
+    /// Success messages (priority: 25).
     success = 25,
-    // ⚠️ Warnings
+    /// Warning conditions (priority: 30).
     warning = 30,
-    // ❌ Errors
+    /// Error conditions (priority: 40).
     err = 40,
-    // 🛑 Failures
+    /// Failure conditions (priority: 45).
     fail = 45,
-    // 🚨 Critical failures
+    /// Critical failures (priority: 50).
     critical = 50,
-    // ☠️ Fatal system errors
+    /// Fatal system errors - highest severity (priority: 55).
     fatal = 55,
 
+    /// Returns the numeric priority value of this level.
     pub fn priority(self: Level) u8 {
         return @intFromEnum(self);
     }
 
+    /// Returns the Level enum from a numeric priority, or null if invalid.
     pub fn fromPriority(p: u8) ?Level {
         return switch (p) {
             5 => .trace,
@@ -66,6 +67,7 @@ pub const Level = enum(u8) {
         };
     }
 
+    /// Returns the uppercase string representation of this level.
     pub fn asString(self: Level) []const u8 {
         return switch (self) {
             .trace => "TRACE",
@@ -81,6 +83,7 @@ pub const Level = enum(u8) {
         };
     }
 
+    /// Returns the default ANSI color code for this level.
     pub fn defaultColor(self: Level) []const u8 {
         return switch (self) {
             .trace => "36", // Cyan
@@ -150,9 +153,13 @@ pub const Level = enum(u8) {
     }
 };
 
+/// User-defined logging level.
 pub const CustomLevel = struct {
+    /// Name of the custom level (e.g. "AUDIT").
     name: []const u8,
+    /// Priority value (0-255).
     priority: u8,
+    /// ANSI color code for this level.
     color: []const u8,
 
     /// Creates a new custom level.
@@ -174,7 +181,7 @@ pub const CustomLevel = struct {
         return self.priority >= Level.err.priority();
     }
 
-    /// Alias for name
+    /// Alias for name.
     pub fn asString(self: CustomLevel) []const u8 {
         return self.name;
     }

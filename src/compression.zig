@@ -1,55 +1,68 @@
+//! Log Compression Module
+//!
+//! Provides compression and decompression utilities for log files.
+//! Supports multiple algorithms and integrates with rotation and archival.
+//!
+//! Algorithms:
+//! - deflate: Standard DEFLATE (gzip compatible)
+//! - zlib: ZLIB format (RFC 1950)
+//! - raw_deflate: Raw DEFLATE without headers (RFC 1951)
+//!
+//! Compression Levels:
+//! - fast: Quick compression, larger output
+//! - balanced: Good compression/speed tradeoff
+//! - best: Maximum compression, slower
+//! - custom: User-specified level (1-9)
+//!
+//! Features:
+//! - File compression/decompression
+//! - Streaming compression for large files
+//! - Statistics (ratio, speed, errors)
+//! - Callback hooks for monitoring
+//!
+//! Integration:
+//! - Automatic compression on rotation
+//! - Scheduled archival compression
+//! - On-the-fly log compression
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 // const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Log compression utilities with callback support and comprehensive monitoring.
 ///
-/// Provides compression and decompression for log files using various algorithms.
-/// Supports both automatic (on rotation) and manual compression modes with
-/// full observability through callbacks.
-///
-/// Algorithms:
-/// - deflate: DEFLATE compression (standard gzip)
-/// - zlib: ZLIB compression (RFC 1950)
-/// - raw_deflate: Raw DEFLATE without headers (RFC 1951)
-///
-/// Callbacks:
-/// - `on_compression_start`: Called before compression begins
-/// - `on_compression_complete`: Called after successful compression
-/// - `on_compression_error`: Called when compression fails
-/// - `on_decompression_complete`: Called after decompression
-/// - `on_archive_deleted`: Called when archived file is deleted
-///
-/// Performance:
-/// - Streaming compression for minimal memory overhead
-/// - Configurable compression levels (0-9, default 6)
-/// - Background compression via thread pool integration
-/// - ~100-500 MB/s compression throughput typical
+/// Provides compression and decompression capabilities for log files using
+/// various algorithms (deflate, zlib, raw_deflate).
 pub const Compression = struct {
+    /// Memory allocator for compression operations.
     allocator: std.mem.Allocator,
+    /// Compression configuration options.
     config: CompressionConfig,
+    /// Compression statistics for monitoring.
     stats: CompressionStats,
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
 
-    /// Callback invoked before compression starts
+    /// Callback invoked before compression starts.
     /// Parameters: (file_path: []const u8, uncompressed_size: u64)
     on_compression_start: ?*const fn ([]const u8, u64) void = null,
 
-    /// Callback invoked after successful compression
+    /// Callback invoked after successful compression.
     /// Parameters: (original_path: []const u8, compressed_path: []const u8,
     ///             original_size: u64, compressed_size: u64, elapsed_ms: u64)
     on_compression_complete: ?*const fn ([]const u8, []const u8, u64, u64, u64) void = null,
 
-    /// Callback invoked when compression fails
+    /// Callback invoked when compression fails.
     /// Parameters: (file_path: []const u8, error: anyerror)
     on_compression_error: ?*const fn ([]const u8, anyerror) void = null,
 
-    /// Callback invoked after decompression
+    /// Callback invoked after decompression.
     /// Parameters: (compressed_path: []const u8, decompressed_path: []const u8)
     on_decompression_complete: ?*const fn ([]const u8, []const u8) void = null,
 
-    /// Callback invoked when archived file is deleted
+    /// Callback invoked when archived file is deleted.
     /// Parameters: (file_path: []const u8)
     on_archive_deleted: ?*const fn ([]const u8) void = null,
 
@@ -61,7 +74,7 @@ pub const Compression = struct {
     /// Re-exports centralized config for convenience.
     pub const Level = Config.CompressionConfig.CompressionLevel;
 
-    /// Compression strategy for different data types
+    /// Compression strategy for different data types.
     pub const Strategy = Config.CompressionConfig.Strategy;
 
     /// Compression mode for automatic triggers.
@@ -73,16 +86,27 @@ pub const Compression = struct {
 
     /// Statistics for compression operations with detailed tracking.
     pub const CompressionStats = struct {
+        /// Total number of files compressed.
         files_compressed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total number of files decompressed.
         files_decompressed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total bytes before compression.
         bytes_before: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total bytes after compression.
         bytes_after: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of compression errors.
         compression_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of decompression errors.
         decompression_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Timestamp of last compression operation.
         last_compression_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+        /// Total time spent compressing in nanoseconds.
         total_compression_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total time spent decompressing in nanoseconds.
         total_decompression_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of background compression tasks queued.
         background_tasks_queued: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of background compression tasks completed.
         background_tasks_completed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate compression ratio (original size / compressed size)
@@ -128,10 +152,13 @@ pub const Compression = struct {
         /// Calculate error rate (0.0 - 1.0)
         /// Performance: O(1) - atomic loads
         pub fn errorRate(self: *const CompressionStats) f64 {
-            const total = @as(u64, self.files_compressed.load(.monotonic)) + @as(u64, self.files_decompressed.load(.monotonic));
-            if (total == 0) return 0;
-            const errors = @as(u64, self.compression_errors.load(.monotonic)) + @as(u64, self.decompression_errors.load(.monotonic));
-            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+            const compressed = Utils.atomicLoadU64(&self.files_compressed);
+            const decompressed = Utils.atomicLoadU64(&self.files_decompressed);
+            const total = compressed + decompressed;
+            const comp_errors = Utils.atomicLoadU64(&self.compression_errors);
+            const decomp_errors = Utils.atomicLoadU64(&self.decompression_errors);
+            const errors = comp_errors + decomp_errors;
+            return Utils.calculateErrorRate(errors, total);
         }
     };
 

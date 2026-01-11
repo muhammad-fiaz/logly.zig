@@ -98,23 +98,32 @@ pub fn main() !void {
 
 ## Why Logly.Zig?
 
+- **Out-of-Box Features**: Get file rotation, JSON logging, async I/O, compression, metrics, and more without manual implementation
 - **Production Grade**: Aims to be production ready, built natively in Zig
 - **Zero Dependencies**: Pure Zig implementation with no external dependencies
 - **Memory Safe**: Compile-time safety guarantees from Zig
 - **Cross-Platform**: Works on Linux, Windows, macOS, and more
 - **Well Documented**: Comprehensive guides and API documentation
 
+::: tip 💡 Note
+Logly.zig aims to be production-ready. While this is a relatively new project and not yet widely adopted, it offers powerful features that can simplify your Zig project's logging. If you love Logly.zig, feel free to use it in your projects and give it a ⭐ on GitHub!
+:::
+
 ## Installation
 
-Add to your `build.zig.zon`:
+The easiest way to add Logly to your project:
 
-```zig
-.dependencies = .{
-    .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz",
-        .hash = "...",
-    },
-},
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.3.tar.gz
+```
+
+This automatically adds the dependency with the correct hash to your `build.zig.zon`.
+
+For Nightly builds, you can use the Git URL directly:
+
+```bash
+zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
 ```
 
 [Get Started →](/guide/getting-started)
+

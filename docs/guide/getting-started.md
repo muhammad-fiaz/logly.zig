@@ -256,7 +256,7 @@ Both sets of methods are functionally identical.
 
 If you see a hash mismatch error, run:
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.2.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.3.tar.gz
 ```
 
 ### Colors Not Displaying on Windows

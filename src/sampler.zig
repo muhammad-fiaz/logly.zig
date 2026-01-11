@@ -1,32 +1,32 @@
+//! Log Sampling Module
+//!
+//! Controls log throughput by selectively allowing records through
+//! based on configurable sampling strategies.
+//!
+//! Strategies:
+//! - none: Allow all records (no sampling)
+//! - probability: Random sampling with specified probability (0.0-1.0)
+//! - rate_limit: Allow N records per time window (sliding window)
+//! - every_n: Deterministic sampling (1 per N records)
+//! - adaptive: Auto-adjust sampling rate based on target throughput
+//!
+//! Use Cases:
+//! - High-volume production systems requiring reduced log volume
+//! - Cost control for cloud logging services
+//! - Debug sampling without overwhelming storage
+//! - Load-based adaptive throttling
+//!
+//! Performance:
+//! - O(1) per sampling decision
+//! - Lock-free fast path for read-only checks
+//! - Zero allocations after initialization
+
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
 
 /// Sampler for controlling log throughput with comprehensive monitoring.
-///
-/// Samplers reduce log volume by selectively allowing records through
-/// based on various strategies: rate limiting, probability sampling,
-/// or adaptive sampling based on system load.
-///
-/// Strategies:
-/// - `none`: Allow all records through (no sampling)
-/// - `probability`: Random sampling with specified probability (0.0-1.0)
-/// - `rate_limit`: Allow N records per time window (sliding window)
-/// - `every_n`: Deterministic sampling (1 per N records)
-/// - `adaptive`: Auto-adjust sampling rate based on target throughput
-///
-/// Callbacks:
-/// - `on_sample_accept`: Called when a record passes sampling
-/// - `on_sample_reject`: Called when a record is dropped
-/// - `on_rate_exceeded`: Called when rate limit is exceeded
-/// - `on_rate_adjustment`: Called when adaptive rate is adjusted
-///
-/// Performance:
-/// - Lock-free fast path for read-only sampling checks
-/// - Minimal overhead: O(1) per sampling decision
-/// - Atomic stats updates for concurrent access
-/// - Zero allocations after initialization
 pub const Sampler = struct {
     /// Sampling statistics for monitoring and diagnostics.
     pub const SamplerStats = struct {
@@ -45,33 +45,45 @@ pub const Sampler = struct {
         }
     };
 
-    /// Reason for rejecting a sample
+    /// Reason for rejecting a sample.
     pub const SampleRejectReason = enum {
+        /// Rejected due to probability sampling threshold.
         probability_filter,
+        /// Rejected because rate limit was exceeded in current window.
         rate_limit_exceeded,
+        /// Rejected by every-N sampling (not Nth record).
         every_n_filter,
+        /// Rejected by adaptive sampling rate.
         adaptive_rate_exceeded,
+        /// Rejected because sampling strategy is disabled.
         strategy_disabled,
     };
 
     /// Sampling strategy configuration.
     pub const Strategy = Config.SamplingConfig.Strategy;
 
-    /// Configuration for rate limiting strategy
+    /// Configuration for rate limiting strategy.
     pub const RateLimitConfig = Config.SamplingConfig.SamplingRateLimitConfig;
 
-    /// Configuration for adaptive sampling strategy
+    /// Configuration for adaptive sampling strategy.
     pub const AdaptiveConfig = Config.SamplingConfig.AdaptiveConfig;
 
+    /// Internal sampler state (counters, RNG, statistics).
     const SamplerState = struct {
+        /// Record counter for every-N sampling.
         counter: u64 = 0,
+        /// Start time of current rate-limiting window.
         window_start: i64 = 0,
+        /// Number of records in current window.
         window_count: u32 = 0,
+        /// Current adaptive sampling rate.
         current_rate: f64 = 1.0,
+        /// Last time adaptive rate was adjusted.
         last_adjustment: i64 = 0,
+        /// Random number generator for probability sampling.
         rng: std.Random.DefaultPrng,
 
-        /// Thread-safe statistics
+        /// Thread-safe statistics.
         stats: SamplerStats = .{},
 
         fn init() SamplerState {
@@ -82,9 +94,13 @@ pub const Sampler = struct {
         }
     };
 
+    /// Memory allocator for any future allocations.
     allocator: std.mem.Allocator,
+    /// Active sampling strategy.
     strategy: Strategy,
+    /// Internal state (counters, RNG, window tracking).
     state: SamplerState,
+    /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
 
     /// Callback invoked when a record passes sampling.

@@ -1,3 +1,30 @@
+//! Diagnostic Rules Engine Module
+//!
+//! Provides compiler-style guided diagnostics for log entries, attaching
+//! contextual messages based on configurable conditions.
+//!
+//! Features:
+//! - Error analysis and root cause identification
+//! - Solution suggestions and best practices
+//! - Documentation links and bug report URLs
+//! - Performance tips and security notices
+//! - IDE-style formatted output with colors
+//!
+//! Message Categories:
+//! - error_analysis: Root cause identification
+//! - solution_suggestion: Fix recommendations
+//! - best_practice: Code quality hints
+//! - action_required: Required actions
+//! - documentation_link: Reference URLs
+//! - performance_tip: Optimization hints
+//! - security_notice: Security alerts
+//!
+//! Rule Matching:
+//! - Level-based (exact, range, min/max)
+//! - Module and function filtering
+//! - Message content patterns
+//! - Custom predicates
+
 const std = @import("std");
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
@@ -6,13 +33,6 @@ const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
 /// Unified Rules System for compiler-style guided diagnostics.
-///
-/// The Rules engine attaches contextual diagnostic messages to log entries
-/// based on configurable conditions. This enables IDE-style guidance including:
-/// - Error analysis and root cause identification
-/// - Solution suggestions and best practices
-/// - Documentation links and bug report URLs
-/// - Performance tips and security notices
 pub const Rules = struct {
     allocator: std.mem.Allocator,
     rules: std.ArrayList(Rule),
@@ -160,20 +180,33 @@ pub const Rules = struct {
     };
 
     /// A single diagnostic message attached to a rule.
+    ///
+    /// Diagnostic messages provide context for log entries, including
+    /// error analysis, solutions, documentation links, and more.
     pub const RuleMessage = struct {
+        /// The category/type of this message (error, fix, docs, etc.).
         category: MessageCategory,
+        /// Optional title for the message.
         title: ?[]const u8 = null,
+        /// The main message content.
         message: []const u8,
+        /// Optional URL for documentation or bug reports.
         url: ?[]const u8 = null,
+        /// Custom ANSI color code (overrides category default).
         custom_color: ?[]const u8 = null,
+        /// Custom prefix string (overrides category default).
         custom_prefix: ?[]const u8 = null,
+        /// Whether to use background coloring.
         use_background: bool = false,
+        /// ANSI background color code.
         background_color: ?[]const u8 = null,
 
+        /// Returns the ANSI color code for this message.
         pub fn getColor(self: *const RuleMessage) []const u8 {
             return self.custom_color orelse self.category.defaultColor();
         }
 
+        /// Returns the prefix string for this message.
         pub fn getPrefix(self: *const RuleMessage, symbols: Config.RuleSymbols) []const u8 {
             if (self.custom_prefix) |cp| return cp;
             return switch (self.category) {
@@ -192,46 +225,58 @@ pub const Rules = struct {
         }
 
         // Convenience constructors
+
+        /// Creates an error analysis message (root cause identification).
         pub fn cause(msg: []const u8) RuleMessage {
             return .{ .category = .error_analysis, .message = msg };
         }
 
+        /// Creates a solution suggestion message (fix recommendation).
         pub fn fix(msg: []const u8) RuleMessage {
             return .{ .category = .solution_suggestion, .message = msg };
         }
 
+        /// Creates a best practice suggestion message.
         pub fn suggest(msg: []const u8) RuleMessage {
             return .{ .category = .best_practice, .message = msg };
         }
 
+        /// Creates an action required message.
         pub fn action(msg: []const u8) RuleMessage {
             return .{ .category = .action_required, .message = msg };
         }
 
+        /// Creates a documentation link message.
         pub fn docs(title: []const u8, url: []const u8) RuleMessage {
             return .{ .category = .documentation_link, .title = title, .message = "See documentation", .url = url };
         }
 
+        /// Creates a bug report link message.
         pub fn report(title: []const u8, url: []const u8) RuleMessage {
             return .{ .category = .bug_report, .title = title, .message = "Report issue", .url = url };
         }
 
+        /// Creates a general information note.
         pub fn note(msg: []const u8) RuleMessage {
             return .{ .category = .general_information, .message = msg };
         }
 
+        /// Creates a warning/caution message.
         pub fn caution(msg: []const u8) RuleMessage {
             return .{ .category = .warning_explanation, .message = msg };
         }
 
+        /// Creates a performance tip message.
         pub fn perf(msg: []const u8) RuleMessage {
             return .{ .category = .performance_tip, .message = msg };
         }
 
+        /// Creates a security notice message.
         pub fn security(msg: []const u8) RuleMessage {
             return .{ .category = .security_notice, .message = msg };
         }
 
+        /// Creates a custom category message with custom prefix.
         pub fn custom(custom_prefix: []const u8, msg: []const u8) RuleMessage {
             return .{ .category = .custom, .custom_prefix = custom_prefix, .message = msg };
         }

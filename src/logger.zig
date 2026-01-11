@@ -1,3 +1,23 @@
+//! Core Logger Module
+//!
+//! The central logging component responsible for managing sinks, configuration,
+//! and log dispatch. The Logger is the main entry point for all logging operations.
+//!
+//! Features:
+//! - Sink Management: Add, remove, enable/disable log outputs
+//! - Configuration: Runtime configuration updates
+//! - Context Binding: Structured logging with key-value pairs
+//! - Custom Levels: User-defined log levels with priorities
+//! - Distributed Tracing: Trace ID, span ID propagation
+//! - Sampling: Rate limiting and probabilistic sampling
+//! - Redaction: Sensitive data masking
+//! - Metrics: Performance and usage statistics
+//! - Arena Allocator: Optional memory pooling for performance
+//!
+//! Thread Safety:
+//! All public methods are thread-safe using RwLock.
+//! Atomic operations are used for counters and statistics.
+
 const std = @import("std");
 const Level = @import("level.zig").Level;
 const CustomLevel = @import("level.zig").CustomLevel;
@@ -17,45 +37,6 @@ const Constants = @import("constants.zig");
 const Rules = @import("rules.zig").Rules;
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
-///
-/// This struct serves as the central hub for all logging operations. It handles:
-/// - Sink management (adding, removing, enabling/disabling)
-/// - Configuration updates
-/// - Context binding (structured logging)
-/// - Custom log levels
-/// - Thread-safe logging dispatch
-/// - Distributed tracing context propagation
-/// - Sampling and rate limiting
-/// - Sensitive data redaction
-/// - Metrics collection
-/// - Arena allocator support for improved performance
-///
-/// Usage:
-/// ```zig
-/// var logger = try logly.Logger.init(allocator);
-/// defer logger.deinit();
-///
-/// // Configure
-/// var config = logly.Config.default();
-/// config.level = .debug;
-/// logger.configure(config);
-///
-/// // Log
-/// try logger.info("Application started", .{});
-/// try logger.err("An error occurred", .{});
-/// ```
-///
-/// Callbacks:
-/// - `on_record_logged`: Called when a record is successfully logged
-/// - `on_record_filtered`: Called when a record is filtered/dropped before output
-/// - `on_sink_error`: Called when a sink encounters an error
-/// - `on_logger_initialized`: Called after logger initialization
-/// - `on_logger_destroyed`: Called when logger is destroyed
-///
-/// Thread Safety:
-/// - All public methods are thread-safe
-/// - Uses std.Thread.Mutex for protecting mutable state
-/// - Atomic operations for counters and statistics
 pub const Logger = struct {
     /// Trace context for distributed request tracking.
     pub const TraceContext = struct {
@@ -66,20 +47,25 @@ pub const Logger = struct {
 
     /// Logger statistics for monitoring and diagnostics.
     pub const LoggerStats = struct {
+        /// Total number of records successfully logged.
         total_records_logged: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of records filtered/dropped before output.
         records_filtered: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of sink write errors encountered.
         sink_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of currently active sinks.
         active_sinks: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+        /// Total bytes written across all sinks.
         bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
-        /// Calculate records per second (requires timestamp delta from caller)
+        /// Calculate records per second (requires timestamp delta from caller).
         pub fn recordsPerSecond(self: *const LoggerStats, elapsed_seconds: f64) f64 {
             const total = @as(u64, self.total_records_logged.load(.monotonic));
             if (elapsed_seconds == 0) return 0;
             return @as(f64, @floatFromInt(total)) / elapsed_seconds;
         }
 
-        /// Calculate average bytes per record
+        /// Calculate average bytes per record.
         pub fn avgBytesPerRecord(self: *const LoggerStats) f64 {
             const total = @as(u64, self.total_records_logged.load(.monotonic));
             if (total == 0) return 0;
@@ -87,7 +73,7 @@ pub const Logger = struct {
             return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
         }
 
-        /// Calculate filter rate (0.0 - 1.0)
+        /// Calculate filter rate (0.0 - 1.0).
         pub fn filterRate(self: *const LoggerStats) f64 {
             const total = @as(u64, self.total_records_logged.load(.monotonic));
             const filtered = @as(u64, self.records_filtered.load(.monotonic));
@@ -97,16 +83,27 @@ pub const Logger = struct {
         }
     };
 
+    /// Memory allocator for logger operations.
     allocator: std.mem.Allocator,
+    /// Logger configuration options.
     config: Config,
+    /// List of attached sinks (output destinations).
     sinks: std.ArrayList(*Sink),
+    /// Bound context key-value pairs for structured logging.
     context: std.StringHashMap(std.json.Value),
+    /// Custom log levels defined by the user.
     custom_levels: std.StringHashMap(CustomLevel),
+    /// Per-module log level overrides.
     module_levels: std.StringHashMap(Level),
+    /// Whether the logger is enabled (false to suppress all output).
     enabled: bool = true,
+    /// Atomic log level for thread-safe level checking.
     atomic_level: std.atomic.Value(u8) = std.atomic.Value(u8).init(@intFromEnum(Level.info)),
+    /// Read-write lock for thread-safe access.
     mutex: std.Thread.RwLock = .{},
+    /// Legacy callback for log events.
     log_callback: ?*const fn (*const Record) anyerror!void = null,
+    /// Custom color callback for level-based coloring.
     color_callback: ?*const fn (Level, []const u8) []const u8 = null,
 
     /// Callback invoked when a record is successfully logged.
@@ -131,16 +128,24 @@ pub const Logger = struct {
 
     /// Tracing context for distributed systems.
     trace_id: ?[]const u8 = null,
+    /// Span ID for distributed tracing.
     span_id: ?[]const u8 = null,
+    /// Correlation ID for request tracking.
     correlation_id: ?[]const u8 = null,
 
-    /// Enterprise components.
+    /// Filter for conditional log processing.
     filter: ?*Filter = null,
+    /// Sampler for throughput control.
     sampler: ?*Sampler = null,
+    /// Redactor for sensitive data masking.
     redactor: ?*Redactor = null,
+    /// Metrics collector for observability.
     metrics: ?*Metrics = null,
+    /// Thread pool for parallel processing.
     thread_pool: ?*ThreadPool = null,
+    /// Background thread for update checking.
     update_thread: ?std.Thread = null,
+    /// Rules engine for diagnostic messages.
     rules: ?*Rules = null,
 
     /// Initialization timestamp for uptime tracking.
@@ -1610,10 +1615,15 @@ pub const Logger = struct {
 };
 
 /// Context for span-based tracing operations.
-/// Automatically restores the parent span when the span is ended.
+///
+/// Used for distributed tracing with nested spans. Automatically restores
+/// the parent span when the current span is ended.
 pub const SpanContext = struct {
+    /// The logger instance this span belongs to.
     logger: *Logger,
+    /// The parent span ID to restore when this span ends.
     parent_span_id: ?[]const u8,
+    /// Start timestamp in nanoseconds for duration calculation.
     start_time: i128,
 
     /// Ends the span and logs the duration.
@@ -1654,22 +1664,27 @@ pub const ScopedLogger = struct {
     logger: *Logger,
     module: []const u8,
 
+    /// Logs a trace message with module scope.
     pub fn trace(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.trace, message, self.module, src);
     }
 
+    /// Logs a debug message with module scope.
     pub fn debug(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.debug, message, self.module, src);
     }
 
+    /// Logs an info message with module scope.
     pub fn info(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.info, message, self.module, src);
     }
 
+    /// Logs a notice message with module scope.
     pub fn notice(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.notice, message, self.module, src);
     }
 
+    /// Logs a success message with module scope.
     pub fn success(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.success, message, self.module, src);
     }
@@ -1687,10 +1702,12 @@ pub const ScopedLogger = struct {
     /// Use `@"error"` or `err` to call this method.
     pub const @"error" = err;
 
+    /// Logs an error message with module scope.
     pub fn err(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.err, message, self.module, src);
     }
 
+    /// Logs a failure message with module scope.
     pub fn fail(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.fail, message, self.module, src);
     }
@@ -1704,34 +1721,40 @@ pub const ScopedLogger = struct {
     /// Alias for critical() - shorter form.
     pub const crit = critical;
 
+    /// Logs a fatal message with module scope.
     pub fn fatal(self: ScopedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.log(.fatal, message, self.module, src);
     }
 
+    /// Logs a formatted trace message with module scope.
     pub fn tracef(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.trace, message, self.module, src);
     }
 
+    /// Logs a formatted debug message with module scope.
     pub fn debugf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.debug, message, self.module, src);
     }
 
+    /// Logs a formatted info message with module scope.
     pub fn infof(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.info, message, self.module, src);
     }
 
+    /// Logs a formatted notice message with module scope.
     pub fn noticef(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.notice, message, self.module, src);
     }
 
+    /// Logs a formatted success message with module scope.
     pub fn successf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
@@ -1753,12 +1776,14 @@ pub const ScopedLogger = struct {
     /// Use `errorf` or `errf` to call this method.
     pub const errorf = errf;
 
+    /// Logs a formatted error message with module scope.
     pub fn errf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
         try self.logger.log(.err, message, self.module, src);
     }
 
+    /// Logs a formatted failure message with module scope.
     pub fn failf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
@@ -1776,6 +1801,7 @@ pub const ScopedLogger = struct {
     /// Alias for criticalf() - shorter form.
     pub const critf = criticalf;
 
+    /// Logs a formatted fatal message with module scope.
     pub fn fatalf(self: ScopedLogger, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void {
         const message = try std.fmt.allocPrint(self.logger.allocator, fmt, args);
         defer self.logger.allocator.free(message);
@@ -1787,6 +1813,7 @@ pub const ContextLogger = struct {
     logger: *Logger,
     context: std.StringHashMap(std.json.Value),
 
+    /// Initializes a new ContextLogger.
     pub fn init(logger: *Logger) ContextLogger {
         return .{
             .logger = logger,
@@ -1797,6 +1824,7 @@ pub const ContextLogger = struct {
     /// Alias for init().
     pub const create = init;
 
+    /// Deinitializes the ContextLogger.
     pub fn deinit(self: *ContextLogger) void {
         self.context.deinit();
     }
@@ -1804,26 +1832,31 @@ pub const ContextLogger = struct {
     /// Alias for deinit().
     pub const destroy = deinit;
 
+    /// Adds a string value to the context.
     pub fn str(self: *ContextLogger, key: []const u8, value: []const u8) *ContextLogger {
         self.context.put(key, .{ .string = value }) catch {};
         return self;
     }
 
+    /// Adds an integer value to the context.
     pub fn int(self: *ContextLogger, key: []const u8, value: i64) *ContextLogger {
         self.context.put(key, .{ .integer = value }) catch {};
         return self;
     }
 
+    /// Adds a float value to the context.
     pub fn float(self: *ContextLogger, key: []const u8, value: f64) *ContextLogger {
         self.context.put(key, .{ .float = value }) catch {};
         return self;
     }
 
+    /// Adds a boolean value to the context.
     pub fn boolean(self: *ContextLogger, key: []const u8, value: bool) *ContextLogger {
         self.context.put(key, .{ .boolean = value }) catch {};
         return self;
     }
 
+    /// Logs the context message at the specified level.
     pub fn log(self: *ContextLogger, level: Level, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         defer self.deinit();
         try self.logger.logWithContext(level, message, null, src, &self.context);
@@ -1831,26 +1864,32 @@ pub const ContextLogger = struct {
 
     pub const record = log;
 
+    /// Logs a trace message with context.
     pub fn trace(self: *ContextLogger, message: []const u8) !void {
         try self.log(.trace, message, null);
     }
 
+    /// Logs a debug message with context.
     pub fn debug(self: *ContextLogger, message: []const u8) !void {
         try self.log(.debug, message, null);
     }
 
+    /// Logs an info message with context.
     pub fn info(self: *ContextLogger, message: []const u8) !void {
         try self.log(.info, message, null);
     }
 
+    /// Logs a warning message with context.
     pub fn warn(self: *ContextLogger, message: []const u8) !void {
         try self.log(.warning, message, null);
     }
 
+    /// Logs an error message with context.
     pub fn err(self: *ContextLogger, message: []const u8) !void {
         try self.log(.err, message, null);
     }
 
+    /// Logs a critical message with context.
     pub fn critical(self: *ContextLogger, message: []const u8) !void {
         try self.log(.critical, message, null);
     }
@@ -1862,6 +1901,7 @@ pub const PersistentContextLogger = struct {
     logger: *Logger,
     context: std.StringHashMap(std.json.Value),
 
+    /// Initializes a new PersistentContextLogger.
     pub fn init(logger: *Logger) PersistentContextLogger {
         return .{
             .logger = logger,
@@ -1874,56 +1914,68 @@ pub const PersistentContextLogger = struct {
 
     /// Alias for deinit().
     pub const destroy = deinit;
+    /// Deinitializes the PersistentContextLogger.
     pub fn deinit(self: *PersistentContextLogger) void {
         self.context.deinit();
     }
 
+    /// Adds a string value to the persistent context.
     pub fn str(self: *PersistentContextLogger, key: []const u8, value: []const u8) *PersistentContextLogger {
         self.context.put(key, .{ .string = value }) catch {};
         return self;
     }
 
+    /// Adds an integer value to the persistent context.
     pub fn int(self: *PersistentContextLogger, key: []const u8, value: i64) *PersistentContextLogger {
         self.context.put(key, .{ .integer = value }) catch {};
         return self;
     }
 
+    /// Adds a float value to the persistent context.
     pub fn float(self: *PersistentContextLogger, key: []const u8, value: f64) *PersistentContextLogger {
         self.context.put(key, .{ .float = value }) catch {};
         return self;
     }
 
+    /// Adds a boolean value to the persistent context.
     pub fn boolean(self: *PersistentContextLogger, key: []const u8, value: bool) *PersistentContextLogger {
         self.context.put(key, .{ .boolean = value }) catch {};
         return self;
     }
 
+    /// Logs a message at the specified level with persistent context.
     pub fn log(self: *PersistentContextLogger, level: Level, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.logWithContext(level, message, null, src, &self.context);
     }
 
     pub const record = log;
 
+    /// Logs a trace message with persistent context.
     pub fn trace(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.trace, message, src);
     }
 
+    /// Logs a debug message with persistent context.
     pub fn debug(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.debug, message, src);
     }
 
+    /// Logs an info message with persistent context.
     pub fn info(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.info, message, src);
     }
 
+    /// Logs a warning message with persistent context.
     pub fn warn(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.warning, message, src);
     }
 
+    /// Logs an error message with persistent context.
     pub fn err(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.err, message, src);
     }
 
+    /// Logs a critical message with persistent context.
     pub fn critical(self: *PersistentContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.critical, message, src);
     }
@@ -1937,6 +1989,7 @@ pub const DistributedLogger = struct {
     parent_span_id: ?[]const u8 = null,
     module: ?[]const u8 = null,
 
+    /// Logs a message at the specified level with distributed trace context.
     pub fn log(self: *const DistributedLogger, level: Level, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.logger.logInternal(level, message, self.module, src, null, .{
             .trace_id = self.trace_id,
@@ -1947,26 +2000,32 @@ pub const DistributedLogger = struct {
 
     pub const record = log;
 
+    /// Logs a trace message with distributed trace context.
     pub fn trace(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.trace, message, src);
     }
 
+    /// Logs a debug message with distributed trace context.
     pub fn debug(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.debug, message, src);
     }
 
+    /// Logs an info message with distributed trace context.
     pub fn info(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.info, message, src);
     }
 
+    /// Logs a warning message with distributed trace context.
     pub fn warn(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.warning, message, src);
     }
 
+    /// Logs an error message with distributed trace context.
     pub fn err(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.err, message, src);
     }
 
+    /// Logs a critical message with distributed trace context.
     pub fn critical(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.critical, message, src);
     }
