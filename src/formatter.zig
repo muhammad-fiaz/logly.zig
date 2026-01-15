@@ -38,20 +38,114 @@ pub const Formatter = struct {
         format_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         total_bytes_formatted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
+        /// Get total records formatted.
+        pub fn getTotalFormatted(self: *const FormatterStats) u64 {
+            return Utils.atomicLoadU64(&self.total_records_formatted);
+        }
+
+        /// Get total JSON formats.
+        pub fn getJsonFormats(self: *const FormatterStats) u64 {
+            return Utils.atomicLoadU64(&self.json_formats);
+        }
+
+        /// Get total custom formats.
+        pub fn getCustomFormats(self: *const FormatterStats) u64 {
+            return Utils.atomicLoadU64(&self.custom_formats);
+        }
+
+        /// Get total format errors.
+        pub fn getFormatErrors(self: *const FormatterStats) u64 {
+            return Utils.atomicLoadU64(&self.format_errors);
+        }
+
+        /// Get total bytes formatted.
+        pub fn getTotalBytesFormatted(self: *const FormatterStats) u64 {
+            return Utils.atomicLoadU64(&self.total_bytes_formatted);
+        }
+
+        /// Get plain text formats (total - json - custom).
+        pub fn getPlainFormats(self: *const FormatterStats) u64 {
+            const total = self.getTotalFormatted();
+            const json_count = self.getJsonFormats();
+            const custom_count = self.getCustomFormats();
+            if (total > json_count + custom_count) {
+                return total - json_count - custom_count;
+            }
+            return 0;
+        }
+
+        /// Check if any records have been formatted.
+        pub fn hasFormatted(self: *const FormatterStats) bool {
+            return self.getTotalFormatted() > 0;
+        }
+
+        /// Check if any JSON formats have been used.
+        pub fn hasJsonFormats(self: *const FormatterStats) bool {
+            return self.getJsonFormats() > 0;
+        }
+
+        /// Check if any custom formats have been used.
+        pub fn hasCustomFormats(self: *const FormatterStats) bool {
+            return self.getCustomFormats() > 0;
+        }
+
+        /// Check if any format errors have occurred.
+        pub fn hasErrors(self: *const FormatterStats) bool {
+            return self.getFormatErrors() > 0;
+        }
+
+        /// Calculate JSON format usage rate (0.0 - 1.0).
+        pub fn jsonUsageRate(self: *const FormatterStats) f64 {
+            return Utils.calculateRate(
+                self.getJsonFormats(),
+                self.getTotalFormatted(),
+            );
+        }
+
+        /// Calculate custom format usage rate (0.0 - 1.0).
+        pub fn customUsageRate(self: *const FormatterStats) f64 {
+            return Utils.calculateRate(
+                self.getCustomFormats(),
+                self.getTotalFormatted(),
+            );
+        }
+
         /// Calculate average format size
         pub fn avgFormatSize(self: *const FormatterStats) f64 {
             return Utils.calculateAverage(
-                Utils.atomicLoadU64(&self.total_bytes_formatted),
-                Utils.atomicLoadU64(&self.total_records_formatted),
+                self.getTotalBytesFormatted(),
+                self.getTotalFormatted(),
             );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const FormatterStats) f64 {
             return Utils.calculateErrorRate(
-                Utils.atomicLoadU64(&self.format_errors),
-                Utils.atomicLoadU64(&self.total_records_formatted),
+                self.getFormatErrors(),
+                self.getTotalFormatted(),
             );
+        }
+
+        /// Calculate success rate (0.0 - 1.0).
+        pub fn successRate(self: *const FormatterStats) f64 {
+            return 1.0 - self.errorRate();
+        }
+
+        /// Calculate throughput (bytes per second).
+        pub fn throughputBytesPerSecond(self: *const FormatterStats, elapsed_seconds: f64) f64 {
+            return Utils.safeFloatDiv(
+                @as(f64, @floatFromInt(self.getTotalBytesFormatted())),
+                elapsed_seconds,
+            );
+        }
+
+        /// Reset all statistics to initial state.
+        pub fn reset(self: *FormatterStats) void {
+            self.total_records_formatted.store(0, .monotonic);
+            self.json_formats.store(0, .monotonic);
+            self.custom_formats.store(0, .monotonic);
+            self.format_errors.store(0, .monotonic);
+            self.total_bytes_formatted.store(0, .monotonic);
         }
     };
 

@@ -1,8 +1,3 @@
-//! Advanced Async Logging Example
-//!
-//! Demonstrates async logging with buffering, background threads,
-//! and high-throughput configurations.
-
 const std = @import("std");
 const logly = @import("logly");
 
@@ -94,9 +89,9 @@ pub fn main() !void {
     _ = stats.records_dropped.fetchAdd(10, .monotonic);
     _ = stats.total_latency_ns.fetchAdd(5000000, .monotonic);
 
-    std.debug.print("   Records queued: {d}\n", .{stats.records_queued.load(.monotonic)});
-    std.debug.print("   Records written: {d}\n", .{stats.records_written.load(.monotonic)});
-    std.debug.print("   Records dropped: {d}\n", .{stats.records_dropped.load(.monotonic)});
+    std.debug.print("   Records queued: {d}\n", .{stats.getQueued()});
+    std.debug.print("   Records written: {d}\n", .{stats.getWritten()});
+    std.debug.print("   Records dropped: {d}\n", .{stats.getDropped()});
     std.debug.print("   Drop rate: {d:.2}%\n", .{stats.dropRate() * 100});
     std.debug.print("   Avg latency: {d} ns\n\n", .{stats.averageLatencyNs()});
 

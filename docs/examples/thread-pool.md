@@ -86,7 +86,7 @@ pub fn main() !void {
 
     const stats = pool.getStats();
     std.debug.print("Tasks completed: {d}\n", .{
-        stats.tasks_completed.load(.monotonic),
+        stats.getCompleted(),
     });
 }
 
@@ -163,8 +163,8 @@ try writer.write(&record);
 
 ```zig
 const stats = pool.getStats();
-std.debug.print("Completed: {d}\n", .{stats.tasks_completed.load(.monotonic)});
-std.debug.print("Stolen: {d}\n", .{stats.tasks_stolen.load(.monotonic)});
+std.debug.print("Completed: {d}\n", .{stats.getCompleted()});
+std.debug.print("Stolen: {d}\n", .{stats.getStolen()});
 std.debug.print("Throughput: {d:.2}/sec\n", .{stats.throughput()});
 ```
 

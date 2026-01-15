@@ -81,13 +81,13 @@ logger.setSinkErrorCallback(&onSinkError);
 
 ```zig
 fn onLoggerInitialized(stats: *const logly.Logger.LoggerStats) void {
-    std.debug.print("Logger initialized with {d} active sinks\n", 
-        .{stats.active_sinks.load(.monotonic)});
+    std.debug.print("Logger initialized with {d} active sinks\\n", 
+        .{stats.getActiveSinks()});
 }
 
 fn onLoggerDestroyed(stats: *const logly.Logger.LoggerStats) void {
-    const total = stats.total_records_logged.load(.monotonic);
-    std.debug.print("Logger destroyed. Total records: {d}\n", .{total});
+    const total = stats.getTotalLogged();
+    std.debug.print("Logger destroyed. Total records: {d}\\n", .{total});
 }
 
 logger.setInitializedCallback(&onLoggerInitialized);
@@ -540,6 +540,8 @@ const MonitoringSystem = struct {
     fn onError(self: *MonitoringSystem) fn([]const u8, []const u8) void {
         return struct {
             fn callback(sink_name: []const u8, error_msg: []const u8) void {
+                _ = sink_name;
+                _ = error_msg;
                 _ = self.error_count.fetchAdd(1, .monotonic);
                 if (self.error_count.load(.monotonic) > 100) {
                     // Alert on high error rate
@@ -571,12 +573,12 @@ pub fn main() !void {
     logger.setSinkErrorCallback(monitor.onError());
     
     // Use logger normally
-    try logger.info("Application started");
+    try logger.info("Application started", @src());
     
     // Get statistics
     const stats = logger.getStats();
-    std.debug.print("Total errors: {d}\n", .{monitor.error_count.load(.monotonic)});
-    std.debug.print("Records logged: {d}\n", .{stats.total_records_logged.load(.monotonic)});
+    std.debug.print("Total errors: {d}\\n", .{monitor.error_count.load(.monotonic)});
+    std.debug.print("Records logged: {d}\\n", .{stats.getTotalLogged()});
 }
 ```
 

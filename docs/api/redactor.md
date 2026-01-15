@@ -85,18 +85,52 @@ pub const RedactionType = enum {
 
 ### RedactorStats
 
-Statistics for redaction operations.
+Statistics for redaction operations with atomic counters.
 
 ```zig
 pub const RedactorStats = struct {
+    total_values_processed: std.atomic.Value(u64),
+    values_redacted: std.atomic.Value(u64),
     patterns_matched: std.atomic.Value(u64),
     fields_redacted: std.atomic.Value(u64),
-    total_redactions: std.atomic.Value(u64),
-    bytes_redacted: std.atomic.Value(u64),
-    
-    pub fn reset(self: *RedactorStats) void;
+    redaction_errors: std.atomic.Value(u64),
 };
 ```
+
+#### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getTotalProcessed()` | `u64` | Get total values processed |
+| `getValuesRedacted()` | `u64` | Get total values redacted |
+| `getPatternsMatched()` | `u64` | Get total patterns matched |
+| `getFieldsRedacted()` | `u64` | Get total fields redacted |
+| `getRedactionErrors()` | `u64` | Get total redaction errors |
+
+#### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasProcessed()` | `bool` | Check if any values have been processed |
+| `hasRedacted()` | `bool` | Check if any values have been redacted |
+| `hasMatchedPatterns()` | `bool` | Check if any patterns have matched |
+| `hasErrors()` | `bool` | Check if any errors have occurred |
+
+#### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `redactionRate()` | `f64` | Calculate redaction rate (0.0 - 1.0) |
+| `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
+| `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
+| `patternMatchRate()` | `f64` | Calculate pattern match rate |
+| `avgRedactionsPerValue()` | `f64` | Calculate average redactions per processed value |
+
+#### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
 
 ### RedactionConfig
 
@@ -343,10 +377,10 @@ defer allocator.free(redacted);
 
 // Check statistics
 const stats = redactor.getStats();
-std.debug.print("Redactions: {d}\n", .{stats.total_redactions.load(.monotonic)});
+std.debug.print("Redactions: {d}\\n", .{stats.getValuesRedacted()});
 
 // Check rule counts
-std.debug.print("Patterns: {d}, Fields: {d}\n", .{
+std.debug.print("Patterns: {d}, Fields: {d}\\n", .{
     redactor.patternCount(),
     redactor.fieldCount(),
 });

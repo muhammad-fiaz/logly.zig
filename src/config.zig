@@ -199,6 +199,9 @@ pub const Config = struct {
     /// Rotation configuration.
     rotation: RotationConfig = .{},
 
+    /// OpenTelemetry telemetry configuration.
+    telemetry: TelemetryConfig = .{},
+
     /// Use arena allocator for internal temporary allocations.
     /// Improves performance by batching allocations and reducing malloc overhead.
     use_arena_allocator: bool = false,
@@ -2197,3 +2200,303 @@ test "rotation config customization fields" {
     try std.testing.expect(cfg.compress_on_retention);
     try std.testing.expect(!cfg.delete_after_retention_compress);
 }
+
+/// OpenTelemetry telemetry configuration options.
+pub const TelemetryConfig = struct {
+    /// Enable OpenTelemetry integration.
+    enabled: bool = false,
+
+    /// OpenTelemetry provider.
+    provider: Provider = .none,
+
+    /// Exporter endpoint URL (HTTP/gRPC endpoint).
+    exporter_endpoint: ?[]const u8 = null,
+
+    /// API key for authentication.
+    api_key: ?[]const u8 = null,
+
+    /// Connection string (for Azure Application Insights).
+    connection_string: ?[]const u8 = null,
+
+    /// Project ID (for Google Cloud, AWS, Azure).
+    project_id: ?[]const u8 = null,
+
+    /// Region (for AWS, Azure, Google Cloud).
+    region: ?[]const u8 = null,
+
+    /// File path for file-based exporter (JSONL format).
+    exporter_file_path: ?[]const u8 = null,
+
+    /// Batch span export size.
+    batch_size: usize = 256,
+
+    /// Batch export timeout in milliseconds.
+    batch_timeout_ms: u64 = 5000,
+
+    /// Sampling strategy configuration.
+    sampling_strategy: SamplingStrategy = .always_on,
+
+    /// Sampling rate (0.0 to 1.0) when using trace_id_ratio strategy.
+    sampling_rate: f64 = 1.0,
+
+    /// Service name for resource identification.
+    service_name: ?[]const u8 = null,
+
+    /// Service version for resource identification.
+    service_version: ?[]const u8 = null,
+
+    /// Environment name (e.g., "production", "staging", "development").
+    environment: ?[]const u8 = null,
+
+    /// Datacenter or region identifier.
+    datacenter: ?[]const u8 = null,
+
+    /// Span processor type.
+    span_processor_type: SpanProcessorType = .simple,
+
+    /// Metric exporter format.
+    metric_format: MetricFormat = .otlp,
+
+    /// Compress span exports.
+    compress_exports: bool = false,
+
+    /// Custom exporter initialization callback.
+    custom_exporter_fn: ?*const fn () anyerror!void = null,
+
+    /// Span start event callback (span_id, name).
+    on_span_start: ?*const fn ([]const u8, []const u8) void = null,
+
+    /// Span end event callback (span_id, duration_ns).
+    on_span_end: ?*const fn ([]const u8, u64) void = null,
+
+    /// Metric recorded callback (name, value).
+    on_metric_recorded: ?*const fn ([]const u8, f64) void = null,
+
+    /// Error callback (error_msg).
+    on_error: ?*const fn ([]const u8) void = null,
+
+    /// Enable automatic context propagation in HTTP headers.
+    auto_context_propagation: bool = true,
+
+    /// W3C Trace Context header name for trace IDs.
+    trace_header: []const u8 = "traceparent",
+
+    /// Baggage/Correlation context header name.
+    baggage_header: []const u8 = "baggage",
+
+    /// OpenTelemetry providers.
+    pub const Provider = enum {
+        /// No provider (disabled).
+        none,
+        /// Jaeger (native Thrift protocol over UDP).
+        jaeger,
+        /// Zipkin (JSON over HTTP).
+        zipkin,
+        /// Datadog APM.
+        datadog,
+        /// Google Cloud Trace.
+        google_cloud,
+        /// Google Analytics 4 (Measurement Protocol).
+        google_analytics,
+        /// Google Tag Manager (Server-Side).
+        google_tag_manager,
+        /// AWS X-Ray.
+        aws_xray,
+        /// Azure Application Insights.
+        azure,
+        /// Generic OpenTelemetry Collector (gRPC/HTTP).
+        generic,
+        /// File-based exporter (JSONL format, local only).
+        file,
+        /// Custom user-defined exporter.
+        custom,
+    };
+
+    /// Sampling strategy types.
+    pub const SamplingStrategy = enum {
+        /// Always sample all traces.
+        always_on,
+        /// Never sample any traces.
+        always_off,
+        /// Sample based on trace ID hash (use sampling_rate field).
+        trace_id_ratio,
+        /// Sample based on parent decision (W3C TraceFlags).
+        parent_based,
+    };
+
+    /// Span processor types.
+    pub const SpanProcessorType = enum {
+        /// Simple processor (exports immediately).
+        simple,
+        /// Batch processor (batches spans before export).
+        batch,
+    };
+
+    /// Metric export formats.
+    pub const MetricFormat = enum {
+        /// OpenTelemetry Protocol format.
+        otlp,
+        /// Prometheus format.
+        prometheus,
+        /// JSON format.
+        json,
+    };
+
+    /// Returns default telemetry configuration (disabled).
+    pub fn default() TelemetryConfig {
+        return .{};
+    }
+
+    /// Returns production-ready telemetry configuration with Jaeger.
+    pub fn jaeger() TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .jaeger,
+            .exporter_endpoint = "http://localhost:6831",
+            .span_processor_type = .batch,
+            .batch_size = 256,
+            .sampling_strategy = .trace_id_ratio,
+            .sampling_rate = 0.1,
+        };
+    }
+
+    /// Returns configuration for Zipkin.
+    pub fn zipkin() TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .zipkin,
+            .exporter_endpoint = "http://localhost:9411/api/v2/spans",
+            .span_processor_type = .batch,
+            .batch_size = 512,
+        };
+    }
+
+    /// Returns configuration for Datadog APM.
+    pub fn datadog(api_key: []const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .datadog,
+            .exporter_endpoint = "http://localhost:8126/v0.3/traces",
+            .api_key = api_key,
+            .span_processor_type = .batch,
+        };
+    }
+
+    /// Returns configuration for Google Cloud Trace.
+    pub fn googleCloud(project_id: []const u8, api_key: []const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .google_cloud,
+            .project_id = project_id,
+            .api_key = api_key,
+            .exporter_endpoint = "https://cloudtrace.googleapis.com/v2",
+            .span_processor_type = .batch,
+        };
+    }
+
+    /// Returns configuration for AWS X-Ray.
+    pub fn awsXray(region: []const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .aws_xray,
+            .region = region,
+            .exporter_endpoint = "http://localhost:2000",
+            .span_processor_type = .batch,
+        };
+    }
+
+    /// Returns configuration for Azure Application Insights.
+    pub fn azure(connection_string: []const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .azure,
+            .connection_string = connection_string,
+            .exporter_endpoint = "https://dc.applicationinsights.azure.com/v2.1/track",
+            .span_processor_type = .batch,
+        };
+    }
+
+    /// Returns configuration for Google Analytics 4 (Measurement Protocol).
+    /// measurement_id: GA4 Measurement ID (e.g., "G-XXXXXXXXXX")
+    /// api_secret: GA4 Measurement Protocol API secret
+    pub fn googleAnalytics(measurement_id: []const u8, api_secret: []const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .google_analytics,
+            .project_id = measurement_id,
+            .api_key = api_secret,
+            .exporter_endpoint = "https://www.google-analytics.com/mp/collect",
+            .span_processor_type = .batch,
+            .batch_size = 25, // GA4 limit per request
+        };
+    }
+
+    /// Returns configuration for Google Tag Manager Server-Side.
+    /// container_url: Server-side GTM container URL
+    /// api_key: Optional API key for authentication
+    pub fn googleTagManager(container_url: []const u8, api_key: ?[]const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .google_tag_manager,
+            .exporter_endpoint = container_url,
+            .api_key = api_key,
+            .span_processor_type = .batch,
+        };
+    }
+
+    /// Returns configuration for generic OpenTelemetry Collector.
+    pub fn otelCollector(endpoint: []const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .generic,
+            .exporter_endpoint = endpoint,
+            .span_processor_type = .batch,
+            .batch_size = 512,
+        };
+    }
+
+    /// Returns configuration for file-based exporter (development/testing).
+    pub fn file(path: []const u8) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .file,
+            .exporter_file_path = path,
+            .span_processor_type = .simple,
+        };
+    }
+
+    /// Returns configuration with custom exporter.
+    pub fn custom(exporter_fn: *const fn () anyerror!void) TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .custom,
+            .custom_exporter_fn = exporter_fn,
+            .span_processor_type = .simple,
+        };
+    }
+
+    /// Returns high-throughput telemetry configuration with sampling.
+    pub fn highThroughput() TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .jaeger,
+            .exporter_endpoint = "http://localhost:6831",
+            .span_processor_type = .batch,
+            .batch_size = 1024,
+            .batch_timeout_ms = 2000,
+            .sampling_strategy = .trace_id_ratio,
+            .sampling_rate = 0.01,
+        };
+    }
+
+    /// Returns development telemetry configuration (file-based, detailed).
+    pub fn development() TelemetryConfig {
+        return .{
+            .enabled = true,
+            .provider = .file,
+            .exporter_file_path = "telemetry_spans.jsonl",
+            .span_processor_type = .simple,
+            .sampling_strategy = .always_on,
+        };
+    }
+};

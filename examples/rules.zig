@@ -147,10 +147,10 @@ pub fn main() !void {
     std.debug.print("=== Part 5: Statistics ===\n\n", .{});
 
     const stats = rules.getStats();
-    std.debug.print("   Rules evaluated:    {}\n", .{stats.rules_evaluated.load(.monotonic)});
-    std.debug.print("   Rules matched:      {}\n", .{stats.rules_matched.load(.monotonic)});
-    std.debug.print("   Messages emitted:   {}\n", .{stats.messages_emitted.load(.monotonic)});
-    std.debug.print("   Evaluations skipped: {}\n", .{stats.evaluations_skipped.load(.monotonic)});
+    std.debug.print("   Rules evaluated:    {}\n", .{stats.getRulesEvaluated()});
+    std.debug.print("   Rules matched:      {}\n", .{stats.getRulesMatched()});
+    std.debug.print("   Messages emitted:   {}\n", .{stats.getMessagesEmitted()});
+    std.debug.print("   Evaluations skipped: {}\n", .{stats.getEvaluationsSkipped()});
     std.debug.print("   Match rate:         {d:.1}%\n\n", .{stats.matchRate() * 100});
 
     std.debug.print("=== Part 6: JSON Output ===\n\n", .{});

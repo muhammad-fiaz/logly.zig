@@ -38,3 +38,6 @@ benchmark-results.md
 logs_test_batch
 *.lgz
 *.gz
+*.json
+*.jsonl
+*.zip

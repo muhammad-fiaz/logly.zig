@@ -43,6 +43,47 @@ pub const Sampler = struct {
             const accepted = @as(u64, self.records_accepted.load(.monotonic));
             return @as(f64, @floatFromInt(accepted)) / @as(f64, @floatFromInt(total));
         }
+
+        /// Calculate current reject rate (0.0 - 1.0)
+        pub fn getRejectRate(self: *const SamplerStats) f64 {
+            const total = @as(u64, self.total_records_sampled.load(.monotonic));
+            if (total == 0) return 0;
+            const rejected = @as(u64, self.records_rejected.load(.monotonic));
+            return @as(f64, @floatFromInt(rejected)) / @as(f64, @floatFromInt(total));
+        }
+
+        /// Returns true if any records have been rejected.
+        pub fn hasRejections(self: *const SamplerStats) bool {
+            return self.records_rejected.load(.monotonic) > 0;
+        }
+
+        /// Returns true if rate limit has been exceeded at least once.
+        pub fn hasRateLimitExceeded(self: *const SamplerStats) bool {
+            return self.rate_limit_exceeded.load(.monotonic) > 0;
+        }
+
+        /// Returns the rate limit exceeded percentage (0.0 - 1.0).
+        pub fn getRateLimitExceededRate(self: *const SamplerStats) f64 {
+            const rejected = @as(u64, self.records_rejected.load(.monotonic));
+            if (rejected == 0) return 0;
+            const exceeded = @as(u64, self.rate_limit_exceeded.load(.monotonic));
+            return @as(f64, @floatFromInt(exceeded)) / @as(f64, @floatFromInt(rejected));
+        }
+
+        /// Returns total records sampled as u64.
+        pub fn getTotal(self: *const SamplerStats) u64 {
+            return @as(u64, self.total_records_sampled.load(.monotonic));
+        }
+
+        /// Returns accepted records count as u64.
+        pub fn getAccepted(self: *const SamplerStats) u64 {
+            return @as(u64, self.records_accepted.load(.monotonic));
+        }
+
+        /// Returns rejected records count as u64.
+        pub fn getRejected(self: *const SamplerStats) u64 {
+            return @as(u64, self.records_rejected.load(.monotonic));
+        }
     };
 
     /// Reason for rejecting a sample.

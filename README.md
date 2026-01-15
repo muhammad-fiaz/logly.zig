@@ -43,8 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-  - [Version 0.1.3](#version-013)
-  - [Version 0.1.2](#version-012)
+  - [Version 0.1.4](#version-014)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended)](#method-1-zig-fetch-recommended)
   - [Method 2: Project Starter Template (Quick Start)](#method-2-project-starter-template-quick-start)
@@ -145,6 +144,11 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Advanced Filtering** | Fluent API for complex filter rules | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/filtering) |
 | **Configuration Modes** | Log-only, display-only, and custom display/storage modes | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/configuration) |
 | **Rule-based Templates** | Diagnostic message templates with cause, fix, and documentation links | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/rules) |
+| **OpenTelemetry** | Full OTEL support with Jaeger, Zipkin, Datadog, GCP, AWS, Azure, and generic collectors | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
+| **Distributed Tracing** | W3C Trace Context propagation with span and trace management | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
+| **Metrics Export** | Export metrics in OTLP, Prometheus, and JSON formats | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
+| **Sampling Strategies** | Multiple sampling strategies for performance optimization | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
+| **Baggage Propagation** | W3C Baggage support for correlation context | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 
 </details>
 
@@ -198,24 +202,22 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.3
-
-**Improvements:**
-
-- **Code Optimization**: Consolidated common utility functions in `utils.zig` for better code reuse.
-- **Refactored Statistics**: Shared utility functions for error rate, average, and throughput calculations across all modules.
-- **Improved Docstrings**: Enhanced documentation for Filter, Formatter, Sink, Compression, Rotation, Sampler, Scheduler, ThreadPool, Network, Metrics, Diagnostics, Rules, and Redactor modules for `zig build docs` generation.
-
-### Version 0.1.2
+### Version 0.1.4
 
 **New Features:**
 
-- **File Name Customization**: Full control over compressed/rotated file names (`file_prefix`, `file_suffix`, `naming_pattern`).
-- **Archive Root Directory**: Centralized folder support for all compressed files with optional date-based subdirectories.
-- **Compression Presets**: Added `enable()`, `implicit()`, `fast()`, `balanced()`, `best()`, `production()`, and more.
-- **Enhanced Scheduler**: 12 new options including compression algo/level, archive paths, and concurrent limits.
-- **Enhanced Rotation**: Added archive root, compression during retention, and file prefixes/suffixes.
-- **Documentation**: New file customization guide, updated API refs, and more examples.
+- **OpenTelemetry Integration**: Full OpenTelemetry support with multiple providers (Jaeger, Zipkin, Datadog, Google Cloud, Google Analytics 4, Google Tag Manager, AWS X-Ray, Azure, and generic OTEL Collector).
+- **Distributed Tracing**: Native span and trace management with W3C Trace Context propagation.
+- **W3C Baggage Support**: Context propagation for arbitrary key-value pairs across service boundaries.
+- **Metrics Export**: Comprehensive metrics collection and export in OTLP, Prometheus, and JSON formats.
+- **Exporter Statistics**: Real-time monitoring of export performance with atomic counters.
+- **Custom Exporters**: Plugin architecture for custom exporter implementations with callback function interface.
+- **Sampling Strategies**: Multiple sampling strategies (always-on, always-off, trace-id-ratio, parent-based).
+- **Telemetry Callbacks**: Custom callbacks for span lifecycle and metric recording events.
+- **Update Checker Control**: Global `setEnabled()` function to enable/disable update checks project-wide.
+- **File Exporter**: JSONL-based file exporter for development and testing.
+
+For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -227,7 +229,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.4.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -276,7 +278,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.3.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.4.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -531,6 +533,95 @@ try logger.info("Processing request", @src());
 // Clear context
 logger.clearTraceContext();
 ```
+
+### OpenTelemetry Integration
+
+Logly provides comprehensive OpenTelemetry support for distributed tracing, metrics, and context propagation.
+
+#### Basic Telemetry Setup
+
+```zig
+const logly = @import("logly");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Disable update checker for production
+    logly.UpdateChecker.setEnabled(false);
+
+    // Configure Jaeger backend
+    var config = logly.TelemetryConfig.jaeger();
+    config.service_name = "my-service";
+    config.service_version = "1.0.0";
+    config.environment = "production";
+
+    var telemetry = try logly.Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    // Create a span
+    var span = try telemetry.startSpan("http_request", .{ .kind = .server });
+    defer span.deinit();
+
+    try span.setAttribute("http.method", .{ .string = "POST" });
+    try span.setAttribute("http.status_code", .{ .integer = 200 });
+
+    // Record metrics
+    try telemetry.recordCounter("requests.total", 1.0);
+    try telemetry.recordGauge("connections.active", 42.0);
+    try telemetry.recordHistogram("request.latency_ms", 23.5);
+}
+```
+
+#### W3C Trace Context Propagation
+
+```zig
+// Generate traceparent header for outgoing requests
+var span = try telemetry.startSpan("outbound_call", .{});
+const traceparent = try telemetry.getTraceparentHeader(&span);
+defer allocator.free(traceparent);
+// Use: "traceparent: 00-trace_id-span_id-01"
+
+// Parse incoming traceparent header
+const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+if (logly.Telemetry.parseTraceparentHeader(incoming)) |ctx| {
+    std.debug.print("Continuing trace: {s}\n", .{ctx.trace_id});
+}
+```
+
+#### Baggage Context
+
+```zig
+// Create baggage for cross-service context
+var baggage = logly.Baggage.init(allocator);
+defer baggage.deinit();
+
+try baggage.set("user.id", "user123");
+try baggage.set("tenant.id", "tenant456");
+
+// Convert to HTTP header
+const header = try baggage.toHeaderValue(allocator);
+defer allocator.free(header);
+// header = "user.id=user123,tenant.id=tenant456"
+```
+
+#### Supported Providers
+
+| Provider | Configuration |
+|----------|---------------|
+| **Jaeger** | `TelemetryConfig.jaeger()` |
+| **Zipkin** | `TelemetryConfig.zipkin()` |
+| **Datadog** | `TelemetryConfig.datadog(api_key)` |
+| **Google Cloud Trace** | `TelemetryConfig.googleCloud(project_id, api_key)` |
+| **Google Analytics 4** | `TelemetryConfig.googleAnalytics(measurement_id, api_secret)` |
+| **Google Tag Manager** | `TelemetryConfig.googleTagManager(container_url, api_key)` |
+| **AWS X-Ray** | `TelemetryConfig.awsXray(region)` |
+| **Azure App Insights** | `TelemetryConfig.azure(connection_string)` |
+| **OTEL Collector** | `TelemetryConfig.otelCollector(endpoint)` |
+| **File Export** | `TelemetryConfig.file(path)` |
+
+See [Telemetry API Reference](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) for complete documentation.
 
 ### Filtering
 

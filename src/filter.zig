@@ -51,12 +51,50 @@ pub const Filter = struct {
             );
         }
 
+        /// Calculate deny rate (0.0 - 1.0)
+        pub fn denyRate(self: *const FilterStats) f64 {
+            return Utils.calculateRate(
+                Utils.atomicLoadU64(&self.records_denied),
+                Utils.atomicLoadU64(&self.total_records_evaluated),
+            );
+        }
+
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const FilterStats) f64 {
             return Utils.calculateErrorRate(
                 Utils.atomicLoadU64(&self.evaluation_errors),
                 Utils.atomicLoadU64(&self.total_records_evaluated),
             );
+        }
+
+        /// Returns true if any records have been denied.
+        pub fn hasDenied(self: *const FilterStats) bool {
+            return self.records_denied.load(.monotonic) > 0;
+        }
+
+        /// Returns true if any evaluation errors occurred.
+        pub fn hasEvaluationErrors(self: *const FilterStats) bool {
+            return self.evaluation_errors.load(.monotonic) > 0;
+        }
+
+        /// Returns total records evaluated as u64.
+        pub fn getTotal(self: *const FilterStats) u64 {
+            return Utils.atomicLoadU64(&self.total_records_evaluated);
+        }
+
+        /// Returns allowed records count as u64.
+        pub fn getAllowed(self: *const FilterStats) u64 {
+            return Utils.atomicLoadU64(&self.records_allowed);
+        }
+
+        /// Returns denied records count as u64.
+        pub fn getDenied(self: *const FilterStats) u64 {
+            return Utils.atomicLoadU64(&self.records_denied);
+        }
+
+        /// Returns rules added count as u64.
+        pub fn getRulesAdded(self: *const FilterStats) u64 {
+            return Utils.atomicLoadU64(&self.rules_added);
         }
     };
 

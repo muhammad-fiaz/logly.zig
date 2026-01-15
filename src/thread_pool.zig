@@ -29,6 +29,7 @@
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Thread pool for parallel log processing with full callback support.
 ///
@@ -129,28 +130,80 @@ pub const ThreadPool = struct {
         /// Calculate average wait time in nanoseconds
         /// Performance: O(1) - atomic loads
         pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64 {
-            const completed = @as(u64, self.tasks_completed.load(.monotonic));
-            if (completed == 0) return 0;
-            const total_wait = @as(u64, self.total_wait_time_ns.load(.monotonic));
-            return total_wait / completed;
+            const completed = Utils.atomicLoadU64(&self.tasks_completed);
+            const total_wait = Utils.atomicLoadU64(&self.total_wait_time_ns);
+            return if (completed == 0) 0 else total_wait / completed;
         }
 
         /// Calculate average execution time in nanoseconds
         /// Performance: O(1) - atomic loads
         pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64 {
-            const completed = @as(u64, self.tasks_completed.load(.monotonic));
-            if (completed == 0) return 0;
-            const total_exec = @as(u64, self.total_exec_time_ns.load(.monotonic));
-            return total_exec / completed;
+            const completed = Utils.atomicLoadU64(&self.tasks_completed);
+            const total_exec = Utils.atomicLoadU64(&self.total_exec_time_ns);
+            return if (completed == 0) 0 else total_exec / completed;
         }
 
         /// Calculate throughput (tasks per second)
         /// Performance: O(1) - atomic loads
         pub fn throughput(self: *const ThreadPoolStats) f64 {
-            const completed = @as(u64, self.tasks_completed.load(.monotonic));
-            const exec_time = @as(u64, self.total_exec_time_ns.load(.monotonic));
+            const completed = Utils.atomicLoadU64(&self.tasks_completed);
+            const exec_time = Utils.atomicLoadU64(&self.total_exec_time_ns);
             if (exec_time == 0) return 0;
             return @as(f64, @floatFromInt(completed)) / (@as(f64, @floatFromInt(exec_time)) / 1e9);
+        }
+
+        /// Returns total tasks submitted as u64.
+        pub fn getSubmitted(self: *const ThreadPoolStats) u64 {
+            return Utils.atomicLoadU64(&self.tasks_submitted);
+        }
+
+        /// Returns total tasks completed as u64.
+        pub fn getCompleted(self: *const ThreadPoolStats) u64 {
+            return Utils.atomicLoadU64(&self.tasks_completed);
+        }
+
+        /// Returns total tasks dropped as u64.
+        pub fn getDropped(self: *const ThreadPoolStats) u64 {
+            return Utils.atomicLoadU64(&self.tasks_dropped);
+        }
+
+        /// Returns total tasks stolen as u64.
+        pub fn getStolen(self: *const ThreadPoolStats) u64 {
+            return Utils.atomicLoadU64(&self.tasks_stolen);
+        }
+
+        /// Calculate task completion rate (0.0 - 1.0).
+        pub fn completionRate(self: *const ThreadPoolStats) f64 {
+            const submitted = Utils.atomicLoadU64(&self.tasks_submitted);
+            const completed = Utils.atomicLoadU64(&self.tasks_completed);
+            return Utils.calculateErrorRate(completed, submitted);
+        }
+
+        /// Calculate task drop rate (0.0 - 1.0).
+        pub fn dropRate(self: *const ThreadPoolStats) f64 {
+            const submitted = Utils.atomicLoadU64(&self.tasks_submitted);
+            const dropped = Utils.atomicLoadU64(&self.tasks_dropped);
+            return Utils.calculateErrorRate(dropped, submitted);
+        }
+
+        /// Checks if any tasks were dropped.
+        pub fn hasDropped(self: *const ThreadPoolStats) bool {
+            return self.tasks_dropped.load(.monotonic) > 0;
+        }
+
+        /// Returns current active thread count.
+        pub fn getActiveThreads(self: *const ThreadPoolStats) u32 {
+            return self.active_threads.load(.monotonic);
+        }
+
+        /// Calculate average wait time in milliseconds.
+        pub fn avgWaitTimeMs(self: *const ThreadPoolStats) f64 {
+            return @as(f64, @floatFromInt(self.avgWaitTimeNs())) / 1_000_000.0;
+        }
+
+        /// Calculate average execution time in milliseconds.
+        pub fn avgExecTimeMs(self: *const ThreadPoolStats) f64 {
+            return @as(f64, @floatFromInt(self.avgExecTimeNs())) / 1_000_000.0;
         }
     };
 

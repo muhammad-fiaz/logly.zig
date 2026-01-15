@@ -102,10 +102,10 @@ pub fn main() !void {
     // Test 5: Compression stats
     std.debug.print("\n--- Test 5: Compression Statistics ---\n", .{});
     const stats = comp.getStats();
-    std.debug.print("  Files compressed:   {}\n", .{stats.files_compressed});
-    std.debug.print("  Files decompressed: {}\n", .{stats.files_decompressed});
-    std.debug.print("  Bytes before:       {} bytes\n", .{stats.bytes_before});
-    std.debug.print("  Bytes after:        {} bytes\n", .{stats.bytes_after});
+    std.debug.print("  Files compressed:   {}\n", .{stats.getFilesCompressed()});
+    std.debug.print("  Files decompressed: {}\n", .{stats.getFilesDecompressed()});
+    std.debug.print("  Bytes before:       {} bytes\n", .{stats.getBytesBefore()});
+    std.debug.print("  Bytes after:        {} bytes\n", .{stats.getBytesAfter()});
     std.debug.print("  Overall ratio:      {d:.1}%\n", .{stats.compressionRatio() * 100});
 
     // Test 6: File compression (creates test file)

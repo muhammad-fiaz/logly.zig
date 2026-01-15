@@ -297,6 +297,58 @@ _ = try logger.addSink(.{
 });
 ```
 
+## SinkStats
+
+Statistics for monitoring sink performance.
+
+### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getTotalWritten()` | `u64` | Get total number of records written |
+| `getBytesWritten()` | `u64` | Get total bytes written |
+| `getWriteErrors()` | `u64` | Get number of write errors |
+| `getFlushCount()` | `u64` | Get number of flush operations |
+| `getRotationCount()` | `u64` | Get number of file rotations |
+
+### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasWritten()` | `bool` | Check if any records have been written |
+| `hasErrors()` | `bool` | Check if any errors have occurred |
+| `hasFlushed()` | `bool` | Check if any flushes have occurred |
+| `hasRotated()` | `bool` | Check if any rotations have occurred |
+
+### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate bytes per second throughput |
+| `throughputRecordsPerSecond(elapsed_seconds)` | `f64` | Calculate records per second throughput |
+| `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
+| `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
+| `avgBytesPerWrite()` | `f64` | Calculate average bytes per write |
+| `avgFlushesPerRotation()` | `f64` | Calculate average flushes per rotation |
+
+### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
+
+### Example
+
+```zig
+const stats = sink.getStats();
+std.debug.print("Written: {} records, {} bytes\n", .{
+    stats.getTotalWritten(),
+    stats.getBytesWritten(),
+});
+std.debug.print("Error rate: {d:.2}%\n", .{stats.errorRate() * 100});
+std.debug.print("Avg bytes/write: {d:.1}\n", .{stats.avgBytesPerWrite()});
+```
+
 ## Compression Configuration
 
 ```zig

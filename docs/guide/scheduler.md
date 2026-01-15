@@ -446,24 +446,49 @@ const aggressive_config = Presets.aggressiveCleanup("logs", 30, 100);
 
 ## Statistics
 
-Monitor scheduler performance:
+Monitor scheduler performance with atomic stats and helper methods:
 
 ```zig
 const stats = scheduler.getStats();
 
-std.debug.print("Tasks executed: {d}\n", .{
-    stats.tasks_executed.load(.monotonic),
-});
-std.debug.print("Tasks failed: {d}\n", .{
-    stats.tasks_failed.load(.monotonic),
-});
-std.debug.print("Files cleaned: {d}\n", .{
-    stats.files_cleaned.load(.monotonic),
-});
-std.debug.print("Bytes freed: {d}\n", .{
-    stats.bytes_freed.load(.monotonic),
-});
+// Use helper methods for easy access
+std.debug.print("Tasks executed: {d}\n", .{stats.getExecuted()});
+std.debug.print("Tasks failed: {d}\n", .{stats.getFailed()});
+std.debug.print("Files cleaned: {d}\n", .{stats.getFilesCleaned()});
+std.debug.print("Files compressed: {d}\n", .{stats.getFilesCompressed()});
+std.debug.print("Bytes freed: {d}\n", .{stats.getBytesFreed()});
+std.debug.print("Bytes saved: {d}\n", .{stats.getBytesSaved()});
+
+// Rate calculations
+std.debug.print("Success rate: {d:.1}%\n", .{stats.successRate() * 100});
+std.debug.print("Failure rate: {d:.1}%\n", .{stats.failureRate() * 100});
+
+// Uptime info
+std.debug.print("Uptime: {d} seconds\n", .{stats.uptimeSeconds()});
+std.debug.print("Tasks per hour: {d:.2}\n", .{stats.tasksPerHour()});
+
+// Check for failures
+if (stats.hasFailures()) {
+    std.log.warn("Scheduler has failed tasks!", .{});
+}
 ```
+
+### SchedulerStats Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getExecuted()` | `u64` | Total successful executions |
+| `getFailed()` | `u64` | Total failed executions |
+| `getFilesCleaned()` | `u64` | Total files cleaned |
+| `getFilesCompressed()` | `u64` | Total files compressed |
+| `getBytesFreed()` | `u64` | Total bytes freed |
+| `getBytesSaved()` | `u64` | Total bytes saved by compression |
+| `successRate()` | `f64` | Success rate (0.0 - 1.0) |
+| `failureRate()` | `f64` | Failure rate (0.0 - 1.0) |
+| `hasFailures()` | `bool` | Check if any failures occurred |
+| `uptimeSeconds()` | `i64` | Scheduler uptime in seconds |
+| `tasksPerHour()` | `f64` | Average tasks per hour |
+| `compressionRatio()` | `f64` | Compression savings ratio |
 
 ## Configuration
 
@@ -604,9 +629,24 @@ Regularly check statistics to ensure tasks are running:
 
 ```zig
 const stats = scheduler.getStats();
-if (stats.tasks_failed.load(.monotonic) > 0) {
+
+// Check for failures using helper method
+if (stats.hasFailures()) {
+    std.log.warn("Scheduler has {d} failed tasks", .{stats.getFailed()});
     // Alert on failures
 }
+
+// Monitor efficiency
+const rate = stats.successRate();
+if (rate < 0.95) {
+    std.log.warn("Task success rate below 95%: {d:.1}%", .{rate * 100});
+}
+
+// Check uptime and throughput
+std.log.info("Running for {d}s, {d:.2} tasks/hour", .{
+    stats.uptimeSeconds(),
+    stats.tasksPerHour(),
+});
 ```
 
 ## Example: Production Setup
@@ -680,6 +720,82 @@ pub fn main() !void {
 - [Scheduler API Reference](../api/scheduler.md)
 - [Compression Guide](compression.md)
 - [Rotation Guide](rotation.md)
+- [Telemetry Guide](telemetry.md)
+
+## Telemetry Integration
+
+The scheduler supports optional telemetry integration for distributed tracing and observability. When enabled, each task execution creates a span with task-specific attributes.
+
+### Basic Setup
+
+```zig
+const logly = @import("logly");
+
+// Create telemetry instance
+var telemetry = try logly.Telemetry.init(allocator, .{
+    .provider = .file,
+    .exporter_file_path = "scheduler_telemetry.jsonl",
+});
+defer telemetry.deinit();
+
+// Create and configure scheduler
+var scheduler = try logly.Scheduler.init(allocator);
+defer scheduler.deinit();
+
+// Enable telemetry
+scheduler.setTelemetry(&telemetry);
+
+// Add tasks and start
+_ = try scheduler.addTask(.{
+    .name = "daily_cleanup",
+    .task_type = .cleanup,
+    .schedule = logly.Schedule.daily(2, 0),
+    .config = .{
+        .path = "logs",
+        .max_age_seconds = 30 * 24 * 60 * 60,
+    },
+});
+
+try scheduler.start();
+```
+
+### Span Attributes
+
+Task execution spans include:
+
+| Attribute | Task Types | Description |
+|-----------|------------|-------------|
+| `task.type` | All | Task type name |
+| `task.priority` | All | Task priority |
+| `task.duration_ms` | All | Execution time |
+| `cleanup.files_deleted` | cleanup | Files deleted |
+| `cleanup.bytes_freed` | cleanup | Bytes freed |
+| `compression.files` | compression | Files compressed |
+| `compression.bytes_saved` | compression | Space saved |
+| `health.healthy` | health_check | Health status |
+
+### Export to External Systems
+
+```zig
+// Export to Jaeger
+var telemetry = try logly.Telemetry.init(allocator, .{
+    .provider = .jaeger,
+    .endpoint = "http://jaeger:14268/api/traces",
+});
+
+// Export to Zipkin
+var telemetry = try logly.Telemetry.init(allocator, .{
+    .provider = .zipkin,
+    .endpoint = "http://zipkin:9411/api/v2/spans",
+});
+```
+
+### Disabling Telemetry
+
+```zig
+// Disable telemetry when not needed
+scheduler.clearTelemetry();
+```
 
 ## New Presets (v0.0.9)
 

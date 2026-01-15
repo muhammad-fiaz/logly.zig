@@ -118,10 +118,10 @@ pub fn main() !void {
         // Show current stats
         const stats = scheduler.getStats();
         std.debug.print("  Stats: {d} tasks executed, {d} failed, {d} files cleaned, {d} bytes freed\n", .{
-            stats.tasks_executed,
-            stats.tasks_failed,
-            stats.files_cleaned,
-            stats.bytes_freed,
+            stats.getExecuted(),
+            stats.getFailed(),
+            stats.getFilesCleaned(),
+            stats.getBytesFreed(),
         });
 
         // Check health
@@ -134,10 +134,10 @@ pub fn main() !void {
     // Show final stats
     std.debug.print("\n--- Final Statistics ---\n", .{});
     const final_stats = scheduler.getStats();
-    std.debug.print("  Total tasks executed:  {d}\n", .{final_stats.tasks_executed});
-    std.debug.print("  Total tasks failed:    {d}\n", .{final_stats.tasks_failed});
-    std.debug.print("  Total files cleaned:   {d}\n", .{final_stats.files_cleaned});
-    std.debug.print("  Total bytes freed:     {d}\n", .{final_stats.bytes_freed});
+    std.debug.print("  Total tasks executed:  {d}\n", .{final_stats.getExecuted()});
+    std.debug.print("  Total tasks failed:    {d}\n", .{final_stats.getFailed()});
+    std.debug.print("  Total files cleaned:   {d}\n", .{final_stats.getFilesCleaned()});
+    std.debug.print("  Total bytes freed:     {d}\n", .{final_stats.getBytesFreed()});
 
     // Show remaining files in test directory
     std.debug.print("\n--- Remaining Test Files ---\n", .{});

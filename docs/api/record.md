@@ -279,28 +279,53 @@ The Record module provides convenience aliases:
 |-------|--------|
 | `setField` | `addField` |
 | `put` | `addField` |
-| `tag` | `addTag` |
-| `labelAs` | `addTag` |
-| `withTraceId` | `setTraceId` |
-| `withSpanId` | `setSpanId` |
-| `withCorrelationId` | `setCorrelationId` |
-| `withDuration` | `setDuration` |
+| `trace` | `setTraceId` |
+| `span` | `setSpanId` |
+| `correlate` | `setCorrelationId` |
+| `parentSpan` | `setParentSpanId` |
+| `request` | `setRequestId` |
+| `session` | `setSessionId` |
+| `user` | `setUserId` |
 | `duplicate` | `clone` |
 | `copy` | `clone` |
-| `name` | `levelName` |
-| `color` | `levelColor` |
 
-## Additional Methods
+## Tracing Methods
+
+- `setTraceId(trace_id: []const u8) !void` - Set distributed trace ID
+- `setSpanId(span_id: []const u8) !void` - Set span ID
+- `setParentSpanId(parent_id: []const u8) !void` - Set parent span ID for hierarchical tracing
+- `setCorrelationId(correlation_id: []const u8) !void` - Set correlation ID
+
+## Identification Methods
+
+- `setRequestId(req_id: []const u8) !void` - Set HTTP request ID
+- `setSessionId(sess_id: []const u8) !void` - Set user session ID
+- `setUserId(uid: []const u8) !void` - Set user ID for audit logging
+
+## Context Methods
 
 - `addField(key: []const u8, value: json.Value) !void` - Add a context field
-- `addTag(tag: []const u8) !void` - Add a tag to the record
-- `setTraceId(trace_id: []const u8) void` - Set trace ID
-- `setSpanId(span_id: []const u8) void` - Set span ID
-- `setCorrelationId(correlation_id: []const u8) void` - Set correlation ID
+- `setError(name, message, stack_trace, code) !void` - Set error information
 - `setDuration(duration_ns: u64) void` - Set operation duration
-- `hasTraceId() bool` - Check if trace ID is set
-- `hasSpanId() bool` - Check if span ID is set
-- `hasCorrelationId() bool` - Check if correlation ID is set
+- `setDurationSince(start_time: i128) void` - Set duration from timer start
+
+## Query Methods
+
+- `hasTracing() bool` - Check if trace or span ID is set
+- `hasCustomLevel() bool` - Check if custom level is set
+- `hasContext() bool` - Check if context fields exist
+- `hasStackTrace() bool` - Check if stack trace is set
+- `hasError() bool` - Check if error info is set
+- `hasRequestId() bool` - Check if request ID is set
+- `hasSessionId() bool` - Check if session ID is set
+- `hasUserId() bool` - Check if user ID is set
+- `hasParentSpan() bool` - Check if parent span ID is set
+- `contextCount() usize` - Get number of context fields
+
+## Static Methods
+
+- `generateTraceId(allocator) ![]u8` - Generate unique trace ID (32 hex chars)
+- `generateSpanId(allocator) ![]u8` - Generate unique span ID (16 hex chars)
 
 ## See Also
 

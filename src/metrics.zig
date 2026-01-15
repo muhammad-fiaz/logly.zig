@@ -78,12 +78,79 @@ pub const Metrics = struct {
         /// Number of flush operations for this sink.
         flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
+        /// Get total records written.
+        pub fn getRecordsWritten(self: *const SinkMetrics) u64 {
+            return Utils.atomicLoadU64(&self.records_written);
+        }
+
+        /// Get total bytes written.
+        pub fn getBytesWritten(self: *const SinkMetrics) u64 {
+            return Utils.atomicLoadU64(&self.bytes_written);
+        }
+
+        /// Get write errors count.
+        pub fn getWriteErrors(self: *const SinkMetrics) u64 {
+            return Utils.atomicLoadU64(&self.write_errors);
+        }
+
+        /// Get flush count.
+        pub fn getFlushCount(self: *const SinkMetrics) u64 {
+            return Utils.atomicLoadU64(&self.flush_count);
+        }
+
+        /// Check if any records have been written.
+        pub fn hasWritten(self: *const SinkMetrics) bool {
+            return self.getRecordsWritten() > 0;
+        }
+
+        /// Check if any errors have occurred.
+        pub fn hasErrors(self: *const SinkMetrics) bool {
+            return self.getWriteErrors() > 0;
+        }
+
         /// Get write error rate for this sink.
         pub fn getErrorRate(self: *const SinkMetrics) f64 {
-            const written = @as(u64, self.records_written.load(.monotonic));
-            if (written == 0) return 0;
-            const errors = @as(u64, self.write_errors.load(.monotonic));
-            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(written));
+            return Utils.calculateErrorRate(
+                self.getWriteErrors(),
+                self.getRecordsWritten(),
+            );
+        }
+
+        /// Get success rate (0.0 - 1.0).
+        pub fn getSuccessRate(self: *const SinkMetrics) f64 {
+            return 1.0 - self.getErrorRate();
+        }
+
+        /// Get average bytes per record.
+        pub fn avgBytesPerRecord(self: *const SinkMetrics) f64 {
+            return Utils.calculateAverage(
+                self.getBytesWritten(),
+                self.getRecordsWritten(),
+            );
+        }
+
+        /// Get average records per flush.
+        pub fn avgRecordsPerFlush(self: *const SinkMetrics) f64 {
+            return Utils.calculateAverage(
+                self.getRecordsWritten(),
+                self.getFlushCount(),
+            );
+        }
+
+        /// Calculate throughput (bytes per second).
+        pub fn throughputBytesPerSecond(self: *const SinkMetrics, elapsed_seconds: f64) f64 {
+            return Utils.safeFloatDiv(
+                @as(f64, @floatFromInt(self.getBytesWritten())),
+                elapsed_seconds,
+            );
+        }
+
+        /// Reset all statistics to initial state.
+        pub fn reset(self: *SinkMetrics) void {
+            self.records_written.store(0, .monotonic);
+            self.bytes_written.store(0, .monotonic);
+            self.write_errors.store(0, .monotonic);
+            self.flush_count.store(0, .monotonic);
         }
     };
 
@@ -261,6 +328,44 @@ pub const Metrics = struct {
 
     /// Alias for deinit().
     pub const destroy = deinit;
+
+    /// Sets the callback for record logged events.
+    pub fn setRecordLoggedCallback(self: *Metrics, callback: *const fn (Level, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_record_logged = callback;
+    }
+
+    /// Sets the callback for metrics snapshot events.
+    pub fn setSnapshotCallback(self: *Metrics, callback: *const fn (*const Snapshot) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_metrics_snapshot = callback;
+    }
+
+    /// Sets the callback for threshold exceeded events.
+    pub fn setThresholdCallback(self: *Metrics, callback: *const fn (MetricType, u64, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_threshold_exceeded = callback;
+    }
+
+    /// Sets the callback for error detected events.
+    pub fn setErrorCallback(self: *Metrics, callback: *const fn (ErrorEvent, u64) void) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.on_error_detected = callback;
+    }
+
+    /// Returns the current configuration.
+    pub fn getConfig(self: *const Metrics) MetricsConfig {
+        return self.config;
+    }
+
+    /// Checks if metrics collection is enabled.
+    pub fn isEnabled(self: *const Metrics) bool {
+        return self.config.enabled;
+    }
 
     /// Records a new log record.
     /// Basic counting always works; advanced features (thresholds, callbacks) require config.enabled = true.
@@ -796,11 +901,55 @@ pub const Metrics = struct {
         return @as(f64, @floatFromInt(self.uptime())) / 1000.0;
     }
 
+    /// Records a flush operation on a sink.
+    pub fn recordSinkFlush(self: *Metrics, sink_index: usize) void {
+        if (sink_index < self.sink_metrics.items.len) {
+            _ = self.sink_metrics.items[sink_index].flush_count.fetchAdd(1, .monotonic);
+        }
+    }
+
+    /// Get sink metrics by index.
+    pub fn getSinkMetrics(self: *const Metrics, sink_index: usize) ?SinkMetrics {
+        if (sink_index < self.sink_metrics.items.len) {
+            return self.sink_metrics.items[sink_index];
+        }
+        return null;
+    }
+
+    /// Get sink metrics by name.
+    pub fn getSinkMetricsByName(self: *const Metrics, name: []const u8) ?SinkMetrics {
+        for (self.sink_metrics.items) |metric| {
+            if (std.mem.eql(u8, metric.name, name)) {
+                return metric;
+            }
+        }
+        return null;
+    }
+
+    /// Returns true if any errors have occurred.
+    pub fn hasErrors(self: *const Metrics) bool {
+        return self.errorCount() > 0;
+    }
+
+    /// Returns true if any records have been dropped.
+    pub fn hasDropped(self: *const Metrics) bool {
+        return self.droppedCount() > 0;
+    }
+
+    /// Get bytes per second throughput.
+    pub fn bytesPerSecond(self: *Metrics) f64 {
+        const snapshot_data = self.getSnapshot();
+        return snapshot_data.bytes_per_second;
+    }
+
     /// Alias for reset
     pub const clear = reset;
 
     /// Alias for uptimeSeconds
     pub const uptimeSec = uptimeSeconds;
+
+    /// Alias for bytesPerSecond
+    pub const throughput = bytesPerSecond;
 };
 
 /// Pre-built metrics configurations.
@@ -867,4 +1016,53 @@ test "metrics reset" {
 
     metrics.reset();
     try std.testing.expect(!metrics.hasRecords());
+}
+
+test "metrics sink tracking" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    const idx = try metrics.addSink("test_sink");
+    metrics.recordSinkWrite(idx, 100);
+    metrics.recordSinkFlush(idx);
+
+    const sink = metrics.getSinkMetrics(idx);
+    try std.testing.expect(sink != null);
+    try std.testing.expectEqual(@as(u64, 1), sink.?.records_written.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 100), sink.?.bytes_written.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 1), sink.?.flush_count.load(.monotonic));
+}
+
+test "metrics callback setters" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    // Test that setters don't crash
+    const S = struct {
+        fn logCallback(_: Level, _: u64) void {}
+        fn snapshotCallback(_: *const Metrics.Snapshot) void {}
+        fn thresholdCallback(_: Metrics.MetricType, _: u64, _: u64) void {}
+        fn errorCallback(_: Metrics.ErrorEvent, _: u64) void {}
+    };
+
+    metrics.setRecordLoggedCallback(S.logCallback);
+    metrics.setSnapshotCallback(S.snapshotCallback);
+    metrics.setThresholdCallback(S.thresholdCallback);
+    metrics.setErrorCallback(S.errorCallback);
+
+    try std.testing.expect(metrics.on_record_logged != null);
+    try std.testing.expect(metrics.on_metrics_snapshot != null);
+}
+
+test "metrics helper methods" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    metrics.recordLog(.info, 100);
+    metrics.recordError();
+    metrics.recordDrop();
+
+    try std.testing.expect(metrics.hasErrors());
+    try std.testing.expect(metrics.hasDropped());
+    try std.testing.expect(metrics.isEnabled() == false); // default config has enabled = false
 }

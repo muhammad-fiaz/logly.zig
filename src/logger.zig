@@ -81,6 +81,57 @@ pub const Logger = struct {
             if (total_seen == 0) return 0;
             return @as(f64, @floatFromInt(filtered)) / @as(f64, @floatFromInt(total_seen));
         }
+
+        /// Calculate sink error rate (0.0 - 1.0).
+        pub fn sinkErrorRate(self: *const LoggerStats) f64 {
+            const total = @as(u64, self.total_records_logged.load(.monotonic));
+            if (total == 0) return 0;
+            const errors = @as(u64, self.sink_errors.load(.monotonic));
+            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+        }
+
+        /// Returns true if any records were filtered.
+        pub fn hasFiltered(self: *const LoggerStats) bool {
+            return self.records_filtered.load(.monotonic) > 0;
+        }
+
+        /// Returns true if any sink errors occurred.
+        pub fn hasSinkErrors(self: *const LoggerStats) bool {
+            return self.sink_errors.load(.monotonic) > 0;
+        }
+
+        /// Returns total records logged as u64.
+        pub fn getTotalLogged(self: *const LoggerStats) u64 {
+            return @as(u64, self.total_records_logged.load(.monotonic));
+        }
+
+        /// Returns filtered records count as u64.
+        pub fn getFiltered(self: *const LoggerStats) u64 {
+            return @as(u64, self.records_filtered.load(.monotonic));
+        }
+
+        /// Returns sink errors count as u64.
+        pub fn getSinkErrors(self: *const LoggerStats) u64 {
+            return @as(u64, self.sink_errors.load(.monotonic));
+        }
+
+        /// Returns bytes written as u64.
+        pub fn getBytesWritten(self: *const LoggerStats) u64 {
+            return @as(u64, self.bytes_written.load(.monotonic));
+        }
+
+        /// Returns active sinks count as u32.
+        pub fn getActiveSinks(self: *const LoggerStats) u32 {
+            return self.active_sinks.load(.monotonic);
+        }
+
+        /// Calculate bytes per second (requires elapsed time in ms).
+        pub fn bytesPerSecond(self: *const LoggerStats, elapsed_ms: i64) f64 {
+            if (elapsed_ms <= 0) return 0;
+            const bytes = @as(u64, self.bytes_written.load(.monotonic));
+            const seconds = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
+            return @as(f64, @floatFromInt(bytes)) / seconds;
+        }
     };
 
     /// Memory allocator for logger operations.

@@ -310,19 +310,19 @@ const count = writer.sinkCount();
 const stats = writer.getStats();
 
 std.debug.print("Writes submitted: {d}\n", .{
-    stats.writes_submitted.load(.monotonic),
+    stats.getSubmitted(),
 });
 std.debug.print("Writes completed: {d}\n", .{
-    stats.writes_completed.load(.monotonic),
+    stats.getCompleted(),
 });
 std.debug.print("Writes failed: {d}\n", .{
-    stats.writes_failed.load(.monotonic),
+    stats.getFailed(),
 });
 std.debug.print("Retries: {d}\n", .{
-    stats.retries.load(.monotonic),
+    stats.getRetries(),
 });
 std.debug.print("Bytes written: {d}\n", .{
-    stats.bytes_written.load(.monotonic),
+    stats.getBytesWritten(),
 });
 std.debug.print("Success rate: {d:.2}%\n", .{
     stats.successRate() * 100,
@@ -337,19 +337,19 @@ Monitor pool performance:
 const stats = pool.getStats();
 
 std.debug.print("Tasks completed: {d}\n", .{
-    stats.tasks_completed.load(.monotonic),
+    stats.getCompleted(),
 });
 std.debug.print("Tasks stolen: {d}\n", .{
-    stats.tasks_stolen.load(.monotonic),
+    stats.getStolen(),
 });
 std.debug.print("Throughput: {d:.2} tasks/sec\n", .{
     stats.throughput(),
 });
 std.debug.print("Avg wait time: {d}ns\n", .{
-    stats.averageWaitTimeNs(),
+    stats.avgWaitTimeNs(),
 });
 std.debug.print("Avg exec time: {d}ns\n", .{
-    stats.averageExecTimeNs(),
+    stats.avgExecTimeNs(),
 });
 ```
 
@@ -494,7 +494,7 @@ Regularly check statistics to identify bottlenecks:
 
 ```zig
 const stats = pool.getStats();
-if (stats.tasks_dropped.load(.monotonic) > 0) {
+if (stats.hasDropped()) {
     // Queue overflow - increase queue size or threads
 }
 ```
@@ -563,7 +563,7 @@ pub fn main() !void {
     // Check final stats
     const stats = pool.getStats();
     std.debug.print("Total processed: {d}\n", .{
-        stats.tasks_completed.load(.monotonic),
+        stats.getCompleted(),
     });
 }
 ```

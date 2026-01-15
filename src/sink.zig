@@ -461,27 +461,102 @@ pub const Sink = struct {
         /// Number of file rotations performed.
         rotation_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
+        /// Get total number of records written.
+        pub fn getTotalWritten(self: *const SinkStats) u64 {
+            return Utils.atomicLoadU64(&self.total_written);
+        }
+
+        /// Get total bytes written.
+        pub fn getBytesWritten(self: *const SinkStats) u64 {
+            return Utils.atomicLoadU64(&self.bytes_written);
+        }
+
+        /// Get number of write errors.
+        pub fn getWriteErrors(self: *const SinkStats) u64 {
+            return Utils.atomicLoadU64(&self.write_errors);
+        }
+
+        /// Get number of flush operations.
+        pub fn getFlushCount(self: *const SinkStats) u64 {
+            return Utils.atomicLoadU64(&self.flush_count);
+        }
+
+        /// Get number of file rotations.
+        pub fn getRotationCount(self: *const SinkStats) u64 {
+            return Utils.atomicLoadU64(&self.rotation_count);
+        }
+
+        /// Check if any records have been written.
+        pub fn hasWritten(self: *const SinkStats) bool {
+            return self.getTotalWritten() > 0;
+        }
+
+        /// Check if any errors have occurred.
+        pub fn hasErrors(self: *const SinkStats) bool {
+            return self.getWriteErrors() > 0;
+        }
+
+        /// Check if any flushes have occurred.
+        pub fn hasFlushed(self: *const SinkStats) bool {
+            return self.getFlushCount() > 0;
+        }
+
+        /// Check if any rotations have occurred.
+        pub fn hasRotated(self: *const SinkStats) bool {
+            return self.getRotationCount() > 0;
+        }
+
         /// Calculate throughput (bytes per second).
         pub fn throughputBytesPerSecond(self: *const SinkStats, elapsed_seconds: f64) f64 {
             return Utils.safeFloatDiv(
-                @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.bytes_written))),
+                @as(f64, @floatFromInt(self.getBytesWritten())),
+                elapsed_seconds,
+            );
+        }
+
+        /// Calculate records per second throughput.
+        pub fn throughputRecordsPerSecond(self: *const SinkStats, elapsed_seconds: f64) f64 {
+            return Utils.safeFloatDiv(
+                @as(f64, @floatFromInt(self.getTotalWritten())),
                 elapsed_seconds,
             );
         }
 
         /// Calculate error rate (0.0 - 1.0).
         pub fn errorRate(self: *const SinkStats) f64 {
-            const total = Utils.atomicLoadU64(&self.total_written);
-            const errors = Utils.atomicLoadU64(&self.write_errors);
+            const total = self.getTotalWritten();
+            const errors = self.getWriteErrors();
             return Utils.calculateErrorRate(errors, total + errors);
+        }
+
+        /// Calculate success rate (0.0 - 1.0).
+        pub fn successRate(self: *const SinkStats) f64 {
+            return 1.0 - self.errorRate();
         }
 
         /// Calculate average bytes per write.
         pub fn avgBytesPerWrite(self: *const SinkStats) f64 {
             return Utils.calculateAverage(
-                Utils.atomicLoadU64(&self.bytes_written),
-                Utils.atomicLoadU64(&self.total_written),
+                self.getBytesWritten(),
+                self.getTotalWritten(),
             );
+        }
+
+        /// Calculate average flushes per rotation.
+        pub fn avgFlushesPerRotation(self: *const SinkStats) f64 {
+            return Utils.calculateAverage(
+                self.getFlushCount(),
+                self.getRotationCount(),
+            );
+        }
+
+        /// Reset all statistics to initial state.
+        pub fn reset(self: *SinkStats) void {
+            self.total_written.store(0, .monotonic);
+            self.bytes_written.store(0, .monotonic);
+            self.write_errors.store(0, .monotonic);
+            self.flush_count.store(0, .monotonic);
+            self.rotation_count.store(0, .monotonic);
         }
     };
 

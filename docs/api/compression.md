@@ -439,16 +439,55 @@ pub const CompressionStats = struct {
     total_decompression_time_ns: std.atomic.Value(u64),
     background_tasks_queued: std.atomic.Value(u64),
     background_tasks_completed: std.atomic.Value(u64),
-    
-    pub fn compressionRatio(self: *const CompressionStats) f64;
-    pub fn spaceSavingsPercent(self: *const CompressionStats) f64;
-    pub fn avgCompressionSpeedMBps(self: *const CompressionStats) f64;
-    pub fn avgDecompressionSpeedMBps(self: *const CompressionStats) f64;
-    pub fn errorRate(self: *const CompressionStats) f64;
 };
 ```
 
-**Statistics Methods:**
+#### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getFilesCompressed()` | `u64` | Get total files compressed |
+| `getFilesDecompressed()` | `u64` | Get total files decompressed |
+| `getBytesBefore()` | `u64` | Get total bytes before compression |
+| `getBytesAfter()` | `u64` | Get total bytes after compression |
+| `getBytesSaved()` | `u64` | Get total bytes saved by compression |
+| `getCompressionErrors()` | `u64` | Get compression error count |
+| `getDecompressionErrors()` | `u64` | Get decompression error count |
+| `getTotalErrors()` | `u64` | Get total error count |
+| `getBackgroundTasksQueued()` | `u64` | Get background tasks queued |
+| `getBackgroundTasksCompleted()` | `u64` | Get background tasks completed |
+| `getTotalOperations()` | `u64` | Get total operations (compress + decompress) |
+
+#### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasOperations()` | `bool` | Check if any operations have been performed |
+| `hasErrors()` | `bool` | Check if any errors have occurred |
+| `hasCompressionErrors()` | `bool` | Check for compression errors |
+| `hasDecompressionErrors()` | `bool` | Check for decompression errors |
+| `hasPendingBackgroundTasks()` | `bool` | Check for pending background tasks |
+
+#### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `compressionRatio()` | `f64` | Calculate compression ratio (before/after) |
+| `spaceSavingsPercent()` | `f64` | Calculate space savings percentage |
+| `avgCompressionSpeedMBps()` | `f64` | Calculate average compression speed in MB/s |
+| `avgDecompressionSpeedMBps()` | `f64` | Calculate average decompression speed in MB/s |
+| `errorRate()` | `f64` | Calculate overall error rate (0.0 - 1.0) |
+| `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
+| `backgroundTaskCompletionRate()` | `f64` | Calculate background task completion rate |
+| `avgBytesPerOperation()` | `f64` | Calculate average bytes per operation |
+
+#### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
+
+**Statistics Example:**
 
 ```zig
 const stats = compression.getStats();
@@ -465,9 +504,10 @@ std.debug.print("Decompression speed: {d:.1} MB/s\n", .{stats.avgDecompressionSp
 std.debug.print("Error rate: {d:.4}%\n", .{stats.errorRate() * 100});
 
 // Background operations
-const queued = stats.background_tasks_queued.load(.monotonic);
-const completed = stats.background_tasks_completed.load(.monotonic);
-std.debug.print("Background: {d}/{d} completed\n", .{completed, queued});
+std.debug.print("Background: {d}/{d} completed\n", .{
+    stats.getBackgroundTasksCompleted(),
+    stats.getBackgroundTasksQueued(),
+});
 ```
 
 ### CompressionResult
@@ -975,15 +1015,15 @@ pub fn main() !void {
     defer if (result.output_path) |p| allocator.free(p);
 
     if (result.success) {
-        std.debug.print("✓ Compressed: {d:.1}% savings\n", .{result.ratio() * 100});
+        std.debug.print("✓ Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});
         
         // Get statistics
         const stats = compression.getStats();
-        std.debug.print("Total files: {d}\n", 
-            .{stats.files_compressed.load(.monotonic)});
-        std.debug.print("Compression ratio: {d:.2}x\n", 
+        std.debug.print("Total files: {d}\\n", 
+            .{stats.getFilesCompressed()});
+        std.debug.print("Compression ratio: {d:.2}x\\n", 
             .{stats.compressionRatio()});
-        std.debug.print("Speed: {d:.1} MB/s\n", 
+        std.debug.print("Speed: {d:.1} MB/s\\n", 
             .{stats.avgCompressionSpeedMBps()});
     }
 }

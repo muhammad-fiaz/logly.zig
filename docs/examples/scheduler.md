@@ -251,13 +251,13 @@ try scheduler.removeTask(0);
 ```zig
 const stats = scheduler.getStats();
 std.debug.print("Tasks executed: {d}\n", .{
-    stats.tasks_executed.load(.monotonic),
+    stats.getExecuted(),
 });
 std.debug.print("Files cleaned: {d}\n", .{
-    stats.files_cleaned.load(.monotonic),
+    stats.getFilesCleaned(),
 });
 std.debug.print("Bytes freed: {d}\n", .{
-    stats.bytes_freed.load(.monotonic),
+    stats.getBytesFreed(),
 });
 ```
 

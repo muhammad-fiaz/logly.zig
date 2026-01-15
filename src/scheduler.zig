@@ -29,6 +29,12 @@ const Config = @import("config.zig").Config;
 const Compression = @import("compression.zig").Compression;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const ThreadPool = @import("thread_pool.zig").ThreadPool;
+const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
+const Telemetry = @import("telemetry.zig").Telemetry;
+const Span = @import("telemetry.zig").Span;
+const SpanKind = @import("telemetry.zig").SpanKind;
+const SpanAttribute = @import("telemetry.zig").SpanAttribute;
 
 /// Scheduler for automated log maintenance tasks.
 ///
@@ -80,6 +86,10 @@ pub const Scheduler = struct {
     /// Callback invoked during health checks.
     /// Parameters: (status: *const HealthStatus)
     on_health_check: ?*const fn (*const HealthStatus) void = null,
+
+    /// Optional telemetry instance for distributed tracing.
+    /// When enabled, task executions create spans for observability.
+    telemetry: ?*Telemetry = null,
 
     /// Centralized scheduler configuration.
     /// Re-exports centralized config for convenience.
@@ -293,13 +303,97 @@ pub const Scheduler = struct {
         }
     };
 
-    /// Statistics for scheduler operations.
+    /// Statistics for scheduler operations with atomic counters for thread safety.
     pub const SchedulerStats = struct {
-        tasks_executed: u64 = 0,
-        tasks_failed: u64 = 0,
-        files_cleaned: u64 = 0,
-        bytes_freed: u64 = 0,
-        last_run_time: i64 = 0,
+        /// Total tasks executed successfully.
+        tasks_executed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total tasks that failed.
+        tasks_failed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total files cleaned up.
+        files_cleaned: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total files compressed.
+        files_compressed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total bytes freed by cleanup operations.
+        bytes_freed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Total bytes saved by compression.
+        bytes_saved: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Last run time in milliseconds.
+        last_run_time: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+        /// Scheduler start time for uptime calculation.
+        start_time: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+
+        /// Calculate task success rate (0.0 - 1.0).
+        pub fn successRate(self: *const SchedulerStats) f64 {
+            const executed = Utils.atomicLoadU64(&self.tasks_executed);
+            const failed = Utils.atomicLoadU64(&self.tasks_failed);
+            const total = executed + failed;
+            return Utils.calculateRate(executed, total);
+        }
+
+        /// Calculate task failure rate (0.0 - 1.0).
+        pub fn failureRate(self: *const SchedulerStats) f64 {
+            const executed = Utils.atomicLoadU64(&self.tasks_executed);
+            const failed = Utils.atomicLoadU64(&self.tasks_failed);
+            return Utils.calculateErrorRate(failed, executed + failed);
+        }
+
+        /// Returns true if any tasks have failed.
+        pub fn hasFailures(self: *const SchedulerStats) bool {
+            return self.tasks_failed.load(.monotonic) > 0;
+        }
+
+        /// Returns total tasks executed as u64.
+        pub fn getExecuted(self: *const SchedulerStats) u64 {
+            return Utils.atomicLoadU64(&self.tasks_executed);
+        }
+
+        /// Returns total tasks failed as u64.
+        pub fn getFailed(self: *const SchedulerStats) u64 {
+            return Utils.atomicLoadU64(&self.tasks_failed);
+        }
+
+        /// Returns total files cleaned as u64.
+        pub fn getFilesCleaned(self: *const SchedulerStats) u64 {
+            return Utils.atomicLoadU64(&self.files_cleaned);
+        }
+
+        /// Returns total files compressed as u64.
+        pub fn getFilesCompressed(self: *const SchedulerStats) u64 {
+            return Utils.atomicLoadU64(&self.files_compressed);
+        }
+
+        /// Returns total bytes freed as u64.
+        pub fn getBytesFreed(self: *const SchedulerStats) u64 {
+            return Utils.atomicLoadU64(&self.bytes_freed);
+        }
+
+        /// Returns total bytes saved by compression as u64.
+        pub fn getBytesSaved(self: *const SchedulerStats) u64 {
+            return Utils.atomicLoadU64(&self.bytes_saved);
+        }
+
+        /// Returns uptime in seconds since scheduler started.
+        pub fn uptimeSeconds(self: *const SchedulerStats) i64 {
+            const start_ts = self.start_time.load(.monotonic);
+            if (start_ts == 0) return 0;
+            return @divFloor(std.time.milliTimestamp() - start_ts, 1000);
+        }
+
+        /// Returns average tasks per hour.
+        pub fn tasksPerHour(self: *const SchedulerStats) f64 {
+            const uptime = self.uptimeSeconds();
+            if (uptime <= 0) return 0;
+            const executed = Utils.atomicLoadU64(&self.tasks_executed);
+            const hours = @as(f64, @floatFromInt(uptime)) / 3600.0;
+            return @as(f64, @floatFromInt(executed)) / hours;
+        }
+
+        /// Calculate compression ratio (bytes saved / total bytes).
+        pub fn compressionRatio(self: *const SchedulerStats) f64 {
+            const saved = Utils.atomicLoadU64(&self.bytes_saved);
+            const freed = Utils.atomicLoadU64(&self.bytes_freed);
+            return Utils.calculateRate(saved, saved + freed);
+        }
     };
 
     /// Cleanup result information.
@@ -418,8 +512,8 @@ pub const Scheduler = struct {
         }
         return .{
             .timestamp = std.time.milliTimestamp(),
-            .log_count = self.stats.tasks_executed,
-            .error_count = self.stats.tasks_failed,
+            .log_count = self.stats.getExecuted(),
+            .error_count = self.stats.getFailed(),
         };
     }
 
@@ -635,6 +729,9 @@ pub const Scheduler = struct {
     pub fn start(self: *Scheduler) !void {
         if (self.running.load(.acquire)) return;
 
+        // Record start time for uptime calculations
+        self.stats.start_time.store(std.time.milliTimestamp(), .monotonic);
+
         self.running.store(true, .release);
         self.worker_thread = try std.Thread.spawn(.{}, schedulerLoop, .{self});
     }
@@ -764,7 +861,7 @@ pub const Scheduler = struct {
         const task = &self.tasks.items[index];
 
         task.error_count += 1;
-        self.stats.tasks_failed += 1;
+        _ = self.stats.tasks_failed.fetchAdd(1, .monotonic);
 
         if (task.retries_remaining > 0) {
             task.retries_remaining -= 1;
@@ -813,31 +910,90 @@ pub const Scheduler = struct {
 
     fn executeTask(self: *Scheduler, task: *ScheduledTask) !void {
         const now = std.time.milliTimestamp();
+        const start_ns = std.time.nanoTimestamp();
 
+        // Start telemetry span if enabled
+        var maybe_span: ?Span = null;
+        if (self.telemetry) |t| {
+            maybe_span = t.startSpan(task.name, .{
+                .kind = SpanKind.internal,
+            }) catch null;
+            if (maybe_span) |*span| {
+                span.setAttribute("task.type", .{ .string = @tagName(task.task_type) }) catch {};
+                span.setAttribute("task.priority", .{ .string = @tagName(task.priority) }) catch {};
+            }
+        }
+
+        // Execute task based on type with error tracking
+        const exec_result = self.executeTaskCore(task, &maybe_span);
+
+        // Calculate duration
+        const duration_ns = Utils.durationSinceNs(start_ns);
+        const duration_ms: i64 = @intCast(@divFloor(duration_ns, std.time.ns_per_ms));
+
+        // End telemetry span
+        if (maybe_span) |*span| {
+            span.setAttribute("task.duration_ms", .{ .integer = duration_ms }) catch {};
+            if (exec_result) |_| {} else |err| {
+                span.setStatusWithMessage(.err, @errorName(err)) catch {};
+            }
+            if (self.telemetry) |t| {
+                t.endSpan(span) catch {};
+            }
+        }
+
+        // Record task execution metrics in telemetry
+        if (self.telemetry) |t| {
+            t.recordCounter("scheduler.tasks_executed", 1.0) catch {};
+            t.recordGauge("scheduler.task_duration_ms", @floatFromInt(duration_ms)) catch {};
+        }
+
+        // Propagate error if task failed
+        try exec_result;
+
+        task.last_run = now;
+        task.next_run = task.schedule.nextRunTime(now);
+        task.run_count += 1;
+        _ = self.stats.tasks_executed.fetchAdd(1, .monotonic);
+        self.stats.last_run_time.store(now, .monotonic);
+    }
+
+    /// Core task execution logic (separated for telemetry tracking).
+    fn executeTaskCore(self: *Scheduler, task: *ScheduledTask, maybe_span: *?Span) !void {
         switch (task.task_type) {
             .cleanup => {
                 if (task.config.path) |path| {
                     const result = try self.performCleanup(path, task.config);
-                    self.stats.files_cleaned += result.files_deleted;
-                    self.stats.bytes_freed += result.bytes_freed;
+                    _ = self.stats.files_cleaned.fetchAdd(@intCast(result.files_deleted), .monotonic);
+                    _ = self.stats.bytes_freed.fetchAdd(@intCast(result.bytes_freed), .monotonic);
+
+                    // Record cleanup stats in span
+                    if (maybe_span.*) |*span| {
+                        span.setAttribute("cleanup.files_deleted", .{ .integer = @intCast(result.files_deleted) }) catch {};
+                        span.setAttribute("cleanup.bytes_freed", .{ .integer = @intCast(result.bytes_freed) }) catch {};
+                    }
                 }
             },
             .compression => {
                 if (task.config.path) |path| {
                     const result = try self.performCompression(path, task.config);
-                    self.stats.files_cleaned += result.files_compressed;
-                    self.stats.bytes_freed += result.bytes_saved;
+                    _ = self.stats.files_compressed.fetchAdd(@intCast(result.files_compressed), .monotonic);
+                    _ = self.stats.bytes_saved.fetchAdd(@intCast(result.bytes_saved), .monotonic);
+
+                    // Record compression stats in span
+                    if (maybe_span.*) |*span| {
+                        span.setAttribute("compression.files", .{ .integer = @intCast(result.files_compressed) }) catch {};
+                        span.setAttribute("compression.bytes_saved", .{ .integer = @intCast(result.bytes_saved) }) catch {};
+                    }
                 }
             },
             .rotation => {
                 // Rotation is handled by the sink directly based on size/time
                 // This task is typically used to trigger manual rotation checks
-                // The sink will handle the actual file rotation when logs are written
             },
             .flush => {
                 // Flush task - triggers a flush of any buffered data
                 // This is typically handled by the logger or sinks
-                // Used to ensure all buffered logs are written to disk
             },
             .custom => {
                 if (task.callback) |cb| {
@@ -850,19 +1006,20 @@ pub const Scheduler = struct {
                 if (!health.healthy) {
                     task.error_count += 1;
                 }
+                // Record health status in span
+                if (maybe_span.*) |*span| {
+                    span.setAttribute("health.healthy", .{ .boolean = health.healthy }) catch {};
+                }
             },
             .metrics_snapshot => {
                 // Capture metrics snapshot
                 const metrics = self.getMetrics();
-                _ = metrics; // Store or report metrics as needed
+                if (maybe_span.*) |*span| {
+                    span.setAttribute("metrics.log_count", .{ .integer = @intCast(metrics.log_count) }) catch {};
+                    span.setAttribute("metrics.error_count", .{ .integer = @intCast(metrics.error_count) }) catch {};
+                }
             },
         }
-
-        task.last_run = now;
-        task.next_run = task.schedule.nextRunTime(now);
-        task.run_count += 1;
-        self.stats.tasks_executed += 1;
-        self.stats.last_run_time = now;
     }
 
     fn performCleanup(self: *Scheduler, path: []const u8, config: ScheduledTask.TaskConfig) !CleanupResult {
@@ -1121,6 +1278,17 @@ pub const Scheduler = struct {
     /// Resets statistics.
     pub fn resetStats(self: *Scheduler) void {
         self.stats = .{};
+    }
+
+    /// Sets the telemetry instance for distributed tracing.
+    /// When set, task executions will create spans for observability.
+    pub fn setTelemetry(self: *Scheduler, telemetry: *Telemetry) void {
+        self.telemetry = telemetry;
+    }
+
+    /// Clears the telemetry instance.
+    pub fn clearTelemetry(self: *Scheduler) void {
+        self.telemetry = null;
     }
 
     /// Gets list of all tasks.

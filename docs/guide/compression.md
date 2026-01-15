@@ -638,13 +638,13 @@ std.debug.print("Error rate: {d:.4}%\n", .{stats.errorRate() * 100});
 
 // Operations
 std.debug.print("Files compressed: {d}\n", 
-    .{stats.files_compressed.load(.monotonic)});
+    .{stats.getFilesCompressed()});
 std.debug.print("Files decompressed: {d}\n", 
-    .{stats.files_decompressed.load(.monotonic)});
+    .{stats.getFilesDecompressed()});
 
 // Background tasks (if enabled)
-const queued = stats.background_tasks_queued.load(.monotonic);
-const completed = stats.background_tasks_completed.load(.monotonic);
+const queued = stats.getBackgroundTasksQueued();
+const completed = stats.getBackgroundTasksCompleted();
 std.debug.print("Background: {d}/{d} completed\n", .{completed, queued});
 ```
 
@@ -912,7 +912,7 @@ pub fn main() !void {
     const stats = compression.getStats();
     std.log.info("Compression stats:", .{});
     std.log.info("  Files compressed: {d}", 
-        .{stats.files_compressed.load(.monotonic)});
+        .{stats.getFilesCompressed()});
     std.log.info("  Compression ratio: {d:.2}x", 
         .{stats.compressionRatio()});
     std.log.info("  Space savings: {d:.1}%", 

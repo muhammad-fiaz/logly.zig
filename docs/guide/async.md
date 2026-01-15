@@ -238,11 +238,11 @@ Monitor async performance:
 ```zig
 const stats = async_logger.getStats();
 
-std.debug.print("Queued: {d}\n", .{stats.records_queued.load(.monotonic)});
-std.debug.print("Written: {d}\n", .{stats.records_written.load(.monotonic)});
-std.debug.print("Dropped: {d}\n", .{stats.records_dropped.load(.monotonic)});
-std.debug.print("Drop rate: {d:.2}%\n", .{stats.dropRate() * 100});
-std.debug.print("Avg latency: {d}ns\n", .{stats.averageLatencyNs()});
+std.debug.print("Queued: {d}\\n", .{stats.getQueued()});
+std.debug.print("Written: {d}\\n", .{stats.getWritten()});
+std.debug.print("Dropped: {d}\\n", .{stats.getDropped()});
+std.debug.print("Drop rate: {d:.2}%\\n", .{stats.dropRate() * 100});
+std.debug.print("Avg latency: {d}ns\\n", .{stats.averageLatencyNs()});
 ```
 
 ## AsyncFileWriter

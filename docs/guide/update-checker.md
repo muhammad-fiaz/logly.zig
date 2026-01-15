@@ -35,11 +35,49 @@ config.check_for_updates = false; // Disable update check
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
 
+## Project-Wide Disable
+
+For production applications, you may want to disable update checking entirely across your project. Use the `setEnabled()` function at the start of your application:
+
+```zig
+const logly = @import("logly");
+
+pub fn main() !void {
+    // Disable update checker for the entire application
+    // This must be called BEFORE any logger initialization
+    logly.UpdateChecker.setEnabled(false);
+
+    // All subsequent logger initializations will skip update checks
+    var logger1 = try logly.Logger.init(allocator);
+    defer logger1.deinit();
+
+    var logger2 = try logly.Logger.init(allocator);
+    defer logger2.deinit();
+
+    // ... your application code
+}
+```
+
+### API Reference
+
+| Function | Description |
+|----------|-------------|
+| `setEnabled(enabled: bool)` | Enable or disable update checking project-wide |
+| `isEnabled() bool` | Check if update checking is currently enabled |
+| `resetState()` | Reset update checker state (for testing only) |
+
+### Important Notes
+
+- **Call Early**: `setEnabled(false)` must be called before any `Logger.init()` calls to ensure update checks are disabled.
+- **Process-Wide**: Once disabled, update checking remains disabled for the entire process lifetime.
+- **Thread-Safe**: The enable/disable functions are thread-safe and can be called from any thread.
+
 ## Behavior
 
 -   **Non-blocking**: The check runs in a background thread, so it never slows down your application startup.
 -   **Silent Failure**: If there is no internet connection or the GitHub API is unreachable, the checker fails silently without printing errors or affecting your application.
 -   **Cross-Platform**: Uses ASCII-safe message formatting compatible with all terminals (PowerShell, cmd, Linux, macOS).
+-   **Single Check**: The update check runs only once per process, even if multiple loggers are initialized.
 
 ## Example Output
 
@@ -51,6 +89,46 @@ info: [UPDATE] A newer release is available: v0.0.5 (current 0.0.4)
 Running a dev/nightly build:
 ```text
 info: [NIGHTLY] Running a dev/nightly build ahead of latest release: current 0.0.5, latest 0.0.4
+```
+
+## Use Cases
+
+### Production Deployment
+
+```zig
+const logly = @import("logly");
+
+pub fn main() !void {
+    // Always disable in production
+    logly.UpdateChecker.setEnabled(false);
+
+    var config = logly.Config.production();
+    var logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+
+    try logger.info("Application started", @src());
+}
+```
+
+### CI/CD Pipelines
+
+```zig
+// Disable update checks in automated builds
+logly.UpdateChecker.setEnabled(false);
+```
+
+### Library Development
+
+If you're building a library that uses Logly internally, you should disable update checks to avoid confusing your users:
+
+```zig
+// In your library's init function
+pub fn initMyLibrary(allocator: std.mem.Allocator) !MyLibrary {
+    // Disable Logly update checks - let the application owner decide
+    logly.UpdateChecker.setEnabled(false);
+
+    // ... library initialization
+}
 ```
 
 ## Platform Support

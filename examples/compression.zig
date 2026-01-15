@@ -84,8 +84,8 @@ pub fn main() !void {
     defer allocator.free(c2);
 
     const stats = custom_comp.getStats();
-    std.debug.print("   Bytes before compression: {d}\n", .{stats.bytes_before.load(.monotonic)});
-    std.debug.print("   Bytes after compression: {d}\n", .{stats.bytes_after.load(.monotonic)});
+    std.debug.print("   Bytes before compression: {d}\n", .{stats.getBytesBefore()});
+    std.debug.print("   Bytes after compression: {d}\n", .{stats.getBytesAfter()});
     std.debug.print("   Compression ratio: {d:.2}%\n\n", .{stats.compressionRatio() * 100});
 
     // Example 5: Size-based compression trigger

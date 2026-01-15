@@ -48,18 +48,42 @@ pub const Filter = struct {
 
 ### FilterStats
 
-Statistics tracking for filter operations.
+Statistics tracking for filter operations with cross-platform atomic counters.
 
 ```zig
 pub const FilterStats = struct {
-    total_records_evaluated: std.atomic.Value(u64),
-    records_allowed: std.atomic.Value(u64),
-    records_denied: std.atomic.Value(u64),
-    rules_added: std.atomic.Value(u64),
-    evaluation_errors: std.atomic.Value(u64),
-    
+    total_records_evaluated: std.atomic.Value(Constants.AtomicUnsigned),
+    records_allowed: std.atomic.Value(Constants.AtomicUnsigned),
+    records_denied: std.atomic.Value(Constants.AtomicUnsigned),
+    rules_added: std.atomic.Value(Constants.AtomicUnsigned),
+    evaluation_errors: std.atomic.Value(Constants.AtomicUnsigned),
+
+    /// Calculate allow rate (0.0 - 1.0)
     pub fn allowRate(self: *const FilterStats) f64;
+
+    /// Calculate deny rate (0.0 - 1.0)
+    pub fn denyRate(self: *const FilterStats) f64;
+
+    /// Calculate error rate (0.0 - 1.0)
     pub fn errorRate(self: *const FilterStats) f64;
+
+    /// Returns true if any records have been denied.
+    pub fn hasDenied(self: *const FilterStats) bool;
+
+    /// Returns true if any evaluation errors occurred.
+    pub fn hasEvaluationErrors(self: *const FilterStats) bool;
+
+    /// Returns total records evaluated as u64.
+    pub fn getTotal(self: *const FilterStats) u64;
+
+    /// Returns allowed records count as u64.
+    pub fn getAllowed(self: *const FilterStats) u64;
+
+    /// Returns denied records count as u64.
+    pub fn getDenied(self: *const FilterStats) u64;
+
+    /// Returns rules added count as u64.
+    pub fn getRulesAdded(self: *const FilterStats) u64;
 };
 ```
 

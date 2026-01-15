@@ -86,10 +86,10 @@ pub fn main() !void {
     std.debug.print("   ----------------\n", .{});
 
     const stats = pool.getStats();
-    std.debug.print("   Tasks submitted: {d}\n", .{stats.tasks_submitted.load(.monotonic)});
-    std.debug.print("   Tasks completed: {d}\n", .{stats.tasks_completed.load(.monotonic)});
-    std.debug.print("   Tasks dropped: {d}\n", .{stats.tasks_dropped.load(.monotonic)});
-    std.debug.print("   Tasks stolen: {d}\n", .{stats.tasks_stolen.load(.monotonic)});
+    std.debug.print("   Tasks submitted: {d}\n", .{stats.getSubmitted()});
+    std.debug.print("   Tasks completed: {d}\n", .{stats.getCompleted()});
+    std.debug.print("   Tasks dropped: {d}\n", .{stats.getDropped()});
+    std.debug.print("   Tasks stolen: {d}\n", .{stats.getStolen()});
     std.debug.print("   Avg wait time: {d} ns\n", .{stats.avgWaitTimeNs()});
     std.debug.print("   Avg exec time: {d} ns\n", .{stats.avgExecTimeNs()});
     std.debug.print("   Throughput: {d:.2} tasks/sec\n\n", .{stats.throughput()});

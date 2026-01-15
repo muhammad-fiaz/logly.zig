@@ -297,9 +297,119 @@ config.metrics = logly.Config.MetricsConfig.detailed();
 4. **Track dropped records**: Monitor how many records are sampled/filtered out
 5. **Reset periodically**: Use `reset()` for time-windowed metrics
 
-## New Methods (v0.0.9)
+## Callback Support
 
-### Direct Statistics Access
+Set callbacks to react to metrics events:
+
+```zig
+var metrics = Metrics.init(allocator);
+defer metrics.deinit();
+
+// Callback when a record is logged
+const S = struct {
+    fn onRecordLogged(level: logly.Level, bytes: u64) void {
+        std.debug.print("Logged {s}: {d} bytes\n", .{level.asString(), bytes});
+    }
+    
+    fn onSnapshotTaken(snapshot: *const Metrics.Snapshot) void {
+        std.debug.print("Snapshot: {d} records\n", .{snapshot.total_records});
+    }
+    
+    fn onThresholdExceeded(metric_type: Metrics.MetricType, value: u64, threshold: u64) void {
+        std.debug.print("Threshold exceeded: {any} = {d} > {d}\n", .{metric_type, value, threshold});
+    }
+    
+    fn onErrorDetected(event: Metrics.ErrorEvent, count: u64) void {
+        std.debug.print("Error event: {any}, count: {d}\n", .{event, count});
+    }
+};
+
+metrics.setRecordLoggedCallback(S.onRecordLogged);
+metrics.setSnapshotCallback(S.onSnapshotTaken);
+metrics.setThresholdCallback(S.onThresholdExceeded);
+metrics.setErrorCallback(S.onErrorDetected);
+
+// Now callbacks will be invoked when events occur
+metrics.recordLog(.info, 100);
+```
+
+## Latency Tracking
+
+Track logging latency for performance monitoring:
+
+```zig
+var metrics = Metrics.initWithConfig(allocator, .{
+    .enabled = true,
+    .track_latency = true,
+    .enable_histogram = true,
+});
+defer metrics.deinit();
+
+// Record with latency (in nanoseconds)
+metrics.recordLogWithLatency(.info, 100, 1_500_000); // 1.5ms
+
+// Get latency statistics
+const avg = metrics.avgLatencyNs();
+const min = metrics.minLatencyNs();
+const max = metrics.maxLatencyNs();
+
+// Get histogram buckets for latency distribution
+const histogram = metrics.getHistogram();
+```
+
+## Sink Flush Tracking
+
+Track flush operations on sinks:
+
+```zig
+var metrics = Metrics.init(allocator);
+defer metrics.deinit();
+
+const sink_idx = try metrics.addSink("file_sink");
+
+// Record flush
+metrics.recordSinkFlush(sink_idx);
+
+// Get sink metrics by index or name
+if (metrics.getSinkMetrics(sink_idx)) |sink| {
+    std.debug.print("Flushes: {d}\\n", .{sink.getFlushCount()});
+}
+
+if (metrics.getSinkMetricsByName("file_sink")) |sink| {
+    std.debug.print("Bytes: {d}\\n", .{sink.getBytesWritten()});
+}
+```
+
+## Export Formats
+
+Export metrics in various formats:
+
+```zig
+var metrics = Metrics.init(allocator);
+defer metrics.deinit();
+
+metrics.recordLog(.info, 100);
+
+// JSON format
+const json = try metrics.exportJson(allocator);
+defer allocator.free(json);
+// {"total_records":1,"total_bytes":100,...}
+
+// Prometheus format
+const prom = try metrics.exportPrometheus(allocator);
+defer allocator.free(prom);
+// logly_records_total 1
+// logly_bytes_total 100
+// ...
+
+// StatsD format
+const statsd = try metrics.exportStatsd(allocator);
+defer allocator.free(statsd);
+// logly.records.total:1|c
+// logly.bytes.total:100|c
+```
+
+## Direct Statistics Access
 
 ```zig
 var metrics = Metrics.init(allocator);
@@ -320,6 +430,7 @@ const drops = metrics.droppedCount();
 const err_rate = metrics.errorRate();   // 0.0 - 1.0
 const drop_rate = metrics.dropRate();   // 0.0 - 1.0
 const rps = metrics.rate();             // records per second
+const bps = metrics.bytesPerSecond();   // bytes per second
 
 // Uptime
 const uptime_ms = metrics.uptime();
@@ -331,6 +442,10 @@ const err_count = metrics.levelCount(.err);
 
 // Sink count
 const sinks = metrics.sinkCount();
+
+// Configuration access
+const config = metrics.getConfig();
+const enabled = metrics.isEnabled();
 ```
 
 ### Threshold Checks
@@ -344,6 +459,14 @@ if (metrics.hasHighErrorRate(0.01)) {
 // Check for high drop rate
 if (metrics.hasHighDropRate(0.05)) {
     std.debug.print("Warning: Drop rate exceeds 5%!\n", .{});
+}
+
+// Check for any errors or drops
+if (metrics.hasErrors()) {
+    std.debug.print("Errors detected!\n", .{});
+}
+if (metrics.hasDropped()) {
+    std.debug.print("Records were dropped!\n", .{});
 }
 ```
 
@@ -375,6 +498,7 @@ metrics.clear();
 | `breakdown` | `formatLevelBreakdown` |
 | `clear` | `reset` |
 | `uptimeSec` | `uptimeSeconds` |
+| `throughput` | `bytesPerSecond` |
 
 ## See Also
 

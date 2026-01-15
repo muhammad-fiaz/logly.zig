@@ -160,6 +160,90 @@ pub const Compression = struct {
             const errors = comp_errors + decomp_errors;
             return Utils.calculateErrorRate(errors, total);
         }
+
+        /// Returns total files compressed as u64.
+        pub fn getFilesCompressed(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.files_compressed);
+        }
+
+        /// Returns total files decompressed as u64.
+        pub fn getFilesDecompressed(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.files_decompressed);
+        }
+
+        /// Returns total bytes before compression as u64.
+        pub fn getBytesBefore(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.bytes_before);
+        }
+
+        /// Returns total bytes after compression as u64.
+        pub fn getBytesAfter(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.bytes_after);
+        }
+
+        /// Returns total bytes saved by compression.
+        pub fn getBytesSaved(self: *const CompressionStats) u64 {
+            const before = Utils.atomicLoadU64(&self.bytes_before);
+            const after = Utils.atomicLoadU64(&self.bytes_after);
+            return if (before > after) before - after else 0;
+        }
+
+        /// Returns compression errors count as u64.
+        pub fn getCompressionErrors(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.compression_errors);
+        }
+
+        /// Returns decompression errors count as u64.
+        pub fn getDecompressionErrors(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.decompression_errors);
+        }
+
+        /// Checks if any compression errors occurred.
+        pub fn hasErrors(self: *const CompressionStats) bool {
+            return self.compression_errors.load(.monotonic) > 0 or self.decompression_errors.load(.monotonic) > 0;
+        }
+
+        /// Checks if any compression operations occurred.
+        pub fn hasOperations(self: *const CompressionStats) bool {
+            return self.files_compressed.load(.monotonic) > 0 or self.files_decompressed.load(.monotonic) > 0;
+        }
+
+        /// Returns total operations (compressed + decompressed).
+        pub fn getTotalOperations(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.files_compressed) + Utils.atomicLoadU64(&self.files_decompressed);
+        }
+
+        /// Returns background tasks queued as u64.
+        pub fn getBackgroundTasksQueued(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.background_tasks_queued);
+        }
+
+        /// Returns background tasks completed as u64.
+        pub fn getBackgroundTasksCompleted(self: *const CompressionStats) u64 {
+            return Utils.atomicLoadU64(&self.background_tasks_completed);
+        }
+
+        /// Calculate background task completion rate (0.0 - 1.0).
+        pub fn backgroundTaskCompletionRate(self: *const CompressionStats) f64 {
+            const queued = Utils.atomicLoadU64(&self.background_tasks_queued);
+            const completed = Utils.atomicLoadU64(&self.background_tasks_completed);
+            return Utils.calculateErrorRate(completed, queued);
+        }
+
+        /// Resets all statistics to zero.
+        pub fn reset(self: *CompressionStats) void {
+            self.files_compressed.store(0, .monotonic);
+            self.files_decompressed.store(0, .monotonic);
+            self.bytes_before.store(0, .monotonic);
+            self.bytes_after.store(0, .monotonic);
+            self.compression_errors.store(0, .monotonic);
+            self.decompression_errors.store(0, .monotonic);
+            self.last_compression_time.store(0, .monotonic);
+            self.total_compression_time_ns.store(0, .monotonic);
+            self.total_decompression_time_ns.store(0, .monotonic);
+            self.background_tasks_queued.store(0, .monotonic);
+            self.background_tasks_completed.store(0, .monotonic);
+        }
     };
 
     /// Result of a compression operation.

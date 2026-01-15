@@ -69,6 +69,47 @@ Sets a custom color theme for the formatter.
 
 Returns formatter statistics.
 
+### FormatterStats
+
+Statistics for formatter performance.
+
+#### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getTotalFormatted()` | `u64` | Get total records formatted |
+| `getJsonFormats()` | `u64` | Get total JSON formats |
+| `getCustomFormats()` | `u64` | Get total custom formats |
+| `getFormatErrors()` | `u64` | Get total format errors |
+| `getTotalBytesFormatted()` | `u64` | Get total bytes formatted |
+| `getPlainFormats()` | `u64` | Get plain text formats (total - json - custom) |
+
+#### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasFormatted()` | `bool` | Check if any records have been formatted |
+| `hasJsonFormats()` | `bool` | Check if any JSON formats have been used |
+| `hasCustomFormats()` | `bool` | Check if any custom formats have been used |
+| `hasErrors()` | `bool` | Check if any format errors have occurred |
+
+#### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `jsonUsageRate()` | `f64` | Calculate JSON format usage rate (0.0 - 1.0) |
+| `customUsageRate()` | `f64` | Calculate custom format usage rate (0.0 - 1.0) |
+| `avgFormatSize()` | `f64` | Calculate average format size |
+| `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
+| `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
+| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate throughput (bytes per second) |
+
+#### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
+
 ### System Metadata
 
 The Formatter caches system metadata during initialization to improve performance:
@@ -140,15 +181,42 @@ Statistics for the formatter.
 | `format_errors` | `atomic.Value(u64)` | Number of format errors |
 | `total_bytes_formatted` | `atomic.Value(u64)` | Total bytes formatted |
 
-### Methods
+### Getter Methods
 
-#### `avgFormatSize() f64`
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getTotalFormatted()` | `u64` | Get total records formatted |
+| `getJsonFormats()` | `u64` | Get total JSON formats |
+| `getCustomFormats()` | `u64` | Get total custom formats |
+| `getFormatErrors()` | `u64` | Get total format errors |
+| `getTotalBytesFormatted()` | `u64` | Get total bytes formatted |
+| `getPlainFormats()` | `u64` | Get plain text formats (total - json - custom) |
 
-Calculate average format size in bytes.
+### Boolean Checks
 
-#### `errorRate() f64`
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasFormatted()` | `bool` | Check if any records have been formatted |
+| `hasJsonFormats()` | `bool` | Check if any JSON formats have been used |
+| `hasCustomFormats()` | `bool` | Check if any custom formats have been used |
+| `hasErrors()` | `bool` | Check if any format errors have occurred |
 
-Calculate error rate (0.0 - 1.0).
+### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `jsonUsageRate()` | `f64` | Calculate JSON format usage rate (0.0 - 1.0) |
+| `customUsageRate()` | `f64` | Calculate custom format usage rate (0.0 - 1.0) |
+| `avgFormatSize()` | `f64` | Calculate average format size in bytes |
+| `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
+| `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
+| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate bytes per second throughput |
+
+### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
 
 ## Aliases
 

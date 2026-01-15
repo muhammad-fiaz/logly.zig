@@ -368,27 +368,51 @@ pub fn getStats(self: *const ThreadPool) ThreadPoolStats
 
 ## ThreadPoolStats Methods
 
-### throughput
+### Getter Methods
 
-Calculate tasks per second.
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getSubmitted()` | `u64` | Get total tasks submitted |
+| `getCompleted()` | `u64` | Get total tasks completed |
+| `getDropped()` | `u64` | Get total tasks dropped |
+| `getStolen()` | `u64` | Get total tasks stolen (work stealing) |
+| `getTotalWaitTimeNs()` | `u64` | Get total wait time in nanoseconds |
+| `getTotalExecTimeNs()` | `u64` | Get total execution time in nanoseconds |
+| `getActiveThreads()` | `u32` | Get currently active threads |
+
+### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasSubmitted()` | `bool` | Check if any tasks have been submitted |
+| `hasCompleted()` | `bool` | Check if any tasks have been completed |
+| `hasDropped()` | `bool` | Check if any tasks have been dropped |
+| `hasStolen()` | `bool` | Check if any tasks have been stolen |
+
+### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `completionRate()` | `f64` | Calculate task completion rate (0.0 - 1.0) |
+| `dropRate()` | `f64` | Calculate task drop rate (0.0 - 1.0) |
+| `stealRate()` | `f64` | Calculate work stealing rate (0.0 - 1.0) |
+| `throughput()` | `f64` | Calculate tasks per second |
+| `avgWaitTimeNs()` | `u64` | Get average task wait time in nanoseconds |
+| `avgWaitTimeMs()` | `f64` | Get average task wait time in milliseconds |
+| `avgExecTimeNs()` | `u64` | Get average task execution time in nanoseconds |
+| `avgExecTimeMs()` | `f64` | Get average task execution time in milliseconds |
+
+### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
+
+### Legacy Methods
 
 ```zig
 pub fn throughput(self: *const ThreadPoolStats) f64
-```
-
-### avgWaitTimeNs
-
-Get average task wait time.
-
-```zig
 pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64
-```
-
-### avgExecTimeNs
-
-Get average task execution time.
-
-```zig
 pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64
 ```
 
@@ -584,8 +608,8 @@ pub fn main() !void {
 
     // Check stats
     const stats = pool.getStats();
-    std.debug.print("Completed: {d}, Throughput: {d:.2} tasks/sec\n", .{
-        stats.tasks_completed.load(.monotonic),
+    std.debug.print("Completed: {d}, Throughput: {d:.2} tasks/sec\\n", .{
+        stats.getCompleted(),
         stats.throughput(),
     });
 }

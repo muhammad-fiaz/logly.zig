@@ -53,11 +53,47 @@ pub const NetworkStats = struct {
     }
 
     pub fn totalBytesSent(self: *const NetworkStats) u64 {
-        return @as(u64, self.bytes_sent.load(.monotonic));
+        return Utils.atomicLoadU64(&self.bytes_sent);
+    }
+
+    pub fn totalBytesReceived(self: *const NetworkStats) u64 {
+        return Utils.atomicLoadU64(&self.bytes_received);
     }
 
     pub fn totalMessagesCount(self: *const NetworkStats) u64 {
-        return @as(u64, self.messages_sent.load(.monotonic));
+        return Utils.atomicLoadU64(&self.messages_sent);
+    }
+
+    pub fn totalConnectionsMade(self: *const NetworkStats) u64 {
+        return Utils.atomicLoadU64(&self.connections_made);
+    }
+
+    pub fn totalErrors(self: *const NetworkStats) u64 {
+        return Utils.atomicLoadU64(&self.errors);
+    }
+
+    /// Checks if any network errors occurred.
+    pub fn hasErrors(self: *const NetworkStats) bool {
+        return self.errors.load(.monotonic) > 0;
+    }
+
+    /// Calculate error rate (0.0 - 1.0) based on messages sent.
+    pub fn errorRate(self: *const NetworkStats) f64 {
+        const sent = Utils.atomicLoadU64(&self.messages_sent);
+        const errs = Utils.atomicLoadU64(&self.errors);
+        return Utils.calculateErrorRate(errs, sent);
+    }
+
+    /// Calculate average bytes per message.
+    pub fn avgBytesPerMessage(self: *const NetworkStats) f64 {
+        const bytes = Utils.atomicLoadU64(&self.bytes_sent);
+        const messages = Utils.atomicLoadU64(&self.messages_sent);
+        return Utils.calculateAverage(bytes, messages);
+    }
+
+    /// Returns total bytes transferred (sent + received).
+    pub fn totalBytesTransferred(self: *const NetworkStats) u64 {
+        return Utils.atomicLoadU64(&self.bytes_sent) + Utils.atomicLoadU64(&self.bytes_received);
     }
 };
 

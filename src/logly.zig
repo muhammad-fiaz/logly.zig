@@ -125,6 +125,27 @@ pub const Network = @import("network.zig");
 // Utility components
 pub const Utils = @import("utils.zig");
 
+// OpenTelemetry integration
+pub const Telemetry = @import("telemetry.zig").Telemetry;
+pub const TelemetryConfig = @import("config.zig").TelemetryConfig;
+pub const Span = @import("telemetry.zig").Span;
+pub const SpanAttribute = @import("telemetry.zig").SpanAttribute;
+pub const SpanEvent = @import("telemetry.zig").SpanEvent;
+pub const SpanKind = @import("telemetry.zig").SpanKind;
+pub const SpanStatus = @import("telemetry.zig").SpanStatus;
+pub const SpanOptions = @import("telemetry.zig").SpanOptions;
+pub const Metric = @import("telemetry.zig").Metric;
+pub const MetricKind = @import("telemetry.zig").MetricKind;
+pub const MetricOptions = @import("telemetry.zig").MetricOptions;
+pub const Resource = @import("telemetry.zig").Resource;
+pub const TelemetrySampler = @import("telemetry.zig").TelemetrySampler;
+pub const Baggage = @import("telemetry.zig").Baggage;
+pub const TraceContext = @import("telemetry.zig").TraceContext;
+pub const ExporterStats = @import("telemetry.zig").ExporterStats;
+pub const NetworkProtocol = @import("telemetry.zig").NetworkProtocol;
+pub const ExportMode = @import("telemetry.zig").ExportMode;
+pub const TelemetryStats = @import("telemetry.zig").TelemetryStats;
+
 // Re-export ParallelConfig from Config
 pub const ParallelConfig = Config.ParallelConfig;
 

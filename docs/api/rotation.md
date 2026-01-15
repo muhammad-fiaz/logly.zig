@@ -246,6 +246,41 @@ The `RotationStats` struct provides insights into the rotation process.
 | `rotation_errors` | `AtomicUnsigned` | Count of rotation failures. |
 | `compression_errors` | `AtomicUnsigned` | Count of compression failures. |
 
+### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getTotalRotations()` | `u64` | Get total rotations performed |
+| `getFilesArchived()` | `u64` | Get files archived count |
+| `getFilesDeleted()` | `u64` | Get files deleted count |
+| `getRotationErrors()` | `u64` | Get rotation error count |
+| `getCompressionErrors()` | `u64` | Get compression error count |
+| `getTotalErrors()` | `u64` | Get total error count |
+
+### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasRotated()` | `bool` | Check if any rotations have occurred |
+| `hasErrors()` | `bool` | Check if any errors have occurred |
+| `hasCompressionErrors()` | `bool` | Check for compression errors |
+| `hasArchived()` | `bool` | Check if any files have been archived |
+
+### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
+| `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
+| `totalErrorRate()` | `f64` | Calculate total error rate including compression |
+| `archiveRate()` | `f64` | Calculate archive rate (archived / rotated) |
+
+### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
+
 ## Presets
 
 The `RotationPresets` struct offers common configurations.

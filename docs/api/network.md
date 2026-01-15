@@ -40,11 +40,44 @@ pub const NetworkStats = struct {
     connection_errors: std.atomic.Value(u64),
     send_errors: std.atomic.Value(u64),
     receive_errors: std.atomic.Value(u64),
-    
-    pub fn reset(self: *NetworkStats) void;
-    pub fn errorRate(self: *const NetworkStats) f64;
 };
 ```
+
+#### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getBytesSent()` | `u64` | Get total bytes sent |
+| `getBytesReceived()` | `u64` | Get total bytes received |
+| `getConnectionsOpened()` | `u64` | Get connections opened |
+| `getConnectionsClosed()` | `u64` | Get connections closed |
+| `getConnectionErrors()` | `u64` | Get connection errors |
+| `getSendErrors()` | `u64` | Get send errors |
+| `getReceiveErrors()` | `u64` | Get receive errors |
+| `totalBytesReceived()` | `u64` | Get total bytes received |
+| `totalConnectionsMade()` | `u64` | Get total connections opened |
+| `totalErrors()` | `u64` | Get total error count |
+| `totalBytesTransferred()` | `u64` | Get total bytes (sent + received) |
+
+#### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasErrors()` | `bool` | Check if any errors have occurred |
+| `hasConnections()` | `bool` | Check if any connections have been made |
+
+#### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
+| `avgBytesPerMessage()` | `f64` | Calculate average bytes per message |
+
+#### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
 
 ### LogServer
 

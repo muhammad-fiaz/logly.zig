@@ -165,9 +165,9 @@ for (0..100) |_| {
 
 // Get statistics
 const stats = sampler.getStats();
-std.debug.print("Total records: {d}\n", .{stats.total_records_sampled.load(.monotonic)});
-std.debug.print("Accepted: {d}\n", .{stats.records_accepted.load(.monotonic)});
-std.debug.print("Rejected: {d}\n", .{stats.records_rejected.load(.monotonic)});
+std.debug.print("Total records: {d}\n", .{stats.getTotal()});
+std.debug.print("Accepted: {d}\n", .{stats.getAccepted()});
+std.debug.print("Rejected: {d}\n", .{stats.getRejected()});
 std.debug.print("Accept Rate: {d:.2}%\n", .{stats.getAcceptRate() * 100});
 
 // Get current sampling rate

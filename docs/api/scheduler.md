@@ -55,7 +55,7 @@ const config = logly.Config.default().withScheduler(.{});
 
 ### Scheduler
 
-The main scheduler struct for managing scheduled tasks.
+The main scheduler struct for managing scheduled tasks with optional telemetry integration.
 
 ```zig
 pub const Scheduler = struct {
@@ -65,6 +65,7 @@ pub const Scheduler = struct {
     compression: Compression,  // Integrated compression support
     running: std.atomic.Value(bool),
     worker_thread: ?std.Thread,
+    telemetry: ?*Telemetry,    // Optional telemetry for distributed tracing
 };
 ```
 
@@ -280,16 +281,72 @@ pub const Schedule = union(enum) {
 
 ### SchedulerStats
 
-Statistics for scheduled operations.
+Thread-safe statistics for scheduled operations using atomic counters. Works correctly on both 32-bit and 64-bit architectures.
 
 ```zig
 pub const SchedulerStats = struct {
-    tasks_executed: u64 = 0,
-    tasks_failed: u64 = 0,
-    files_cleaned: u64 = 0,
-    bytes_freed: u64 = 0,
-    last_run_time: i64 = 0,
+    /// Total tasks executed successfully (atomic).
+    tasks_executed: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Total tasks that failed (atomic).
+    tasks_failed: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Total files cleaned up (atomic).
+    files_cleaned: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Total files compressed (atomic).
+    files_compressed: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Total bytes freed by cleanup operations (atomic).
+    bytes_freed: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Total bytes saved by compression (atomic).
+    bytes_saved: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Last run time in milliseconds (atomic).
+    last_run_time: std.atomic.Value(i64),
+    /// Scheduler start time for uptime calculation (atomic).
+    start_time: std.atomic.Value(i64),
 };
+```
+
+#### SchedulerStats Helper Methods
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `successRate()` | `f64` | Task success rate (0.0 - 1.0) |
+| `failureRate()` | `f64` | Task failure rate (0.0 - 1.0) |
+| `hasFailures()` | `bool` | Returns `true` if any tasks have failed |
+| `getExecuted()` | `u64` | Total tasks executed as u64 |
+| `getFailed()` | `u64` | Total tasks failed as u64 |
+| `getFilesCleaned()` | `u64` | Total files cleaned as u64 |
+| `getFilesCompressed()` | `u64` | Total files compressed as u64 |
+| `getBytesFreed()` | `u64` | Total bytes freed as u64 |
+| `getBytesSaved()` | `u64` | Total bytes saved by compression as u64 |
+| `uptimeSeconds()` | `i64` | Uptime in seconds since scheduler started |
+| `tasksPerHour()` | `f64` | Average tasks executed per hour |
+| `compressionRatio()` | `f64` | Compression savings ratio (bytes saved / total) |
+
+#### Usage Example
+
+```zig
+const stats = scheduler.getStats();
+
+// Check success/failure rates
+const success = stats.successRate();  // e.g., 0.95 (95%)
+const failure = stats.failureRate();  // e.g., 0.05 (5%)
+
+// Check for failures
+if (stats.hasFailures()) {
+    std.log.warn("Scheduler has {d} failed tasks", .{stats.getFailed()});
+}
+
+// Get uptime info
+const uptime = stats.uptimeSeconds();
+const rate = stats.tasksPerHour();
+std.log.info("Running for {d}s, {d:.2} tasks/hour", .{uptime, rate});
+
+// Check cleanup efficiency
+const freed = stats.getBytesFreed();
+const saved = stats.getBytesSaved();
+const ratio = stats.compressionRatio();
+std.log.info("Freed {d} bytes, saved {d} bytes ({d:.1}% compression)", .{
+    freed, saved, ratio * 100.0
+});
 ```
 
 ## Methods
@@ -444,6 +501,33 @@ Get current scheduler statistics.
 pub fn getStats(self: *const Scheduler) SchedulerStats
 ```
 
+### resetStats
+
+Reset all scheduler statistics to zero.
+
+```zig
+pub fn resetStats(self: *Scheduler) void
+```
+
+### setTelemetry
+
+Set the telemetry instance for distributed tracing. When enabled, task executions create spans for observability.
+
+```zig
+pub fn setTelemetry(self: *Scheduler, telemetry: *Telemetry) void
+```
+
+**Parameters:**
+- `telemetry`: Telemetry instance for tracing
+
+### clearTelemetry
+
+Disable telemetry tracing.
+
+```zig
+pub fn clearTelemetry(self: *Scheduler) void
+```
+
 ### listTasks
 
 Get list of all scheduled tasks.
@@ -544,4 +628,73 @@ pub const SchedulerPresets = struct {
 - [Compression API](compression.md) - Log compression
 - [Rotation Guide](../guide/rotation.md) - Log rotation
 - [Configuration Guide](../guide/configuration.md) - Full configuration options
+- [Telemetry API](telemetry.md) - Distributed tracing integration
+
+## Telemetry Integration
+
+The scheduler supports optional telemetry integration for distributed tracing. When enabled, each task execution creates a span with relevant attributes.
+
+### Setup
+
+```zig
+const logly = @import("logly");
+
+// Create telemetry instance
+var telemetry = try logly.Telemetry.init(allocator, .{
+    .provider = .file,
+    .exporter_file_path = "telemetry_spans.jsonl",
+});
+defer telemetry.deinit();
+
+// Create scheduler with telemetry
+var scheduler = try logly.Scheduler.init(allocator);
+defer scheduler.deinit();
+
+scheduler.setTelemetry(&telemetry);
+```
+
+### Span Attributes
+
+Task execution spans include the following attributes:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `task.type` | string | Task type (cleanup, compression, etc.) |
+| `task.priority` | string | Task priority level |
+| `task.duration_ms` | integer | Execution duration in milliseconds |
+| `cleanup.files_deleted` | integer | Files deleted (cleanup tasks) |
+| `cleanup.bytes_freed` | integer | Bytes freed (cleanup tasks) |
+| `compression.files` | integer | Files compressed (compression tasks) |
+| `compression.bytes_saved` | integer | Bytes saved (compression tasks) |
+| `health.healthy` | boolean | Health status (health_check tasks) |
+| `metrics.log_count` | integer | Log count (metrics_snapshot tasks) |
+| `metrics.error_count` | integer | Error count (metrics_snapshot tasks) |
+
+### Telemetry Metrics
+
+The scheduler also records counter and gauge metrics:
+
+- `scheduler.tasks_executed` (counter): Incremented for each task execution
+- `scheduler.task_duration_ms` (gauge): Task execution duration
+
+### Example Output
+
+```json
+{
+  "trace_id": "abc123...",
+  "span_id": "def456...",
+  "name": "log_cleanup",
+  "kind": "internal",
+  "status": "ok",
+  "start_time": 1704067200000000000,
+  "end_time": 1704067200500000000,
+  "attributes": {
+    "task.type": "cleanup",
+    "task.priority": "normal",
+    "task.duration_ms": 500,
+    "cleanup.files_deleted": 5,
+    "cleanup.bytes_freed": 1048576
+  }
+}
+```
 

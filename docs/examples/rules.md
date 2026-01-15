@@ -114,11 +114,11 @@ pub fn main() !void {
 
     // Statistics
     const stats = rules.getStats();
-    std.debug.print("\n=== Rules Statistics ===\n", .{});
-    std.debug.print("Rules evaluated: {}\n", .{stats.rules_evaluated.load(.monotonic)});
-    std.debug.print("Rules matched: {}\n", .{stats.rules_matched.load(.monotonic)});
-    std.debug.print("Messages emitted: {}\n", .{stats.messages_emitted.load(.monotonic)});
-    std.debug.print("Match rate: {d:.1}%\n", .{stats.matchRate() * 100});
+    std.debug.print("\\n=== Rules Statistics ===\\n", .{});
+    std.debug.print("Rules evaluated: {}\\n", .{stats.getRulesEvaluated()});
+    std.debug.print("Rules matched: {}\\n", .{stats.getRulesMatched()});
+    std.debug.print("Messages emitted: {}\\n", .{stats.getMessagesEmitted()});
+    std.debug.print("Match rate: {d:.1}%\\n", .{stats.matchRate() * 100});
 }
 ```
 :::

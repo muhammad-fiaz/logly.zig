@@ -88,10 +88,40 @@ pub const SinkMetrics = struct {
     bytes_written: std.atomic.Value(u64),
     write_errors: std.atomic.Value(u64),
     flush_count: std.atomic.Value(u64),
-    
-    pub fn getErrorRate(self: *const SinkMetrics) f64;
 };
 ```
+
+#### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getRecordsWritten()` | `u64` | Get total records written |
+| `getBytesWritten()` | `u64` | Get total bytes written |
+| `getWriteErrors()` | `u64` | Get write errors count |
+| `getFlushCount()` | `u64` | Get flush count |
+
+#### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasWritten()` | `bool` | Check if any records have been written |
+| `hasErrors()` | `bool` | Check if any errors have occurred |
+
+#### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getErrorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
+| `getSuccessRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
+| `avgBytesPerRecord()` | `f64` | Calculate average bytes per record |
+| `avgRecordsPerFlush()` | `f64` | Calculate average records per flush |
+| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate bytes per second throughput |
+
+#### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
 
 ### Snapshot
 
@@ -122,11 +152,43 @@ Initializes a new Metrics instance with all counters at zero.
 
 **Alias:** `create`
 
+#### `initWithConfig(allocator: std.mem.Allocator, config: MetricsConfig) Metrics`
+
+Initializes a new Metrics instance with custom configuration.
+
 #### `deinit(self: *Metrics) void`
 
 Releases all resources associated with metrics.
 
 **Alias:** `destroy`
+
+### Callbacks
+
+#### `setRecordLoggedCallback(callback: *const fn (Level, u64) void) void`
+
+Sets the callback invoked when a record is logged.
+
+#### `setSnapshotCallback(callback: *const fn (*const Snapshot) void) void`
+
+Sets the callback invoked when a metrics snapshot is taken.
+
+#### `setThresholdCallback(callback: *const fn (MetricType, u64, u64) void) void`
+
+Sets the callback invoked when metrics exceed thresholds.
+
+#### `setErrorCallback(callback: *const fn (ErrorEvent, u64) void) void`
+
+Sets the callback invoked when errors or dropped records are detected.
+
+### Configuration
+
+#### `getConfig() MetricsConfig`
+
+Returns the current metrics configuration.
+
+#### `isEnabled() bool`
+
+Returns true if metrics collection is enabled.
 
 ### Recording
 
@@ -135,6 +197,10 @@ Releases all resources associated with metrics.
 Records a successful log event with its level and size.
 
 **Alias**: `record`, `log`
+
+#### `recordLogWithLatency(level: Level, bytes: u64, latency_ns: u64) void`
+
+Records a log with latency measurement for histogram tracking.
 
 #### `recordDrop() void`
 
@@ -152,6 +218,32 @@ Records an internal error.
 
 Records a log using a custom level.
 
+### Sink Tracking
+
+#### `addSink(name: []const u8) !usize`
+
+Adds a sink to track. Returns the sink index.
+
+#### `recordSinkWrite(sink_index: usize, bytes: u64) void`
+
+Records a successful write to a sink.
+
+#### `recordSinkError(sink_index: usize) void`
+
+Records a write error on a sink.
+
+#### `recordSinkFlush(sink_index: usize) void`
+
+Records a flush operation on a sink.
+
+#### `getSinkMetrics(sink_index: usize) ?SinkMetrics`
+
+Returns sink metrics by index.
+
+#### `getSinkMetricsByName(name: []const u8) ?SinkMetrics`
+
+Returns sink metrics by name.
+
 ### Snapshots
 
 #### `getSnapshot() Snapshot`
@@ -160,11 +252,55 @@ Returns a thread-safe snapshot of the current metrics.
 
 **Alias**: `metricsSnapshot`
 
+#### `takeSnapshot() !Snapshot`
+
+Takes a snapshot and optionally stores in history.
+
+#### `getHistory() []const Snapshot`
+
+Returns the snapshot history.
+
 #### `formatLevelBreakdown(allocator: Allocator) ![]u8`
 
 Returns a formatted string showing log counts by level.
 
 **Alias**: `levels`, `breakdown`
+
+### Export
+
+#### `exportMetrics(allocator: Allocator) ![]u8`
+
+Exports metrics in the configured format.
+
+#### `exportJson(allocator: Allocator) ![]u8`
+
+Exports metrics as JSON format.
+
+#### `exportPrometheus(allocator: Allocator) ![]u8`
+
+Exports metrics as Prometheus exposition format.
+
+#### `exportStatsd(allocator: Allocator) ![]u8`
+
+Exports metrics as StatsD format.
+
+### Latency
+
+#### `avgLatencyNs() u64`
+
+Returns average latency in nanoseconds.
+
+#### `minLatencyNs() u64`
+
+Returns minimum latency in nanoseconds.
+
+#### `maxLatencyNs() u64`
+
+Returns maximum latency in nanoseconds.
+
+#### `getHistogram() [20]u64`
+
+Returns histogram bucket data.
 
 ### Statistics
 
@@ -196,6 +332,12 @@ Returns the drop rate (0.0 - 1.0).
 
 Returns records per second throughput.
 
+#### `bytesPerSecond() f64`
+
+Returns bytes per second throughput.
+
+**Alias**: `throughput`
+
 #### `uptime() i64`
 
 Returns uptime in milliseconds.
@@ -219,6 +361,14 @@ Returns the number of sinks being tracked.
 #### `hasRecords() bool`
 
 Returns true if any records have been logged.
+
+#### `hasErrors() bool`
+
+Returns true if any errors have occurred.
+
+#### `hasDropped() bool`
+
+Returns true if any records have been dropped.
 
 #### `hasHighErrorRate(threshold: f64) bool`
 

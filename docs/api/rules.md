@@ -115,6 +115,43 @@ var rules = logly.Rules.initWithConfig(allocator, .{
 | `setUnicode(bool)` | Enable/disable Unicode symbols |
 | `setColors(bool)` | Enable/disable ANSI colors |
 
+### RulesStats
+
+Statistics for the rules engine with atomic counters.
+
+#### Getter Methods
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `getRulesEvaluated()` | `u64` | Get total rules evaluated |
+| `getRulesMatched()` | `u64` | Get total rules matched |
+| `getMessagesEmitted()` | `u64` | Get total messages emitted |
+| `getEvaluationsSkipped()` | `u64` | Get evaluations skipped |
+
+#### Boolean Checks
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `hasEvaluated()` | `bool` | Check if any rules have been evaluated |
+| `hasMatched()` | `bool` | Check if any rules have matched |
+| `hasEmitted()` | `bool` | Check if any messages have been emitted |
+| `hasSkipped()` | `bool` | Check if any evaluations have been skipped |
+
+#### Rate Calculations
+
+| Method | Return | Description |
+|--------|--------|-------------|
+| `matchRate()` | `f64` | Calculate match rate (0.0 - 1.0) |
+| `skipRate()` | `f64` | Calculate skip rate (0.0 - 1.0) |
+| `avgMessagesPerMatch()` | `f64` | Calculate average messages per match |
+| `efficiencyRate()` | `f64` | Calculate efficiency rate (1.0 - skipRate) |
+
+#### Reset
+
+| Method | Description |
+|--------|-------------|
+| `reset()` | Reset all statistics to initial state |
+
 ### Rule Management
 
 ```zig
@@ -371,11 +408,11 @@ Monitor rules performance:
 ```zig
 const stats = rules.getStats();
 
-std.debug.print("Rules evaluated: {}\n", .{stats.rules_evaluated.load(.monotonic)});
-std.debug.print("Rules matched: {}\n", .{stats.rules_matched.load(.monotonic)});
-std.debug.print("Messages emitted: {}\n", .{stats.messages_emitted.load(.monotonic)});
-std.debug.print("Evaluations skipped: {}\n", .{stats.evaluations_skipped.load(.monotonic)});
-std.debug.print("Match rate: {d:.1}%\n", .{stats.matchRate() * 100});
+std.debug.print("Rules evaluated: {}\\n", .{stats.getRulesEvaluated()});
+std.debug.print("Rules matched: {}\\n", .{stats.getRulesMatched()});
+std.debug.print("Messages emitted: {}\\n", .{stats.getMessagesEmitted()});
+std.debug.print("Evaluations skipped: {}\\n", .{stats.getEvaluationsSkipped()});
+std.debug.print("Match rate: {d:.1}%\\n", .{stats.matchRate() * 100});
 
 // Reset statistics
 rules.resetStats();

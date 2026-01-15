@@ -152,6 +152,44 @@ Returns total records accepted.
 
 Returns total records rejected.
 
+### SamplerStats Methods
+
+The `SamplerStats` struct provides comprehensive statistics tracking:
+
+```zig
+pub const SamplerStats = struct {
+    total_records_sampled: std.atomic.Value(Constants.AtomicUnsigned),
+    records_accepted: std.atomic.Value(Constants.AtomicUnsigned),
+    records_rejected: std.atomic.Value(Constants.AtomicUnsigned),
+    rate_limit_exceeded: std.atomic.Value(Constants.AtomicUnsigned),
+    rate_adjustments: std.atomic.Value(Constants.AtomicUnsigned),
+
+    /// Calculate current accept rate (0.0 - 1.0)
+    pub fn getAcceptRate(self: *const SamplerStats) f64;
+
+    /// Calculate current reject rate (0.0 - 1.0)
+    pub fn getRejectRate(self: *const SamplerStats) f64;
+
+    /// Returns true if any records have been rejected.
+    pub fn hasRejections(self: *const SamplerStats) bool;
+
+    /// Returns true if rate limit has been exceeded at least once.
+    pub fn hasRateLimitExceeded(self: *const SamplerStats) bool;
+
+    /// Returns the rate limit exceeded percentage (0.0 - 1.0).
+    pub fn getRateLimitExceededRate(self: *const SamplerStats) f64;
+
+    /// Returns total records sampled as u64.
+    pub fn getTotal(self: *const SamplerStats) u64;
+
+    /// Returns accepted records count as u64.
+    pub fn getAccepted(self: *const SamplerStats) u64;
+
+    /// Returns rejected records count as u64.
+    pub fn getRejected(self: *const SamplerStats) u64;
+};
+```
+
 ### State
 
 #### `isEnabled() bool`

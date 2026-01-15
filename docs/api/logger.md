@@ -182,6 +182,84 @@ Invoked when the logger is initialized.
 Invoked when the logger is destroyed.
 - **Parameters**: `final_stats`
 
+### LoggerStats
+
+The `LoggerStats` struct provides comprehensive statistics for logging operations with cross-platform atomic counters:
+
+```zig
+pub const LoggerStats = struct {
+    /// Total number of records successfully logged.
+    total_records_logged: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Number of records filtered/dropped before output.
+    records_filtered: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Number of sink write errors encountered.
+    sink_errors: std.atomic.Value(Constants.AtomicUnsigned),
+    /// Number of currently active sinks.
+    active_sinks: std.atomic.Value(u32),
+    /// Total bytes written across all sinks.
+    bytes_written: std.atomic.Value(Constants.AtomicUnsigned),
+
+    /// Calculate records per second (requires elapsed seconds).
+    pub fn recordsPerSecond(self: *const LoggerStats, elapsed_seconds: f64) f64;
+
+    /// Calculate average bytes per record.
+    pub fn avgBytesPerRecord(self: *const LoggerStats) f64;
+
+    /// Calculate filter rate (0.0 - 1.0).
+    pub fn filterRate(self: *const LoggerStats) f64;
+
+    /// Calculate sink error rate (0.0 - 1.0).
+    pub fn sinkErrorRate(self: *const LoggerStats) f64;
+
+    /// Returns true if any records were filtered.
+    pub fn hasFiltered(self: *const LoggerStats) bool;
+
+    /// Returns true if any sink errors occurred.
+    pub fn hasSinkErrors(self: *const LoggerStats) bool;
+
+    /// Returns total records logged as u64.
+    pub fn getTotalLogged(self: *const LoggerStats) u64;
+
+    /// Returns filtered records count as u64.
+    pub fn getFiltered(self: *const LoggerStats) u64;
+
+    /// Returns sink errors count as u64.
+    pub fn getSinkErrors(self: *const LoggerStats) u64;
+
+    /// Returns bytes written as u64.
+    pub fn getBytesWritten(self: *const LoggerStats) u64;
+
+    /// Returns active sinks count as u32.
+    pub fn getActiveSinks(self: *const LoggerStats) u32;
+
+    /// Calculate bytes per second (requires elapsed time in ms).
+    pub fn bytesPerSecond(self: *const LoggerStats, elapsed_ms: i64) f64;
+};
+```
+
+**Usage Example:**
+
+```zig
+const stats = logger.getStats();
+
+// Basic stats
+std.debug.print("Total logged: {d}\n", .{stats.getTotalLogged()});
+std.debug.print("Bytes written: {d}\n", .{stats.getBytesWritten()});
+
+// Rate calculations
+std.debug.print("Filter rate: {d:.2}%\n", .{stats.filterRate() * 100});
+std.debug.print("Error rate: {d:.2}%\n", .{stats.sinkErrorRate() * 100});
+
+// State checks
+if (stats.hasSinkErrors()) {
+    std.debug.print("Sink errors detected!\n", .{});
+}
+
+// Throughput (with elapsed time)
+const elapsed_ms = std.time.milliTimestamp() - start_time;
+std.debug.print("Throughput: {d:.2} bytes/sec\n", .{stats.bytesPerSecond(elapsed_ms)});
+```
+
 ### `log_callback: ?*const fn (*const Record) anyerror!void`
 
 A generic callback invoked for every log record. Can be used for custom processing or integration with other systems.

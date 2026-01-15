@@ -26,6 +26,7 @@ const Record = @import("record.zig").Record;
 const Sink = @import("sink.zig").Sink;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Asynchronous logging subsystem for non-blocking I/O operations.
 ///
@@ -126,19 +127,69 @@ pub const AsyncLogger = struct {
         /// Computes the average latency per record processing.
         /// Complexity: O(1)
         pub fn averageLatencyNs(self: *const AsyncStats) u64 {
-            const written = @as(u64, self.records_written.load(.monotonic));
-            if (written == 0) return 0;
-            const total = @as(u64, self.total_latency_ns.load(.monotonic));
-            return total / written;
+            const written = Utils.atomicLoadU64(&self.records_written);
+            const total = Utils.atomicLoadU64(&self.total_latency_ns);
+            return if (written == 0) 0 else total / written;
         }
 
         /// Computes the reliable drop rate as a ratio of dropped vs queued records.
         /// Complexity: O(1)
         pub fn dropRate(self: *const AsyncStats) f64 {
-            const total = @as(u64, self.records_queued.load(.monotonic));
-            if (total == 0) return 0;
-            const dropped = @as(u64, self.records_dropped.load(.monotonic));
-            return @as(f64, @floatFromInt(dropped)) / @as(f64, @floatFromInt(total));
+            const total = Utils.atomicLoadU64(&self.records_queued);
+            const dropped = Utils.atomicLoadU64(&self.records_dropped);
+            return Utils.calculateErrorRate(dropped, total);
+        }
+
+        /// Returns total records queued as u64.
+        pub fn getQueued(self: *const AsyncStats) u64 {
+            return Utils.atomicLoadU64(&self.records_queued);
+        }
+
+        /// Returns total records written as u64.
+        pub fn getWritten(self: *const AsyncStats) u64 {
+            return Utils.atomicLoadU64(&self.records_written);
+        }
+
+        /// Returns total records dropped as u64.
+        pub fn getDropped(self: *const AsyncStats) u64 {
+            return Utils.atomicLoadU64(&self.records_dropped);
+        }
+
+        /// Returns total flush count as u64.
+        pub fn getFlushCount(self: *const AsyncStats) u64 {
+            return Utils.atomicLoadU64(&self.flush_count);
+        }
+
+        /// Returns max queue depth observed as u64.
+        pub fn getMaxQueueDepth(self: *const AsyncStats) u64 {
+            return Utils.atomicLoadU64(&self.max_queue_depth);
+        }
+
+        /// Returns buffer overflow count as u64.
+        pub fn getBufferOverflows(self: *const AsyncStats) u64 {
+            return Utils.atomicLoadU64(&self.buffer_overflows);
+        }
+
+        /// Checks if any records have been dropped.
+        pub fn hasDropped(self: *const AsyncStats) bool {
+            return self.records_dropped.load(.monotonic) > 0;
+        }
+
+        /// Checks if any buffer overflows occurred.
+        pub fn hasOverflows(self: *const AsyncStats) bool {
+            return self.buffer_overflows.load(.monotonic) > 0;
+        }
+
+        /// Calculate write success rate (0.0 - 1.0).
+        pub fn successRate(self: *const AsyncStats) f64 {
+            const queued = Utils.atomicLoadU64(&self.records_queued);
+            const written = Utils.atomicLoadU64(&self.records_written);
+            return Utils.calculateErrorRate(written, queued);
+        }
+
+        /// Calculate average latency in milliseconds.
+        pub fn averageLatencyMs(self: *const AsyncStats) f64 {
+            return @as(f64, @floatFromInt(self.averageLatencyNs())) / 1_000_000.0;
         }
     };
 

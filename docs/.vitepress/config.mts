@@ -213,7 +213,7 @@ gtag('config', '${GA_ID}');`,
           "priceCurrency": "USD"
         },
         "downloadUrl": "https://github.com/muhammad-fiaz/logly.zig",
-        "softwareVersion": "0.1.3", 
+        "softwareVersion": "0.1.4", 
         "license": "https://opensource.org/licenses/MIT"
       });
     } else {
@@ -360,6 +360,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Metrics", link: "/guide/metrics" },
           { text: "Distributed Tracing", link: "/guide/tracing" },
           { text: "Distributed Systems", link: "/guide/distributed" },
+          { text: "Telemetry (OpenTelemetry)", link: "/guide/telemetry" },
           { text: "Customizations", link: "/guide/customizations" },
         ],
       },
@@ -378,6 +379,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Sampler", link: "/api/sampler" },
           { text: "Redactor", link: "/api/redactor" },
           { text: "Metrics", link: "/api/metrics" },
+          { text: "Telemetry", link: "/api/telemetry" },
           { text: "Network", link: "/api/network" },
           { text: "Update Checker", link: "/api/update-checker" },
           { text: "Record", link: "/api/record" },
@@ -419,6 +421,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Redaction", link: "/examples/redaction" },
           { text: "Metrics", link: "/examples/metrics" },
           { text: "Tracing", link: "/examples/tracing" },
+          { text: "Telemetry", link: "/examples/telemetry" },
           { text: "Distributed Logging", link: "/examples/distributed" },
           { text: "Compression", link: "/examples/compression" },
           { text: "Thread Pool", link: "/examples/thread-pool" },
@@ -436,10 +439,11 @@ gtag('config', '${GA_ID}');`,
       { icon: "github", link: "https://github.com/muhammad-fiaz/logly.zig" },
     ],
 
-    footer: {
-      message: "Released under the MIT License.",
-      copyright: "Copyright © 2025 Muhammad Fiaz",
-    },
+footer: {
+  message: "Released under the MIT License.",
+  copyright: `Copyright © ${new Date().getFullYear()}–present Muhammad Fiaz`,
+},
+
 
     search: {
       provider: "local",

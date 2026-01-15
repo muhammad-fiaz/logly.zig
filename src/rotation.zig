@@ -115,14 +115,55 @@ pub const Rotation = struct {
             self.compression_errors.store(0, .monotonic);
         }
 
-        /// Returns total rotation count.
+        /// Returns total rotation count as u64.
         pub fn rotationCount(self: *const RotationStats) u64 {
-            return @as(u64, self.total_rotations.load(.monotonic));
+            return Utils.atomicLoadU64(&self.total_rotations);
         }
 
-        /// Returns total error count.
+        /// Returns total error count as u64.
         pub fn errorCount(self: *const RotationStats) u64 {
-            return @as(u64, self.rotation_errors.load(.monotonic));
+            return Utils.atomicLoadU64(&self.rotation_errors);
+        }
+
+        /// Returns files archived count as u64.
+        pub fn getFilesArchived(self: *const RotationStats) u64 {
+            return Utils.atomicLoadU64(&self.files_archived);
+        }
+
+        /// Returns files deleted count as u64.
+        pub fn getFilesDeleted(self: *const RotationStats) u64 {
+            return Utils.atomicLoadU64(&self.files_deleted);
+        }
+
+        /// Returns compression error count as u64.
+        pub fn getCompressionErrors(self: *const RotationStats) u64 {
+            return Utils.atomicLoadU64(&self.compression_errors);
+        }
+
+        /// Checks if any rotation errors occurred.
+        pub fn hasErrors(self: *const RotationStats) bool {
+            return self.rotation_errors.load(.monotonic) > 0;
+        }
+
+        /// Checks if any compression errors occurred.
+        pub fn hasCompressionErrors(self: *const RotationStats) bool {
+            return self.compression_errors.load(.monotonic) > 0;
+        }
+
+        /// Calculate rotation success rate (0.0 - 1.0).
+        pub fn successRate(self: *const RotationStats) f64 {
+            const total = Utils.atomicLoadU64(&self.total_rotations);
+            const errors = Utils.atomicLoadU64(&self.rotation_errors);
+            if (total == 0) return 1.0;
+            return 1.0 - Utils.calculateErrorRate(errors, total);
+        }
+
+        /// Calculate total error rate (0.0 - 1.0).
+        pub fn totalErrorRate(self: *const RotationStats) f64 {
+            const total = Utils.atomicLoadU64(&self.total_rotations);
+            const rot_errors = Utils.atomicLoadU64(&self.rotation_errors);
+            const comp_errors = Utils.atomicLoadU64(&self.compression_errors);
+            return Utils.calculateErrorRate(rot_errors + comp_errors, total);
         }
     };
 

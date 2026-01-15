@@ -33,8 +33,48 @@ const CURRENT_VERSION: []const u8 = version_info.version;
 /// Flag to ensure update check runs only once per process lifetime.
 var update_check_done = false;
 
+/// Flag to enable/disable update checking project-wide.
+/// When set to false, update checks are disabled for the entire application.
+/// This can be set at any point before the first logger initialization.
+var update_check_enabled = true;
+
 /// Mutex protecting the update check flag.
 var update_check_mutex = std.Thread.Mutex{};
+
+/// Enables or disables update checking project-wide.
+/// Call this function before initializing any loggers to ensure it takes effect.
+///
+/// Example:
+/// ```zig
+/// const logly = @import("logly");
+///
+/// // Disable update checking for the entire application
+/// logly.UpdateChecker.setEnabled(false);
+///
+/// // Now create loggers - they won't perform update checks
+/// const logger = logly.Logger.init(.{});
+/// ```
+pub fn setEnabled(enabled: bool) void {
+    update_check_mutex.lock();
+    defer update_check_mutex.unlock();
+    update_check_enabled = enabled;
+}
+
+/// Returns whether update checking is enabled.
+pub fn isEnabled() bool {
+    update_check_mutex.lock();
+    defer update_check_mutex.unlock();
+    return update_check_enabled;
+}
+
+/// Resets the update check state (useful for testing).
+/// This should only be called in test scenarios.
+pub fn resetState() void {
+    update_check_mutex.lock();
+    defer update_check_mutex.unlock();
+    update_check_done = false;
+    update_check_enabled = true;
+}
 
 /// Strips leading 'v' or 'V' prefix from version tags.
 /// GitHub releases often use "v1.0.0" format.
@@ -104,12 +144,13 @@ fn fetchLatestTag(allocator: std.mem.Allocator) ![]const u8 {
 /// Checks for updates in a background thread (runs only once per process).
 /// Returns a thread handle so callers can optionally join during shutdown.
 /// Fails silently on errors (no internet, api limits, etc).
+/// Respects the project-wide update_check_enabled flag.
 pub fn checkForUpdates(allocator: std.mem.Allocator, global_console_display: bool) ?std.Thread {
     update_check_mutex.lock();
     defer update_check_mutex.unlock();
 
-    // Prevent concurrent checks or running during tests
-    if (update_check_done or builtin.is_test) return null;
+    // Prevent concurrent checks, running during tests, or when disabled project-wide
+    if (update_check_done or builtin.is_test or !update_check_enabled) return null;
     update_check_done = true;
 
     return std.Thread.spawn(.{}, checkWorker, .{ allocator, global_console_display }) catch null;
@@ -165,4 +206,46 @@ fn checkWorker(allocator: std.mem.Allocator, global_console_display: bool) void 
         },
         else => {},
     }
+}
+
+// Tests
+test "setEnabled and isEnabled" {
+    // Initial state should be enabled
+    resetState();
+    try std.testing.expect(isEnabled());
+
+    // Disable
+    setEnabled(false);
+    try std.testing.expect(!isEnabled());
+
+    // Re-enable
+    setEnabled(true);
+    try std.testing.expect(isEnabled());
+
+    // Reset for other tests
+    resetState();
+}
+
+test "resetState" {
+    setEnabled(false);
+    try std.testing.expect(!isEnabled());
+
+    resetState();
+    try std.testing.expect(isEnabled());
+}
+
+test "stripVersionPrefix" {
+    try std.testing.expectEqualStrings("1.0.0", stripVersionPrefix("v1.0.0"));
+    try std.testing.expectEqualStrings("1.0.0", stripVersionPrefix("V1.0.0"));
+    try std.testing.expectEqualStrings("1.0.0", stripVersionPrefix("1.0.0"));
+    try std.testing.expectEqualStrings("", stripVersionPrefix(""));
+}
+
+test "compareVersions" {
+    // Test equal versions
+    try std.testing.expectEqual(VersionRelation.equal, compareVersions(CURRENT_VERSION));
+
+    // Test that comparison handles prefixes
+    const current_with_v = std.fmt.comptimePrint("v{s}", .{CURRENT_VERSION});
+    try std.testing.expectEqual(VersionRelation.equal, compareVersions(current_with_v));
 }

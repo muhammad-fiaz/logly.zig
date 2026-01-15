@@ -293,20 +293,96 @@ pub fn resetArena(self: *AsyncLogger) void
 
 ## AsyncStats Methods
 
-### dropRate
+### Getter Methods
 
+#### getQueued
+Get total records queued.
+```zig
+pub fn getQueued(self: *const AsyncStats) u64
+```
+
+#### getWritten
+Get total records written.
+```zig
+pub fn getWritten(self: *const AsyncStats) u64
+```
+
+#### getDropped
+Get total records dropped.
+```zig
+pub fn getDropped(self: *const AsyncStats) u64
+```
+
+#### getFlushCount
+Get total flush operations.
+```zig
+pub fn getFlushCount(self: *const AsyncStats) u64
+```
+
+#### getMaxQueueDepth
+Get maximum queue depth reached.
+```zig
+pub fn getMaxQueueDepth(self: *const AsyncStats) u64
+```
+
+#### getBufferOverflows
+Get total buffer overflows.
+```zig
+pub fn getBufferOverflows(self: *const AsyncStats) u64
+```
+
+### Boolean Checks
+
+#### hasDropped
+Check if any records have been dropped.
+```zig
+pub fn hasDropped(self: *const AsyncStats) bool
+```
+
+#### hasOverflows
+Check if any buffer overflows occurred.
+```zig
+pub fn hasOverflows(self: *const AsyncStats) bool
+```
+
+### Rate Calculations
+
+#### dropRate
 Calculate the percentage of dropped records.
-
 ```zig
 pub fn dropRate(self: *const AsyncStats) f64
 ```
 
-### averageLatencyNs
+#### successRate
+Calculate successful write rate (0.0 - 1.0).
+```zig
+pub fn successRate(self: *const AsyncStats) f64
+```
 
+#### throughputRecordsPerSecond
+Calculate records throughput per second.
+```zig
+pub fn throughputRecordsPerSecond(self: *const AsyncStats, elapsed_seconds: f64) f64
+```
+
+#### averageLatencyMs
+Get average latency in milliseconds.
+```zig
+pub fn averageLatencyMs(self: *const AsyncStats) f64
+```
+
+#### averageLatencyNs
 Get average latency in nanoseconds.
-
 ```zig
 pub fn averageLatencyNs(self: *const AsyncStats) u64
+```
+
+### Reset
+
+#### reset
+Reset all statistics to initial state.
+```zig
+pub fn reset(self: *AsyncStats) void
 ```
 
 ## AsyncFileWriter Methods
@@ -433,12 +509,12 @@ pub fn main() !void {
 
     // Check statistics
     const stats = async_logger.getStats();
-    std.debug.print("Queued: {d}, Written: {d}, Dropped: {d}\n", .{
-        stats.records_queued.load(.monotonic),
-        stats.records_written.load(.monotonic),
-        stats.records_dropped.load(.monotonic),
+    std.debug.print("Queued: {d}, Written: {d}, Dropped: {d}\\n", .{
+        stats.getQueued(),
+        stats.getWritten(),
+        stats.getDropped(),
     });
-    std.debug.print("Drop rate: {d:.2}%\n", .{stats.dropRate() * 100});
+    std.debug.print("Drop rate: {d:.2}%\\n", .{stats.dropRate() * 100});
 }
 ```
 

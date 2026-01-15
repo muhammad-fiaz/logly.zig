@@ -123,10 +123,10 @@ pub fn main() !void {
     std.debug.print("   ---------------------\n", .{});
 
     const stats = scheduler.getStats();
-    std.debug.print("   Tasks executed: {d}\n", .{stats.tasks_executed});
-    std.debug.print("   Tasks failed: {d}\n", .{stats.tasks_failed});
-    std.debug.print("   Files cleaned: {d}\n", .{stats.files_cleaned});
-    std.debug.print("   Bytes freed: {d}\n\n", .{stats.bytes_freed});
+    std.debug.print("   Tasks executed: {d}\n", .{stats.getExecuted()});
+    std.debug.print("   Tasks failed: {d}\n", .{stats.getFailed()});
+    std.debug.print("   Files cleaned: {d}\n", .{stats.getFilesCleaned()});
+    std.debug.print("   Bytes freed: {d}\n\n", .{stats.getBytesFreed()});
 
     std.debug.print("=== Scheduler Example Complete ===\n", .{});
 }

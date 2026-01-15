@@ -98,15 +98,15 @@ pub fn main() !void {
 
     for (0..10) |i| {
         if (sampler.shouldSample()) {
-            std.debug.print("Log {d} accepted\n", .{i});
+            std.debug.print("Log {d} accepted\\n", .{i});
         }
     }
 
     const stats = sampler.getStats();
-    std.debug.print("Stats: Total={d}, Accepted={d}, Rejected={d}\n", .{
-        stats.total_records_sampled.load(.monotonic),
-        stats.records_accepted.load(.monotonic),
-        stats.records_rejected.load(.monotonic),
+    std.debug.print("Stats: Total={d}, Accepted={d}, Rejected={d}\\n", .{
+        stats.getTotal(),
+        stats.getAccepted(),
+        stats.getRejected(),
     });
 }
 ```

@@ -56,13 +56,75 @@ pub const Rules = struct {
         messages_emitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         evaluations_skipped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
-        pub fn matchRate(self: *const RulesStats) f64 {
-            const evaluated = @as(u64, self.rules_evaluated.load(.monotonic));
-            if (evaluated == 0) return 0;
-            const matched = @as(u64, self.rules_matched.load(.monotonic));
-            return @as(f64, @floatFromInt(matched)) / @as(f64, @floatFromInt(evaluated));
+        /// Get total rules evaluated.
+        pub fn getRulesEvaluated(self: *const RulesStats) u64 {
+            return Utils.atomicLoadU64(&self.rules_evaluated);
         }
 
+        /// Get total rules matched.
+        pub fn getRulesMatched(self: *const RulesStats) u64 {
+            return Utils.atomicLoadU64(&self.rules_matched);
+        }
+
+        /// Get total messages emitted.
+        pub fn getMessagesEmitted(self: *const RulesStats) u64 {
+            return Utils.atomicLoadU64(&self.messages_emitted);
+        }
+
+        /// Get total evaluations skipped.
+        pub fn getEvaluationsSkipped(self: *const RulesStats) u64 {
+            return Utils.atomicLoadU64(&self.evaluations_skipped);
+        }
+
+        /// Check if any rules have been evaluated.
+        pub fn hasEvaluated(self: *const RulesStats) bool {
+            return self.getRulesEvaluated() > 0;
+        }
+
+        /// Check if any rules have matched.
+        pub fn hasMatched(self: *const RulesStats) bool {
+            return self.getRulesMatched() > 0;
+        }
+
+        /// Check if any messages have been emitted.
+        pub fn hasEmitted(self: *const RulesStats) bool {
+            return self.getMessagesEmitted() > 0;
+        }
+
+        /// Check if any evaluations have been skipped.
+        pub fn hasSkipped(self: *const RulesStats) bool {
+            return self.getEvaluationsSkipped() > 0;
+        }
+
+        /// Calculate match rate (0.0 - 1.0).
+        pub fn matchRate(self: *const RulesStats) f64 {
+            return Utils.calculateRate(
+                self.getRulesMatched(),
+                self.getRulesEvaluated(),
+            );
+        }
+
+        /// Calculate skip rate (0.0 - 1.0).
+        pub fn skipRate(self: *const RulesStats) f64 {
+            const evaluated = self.getRulesEvaluated();
+            const skipped = self.getEvaluationsSkipped();
+            return Utils.calculateRate(skipped, evaluated + skipped);
+        }
+
+        /// Calculate average messages per match.
+        pub fn avgMessagesPerMatch(self: *const RulesStats) f64 {
+            return Utils.calculateAverage(
+                self.getMessagesEmitted(),
+                self.getRulesMatched(),
+            );
+        }
+
+        /// Calculate efficiency rate (successful / total).
+        pub fn efficiencyRate(self: *const RulesStats) f64 {
+            return 1.0 - self.skipRate();
+        }
+
+        /// Reset all statistics to initial state.
         pub fn reset(self: *RulesStats) void {
             self.rules_evaluated.store(0, .monotonic);
             self.rules_matched.store(0, .monotonic);

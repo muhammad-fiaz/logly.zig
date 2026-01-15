@@ -43,20 +43,95 @@ pub const Redactor = struct {
         fields_redacted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         redaction_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
+        /// Get total values processed.
+        pub fn getTotalProcessed(self: *const RedactorStats) u64 {
+            return Utils.atomicLoadU64(&self.total_values_processed);
+        }
+
+        /// Get total values redacted.
+        pub fn getValuesRedacted(self: *const RedactorStats) u64 {
+            return Utils.atomicLoadU64(&self.values_redacted);
+        }
+
+        /// Get total patterns matched.
+        pub fn getPatternsMatched(self: *const RedactorStats) u64 {
+            return Utils.atomicLoadU64(&self.patterns_matched);
+        }
+
+        /// Get total fields redacted.
+        pub fn getFieldsRedacted(self: *const RedactorStats) u64 {
+            return Utils.atomicLoadU64(&self.fields_redacted);
+        }
+
+        /// Get total redaction errors.
+        pub fn getRedactionErrors(self: *const RedactorStats) u64 {
+            return Utils.atomicLoadU64(&self.redaction_errors);
+        }
+
+        /// Check if any values have been processed.
+        pub fn hasProcessed(self: *const RedactorStats) bool {
+            return self.getTotalProcessed() > 0;
+        }
+
+        /// Check if any values have been redacted.
+        pub fn hasRedacted(self: *const RedactorStats) bool {
+            return self.getValuesRedacted() > 0;
+        }
+
+        /// Check if any patterns have matched.
+        pub fn hasMatchedPatterns(self: *const RedactorStats) bool {
+            return self.getPatternsMatched() > 0;
+        }
+
+        /// Check if any errors have occurred.
+        pub fn hasErrors(self: *const RedactorStats) bool {
+            return self.getRedactionErrors() > 0;
+        }
+
         /// Calculate redaction rate (0.0 - 1.0)
         pub fn redactionRate(self: *const RedactorStats) f64 {
             return Utils.calculateRate(
-                Utils.atomicLoadU64(&self.values_redacted),
-                Utils.atomicLoadU64(&self.total_values_processed),
+                self.getValuesRedacted(),
+                self.getTotalProcessed(),
             );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const RedactorStats) f64 {
             return Utils.calculateErrorRate(
-                Utils.atomicLoadU64(&self.redaction_errors),
-                Utils.atomicLoadU64(&self.total_values_processed),
+                self.getRedactionErrors(),
+                self.getTotalProcessed(),
             );
+        }
+
+        /// Calculate success rate (0.0 - 1.0).
+        pub fn successRate(self: *const RedactorStats) f64 {
+            return 1.0 - self.errorRate();
+        }
+
+        /// Calculate pattern match rate (patterns matched / values redacted).
+        pub fn patternMatchRate(self: *const RedactorStats) f64 {
+            return Utils.calculateRate(
+                self.getPatternsMatched(),
+                self.getValuesRedacted(),
+            );
+        }
+
+        /// Calculate average redactions per processed value.
+        pub fn avgRedactionsPerValue(self: *const RedactorStats) f64 {
+            return Utils.calculateAverage(
+                self.getValuesRedacted(),
+                self.getTotalProcessed(),
+            );
+        }
+
+        /// Reset all statistics to initial state.
+        pub fn reset(self: *RedactorStats) void {
+            self.total_values_processed.store(0, .monotonic);
+            self.values_redacted.store(0, .monotonic);
+            self.patterns_matched.store(0, .monotonic);
+            self.fields_redacted.store(0, .monotonic);
+            self.redaction_errors.store(0, .monotonic);
         }
     };
 

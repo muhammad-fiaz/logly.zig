@@ -150,17 +150,85 @@ Rules system configuration values.
 
 ```zig
 pub const RulesConstants = struct {
+    /// Default indentation for rule messages
     pub const default_indent: []const u8 = "    ";
-    pub const default_prefix: []const u8 = "↳"; // Deprecated
-    pub const default_prefix_ascii: []const u8 = "|--"; // Deprecated
+    /// Unicode prefix character
+    pub const default_prefix: []const u8 = "↳";
+    /// ASCII prefix character
+    pub const default_prefix_ascii: []const u8 = "|--";
+    /// Maximum number of rules allowed
     pub const default_max_rules: usize = 1000;
+    /// Maximum messages per rule
     pub const default_max_messages: usize = 10;
 
-    /// Default symbols for message categories (ASCII)
-    pub const Symbols: struct { ... };
+    /// Unicode prefixes for message categories
+    pub const Prefixes = struct {
+        pub const cause: []const u8 = "⦿ cause:";
+        pub const fix: []const u8 = "✦ fix:";
+        pub const suggest: []const u8 = "→ suggest:";
+        pub const action: []const u8 = "▸ action:";
+        pub const docs: []const u8 = "📖 docs:";
+        pub const report: []const u8 = "🔗 report:";
+        pub const note: []const u8 = "ℹ note:";
+        pub const caution: []const u8 = "⚠ caution:";
+        pub const perf: []const u8 = "⚡ perf:";
+        pub const security: []const u8 = "🛡 security:";
+        pub const custom: []const u8 = "•";
+    };
+
     /// ASCII prefixes for message categories
-    pub const PrefixesAscii: struct { ... };
+    pub const PrefixesAscii = struct {
+        pub const cause: []const u8 = "[CAUSE]";
+        pub const fix: []const u8 = "[FIX]";
+        pub const suggest: []const u8 = "[SUGGEST]";
+        pub const action: []const u8 = "[ACTION]";
+        pub const docs: []const u8 = "[DOCS]";
+        pub const report: []const u8 = "[REPORT]";
+        pub const note: []const u8 = "[NOTE]";
+        pub const caution: []const u8 = "[CAUTION]";
+        pub const perf: []const u8 = "[PERF]";
+        pub const security: []const u8 = "[SECURITY]";
+        pub const custom: []const u8 = "[*]";
+    };
+
     /// ANSI color codes for message categories
-    pub const Colors: struct { ... };
+    pub const Colors = struct {
+        pub const cause: []const u8 = "91;1";    // Bright red
+        pub const fix: []const u8 = "96;1";      // Bright cyan
+        pub const suggest: []const u8 = "93;1";  // Bright yellow
+        pub const action: []const u8 = "91;1";   // Bold red
+        pub const docs: []const u8 = "35";       // Magenta
+        pub const report: []const u8 = "33";     // Yellow
+        pub const note: []const u8 = "37";       // White
+        pub const caution: []const u8 = "33";    // Yellow
+        pub const perf: []const u8 = "36";       // Cyan
+        pub const security: []const u8 = "95;1"; // Bright magenta
+        pub const custom: []const u8 = "37";     // White
+    };
 };
 ```
+
+## Example Usage
+
+```zig
+const Constants = @import("logly").Constants;
+
+// Use platform-appropriate atomic type
+var counter = std.atomic.Value(Constants.AtomicUnsigned).init(0);
+_ = counter.fetchAdd(1, .monotonic);
+
+// Get recommended thread count
+const threads = Constants.ThreadDefaults.recommendedThreadCount();
+
+// Use buffer size constants
+var buffer: [Constants.BufferSizes.message]u8 = undefined;
+
+// Time conversion
+const ms = timestamp / Constants.TimeConstants.ms_per_second;
+```
+
+## See Also
+
+- [Config API](config.md) - Configuration options
+- [Thread Pool API](thread-pool.md) - Thread pool configuration
+- [Rules API](rules.md) - Rules system configuration

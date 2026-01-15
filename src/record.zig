@@ -445,6 +445,66 @@ pub const Record = struct {
         return self.trace_id != null or self.span_id != null;
     }
 
+    /// Sets the parent span ID for hierarchical tracing.
+    ///
+    /// Arguments:
+    ///     parent_id: The parent span ID string.
+    pub fn setParentSpanId(self: *Record, parent_id: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, parent_id);
+        try self.owned_strings.append(self.allocator, owned);
+        self.parent_span_id = owned;
+    }
+
+    /// Sets the request ID for HTTP request tracking.
+    ///
+    /// Arguments:
+    ///     req_id: The request ID string.
+    pub fn setRequestId(self: *Record, req_id: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, req_id);
+        try self.owned_strings.append(self.allocator, owned);
+        self.request_id = owned;
+    }
+
+    /// Sets the session ID for user session tracking.
+    ///
+    /// Arguments:
+    ///     sess_id: The session ID string.
+    pub fn setSessionId(self: *Record, sess_id: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, sess_id);
+        try self.owned_strings.append(self.allocator, owned);
+        self.session_id = owned;
+    }
+
+    /// Sets the user ID for audit logging.
+    ///
+    /// Arguments:
+    ///     uid: The user ID string.
+    pub fn setUserId(self: *Record, uid: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, uid);
+        try self.owned_strings.append(self.allocator, owned);
+        self.user_id = owned;
+    }
+
+    /// Returns true if this record has a request ID.
+    pub fn hasRequestId(self: *const Record) bool {
+        return self.request_id != null;
+    }
+
+    /// Returns true if this record has a session ID.
+    pub fn hasSessionId(self: *const Record) bool {
+        return self.session_id != null;
+    }
+
+    /// Returns true if this record has a user ID.
+    pub fn hasUserId(self: *const Record) bool {
+        return self.user_id != null;
+    }
+
+    /// Returns true if this record has a parent span ID.
+    pub fn hasParentSpan(self: *const Record) bool {
+        return self.parent_span_id != null;
+    }
+
     /// Alias for addField
     pub const setField = addField;
     pub const put = addField;
@@ -457,6 +517,18 @@ pub const Record = struct {
 
     /// Alias for setCorrelationId
     pub const correlate = setCorrelationId;
+
+    /// Alias for setParentSpanId
+    pub const parentSpan = setParentSpanId;
+
+    /// Alias for setRequestId
+    pub const request = setRequestId;
+
+    /// Alias for setSessionId
+    pub const session = setSessionId;
+
+    /// Alias for setUserId
+    pub const user = setUserId;
 
     /// Alias for clone
     pub const copy = clone;
