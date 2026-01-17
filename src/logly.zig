@@ -1,4 +1,4 @@
-//! # Logly
+//! # Logly Documentations
 //!
 //! A fast, high-performance structured logging library for Zig.
 //!
@@ -77,6 +77,7 @@ pub const SinkConfig = @import("sink.zig").SinkConfig;
 pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;
 pub const Rotation = @import("rotation.zig").Rotation;
+pub const Constants = @import("constants.zig");
 pub const utils = @import("utils.zig");
 
 // Nested config types (convenience re-exports from Config)

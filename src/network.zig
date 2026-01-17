@@ -159,7 +159,7 @@ pub fn formatSyslog(
     message: []const u8,
 ) ![]u8 {
     const priority = (@as(u8, @intFromEnum(facility)) * 8) + @as(u8, @intFromEnum(severity));
-    const timestamp = std.time.timestamp();
+    const timestamp = Utils.currentSeconds();
 
     var res = std.ArrayList(u8){};
     errdefer res.deinit(allocator);

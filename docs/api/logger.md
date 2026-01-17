@@ -550,9 +550,12 @@ Enables the logger (logging is enabled by default).
 
 Temporarily disables all logging.
 
+
+
 ### `flush() !void`
 
 Flushes all sinks, ensuring all buffered data is written.
+Note: When `config.auto_flush` is true (default), this is called automatically after each log operation.
 
 ### `logSystemDiagnostics(src: ?std.builtin.SourceLocation) !void`
 

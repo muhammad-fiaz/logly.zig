@@ -164,7 +164,13 @@ defer allocator.free(message);
 4. **Layer defenses** - Use redaction with encryption and access controls
 5. **Document patterns** - Maintain list of redaction rules for compliance
 
-## New Compliance Presets (v0.0.9)
+## New Features (v0.1.5)
+ 
+ ### Improved Regex Engine
+ 
+ Redaction now supports a production-ready regex-like engine for pattern matching (see [Redaction Guide](/guide/redaction) for details).
+ 
+## New Compliance Presets (v0.1.5)
 
 ```zig
 const RedactionPresets = logly.RedactionPresets;

@@ -17,6 +17,7 @@
 
 const std = @import("std");
 const Level = @import("level.zig").Level;
+const Utils = @import("utils.zig");
 
 /// Represents a single log event.
 pub const Record = struct {
@@ -131,7 +132,7 @@ pub const Record = struct {
     ///     A new Record instance.
     pub fn init(allocator: std.mem.Allocator, level: Level, message: []const u8) Record {
         return .{
-            .timestamp = std.time.milliTimestamp(),
+            .timestamp = Utils.currentMillis(),
             .level = level,
             .message = message,
             .context = std.StringHashMap(std.json.Value).init(allocator),
@@ -162,7 +163,7 @@ pub const Record = struct {
         message: []const u8,
     ) Record {
         return .{
-            .timestamp = std.time.milliTimestamp(),
+            .timestamp = Utils.currentMillis(),
             .level = level,
             .custom_level_name = custom_name,
             .custom_level_color = custom_color,
@@ -190,7 +191,7 @@ pub const Record = struct {
         src: std.builtin.SourceLocation,
     ) Record {
         return .{
-            .timestamp = std.time.milliTimestamp(),
+            .timestamp = Utils.currentMillis(),
             .level = level,
             .message = message,
             .filename = src.file,
@@ -312,7 +313,7 @@ pub const Record = struct {
     /// Arguments:
     ///     start_time: The start timestamp from std.time.Timer or nanoTimestamp.
     pub fn setDurationSince(self: *Record, start_time: i128) void {
-        const now = std.time.nanoTimestamp();
+        const now = Utils.currentNanos();
         const duration = @as(u64, @intCast(@max(0, now - start_time)));
         self.duration_ns = duration;
     }

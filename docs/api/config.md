@@ -78,6 +78,10 @@ Optional global root path for all log files. If set, file sinks will be stored r
 
 If set, system diagnostics will be stored at this path. Default: `null`.
 
+#### `auto_flush: bool`
+
+Automatically flush sinks after every log operation. Creates immediate output but may impact performance in high-throughput applications. Default: `true`.
+
 ### Distributed Logging
 
 #### `distributed: DistributedConfig`

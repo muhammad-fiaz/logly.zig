@@ -166,6 +166,14 @@ Returns current timestamp in milliseconds.
 pub fn currentMillis() i64
 ```
 
+### currentNanos
+
+Returns current timestamp in nanoseconds.
+
+```zig
+pub fn currentNanos() i128
+```
+
 ### isSameDay
 
 Checks if two timestamps are on the same day.
@@ -212,6 +220,56 @@ Calculates elapsed time in seconds since start_time.
 
 ```zig
 pub fn elapsedSeconds(start_time: i64) u64
+```
+
+### durationSinceNs
+
+Calculates duration in nanoseconds since a start time.
+
+```zig
+pub fn durationSinceNs(start_time: i128) u64
+```
+
+## Math & Rate Utilities
+
+### calculateRate
+
+Calculates a rate (0.0 to 1.0) given a numerator and denominator.
+
+```zig
+pub fn calculateRate(numerator: u64, denominator: u64) f64
+```
+
+### calculateErrorRate
+
+Calculates error rate (0.0 to 1.0) given error count and total count.
+
+```zig
+pub fn calculateErrorRate(errors: u64, total: u64) f64
+```
+
+### calculateAverage
+
+Calculates average value given a sum and count.
+
+```zig
+pub fn calculateAverage(sum: u64, count: u64) f64
+```
+
+### calculateThroughput
+
+Calculates throughput (items/sec) given a count and duration in nanoseconds.
+
+```zig
+pub fn calculateThroughput(count: u64, elapsed_ns: u64) f64
+```
+
+### calculateBytesPerSecond
+
+Calculates bytes per second given bytes and duration in milliseconds.
+
+```zig
+pub fn calculateBytesPerSecond(bytes: u64, elapsed_ms: i64) f64
 ```
 
 ## Date Formatting
@@ -285,6 +343,40 @@ Formats a filename-safe datetime (YYYY-MM-DD_HH-MM-SS).
 
 ```zig
 pub fn formatFilenameSafe(buf: []u8, tc: TimeComponents) ![]u8
+```
+
+## Pattern Matching
+
+### matchRegexPattern
+
+Anchored regex-like matching starting from the beginning of the string.
+
+```zig
+pub fn matchRegexPattern(input: []const u8, pattern: []const u8) ?usize
+```
+
+**Supported Syntax:**
+- `.` - Any character
+- `*` - Zero or more of previous token
+- `+` - One or more of previous token
+- `?` - Zero or one of previous token
+- `\d`, `\D` - Digit / Non-digit
+- `\w`, `\W` - Alphanumeric + `_` / Non-alphanumeric
+- `\s`, `\S` - Whitespace / Non-whitespace
+
+### findRegexPattern
+
+Searches for the first occurrence of a regex pattern anywhere in the string.
+
+```zig
+pub fn findRegexPattern(input: []const u8, pattern: []const u8) ?[]const u8
+```
+
+**Example:**
+```zig
+if (Utils.findRegexPattern("error at line 42", "\\d+")) |match| {
+    // match = "42"
+}
 ```
 
 ## General Utilities

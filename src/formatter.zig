@@ -206,16 +206,16 @@ pub const Formatter = struct {
 
     /// Defines a color theme for log levels.
     pub const Theme = struct {
-        trace: []const u8 = "36", // Cyan
-        debug: []const u8 = "34", // Blue
-        info: []const u8 = "37", // White
-        notice: []const u8 = "96", // Bright Cyan
-        success: []const u8 = "32", // Green
-        warning: []const u8 = "33", // Yellow
-        err: []const u8 = "31", // Red
-        fail: []const u8 = "35", // Magenta
-        critical: []const u8 = "91", // Bright Red
-        fatal: []const u8 = "97;41", // White on Red
+        trace: []const u8 = Constants.Colors.LevelColors.trace,
+        debug: []const u8 = Constants.Colors.LevelColors.debug,
+        info: []const u8 = Constants.Colors.LevelColors.info,
+        notice: []const u8 = Constants.Colors.LevelColors.notice,
+        success: []const u8 = Constants.Colors.LevelColors.success,
+        warning: []const u8 = Constants.Colors.LevelColors.warning,
+        err: []const u8 = Constants.Colors.LevelColors.err,
+        fail: []const u8 = Constants.Colors.LevelColors.fail,
+        critical: []const u8 = Constants.Colors.LevelColors.critical,
+        fatal: []const u8 = Constants.Colors.LevelColors.fatal,
 
         pub fn getColor(self: Theme, level: Level) []const u8 {
             return switch (level) {
@@ -234,113 +234,120 @@ pub const Formatter = struct {
 
         /// Preset: bright colors.
         pub fn bright() Theme {
+            const T = Constants.Colors.Themes.bright;
             return .{
-                .trace = "96;1",
-                .debug = "94;1",
-                .info = "97;1",
-                .notice = "96;1",
-                .success = "92;1",
-                .warning = "93;1",
-                .err = "91;1",
-                .fail = "95;1",
-                .critical = "91;1;4",
-                .fatal = "97;41;1",
+                .trace = T.trace,
+                .debug = T.debug,
+                .info = T.info,
+                .notice = T.notice,
+                .success = T.success,
+                .warning = T.warning,
+                .err = T.err,
+                .fail = T.fail,
+                .critical = T.critical,
+                .fatal = T.fatal,
             };
         }
 
         /// Preset: dim colors.
         pub fn dim() Theme {
+            const T = Constants.Colors.Themes.dim;
             return .{
-                .trace = "36;2",
-                .debug = "34;2",
-                .info = "37;2",
-                .notice = "96;2",
-                .success = "32;2",
-                .warning = "33;2",
-                .err = "31;2",
-                .fail = "35;2",
-                .critical = "91;2",
-                .fatal = "97;41;2",
+                .trace = T.trace,
+                .debug = T.debug,
+                .info = T.info,
+                .notice = T.notice,
+                .success = T.success,
+                .warning = T.warning,
+                .err = T.err,
+                .fail = T.fail,
+                .critical = T.critical,
+                .fatal = T.fatal,
             };
         }
 
         /// Preset: minimal colors (only important levels colored).
         pub fn minimal() Theme {
+            const T = Constants.Colors.Themes.minimal;
             return .{
-                .trace = "90",
-                .debug = "90",
-                .info = "37",
-                .notice = "37",
-                .success = "32",
-                .warning = "33",
-                .err = "31",
-                .fail = "31",
-                .critical = "31;1",
-                .fatal = "31;1;4",
+                .trace = T.trace,
+                .debug = T.debug,
+                .info = T.info,
+                .notice = T.notice,
+                .success = T.success,
+                .warning = T.warning,
+                .err = T.err,
+                .fail = T.fail,
+                .critical = T.critical,
+                .fatal = T.fatal,
             };
         }
 
         /// Preset: neon colors (256-color palette).
         pub fn neon() Theme {
+            const T = Constants.Colors.Themes.neon;
             return .{
-                .trace = "38;5;51",
-                .debug = "38;5;33",
-                .info = "38;5;255",
-                .notice = "38;5;123",
-                .success = "38;5;46",
-                .warning = "38;5;226",
-                .err = "38;5;196",
-                .fail = "38;5;201",
-                .critical = "38;5;196;1",
-                .fatal = "38;5;231;48;5;196;1",
+                .trace = T.trace,
+                .debug = T.debug,
+                .info = T.info,
+                .notice = T.notice,
+                .success = T.success,
+                .warning = T.warning,
+                .err = T.err,
+                .fail = T.fail,
+                .critical = T.critical,
+                .fatal = T.fatal,
             };
         }
 
         /// Preset: pastel colors.
         pub fn pastel() Theme {
+            const T = Constants.Colors.Themes.pastel;
             return .{
-                .trace = "38;5;159",
-                .debug = "38;5;117",
-                .info = "38;5;188",
-                .notice = "38;5;153",
-                .success = "38;5;157",
-                .warning = "38;5;222",
-                .err = "38;5;210",
-                .fail = "38;5;218",
-                .critical = "38;5;203",
-                .fatal = "38;5;231;48;5;203",
+                .trace = T.trace,
+                .debug = T.debug,
+                .info = T.info,
+                .notice = T.notice,
+                .success = T.success,
+                .warning = T.warning,
+                .err = T.err,
+                .fail = T.fail,
+                .critical = T.critical,
+                .fatal = T.fatal,
             };
         }
 
         /// Preset: dark theme.
         pub fn dark() Theme {
+            const T = Constants.Colors.Themes.dark;
             return .{
-                .trace = "38;5;244",
-                .debug = "38;5;75",
-                .info = "38;5;252",
-                .notice = "38;5;81",
-                .success = "38;5;114",
-                .warning = "38;5;220",
-                .err = "38;5;203",
-                .fail = "38;5;168",
-                .critical = "38;5;196;1",
-                .fatal = "38;5;231;48;5;124;1",
+                .trace = T.trace,
+                .debug = T.debug,
+                .info = T.info,
+                .notice = T.notice,
+                .success = T.success,
+                .warning = T.warning,
+                .err = T.err,
+                .fail = T.fail,
+                .critical = T.critical,
+                .fatal = T.fatal,
             };
         }
 
         /// Preset: light theme.
         pub fn light() Theme {
+            const T = Constants.Colors.Themes.light;
             return .{
-                .trace = "38;5;242",
-                .debug = "38;5;24",
-                .info = "38;5;235",
-                .notice = "38;5;30",
-                .success = "38;5;28",
-                .warning = "38;5;130",
-                .err = "38;5;124",
-                .fail = "38;5;127",
-                .critical = "38;5;160;1",
-                .fatal = "38;5;231;48;5;160;1",
+                .trace = T.trace,
+                .debug = T.debug,
+                .info = T.info,
+                .notice = T.notice,
+                .success = T.success,
+                .warning = T.warning,
+                .err = T.err,
+                .fail = T.fail,
+                .critical = T.critical,
+                .fatal = T.fatal,
             };
         }
 
@@ -485,12 +492,13 @@ pub const Formatter = struct {
     /// Complexity: O(N)
     pub fn formatWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
-        const start_time = std.time.nanoTimestamp();
+        const start_time = Utils.currentNanos();
+        var bytes_formatted: u64 = 0;
         defer {
-            const elapsed = @as(u64, @intCast(@max(0, std.time.nanoTimestamp() - start_time)));
+            const current = Utils.currentNanos();
+            const elapsed = @as(u64, @intCast(@max(0, current - start_time)));
             _ = self.stats.total_records_formatted.fetchAdd(1, .monotonic);
-            _ = self.stats.total_bytes_formatted.fetchAdd(100, .monotonic); // Estimation, real size difficult to get here efficiently without double pass
-            // In a real implementation we would track precise bytes
+            _ = self.stats.total_bytes_formatted.fetchAdd(bytes_formatted, .monotonic);
             _ = elapsed;
         }
 
@@ -498,7 +506,9 @@ pub const Formatter = struct {
         defer self.mutex.unlock();
 
         if (self.configIsJson(config)) {
-            return self.formatJsonWithAllocator(record, config, scratch_allocator);
+            const res = try self.formatJsonWithAllocator(record, config, scratch_allocator);
+            bytes_formatted = res.len;
+            return res;
         }
 
         var buf: std.ArrayList(u8) = .empty;
@@ -515,7 +525,9 @@ pub const Formatter = struct {
             cb(0, buf.items.len);
         }
 
-        return buf.toOwnedSlice(alloc);
+        const res = try buf.toOwnedSlice(alloc);
+        bytes_formatted = res.len;
+        return res;
     }
 
     /// Internal helper to detect if JSON config is active.
@@ -548,13 +560,26 @@ pub const Formatter = struct {
     /// Complexity: O(N)
     pub fn formatToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
         const use_color = config.color and config.global_color_display;
-        // Use custom color if available, otherwise use standard level color or theme
-        var color_code = record.levelColor();
-        if (self.theme) |t| {
-            // Only override if record doesn't have a custom color
-            if (record.custom_level_color == null) {
+        // Use custom color if available (highest priority)
+        var color_code: []const u8 = if (record.custom_level_color) |c| c else "";
+
+        // If no custom color from record, check config.level_colors (overrides & themes)
+        if (color_code.len == 0) {
+            if (@hasField(@TypeOf(config), "level_colors")) {
+                color_code = config.level_colors.getColorForLevel(record.level);
+            }
+        }
+
+        // If still no color, check legacy theme on formatter
+        if (color_code.len == 0) {
+            if (self.theme) |t| {
                 color_code = t.getColor(record.level);
             }
+        }
+
+        // Fallback to default
+        if (color_code.len == 0) {
+            color_code = record.level.defaultColor();
         }
 
         // Check for custom log format

@@ -101,9 +101,9 @@ pub const ExporterStats = struct {
 
         if (Constants.AtomicSigned == i32) {
             // Use seconds for 32-bit systems to avoid overflow (valid until 2038)
-            self.last_export_time_ns.store(@truncate(std.time.timestamp()), .monotonic);
+            self.last_export_time_ns.store(@truncate(utils.currentSeconds()), .monotonic);
         } else {
-            self.last_export_time_ns.store(@truncate(std.time.nanoTimestamp()), .monotonic);
+            self.last_export_time_ns.store(@truncate(utils.currentNanos()), .monotonic);
         }
     }
 
@@ -409,7 +409,7 @@ pub const Telemetry = struct {
             .trace_id = trace_id,
             .parent_span_id = if (opts.parent_span_id) |pid| try self.allocator.dupe(u8, pid) else null,
             .name = try self.allocator.dupe(u8, name),
-            .start_time = std.time.nanoTimestamp(),
+            .start_time = utils.currentNanos(),
             .kind = opts.kind orelse .internal,
         };
 
@@ -428,7 +428,7 @@ pub const Telemetry = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        span.end_time = std.time.nanoTimestamp();
+        span.end_time = utils.currentNanos();
 
         // Calculate duration using utils helper
         const duration_ns = utils.durationSinceNs(span.start_time);
@@ -451,7 +451,7 @@ pub const Telemetry = struct {
 
     /// Trigger batch export based on config
     fn triggerBatchExport(self: *Telemetry) !void {
-        const now = std.time.timestamp();
+        const now = utils.currentSeconds();
         const elapsed_ms: u64 = if (now > self.last_batch_export)
             @intCast(now - self.last_batch_export)
         else
@@ -488,7 +488,7 @@ pub const Telemetry = struct {
             .value = value,
             .unit = opts.unit,
             .description = opts.description,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = utils.currentNanos(),
         });
 
         self.metric_count += 1;
@@ -1246,7 +1246,7 @@ pub const Span = struct {
 
         try self.events.append(self.allocator, .{
             .name = try self.allocator.dupe(u8, name),
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = utils.currentNanos(),
         });
     }
 
@@ -1264,7 +1264,7 @@ pub const Span = struct {
     /// Ends the span (sets end_time)
     pub fn end(self: *Span) void {
         if (self.end_time == 0) {
-            self.end_time = std.time.nanoTimestamp();
+            self.end_time = utils.currentNanos();
         }
     }
 

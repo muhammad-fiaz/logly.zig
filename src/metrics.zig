@@ -309,7 +309,7 @@ pub const Metrics = struct {
     /// Initializes a new Metrics instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: MetricsConfig) Metrics {
         return .{
-            .start_time = std.time.milliTimestamp(),
+            .start_time = Utils.currentMillis(),
             .sink_metrics = .empty,
             .history = .empty,
             .allocator = allocator,
@@ -378,7 +378,7 @@ pub const Metrics = struct {
             _ = self.level_counts[level_index].fetchAdd(1, .monotonic);
         }
 
-        self.last_record_time.store(@truncate(std.time.milliTimestamp()), .monotonic);
+        self.last_record_time.store(@truncate(Utils.currentMillis()), .monotonic);
 
         // Advanced features only when enabled
         if (self.config.enabled) {
@@ -533,7 +533,7 @@ pub const Metrics = struct {
     /// Returns:
     ///     A snapshot of the current metrics state.
     pub fn getSnapshot(self: *Metrics) Snapshot {
-        const now = std.time.milliTimestamp();
+        const now = Utils.currentMillis();
         const uptime_ms = now - self.start_time;
         const uptime_sec = @as(f64, @floatFromInt(uptime_ms)) / 1000.0;
 
@@ -593,7 +593,7 @@ pub const Metrics = struct {
         self.total_bytes.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         self.dropped_records.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         self.error_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-        self.start_time = std.time.milliTimestamp();
+        self.start_time = Utils.currentMillis();
 
         // Reset latency
         self.total_latency_ns.store(@as(Constants.AtomicUnsigned, 0), .monotonic);

@@ -433,7 +433,7 @@ pub const AsyncLogger = struct {
             self.mutex.lock();
             defer self.mutex.unlock();
 
-            const now = std.time.nanoTimestamp();
+            const now = Utils.currentNanos();
 
             // Handle overflow
             if (self.buffer.isFull()) {
@@ -475,7 +475,7 @@ pub const AsyncLogger = struct {
 
             if (!dropped) {
                 const entry = BufferEntry{
-                    .timestamp = std.time.milliTimestamp(),
+                    .timestamp = Utils.currentMillis(),
                     .formatted_message = owned_message,
                     .level_priority = level_priority,
                     .queued_at = now,
@@ -542,7 +542,7 @@ pub const AsyncLogger = struct {
         defer self.mutex.unlock();
 
         var batch: [64]BufferEntry = undefined;
-        const start_time = std.time.milliTimestamp();
+        const start_time = Utils.currentMillis();
         var total_flushed: u64 = 0;
         var total_bytes: u64 = 0;
 
@@ -562,7 +562,7 @@ pub const AsyncLogger = struct {
 
         if (total_flushed > 0) {
             _ = self.stats.flush_count.fetchAdd(1, .monotonic);
-            const elapsed = std.time.milliTimestamp() - start_time;
+            const elapsed = Utils.currentMillis() - start_time;
             if (self.flush_callback) |cb| {
                 cb(total_flushed, total_bytes, @intCast(elapsed));
             }
@@ -579,22 +579,22 @@ pub const AsyncLogger = struct {
     fn workerLoop(self: *AsyncLogger) void {
         if (self.on_worker_start) |cb| cb();
 
-        const start_time = std.time.milliTimestamp();
+        const start_time = Utils.currentMillis();
         defer {
             if (self.on_worker_stop) |cb| {
-                const uptime = @as(u64, @intCast(std.time.milliTimestamp() - start_time));
+                const uptime = @as(u64, @intCast(Utils.currentMillis() - start_time));
                 cb(self.stats.records_written.load(.monotonic), uptime);
             }
         }
 
         var batch: [64]BufferEntry = undefined;
-        var last_flush = std.time.milliTimestamp();
+        var last_flush = Utils.currentMillis();
 
         while (self.running.load(.acquire) or !self.buffer.isEmpty()) {
             self.mutex.lock();
 
             // Wait for entries or timeout
-            const now = std.time.milliTimestamp();
+            const now = Utils.currentMillis();
             const elapsed = now - last_flush;
 
             if (self.buffer.isEmpty()) {
@@ -612,11 +612,11 @@ pub const AsyncLogger = struct {
             self.mutex.unlock();
 
             if (count > 0) {
-                const write_start = std.time.nanoTimestamp();
+                const write_start = Utils.currentNanos();
                 var bytes_written: u64 = 0;
 
                 for (batch[0..count]) |entry| {
-                    const now_ns = std.time.nanoTimestamp();
+                    const now_ns = Utils.currentNanos();
                     const latency = now_ns - entry.queued_at;
                     if (self.config.max_latency_ms > 0) {
                         const threshold_ns = @as(i128, @intCast(self.config.max_latency_ms)) * std.time.ns_per_ms;
@@ -634,11 +634,11 @@ pub const AsyncLogger = struct {
                     }
                 }
 
-                const write_end = std.time.nanoTimestamp();
+                const write_end = Utils.currentNanos();
                 const write_time = write_end - write_start;
                 _ = self.stats.total_latency_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, write_time)))), .monotonic);
 
-                const now_ms = std.time.milliTimestamp();
+                const now_ms = Utils.currentMillis();
                 self.stats.last_flush_timestamp.store(@truncate(now_ms), .monotonic);
                 last_flush = now_ms;
 
@@ -864,7 +864,7 @@ pub const AsyncFileWriter = struct {
         }
 
         self.buffer.clearRetainingCapacity();
-        self.last_flush.store(@truncate(std.time.milliTimestamp()), .monotonic);
+        self.last_flush.store(@truncate(Utils.currentMillis()), .monotonic);
     }
 
     pub fn flushSync(self: *AsyncFileWriter) void {

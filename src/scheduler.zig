@@ -255,7 +255,7 @@ pub const Scheduler = struct {
                 .once => |delay| now_ms + @as(i64, @intCast(delay)),
                 .interval => |interval| now_ms + @as(i64, @intCast(interval)),
                 .daily => |daily| blk: {
-                    const now_sec = @divFloor(now_ms, 1000);
+                    const now_sec = Utils.currentSeconds();
                     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(now_sec) };
                     const day_seconds = epoch.getDaySeconds();
 
@@ -376,7 +376,7 @@ pub const Scheduler = struct {
         pub fn uptimeSeconds(self: *const SchedulerStats) i64 {
             const start_ts: i64 = self.start_time.load(.monotonic);
             if (start_ts == 0) return 0;
-            return @divFloor(std.time.milliTimestamp() - start_ts, 1000);
+            return @divFloor(Utils.currentMillis() - start_ts, 1000);
         }
 
         /// Returns average tasks per hour.
@@ -511,7 +511,7 @@ pub const Scheduler = struct {
             return cb();
         }
         return .{
-            .timestamp = std.time.milliTimestamp(),
+            .timestamp = Utils.currentMillis(),
             .log_count = self.stats.getExecuted(),
             .error_count = self.stats.getFailed(),
         };
@@ -566,7 +566,7 @@ pub const Scheduler = struct {
         }
         errdefer if (owned_config.file_pattern) |p| self.allocator.free(p);
 
-        const now = std.time.milliTimestamp();
+        const now = Utils.currentMillis();
         const task = ScheduledTask{
             .name = owned_name,
             .task_type = task_type,
@@ -654,7 +654,7 @@ pub const Scheduler = struct {
         defer self.mutex.unlock();
 
         const owned_name = try self.allocator.dupe(u8, name);
-        const now = std.time.milliTimestamp();
+        const now = Utils.currentMillis();
 
         const task = ScheduledTask{
             .name = owned_name,
@@ -730,7 +730,7 @@ pub const Scheduler = struct {
         if (self.running.load(.acquire)) return;
 
         // Record start time for uptime calculations (truncated on 32-bit platforms)
-        self.stats.start_time.store(@truncate(std.time.milliTimestamp()), .monotonic);
+        self.stats.start_time.store(@truncate(Utils.currentMillis()), .monotonic);
 
         self.running.store(true, .release);
         self.worker_thread = try std.Thread.spawn(.{}, schedulerLoop, .{self});
@@ -782,7 +782,7 @@ pub const Scheduler = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const now = std.time.milliTimestamp();
+        const now = Utils.currentMillis();
         for (self.tasks.items, 0..) |*task, i| {
             if (task.enabled and !task.running and task.next_run <= now) {
                 // Check dependencies
@@ -866,7 +866,7 @@ pub const Scheduler = struct {
         if (task.retries_remaining > 0) {
             task.retries_remaining -= 1;
             const delay = @as(u64, @intFromFloat(@as(f32, @floatFromInt(task.retry_policy.interval_ms)) * std.math.pow(f32, task.retry_policy.backoff_multiplier, @floatFromInt(task.retry_policy.max_retries - task.retries_remaining))));
-            task.next_run = std.time.milliTimestamp() + @as(i64, @intCast(delay));
+            task.next_run = Utils.currentMillis() + @as(i64, @intCast(delay));
 
             std.log.warn("Scheduled task '{s}' failed ({s}), retrying in {d}ms ({d} retries left)", .{ task.name, @errorName(err), delay, task.retries_remaining });
         } else {
@@ -909,8 +909,8 @@ pub const Scheduler = struct {
     }
 
     fn executeTask(self: *Scheduler, task: *ScheduledTask) !void {
-        const now = std.time.milliTimestamp();
-        const start_ns = std.time.nanoTimestamp();
+        const now = Utils.currentMillis();
+        const start_ns = Utils.currentNanos();
 
         // Start telemetry span if enabled
         var maybe_span: ?Span = null;
@@ -1024,7 +1024,7 @@ pub const Scheduler = struct {
 
     fn performCleanup(self: *Scheduler, path: []const u8, config: ScheduledTask.TaskConfig) !CleanupResult {
         var result = CleanupResult{};
-        const now = std.time.timestamp();
+        const now = Utils.currentSeconds();
         const max_age = @as(i64, @intCast(config.max_age_seconds));
 
         var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch {
@@ -1214,7 +1214,7 @@ pub const Scheduler = struct {
         defer dir.close();
 
         var iter = dir.iterate();
-        const now = std.time.timestamp();
+        const now = Utils.currentSeconds();
         while (try iter.next()) |entry| {
             if (entry.kind != .file) continue;
 
@@ -1627,7 +1627,7 @@ test "scheduler basic" {
 }
 
 test "schedule next run time" {
-    const now = std.time.milliTimestamp();
+    const now = Utils.currentMillis();
 
     const interval = Scheduler.Schedule{ .interval = 5000 };
     const next = interval.nextRunTime(now);

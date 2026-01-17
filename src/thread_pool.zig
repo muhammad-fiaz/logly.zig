@@ -526,7 +526,7 @@ pub const ThreadPool = struct {
 
         const item = WorkItem{
             .task = task,
-            .submitted_at = std.time.milliTimestamp(),
+            .submitted_at = Utils.currentMillis(),
             .priority = priority,
         };
 
@@ -565,7 +565,7 @@ pub const ThreadPool = struct {
         if (!self.running.load(.acquire)) return 0;
 
         var submitted: usize = 0;
-        const now = std.time.milliTimestamp();
+        const now = Utils.currentMillis();
 
         self.work_queue.mutex.lock();
         defer self.work_queue.mutex.unlock();
@@ -614,7 +614,7 @@ pub const ThreadPool = struct {
 
         const item = WorkItem{
             .task = task,
-            .submitted_at = std.time.milliTimestamp(),
+            .submitted_at = Utils.currentMillis(),
             .priority = priority,
         };
 
@@ -634,7 +634,7 @@ pub const ThreadPool = struct {
 
         const item = WorkItem{
             .task = task,
-            .submitted_at = std.time.milliTimestamp(),
+            .submitted_at = Utils.currentMillis(),
             .priority = priority,
         };
 
@@ -682,7 +682,7 @@ pub const ThreadPool = struct {
             }
 
             if (item) |work| {
-                const start_time = std.time.nanoTimestamp();
+                const start_time = Utils.currentNanos();
                 const wait_time = start_time - work.submitted_at;
 
                 // Get arena allocator if available
@@ -698,7 +698,7 @@ pub const ThreadPool = struct {
                     _ = arena.reset(.retain_capacity);
                 }
 
-                const exec_time = std.time.nanoTimestamp() - start_time;
+                const exec_time = Utils.currentNanos() - start_time;
                 _ = pool.stats.total_wait_time_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, wait_time)))), .monotonic);
                 _ = pool.stats.total_exec_time_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, exec_time)))), .monotonic);
                 _ = pool.stats.tasks_completed.fetchAdd(1, .monotonic);

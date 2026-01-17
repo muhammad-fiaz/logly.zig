@@ -21,6 +21,24 @@ pub fn main() !void {
 
     // Standard levels with default colors
     try logger.info("Standard Info - white", @src());
+
+    // Demonstrate global color overrides
+    std.debug.print("\n=== Global Color Overrides ===\n\n", .{});
+    var config = logly.Config.default();
+    config.level_colors.info_color = "36"; // Cyan
+    config.level_colors.warning_color = "33;1"; // Bold Yellow
+    logger.configure(config);
+
+    try logger.info("Info - now Cyan", @src());
+    try logger.warning("Warning - now Bold Yellow", @src());
+
+    // Demonstrate theme presets
+    std.debug.print("\n=== Theme Presets ===\n\n", .{});
+    config.level_colors.theme_preset = .neon;
+    logger.configure(config);
+    try logger.info("Info - Neon Theme", @src());
+    try logger.warning("Warning - Neon Theme", @src());
+
     try logger.success("Success message - green", @src());
     try logger.warning("Warning message - yellow", @src());
     try logger.err("Error message - red", @src());
@@ -115,9 +133,9 @@ pub fn main() !void {
     const audit = CustomLevel.initFull("AUDIT", 35, "36", "96;1", "36;2", "38;5;81");
     std.debug.print("CustomLevel.initFull - AUDIT:\n", .{});
     std.debug.print("  effective: {s}\n", .{audit.effectiveColor()});
-    std.debug.print("  bright:    {?s}\n", .{audit.getBrightColor()});
-    std.debug.print("  dim:       {?s}\n", .{audit.getDimColor()});
-    std.debug.print("  256-color: {?s}\n", .{audit.get256Color()});
+    std.debug.print("  bright:    {s}\n", .{audit.getBrightColor()});
+    std.debug.print("  dim:       {s}\n", .{audit.getDimColor()});
+    std.debug.print("  256-color: {s}\n", .{audit.get256Color()});
 
     // RGB custom level
     const metric = CustomLevel.initRgb("METRIC", 25, 50, 205, 50);

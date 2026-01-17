@@ -235,7 +235,7 @@ pub const Rotation = struct {
             .interval = interval,
             .size_limit = size_limit,
             .retention = retention,
-            .last_rotation = @divFloor(std.time.milliTimestamp(), 1000),
+            .last_rotation = Utils.currentSeconds(),
         };
 
         // Smart default naming based on interval
@@ -348,7 +348,7 @@ pub const Rotation = struct {
         defer self.mutex.unlock();
 
         var should_rotate = false;
-        const now = @divFloor(std.time.milliTimestamp(), 1000);
+        const now = Utils.currentSeconds();
 
         // Check time-based rotation
         if (self.interval) |interval| {
@@ -379,7 +379,7 @@ pub const Rotation = struct {
     }
 
     fn performRotation(self: *Rotation, file_ptr: *std.fs.File) !void {
-        const start_time = std.time.milliTimestamp();
+        const start_time = Utils.currentMillis();
 
         // 1. Generate new filename
         const rotated_path = try self.generateRotatedPath();
@@ -417,10 +417,10 @@ pub const Rotation = struct {
             .truncate = true,
         });
 
-        self.last_rotation = @divFloor(std.time.milliTimestamp(), 1000);
+        self.last_rotation = Utils.currentSeconds();
         _ = self.stats.total_rotations.fetchAdd(1, .monotonic);
 
-        const elapsed = @as(Constants.AtomicUnsigned, @intCast(std.time.milliTimestamp() - start_time));
+        const elapsed = @as(Constants.AtomicUnsigned, @intCast(Utils.currentMillis() - start_time));
         self.stats.last_rotation_time_ms.store(elapsed, .monotonic);
         if (self.on_rotation_complete) |cb| cb(self.base_path, rotated_path, @as(u64, @intCast(elapsed)));
 
@@ -465,7 +465,7 @@ pub const Rotation = struct {
     }
 
     fn generateRotatedPath(self: *Rotation) ![]u8 {
-        const now_ms = std.time.milliTimestamp();
+        const now_ms = Utils.currentMillis();
         const now = @divFloor(now_ms, 1000);
         const millis = @as(u64, @intCast(@mod(now_ms, 1000)));
         var name_buf: []u8 = undefined;
@@ -674,7 +674,7 @@ pub const Rotation = struct {
 
                 // Age check
                 if (self.max_age_seconds) |max_age| {
-                    const age = std.time.nanoTimestamp() - stat.mtime;
+                    const age = Utils.currentNanos() - stat.mtime;
                     if (age > max_age * std.time.ns_per_s) {
                         try self.handleRetentionFile(full_path, is_compressed);
                         continue; // handled, don't add to list

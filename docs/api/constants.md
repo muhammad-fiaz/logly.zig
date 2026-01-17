@@ -292,20 +292,15 @@ pub const Colors = struct {
 
     /// Theme presets
     pub const Themes = struct {
-        pub const default = struct {
-            pub const trace: []const u8 = "36";
-            pub const debug: []const u8 = "34";
-            pub const info: []const u8 = "37";
-            pub const success: []const u8 = "32";
-            pub const warning: []const u8 = "33";
-            pub const err: []const u8 = "31";
-            pub const critical: []const u8 = "91";
-        };
-        pub const bright = struct { ... };  // Bold colors
-        pub const neon = struct { ... };    // 256-color vivid
-        pub const pastel = struct { ... };  // Soft colors
-        pub const dark = struct { ... };    // Dark terminal
-        pub const light = struct { ... };   // Light terminal
+        pub const default_theme = struct { ... };  // Standard colors
+        pub const bright = struct { ... };         // Bold/bright colors
+        pub const dim = struct { ... };            // Dim/muted colors
+        pub const underlined = struct { ... };     // Underlined colors
+        pub const minimal = struct { ... };        // Subtle gray tones
+        pub const neon = struct { ... };           // Vivid 256-color
+        pub const pastel = struct { ... };         // Soft pastel colors
+        pub const dark = struct { ... };           // Dark terminal optimized
+        pub const light = struct { ... };          // Light terminal optimized
     };
 
     /// Generate 256-color foreground code

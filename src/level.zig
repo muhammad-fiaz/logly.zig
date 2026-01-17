@@ -18,6 +18,7 @@
 //! Custom levels can be created with arbitrary priorities and colors.
 
 const std = @import("std");
+const Constants = @import("constants.zig");
 
 /// Defines the standard logging levels and their priorities.
 ///
@@ -85,81 +86,86 @@ pub const Level = enum(u8) {
 
     /// Returns the default ANSI color code for this level.
     pub fn defaultColor(self: Level) []const u8 {
+        const T = Constants.Colors.Themes.default_theme;
         return switch (self) {
-            .trace => "36", // Cyan
-            .debug => "34", // Blue
-            .info => "37", // White
-            .notice => "96", // Bright Cyan
-            .success => "32", // Green
-            .warning => "33", // Yellow
-            .err => "31", // Red
-            .fail => "35", // Magenta
-            .critical => "91", // Bright Red
-            .fatal => "97;41", // White on Red background
+            .trace => T.trace,
+            .debug => T.debug,
+            .info => T.info,
+            .notice => T.notice,
+            .success => T.success,
+            .warning => T.warning,
+            .err => T.err,
+            .fail => T.fail,
+            .critical => T.critical,
+            .fatal => T.fatal,
         };
     }
 
     /// Returns the bright (bold) ANSI color code for this level.
     pub fn brightColor(self: Level) []const u8 {
+        const T = Constants.Colors.Themes.bright;
         return switch (self) {
-            .trace => "96;1", // Bright Cyan Bold
-            .debug => "94;1", // Bright Blue Bold
-            .info => "97;1", // Bright White Bold
-            .notice => "96;1", // Bright Cyan Bold
-            .success => "92;1", // Bright Green Bold
-            .warning => "93;1", // Bright Yellow Bold
-            .err => "91;1", // Bright Red Bold
-            .fail => "95;1", // Bright Magenta Bold
-            .critical => "91;1;4", // Bright Red Bold Underline
-            .fatal => "97;41;1", // Bright White on Red Bold
+            .trace => T.trace,
+            .debug => T.debug,
+            .info => T.info,
+            .notice => T.notice,
+            .success => T.success,
+            .warning => T.warning,
+            .err => T.err,
+            .fail => T.fail,
+            .critical => T.critical,
+            .fatal => T.fatal,
         };
     }
 
     /// Returns the dim ANSI color code for this level.
     pub fn dimColor(self: Level) []const u8 {
+        const T = Constants.Colors.Themes.dim;
         return switch (self) {
-            .trace => "36;2", // Cyan Dim
-            .debug => "34;2", // Blue Dim
-            .info => "37;2", // White Dim
-            .notice => "96;2", // Bright Cyan Dim
-            .success => "32;2", // Green Dim
-            .warning => "33;2", // Yellow Dim
-            .err => "31;2", // Red Dim
-            .fail => "35;2", // Magenta Dim
-            .critical => "91;2", // Bright Red Dim
-            .fatal => "97;41;2", // White on Red Dim
+            .trace => T.trace,
+            .debug => T.debug,
+            .info => T.info,
+            .notice => T.notice,
+            .success => T.success,
+            .warning => T.warning,
+            .err => T.err,
+            .fail => T.fail,
+            .critical => T.critical,
+            .fatal => T.fatal,
         };
     }
 
     /// Returns the underlined ANSI color code for this level.
     pub fn underlineColor(self: Level) []const u8 {
+        const T = Constants.Colors.Themes.underlined;
         return switch (self) {
-            .trace => "36;4",
-            .debug => "34;4",
-            .info => "37;4",
-            .notice => "96;4",
-            .success => "32;4",
-            .warning => "33;4",
-            .err => "31;4",
-            .fail => "35;4",
-            .critical => "91;4",
-            .fatal => "97;41;4",
+            .trace => T.trace,
+            .debug => T.debug,
+            .info => T.info,
+            .notice => T.notice,
+            .success => T.success,
+            .warning => T.warning,
+            .err => T.err,
+            .fail => T.fail,
+            .critical => T.critical,
+            .fatal => T.fatal,
         };
     }
 
     /// Returns a 256-color palette code for this level.
     pub fn color256(self: Level) []const u8 {
+        const T = Constants.Colors.Themes.neon;
         return switch (self) {
-            .trace => "38;5;51", // Cyan
-            .debug => "38;5;33", // Blue
-            .info => "38;5;255", // White
-            .notice => "38;5;123", // Bright Cyan
-            .success => "38;5;46", // Green
-            .warning => "38;5;226", // Yellow
-            .err => "38;5;196", // Red
-            .fail => "38;5;201", // Magenta
-            .critical => "38;5;196;1", // Red Bold
-            .fatal => "38;5;231;48;5;196;1", // White on Red Bold
+            .trace => T.trace,
+            .debug => T.debug,
+            .info => T.info,
+            .notice => T.notice,
+            .success => T.success,
+            .warning => T.warning,
+            .err => T.err,
+            .fail => T.fail,
+            .critical => T.critical,
+            .fatal => T.fatal,
         };
     }
 

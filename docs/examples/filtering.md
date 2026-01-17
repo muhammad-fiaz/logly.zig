@@ -135,10 +135,16 @@ logger.setFilter(&filter);
 - **Debugging**: Enable debug for specific modules only
 - **Security**: Filter out PII-containing messages
 
-## New Methods (v0.0.9)
-
-```zig
-var filter = logly.Filter.init(allocator);
+## New Features (v0.1.5)
+ 
+ ### Improved Regex Engine
+ 
+ The filter now supports a production-ready regex-like engine for `allowRegex` and `denyRegex` (see [Filtering Guide](/guide/filtering) for details).
+ 
+ ### Batch Evaluation
+ 
+ ```zig
+ var filter = logly.Filter.init(allocator);
 defer filter.deinit();
 
 // Add rules

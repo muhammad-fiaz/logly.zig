@@ -112,7 +112,15 @@ pub const Config = struct {
     /// Resolve memory addresses in stack traces to function names and file locations.
     /// Requires `capture_stack_trace` to be true (or implicit capture for Error/Critical).
     /// This provides human-readable stack traces but has a performance cost.
+    /// Resolve memory addresses in stack traces to function names and file locations.
+    /// Requires `capture_stack_trace` to be true (or implicit capture for Error/Critical).
+    /// This provides human-readable stack traces but has a performance cost.
     symbolize_stack_trace: bool = false,
+
+    /// Automatically flush sinks after every log operation.
+    /// Creates immediate output but may impact performance in high-throughput applications.
+    /// Default: true
+    auto_flush: bool = true,
 
     /// Automatically add a console sink on logger initialization.
     /// Only creates sink when both auto_sink=true and global_console_display=true.

@@ -219,6 +219,9 @@ Logly.Zig supports a wide range of platforms and architectures:
   - Provider-specific exporters: Jaeger, Zipkin, Datadog, Google Cloud, GA4, AWS X-Ray, Azure
 - **Scheduler Compression Presets**: Pre-configured task configurations.
   - `hourlyArchive()`, `compressOnRotation()`, `sizeBasedCompression()`, `diskUsageTriggered()`, `recursiveCompression()`
+- **Improved Regex Engine**: Production-ready backtracking regex-like engine for precise log filtering and redaction.
+  - Supports standard quantifiers (`*`, `+`, `?`) and character classes (`\d`, `\w`, `\s`).
+  - Centralized in `Utils` for consistent behavior across all modules.
 - **Enhanced Color System**: Comprehensive color support with theme presets, 256-color palette, and RGB colors.
 - **Theme Presets**: Built-in themes (default, bright, dim, minimal, neon, pastel, dark, light).
 - **Per-Level Color Override**: Set individual colors for each log level while using a theme.

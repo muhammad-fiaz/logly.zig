@@ -97,7 +97,7 @@ const color = level.defaultColor(); // Returns "97;41" (white on red)
 
 ### brightColor (v0.1.5)
 
-Returns the bright/bold color variant.
+Returns the bright/bold color variant. Uses `Constants.Colors.Themes.bright`.
 
 ```zig
 const level = Level.trace;
@@ -106,7 +106,7 @@ const bright = level.brightColor(); // Returns "96;1" (bright cyan bold)
 
 ### dimColor (v0.1.5)
 
-Returns the dim color variant.
+Returns the dim color variant. Uses `Constants.Colors.Themes.dim`.
 
 ```zig
 const level = Level.info;
@@ -115,7 +115,7 @@ const dim = level.dimColor(); // Returns "37;2" (white dim)
 
 ### underlineColor (v0.1.5)
 
-Returns the underline color variant.
+Returns the underline color variant. Uses `Constants.Colors.Themes.underlined`.
 
 ```zig
 const level = Level.warning;
@@ -124,7 +124,7 @@ const underline = level.underlineColor(); // Returns "33;4" (yellow underline)
 
 ### color256 (v0.1.5)
 
-Returns the 256-color palette code.
+Returns the 256-color palette code. Uses `Constants.Colors.Themes.neon`.
 
 ```zig
 const level = Level.success;

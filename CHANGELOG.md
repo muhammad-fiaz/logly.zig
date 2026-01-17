@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Improved Regex Engine**: Replaced basic wildcard matching with a robust, backtracking regex-like engine in `Utils`.
+  - Supports standard quantifiers: `*` (zero or more), `+` (one or more), `?` (optional).
+  - Supports character classes: `\d` (digit), `\w` (alphanumeric), `\s` (whitespace) and their negated forms (`\D`, `\W`, `\S`).
+  - Supports `.` for matching any single character.
+  - Added `Utils.matchRegexPattern` for anchored matching at string start.
+  - Added `Utils.findRegexPattern` for searching patterns anywhere in a string.
+- **Enhanced Filter & Redactor**: Unified all pattern matching to use the centralized `Utils` regex engine for consistency and improved performance.
+- **Optimized Search Logic**: Refactored `Filter` rule evaluation to use `findRegexPattern`, eliminating manual search loops.
+
+- **Auto-Flush**: New configuration option `auto_flush` (defaults to `true`) in `Config` struct.
+  - Automatically flushes all sinks after every log operation.
+  - Ensures immediate output visibility for both standard logs and custom levels.
+  - Prevents log output reordering issues relative to `std.debug.print`.
+  - Applies to all logging methods including `log`, `logCustomLevel`, `logError`, `logTimed`, and `logSystemDiagnostics`.
 - **Zstd Compression Support**: High-performance Zstandard compression algorithm for log files.
   - New algorithm: `CompressionAlgorithm.zstd` with excellent compression ratios and very fast decompression.
   - Compression presets: `zstd()`, `zstdFast()`, `zstdBest()`, `zstdProduction()`.
@@ -202,6 +216,24 @@ This section documents breaking changes and renamed APIs for migration:
 - All atomic counters across `Sampler`, `Filter`, `Logger`, and `Scheduler` modules now use `Constants.AtomicUnsigned` for proper 32-bit and 64-bit architecture support.
 
 - **TelemetryConfig Factory Functions**: Added preset configurations for all providers (`jaeger()`, `zipkin()`, `datadog()`, `googleCloud()`, `googleAnalytics()`, `googleTagManager()`, `awsXray()`, `azure()`, `otelCollector()`, `file()`, `custom()`, `highThroughput()`, `development()`).
+
+**Refactoring & Optimization**:
+- **Centralized Time Management**: Unified all timestamp retrieval through the `Utils` module.
+  - Replaced all direct `std.time` calls (`timestamp`, `nanoTimestamp`, `milliTimestamp`) with `Utils.currentSeconds()`, `Utils.currentNanos()`, and `Utils.currentMillis()`.
+  - Ensures consistent time source across all modules (Logger, Telemetry, Rotation, Compression, Scheduler, etc.).
+- **Precise Formatter Statistics**: Implemented exact byte tracking in `Formatter.formatWithAllocator`.
+  - Replaced estimated constant (100 bytes) with precise length of the actual formatted message.
+  - Improves accuracy of `total_bytes_formatted` in `FormatterStats`.
+- **Atomic Operation Utilities**: Consolidated atomic load/store operations in `Utils` for consistent cross-platform behavior.
+- **Math & Rate Utilities**: Centralized common calculations like `calculateRate`, `calculateAverage`, and `calculateErrorRate` in `Utils` for efficient reuse in all statistics modules.
+
+- **Advanced Logging Filter**: Major enhancements to the filtering engine.
+  - Added support for multiple logical modes: `all` (AND), `any` (OR), `none` (NOR), and `not_all` (NAND).
+  - Expanded rule types including `module_regex`, `message_regex`, `source_file_match`, `function_match`, `trace_id_match`, and `context_value_match`.
+  - Added support for context-based filtering with pattern matching on specific keys.
+  - Implemented regular expression (regex-like) matching for module names, messages, and source metadata.
+  - Added numerous convenience aliases (`allow`, `deny`, `keep`, `drop`, `include`, `exclude`).
+  - Expanded `FilterPresets` with `development`, `verbose`, `warningsAndErrors`, `noNetwork`, `audit`, and `security`.
 
 ### Fixed
 

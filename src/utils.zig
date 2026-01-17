@@ -188,6 +188,11 @@ pub fn currentMillis() i64 {
     return std.time.milliTimestamp();
 }
 
+/// Returns current timestamp in nanoseconds.
+pub fn currentNanos() i128 {
+    return std.time.nanoTimestamp();
+}
+
 /// Checks if two timestamps are on the same day.
 pub fn isSameDay(ts1: i64, ts2: i64) bool {
     const tc1 = fromEpochSeconds(ts1);
@@ -845,6 +850,125 @@ pub fn writeDurationNs(writer: anytype, ns: u64) !void {
     } else {
         try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ns)) / 1_000_000_000.0});
     }
+}
+
+/// Simple regex-like pattern matcher.
+/// Supports:
+/// - \d: Digit
+/// - \w: Alphanumeric or _
+/// - \s: Whitespace
+/// - \D, \W, \S: Negated versions
+/// - *: Zero or more of previous token
+/// - +: One or more of previous token
+/// - ?: Zero or one of previous token
+/// - .: Any single character
+/// - Literals match exactly
+///
+/// Returns the length of the match if successful (anchored at start), null otherwise.
+pub fn matchRegexPattern(input: []const u8, pattern: []const u8) ?usize {
+    return matchInternal(input, pattern, 0, 0);
+}
+
+/// Finds the first occurrence of a regex pattern in the input string.
+/// Returns the matched slice if found, null otherwise.
+pub fn findRegexPattern(input: []const u8, pattern: []const u8) ?[]const u8 {
+    if (pattern.len == 0) return input[0..0];
+    var i: usize = 0;
+    while (i <= input.len) : (i += 1) {
+        if (matchInternal(input, pattern, i, 0)) |end_idx| {
+            return input[i..end_idx];
+        }
+    }
+    return null;
+}
+
+fn matchInternal(input: []const u8, pattern: []const u8, i_idx: usize, p_idx: usize) ?usize {
+    if (p_idx == pattern.len) return i_idx;
+
+    // Handle special case: * or + at the very beginning or after another quantifier
+    // Treat as matching ANY character (.)
+    var p_char: u8 = undefined;
+    var is_escaped = false;
+    var current_p_idx = p_idx;
+
+    if (pattern[p_idx] == '\\' and p_idx + 1 < pattern.len) {
+        is_escaped = true;
+        p_char = pattern[p_idx + 1];
+        current_p_idx += 2;
+    } else {
+        p_char = pattern[p_idx];
+        current_p_idx += 1;
+    }
+
+    // Check for quantifiers after the current token
+    if (current_p_idx < pattern.len) {
+        const quant = pattern[current_p_idx];
+        if (quant == '*' or quant == '+' or quant == '?') {
+            const next_pattern_idx = current_p_idx + 1;
+
+            if (quant == '?') {
+                // Try matching one
+                if (i_idx < input.len and matchesToken(input[i_idx], p_char, is_escaped)) {
+                    if (matchInternal(input, pattern, i_idx + 1, next_pattern_idx)) |res| return res;
+                }
+                // Try matching zero
+                return matchInternal(input, pattern, i_idx, next_pattern_idx);
+            }
+
+            if (quant == '*') {
+                // Greedy match zero or more
+                var max_matches: usize = 0;
+                while (i_idx + max_matches < input.len and matchesToken(input[i_idx + max_matches], p_char, is_escaped)) {
+                    max_matches += 1;
+                }
+
+                while (true) {
+                    if (matchInternal(input, pattern, i_idx + max_matches, next_pattern_idx)) |res| return res;
+                    if (max_matches == 0) break;
+                    max_matches -= 1;
+                }
+                return null;
+            }
+
+            if (quant == '+') {
+                // Greedy match one or more
+                var count: usize = 0;
+                while (i_idx + count < input.len and matchesToken(input[i_idx + count], p_char, is_escaped)) {
+                    count += 1;
+                }
+                if (count == 0) return null;
+
+                while (count > 0) {
+                    if (matchInternal(input, pattern, i_idx + count, next_pattern_idx)) |res| return res;
+                    count -= 1;
+                }
+                return null;
+            }
+        }
+    }
+
+    // Single token match
+    if (i_idx < input.len and matchesToken(input[i_idx], p_char, is_escaped)) {
+        return matchInternal(input, pattern, i_idx + 1, current_p_idx);
+    }
+
+    return null;
+}
+
+fn matchesToken(c: u8, p_char: u8, is_escaped: bool) bool {
+    if (is_escaped) {
+        return switch (p_char) {
+            'd' => std.ascii.isDigit(c),
+            'w' => std.ascii.isAlphanumeric(c) or c == '_',
+            's' => std.ascii.isWhitespace(c),
+            'D' => !std.ascii.isDigit(c),
+            'W' => !(std.ascii.isAlphanumeric(c) or c == '_'),
+            'S' => !std.ascii.isWhitespace(c),
+            else => c == p_char,
+        };
+    }
+    if (p_char == '.') return true;
+    return c == p_char;
 }
 
 test "calculateErrorRate" {

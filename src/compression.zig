@@ -660,9 +660,10 @@ pub const Compression = struct {
     /// Complexity: O(N) where N is the size of data.
     pub fn compressWithAllocator(self: *Compression, data: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
-        const start_time = std.time.nanoTimestamp();
+        const start_time = Utils.currentNanos();
         defer {
-            const elapsed = @as(u64, @intCast(@max(0, std.time.nanoTimestamp() - start_time)));
+            const current = Utils.currentNanos();
+            const elapsed = @as(u64, @intCast(@max(0, current - start_time)));
             _ = self.stats.total_compression_time_ns.fetchAdd(@truncate(elapsed), .monotonic);
         }
 
@@ -1001,9 +1002,9 @@ pub const Compression = struct {
     ///
     /// Complexity: O(N) where N is the size of the uncompressed output.
     pub fn decompress(self: *Compression, data: []const u8) ![]u8 {
-        const start_time = std.time.nanoTimestamp();
+        const start_time = Utils.currentNanos();
         defer {
-            const elapsed = @as(u64, @intCast(@max(0, std.time.nanoTimestamp() - start_time)));
+            const elapsed = @as(u64, @intCast(@max(0, Utils.currentNanos() - start_time)));
             _ = self.stats.total_decompression_time_ns.fetchAdd(@truncate(elapsed), .monotonic);
         }
 
@@ -1262,7 +1263,7 @@ pub const Compression = struct {
         }
 
         _ = self.stats.files_compressed.fetchAdd(1, .monotonic);
-        self.stats.last_compression_time.store(@truncate(std.time.milliTimestamp()), .monotonic);
+        self.stats.last_compression_time.store(@truncate(Utils.currentMillis()), .monotonic);
 
         const result_path = try self.allocator.dupe(u8, out_path);
 

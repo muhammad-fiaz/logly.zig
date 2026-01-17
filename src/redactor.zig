@@ -640,7 +640,7 @@ pub const Redactor = struct {
 
     /// Resets statistics.
     pub fn resetStats(self: *Redactor) void {
-        self.stats = .{};
+        self.stats.reset();
     }
 
     /// Alias for addPattern
@@ -680,79 +680,7 @@ pub const Redactor = struct {
 /// Simple regex-like pattern matching.
 /// Supports: * (any chars), + (one or more), ? (optional), \d (digit), \w (word), \s (space)
 fn matchRegexPattern(input: []const u8, pattern: []const u8) ?usize {
-    var input_idx: usize = 0;
-    var pattern_idx: usize = 0;
-
-    while (pattern_idx < pattern.len) {
-        // Handle escape sequences
-        if (pattern[pattern_idx] == '\\' and pattern_idx + 1 < pattern.len) {
-            const next = pattern[pattern_idx + 1];
-            if (input_idx >= input.len) return null;
-
-            const matches = switch (next) {
-                'd' => std.ascii.isDigit(input[input_idx]),
-                'w' => std.ascii.isAlphanumeric(input[input_idx]) or input[input_idx] == '_',
-                's' => std.ascii.isWhitespace(input[input_idx]),
-                'D' => !std.ascii.isDigit(input[input_idx]),
-                'W' => !(std.ascii.isAlphanumeric(input[input_idx]) or input[input_idx] == '_'),
-                'S' => !std.ascii.isWhitespace(input[input_idx]),
-                else => input[input_idx] == next,
-            };
-
-            if (!matches) return null;
-            input_idx += 1;
-            pattern_idx += 2;
-            continue;
-        }
-
-        // Handle wildcards
-        if (pattern[pattern_idx] == '*') {
-            // Match zero or more of any character
-            if (pattern_idx + 1 >= pattern.len) {
-                // * at end matches everything
-                return input.len;
-            }
-            // Try to match rest of pattern starting at each position
-            var try_idx = input_idx;
-            while (try_idx <= input.len) {
-                if (matchRegexPattern(input[try_idx..], pattern[pattern_idx + 1 ..])) |rest_len| {
-                    return try_idx + rest_len;
-                }
-                try_idx += 1;
-            }
-            return null;
-        }
-
-        if (pattern[pattern_idx] == '+') {
-            // Match one or more of previous pattern (simplified: any char)
-            if (input_idx >= input.len) return null;
-            input_idx += 1;
-            while (input_idx < input.len and pattern_idx + 1 < pattern.len) {
-                if (matchRegexPattern(input[input_idx..], pattern[pattern_idx + 1 ..])) |rest_len| {
-                    return input_idx + rest_len;
-                }
-                input_idx += 1;
-            }
-            pattern_idx += 1;
-            continue;
-        }
-
-        if (pattern[pattern_idx] == '.') {
-            // Match any single character
-            if (input_idx >= input.len) return null;
-            input_idx += 1;
-            pattern_idx += 1;
-            continue;
-        }
-
-        // Literal match
-        if (input_idx >= input.len) return null;
-        if (input[input_idx] != pattern[pattern_idx]) return null;
-        input_idx += 1;
-        pattern_idx += 1;
-    }
-
-    return input_idx;
+    return Utils.matchRegexPattern(input, pattern);
 }
 
 /// Pre-built redaction patterns for common sensitive data.

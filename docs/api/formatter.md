@@ -104,6 +104,10 @@ Statistics for formatter performance.
 | `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
 | `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate throughput (bytes per second) |
 
+::: tip Precise Byte Tracking
+As of v0.1.5, `total_bytes_formatted` captures the exact length of each formatted message, replacing previous estimations.
+:::
+
 #### Reset
 
 | Method | Description |
@@ -180,6 +184,7 @@ const Theme = logly.Formatter.Theme;
 const default_theme = Theme{};              // Standard colors
 const bright = Theme.bright();              // Bold/bright colors
 const dim = Theme.dim();                    // Dim colors
+const underlined = Theme.underlined();      // Underlined colors (v0.1.5)
 const minimal = Theme.minimal();            // Subtle grays
 const neon = Theme.neon();                  // Vivid 256-colors
 const pastel = Theme.pastel();              // Soft colors
@@ -198,6 +203,7 @@ formatter.setTheme(Theme.neon());
 | `default` | 36 | 34 | 37 | 32 | 33 | 31 | 91 |
 | `bright()` | 96;1 | 94;1 | 97;1 | 92;1 | 93;1 | 91;1 | 91;1;4 |
 | `dim()` | 36;2 | 34;2 | 37;2 | 32;2 | 33;2 | 31;2 | 91;2 |
+| `underlined()` | 36;4 | 34;4 | 37;4 | 32;4 | 33;4 | 31;4 | 91;4 |
 | `minimal()` | 90 | 90 | 37 | 32 | 33 | 31 | 91 |
 | `neon()` | 38;5;51 | 38;5;33 | 38;5;252 | 38;5;46 | 38;5;226 | 38;5;196 | 38;5;196;1 |
 | `pastel()` | 38;5;152 | 38;5;111 | 38;5;253 | 38;5;157 | 38;5;228 | 38;5;210 | 38;5;203 |

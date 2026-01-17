@@ -34,6 +34,7 @@ const ThreadPool = @import("thread_pool.zig").ThreadPool;
 const UpdateChecker = @import("update_checker.zig");
 const Diagnostics = @import("diagnostics.zig");
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 const Rules = @import("rules.zig").Rules;
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
@@ -61,16 +62,14 @@ pub const Logger = struct {
         /// Calculate records per second (requires timestamp delta from caller).
         pub fn recordsPerSecond(self: *const LoggerStats, elapsed_seconds: f64) f64 {
             const total = @as(u64, self.total_records_logged.load(.monotonic));
-            if (elapsed_seconds == 0) return 0;
-            return @as(f64, @floatFromInt(total)) / elapsed_seconds;
+            return Utils.safeFloatDiv(@as(f64, @floatFromInt(total)), elapsed_seconds);
         }
 
         /// Calculate average bytes per record.
         pub fn avgBytesPerRecord(self: *const LoggerStats) f64 {
             const total = @as(u64, self.total_records_logged.load(.monotonic));
-            if (total == 0) return 0;
             const bytes = @as(u64, self.bytes_written.load(.monotonic));
-            return @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateAverage(bytes, total);
         }
 
         /// Calculate filter rate (0.0 - 1.0).
@@ -78,16 +77,14 @@ pub const Logger = struct {
             const total = @as(u64, self.total_records_logged.load(.monotonic));
             const filtered = @as(u64, self.records_filtered.load(.monotonic));
             const total_seen = total + filtered;
-            if (total_seen == 0) return 0;
-            return @as(f64, @floatFromInt(filtered)) / @as(f64, @floatFromInt(total_seen));
+            return Utils.calculateRate(filtered, total_seen);
         }
 
         /// Calculate sink error rate (0.0 - 1.0).
         pub fn sinkErrorRate(self: *const LoggerStats) f64 {
             const total = @as(u64, self.total_records_logged.load(.monotonic));
-            if (total == 0) return 0;
             const errors = @as(u64, self.sink_errors.load(.monotonic));
-            return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateErrorRate(errors, total);
         }
 
         /// Returns true if any records were filtered.
@@ -251,7 +248,7 @@ pub const Logger = struct {
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
             .module_levels = std.StringHashMap(Level).init(allocator),
-            .init_timestamp = std.time.timestamp(),
+            .init_timestamp = Utils.currentSeconds(),
             .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
         };
 
@@ -296,7 +293,7 @@ pub const Logger = struct {
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
             .module_levels = std.StringHashMap(Level).init(allocator),
-            .init_timestamp = std.time.timestamp(),
+            .init_timestamp = Utils.currentSeconds(),
             .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
         };
 
@@ -547,7 +544,7 @@ pub const Logger = struct {
         return SpanContext{
             .logger = self,
             .parent_span_id = parent_span,
-            .start_time = std.time.nanoTimestamp(),
+            .start_time = Utils.currentNanos(),
         };
     }
 
@@ -897,7 +894,10 @@ pub const Logger = struct {
     pub fn flush(self: *Logger) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
+        try self.flushInternal();
+    }
 
+    fn flushInternal(self: *Logger) !void {
         for (self.sinks.items) |sink| {
             try sink.flush();
         }
@@ -1173,6 +1173,12 @@ pub const Logger = struct {
                 }
             };
         }
+
+        // Auto-flush if enabled
+        // Auto-flush if enabled
+        if (self.config.auto_flush) {
+            self.flushInternal() catch {};
+        }
     }
 
     /// Logs an error with associated error information.
@@ -1208,6 +1214,11 @@ pub const Logger = struct {
         for (self.sinks.items) |sink| {
             try sink.writeWithAllocator(&record, self.config, scratch_alloc);
         }
+
+        // Auto-flush if enabled
+        if (self.config.auto_flush) {
+            self.flushInternal() catch {};
+        }
     }
 
     /// Logs a timed operation. Returns the duration in nanoseconds.
@@ -1220,7 +1231,7 @@ pub const Logger = struct {
     /// Returns:
     ///     The duration in nanoseconds.
     pub fn logTimed(self: *Logger, level: Level, message: []const u8, start_time: i128) !i128 {
-        const end_time = std.time.nanoTimestamp();
+        const end_time = Utils.currentNanos();
         const duration = end_time - start_time;
 
         if (!self.enabled) return duration;
@@ -1245,6 +1256,11 @@ pub const Logger = struct {
             try sink.writeWithAllocator(&record, self.config, scratch_alloc);
         }
 
+        // Auto-flush if enabled
+        if (self.config.auto_flush) {
+            self.flushInternal() catch {};
+        }
+
         return duration;
     }
 
@@ -1255,7 +1271,7 @@ pub const Logger = struct {
 
     /// Returns uptime in seconds since logger initialization.
     pub fn getUptime(self: *Logger) i64 {
-        return std.time.timestamp() - self.init_timestamp;
+        return Utils.currentSeconds() - self.init_timestamp;
     }
 
     /// Logs system diagnostics (OS, arch, CPU, memory, drives) as a single record.
@@ -1333,6 +1349,11 @@ pub const Logger = struct {
                     std.debug.print("Diagnostics write error: {}\n", .{write_err});
                 }
             };
+        }
+
+        // Auto-flush if enabled
+        if (self.config.auto_flush) {
+            self.flushInternal() catch {};
         }
     }
 
@@ -1557,6 +1578,11 @@ pub const Logger = struct {
                 }
             };
         }
+
+        // Auto-flush if enabled
+        if (self.config.auto_flush) {
+            self.flushInternal() catch {};
+        }
     }
 
     // Formatted logging methods
@@ -1682,7 +1708,7 @@ pub const SpanContext = struct {
     /// Arguments:
     ///     message: Optional message to log with span completion.
     pub fn end(self: *SpanContext, message: ?[]const u8) !void {
-        const duration = std.time.nanoTimestamp() - self.start_time;
+        const duration = Utils.currentNanos() - self.start_time;
 
         if (message) |msg| {
             _ = try self.logger.logTimed(.debug, msg, self.start_time);

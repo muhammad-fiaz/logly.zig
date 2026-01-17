@@ -234,6 +234,7 @@ const Formatter = logly.Formatter;
 const default_theme = Formatter.Theme{};           // Standard colors
 const bright_theme = Formatter.Theme.bright();     // Bold/bright colors
 const dim_theme = Formatter.Theme.dim();           // Dim colors
+const underlined_theme = Formatter.Theme.underlined(); // Underlined colors (v0.1.5)
 const minimal_theme = Formatter.Theme.minimal();   // Subtle grays
 const neon_theme = Formatter.Theme.neon();         // Vivid 256-colors
 const pastel_theme = Formatter.Theme.pastel();     // Soft colors

@@ -37,6 +37,8 @@ pub const Filter = struct {
     rules: std.ArrayList(FilterRule),
     stats: FilterStats,
     mutex: std.Thread.Mutex,
+    mode: Mode = .all,
+    enabled: bool = true,
     
     // Callbacks
     on_record_allowed: ?*const fn (*const Record, u32) void,
@@ -44,6 +46,18 @@ pub const Filter = struct {
     on_filter_created: ?*const fn (*const FilterStats) void,
     on_rule_added: ?*const fn (u32, u32) void,
 };
+```
+
+### Mode
+
+Logical mode for combining multiple filter rules.
+
+| Variant | Description |
+|---------|-------------|
+| `all` | All rules must pass (AND) |
+| `any` | At least one rule must pass (OR) |
+| `none` | Record allowed only if NO rules match (NOR) |
+| `not_all` | Invert result of `all` (NAND) |
 ```
 
 ### FilterStats
@@ -84,6 +98,12 @@ pub const FilterStats = struct {
 
     /// Returns rules added count as u64.
     pub fn getRulesAdded(self: *const FilterStats) u64;
+
+    /// Calculate throughput records per second.
+    pub fn throughput(self: *const FilterStats, elapsed_ms: i64) f64;
+
+    /// Reset all statistics to zero.
+    pub fn reset(self: *FilterStats) void;
 };
 ```
 
@@ -97,6 +117,8 @@ pub const FilterRule = struct {
     pattern: ?[]const u8 = null,
     level: ?Level = null,
     action: Action = .allow,
+    context_key: ?[]const u8 = null,
+    predicate: ?*const fn (*const Record) bool = null,
 
     pub const RuleType = enum {
         level_min,
@@ -104,8 +126,19 @@ pub const FilterRule = struct {
         level_exact,
         module_match,
         module_prefix,
+        module_regex,
         message_contains,
         message_regex,
+        source_file_match,
+        source_file_regex,
+        function_match,
+        function_regex,
+        trace_id_match,
+        span_id_match,
+        context_has_key,
+        context_value_match,
+        thread_id_match,
+        has_error,
         custom,
     };
 
@@ -173,6 +206,30 @@ Adds a custom level priority filter (for custom levels).
 #### `addPriorityRange(min_priority: u8, max_priority: u8) !void`
 
 Adds a priority range filter for custom levels.
+
+#### `allowModule(module: []const u8) !void`
+
+Explicitly allow a specific module.
+
+#### `denyModule(module: []const u8) !void`
+
+Explicitly deny a specific module.
+
+#### `allowRegex(regex: []const u8) !void`
+ 
+ Allow messages matching a regex-like pattern. Uses the improved regex engine (v0.1.5).
+ 
+ #### `denyRegex(regex: []const u8) !void`
+ 
+ Deny messages matching a regex-like pattern. Uses the improved regex engine (v0.1.5).
+
+#### `addContextMatch(key: []const u8, pattern: []const u8, action: Action) !void`
+
+Filter based on context values matching a pattern.
+
+#### `addErrorOnly() !void`
+
+Only allow records that contain error information.
 
 #### `clear() void`
 
@@ -274,10 +331,19 @@ pub const FilterPresets = struct {
     /// Production - minimum level: info
     pub fn production(allocator: std.mem.Allocator) !Filter;
     
-    /// Debug - minimum level: debug
-    pub fn debug(allocator: std.mem.Allocator) !Filter;
-    
-    /// Security - minimum level: warning
+    /// Development - allow all logs
+    pub fn development(allocator: std.mem.Allocator) !Filter;
+
+    /// Verbose - include trace logs
+    pub fn verbose(allocator: std.mem.Allocator) !Filter;
+
+    /// No network - filter out network/http/socket modules
+    pub fn noNetwork(allocator: std.mem.Allocator) !Filter;
+
+    /// Audit - only allow logs containing 'audit'
+    pub fn audit(allocator: std.mem.Allocator) !Filter;
+
+    /// Security - only allow security/auth related logs
     pub fn security(allocator: std.mem.Allocator) !Filter;
 };
 ```

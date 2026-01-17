@@ -91,20 +91,17 @@ try redactor.addPattern("secret_key", .exact, "supersecretkey123", "[HIDDEN]");
 
 ### Regex Match
 
-Use regex-like patterns for complex matching:
-Supports: `*` (any chars), `+` (one or more), `.` (single char), `\d` (digit), `\w` (word char), `\s` (whitespace)
+Use regex-like patterns for complex matching with the improved engine (v0.1.5).
+Supports: `*` (zero or more), `+` (one or more), `?` (optional), `.` (any char), `\d` (digit), `\w` (word char), `\s` (whitespace).
 
 ```zig
 // Credit card numbers
 try redactor.addPattern("credit_card", .regex, 
     "\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d", 
     "****-****-****-****");
-
-// Social Security Numbers
-try redactor.addPattern("ssn", .regex, 
-    "\\d\\d\\d-\\d\\d-\\d\\d\\d\\d", 
-    "***-**-****");
 ```
+
+> **Note**: While the engine is "regex-like", it focuses on common log patterns and is optimized for performance without the weight of a full PCRE engine.
 
 ## Field-Based Redaction
 

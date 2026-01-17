@@ -278,35 +278,39 @@ pub const Colors = struct {
     };
 
     /// Generate 256-color foreground code (0-255).
-    pub fn fg256(color_index: u8) [16]u8 {
-        var buf: [16]u8 = undefined;
-        const len = std.fmt.bufPrint(&buf, "38;5;{d}", .{color_index}) catch return buf;
-        _ = len;
-        return buf;
+    pub fn fg256(color_index: u8) []const u8 {
+        const S = struct {
+            var buf: [16]u8 = undefined;
+        };
+        const len = std.fmt.bufPrint(&S.buf, "38;5;{d}", .{color_index}) catch return "38;5;0";
+        return S.buf[0..len.len];
     }
 
     /// Generate 256-color background code (0-255).
-    pub fn bg256(color_index: u8) [16]u8 {
-        var buf: [16]u8 = undefined;
-        const len = std.fmt.bufPrint(&buf, "48;5;{d}", .{color_index}) catch return buf;
-        _ = len;
-        return buf;
+    pub fn bg256(color_index: u8) []const u8 {
+        const S = struct {
+            var buf: [16]u8 = undefined;
+        };
+        const len = std.fmt.bufPrint(&S.buf, "48;5;{d}", .{color_index}) catch return "48;5;0";
+        return S.buf[0..len.len];
     }
 
     /// Generate RGB foreground color code.
-    pub fn fgRgb(r: u8, g: u8, b: u8) [24]u8 {
-        var buf: [24]u8 = undefined;
-        const len = std.fmt.bufPrint(&buf, "38;2;{d};{d};{d}", .{ r, g, b }) catch return buf;
-        _ = len;
-        return buf;
+    pub fn fgRgb(r: u8, g: u8, b: u8) []const u8 {
+        const S = struct {
+            var buf: [24]u8 = undefined;
+        };
+        const len = std.fmt.bufPrint(&S.buf, "38;2;{d};{d};{d}", .{ r, g, b }) catch return "38;2;0;0;0";
+        return S.buf[0..len.len];
     }
 
     /// Generate RGB background color code.
-    pub fn bgRgb(r: u8, g: u8, b: u8) [24]u8 {
-        var buf: [24]u8 = undefined;
-        const len = std.fmt.bufPrint(&buf, "48;2;{d};{d};{d}", .{ r, g, b }) catch return buf;
-        _ = len;
-        return buf;
+    pub fn bgRgb(r: u8, g: u8, b: u8) []const u8 {
+        const S = struct {
+            var buf: [24]u8 = undefined;
+        };
+        const len = std.fmt.bufPrint(&S.buf, "48;2;{d};{d};{d}", .{ r, g, b }) catch return "48;2;0;0;0";
+        return S.buf[0..len.len];
     }
 
     /// Combine multiple codes (e.g., "1;31" for bold red).
@@ -363,6 +367,34 @@ pub const Colors = struct {
             pub const fail: []const u8 = "95;1";
             pub const critical: []const u8 = "91;1;4";
             pub const fatal: []const u8 = "97;41;1";
+        };
+
+        /// Dim theme with subtle colors.
+        pub const dim = struct {
+            pub const trace: []const u8 = LevelColors.trace ++ ";" ++ Style.dim;
+            pub const debug: []const u8 = LevelColors.debug ++ ";" ++ Style.dim;
+            pub const info: []const u8 = LevelColors.info ++ ";" ++ Style.dim;
+            pub const notice: []const u8 = LevelColors.notice ++ ";" ++ Style.dim;
+            pub const success: []const u8 = LevelColors.success ++ ";" ++ Style.dim;
+            pub const warning: []const u8 = LevelColors.warning ++ ";" ++ Style.dim;
+            pub const err: []const u8 = LevelColors.err ++ ";" ++ Style.dim;
+            pub const fail: []const u8 = LevelColors.fail ++ ";" ++ Style.dim;
+            pub const critical: []const u8 = LevelColors.critical ++ ";" ++ Style.dim;
+            pub const fatal: []const u8 = LevelColors.fatal ++ ";" ++ Style.dim;
+        };
+
+        /// Underlined theme for highlighted levels.
+        pub const underlined = struct {
+            pub const trace: []const u8 = LevelColors.trace ++ ";" ++ Style.underline;
+            pub const debug: []const u8 = LevelColors.debug ++ ";" ++ Style.underline;
+            pub const info: []const u8 = LevelColors.info ++ ";" ++ Style.underline;
+            pub const notice: []const u8 = LevelColors.notice ++ ";" ++ Style.underline;
+            pub const success: []const u8 = LevelColors.success ++ ";" ++ Style.underline;
+            pub const warning: []const u8 = LevelColors.warning ++ ";" ++ Style.underline;
+            pub const err: []const u8 = LevelColors.err ++ ";" ++ Style.underline;
+            pub const fail: []const u8 = LevelColors.fail ++ ";" ++ Style.underline;
+            pub const critical: []const u8 = LevelColors.critical ++ ";" ++ Style.underline;
+            pub const fatal: []const u8 = LevelColors.fatal ++ ";" ++ Style.underline;
         };
 
         /// Minimal theme with subtle colors.

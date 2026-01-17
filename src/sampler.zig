@@ -25,6 +25,7 @@ const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Sampler for controlling log throughput with comprehensive monitoring.
 pub const Sampler = struct {
@@ -128,7 +129,7 @@ pub const Sampler = struct {
         stats: SamplerStats = .{},
 
         fn init() SamplerState {
-            const seed = @as(u64, @intCast(std.time.milliTimestamp()));
+            const seed = @as(u64, @intCast(Utils.currentMillis()));
             return .{
                 .rng = std.Random.DefaultPrng.init(seed),
             };
@@ -253,7 +254,7 @@ pub const Sampler = struct {
                 },
                 .rate_limit => |config| {
                     current_rate = 1.0; // Rate limit doesn't have a probability rate
-                    const now = std.time.milliTimestamp();
+                    const now = Utils.currentMillis();
                     const window_ms: i64 = @intCast(config.window_ms);
 
                     if (now - self.state.window_start >= window_ms) {
@@ -282,7 +283,7 @@ pub const Sampler = struct {
                     }
                 },
                 .adaptive => |config| {
-                    const now = std.time.milliTimestamp();
+                    const now = Utils.currentMillis();
                     const interval: i64 = @intCast(config.adjustment_interval_ms);
 
                     if (now - self.state.last_adjustment >= interval) {

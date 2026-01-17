@@ -704,7 +704,7 @@ pub const Sink = struct {
         errdefer buf.deinit(allocator);
         const writer = buf.writer(allocator);
 
-        const now_ms = std.time.milliTimestamp();
+        const now_ms = Utils.currentMillis();
         const tc = Utils.fromMilliTimestamp(now_ms);
         const millis = @mod(if (now_ms < 0) 0 else @as(u64, @intCast(now_ms)), 1000);
 

@@ -105,6 +105,19 @@ try filter.addMessageFilter("heartbeat", .drop);
 try filter.addMessageFilter("error", .allow);
 ```
 
+### Regex Filtering
+
+Filter messages or modules using the improved regex-like engine (v0.1.5):
+
+```zig
+var filter = Filter.init(allocator);
+defer filter.deinit();
+
+// Support for: *, +, ?, ., \d, \w, \s, etc.
+try filter.allowRegex("user_\\d+");
+try filter.denyRegex("debug_.*");
+```
+
 ## Filter Presets
 
 Logly provides pre-built filter configurations for common scenarios:
@@ -415,7 +428,15 @@ pub fn main() !void {
 3. **Test your filters**: Verify filtering works at different levels
 4. **Document filter rules**: Add comments explaining why each rule exists
 
-## New Features (v0.0.9)
+## New Features (v0.1.5)
+
+### Improved Regex Engine
+
+The filtering engine now uses a centralized, production-ready regex-like engine with support for:
+- Standard quantifiers: `*`, `+`, `?`
+- Character classes: `\d`, `\w`, `\s` (and negated `\D`, `\W`, `\S`)
+- Anchored matching with `matchRegexPattern`
+- Full string searching with `findRegexPattern`
 
 ### Batch Evaluation
 

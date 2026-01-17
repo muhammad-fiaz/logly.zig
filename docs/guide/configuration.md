@@ -77,6 +77,7 @@ logger.configure(config);
 | `use_arena_allocator`    | `bool`        | `false`                 | Enable arena allocator for temporary allocations     |
 | `emit_system_diagnostics_on_init` | `bool` | `false`           | Emit system diagnostics on logger initialization     |
 | `include_drive_diagnostics` | `bool`     | `true`                  | Include drive information in diagnostics             |
+| `auto_flush`             | `bool`        | `true`                  | Automatically flush sinks after every log operation  |
 | `logs_root_path`         | `?[]const u8` | `null`                  | Root directory for log files                        |
 | `debug_mode`             | `bool`        | `false`                 | Enable debug output for troubleshooting             |
 | `error_handling`         | `enum`        | `.log_and_continue`     | Error handling strategy (`.silent`, `.log_and_continue`, `.fail_fast`, `.callback`) |
@@ -440,8 +441,37 @@ pub fn main() !void {
 | FAIL | Magenta | 35 | Failures |
 | CRITICAL | Bright Red | 91 | Critical errors |
 
+### Level Colors Configuration
+ 
+You can customize the colors for standard levels using the `level_colors` configuration:
+ 
+```zig
+var config = logly.Config.default();
+ 
+// Use a built-in theme
+config.level_colors.theme_preset = .neon; // .bright, .dim, .neon, .pastel, .dark, etc.
+ 
+// Override specific level colors (ANSI codes)
+config.level_colors.info_color = "36";    // Cyan
+config.level_colors.warning_color = "33;1"; // Bold Yellow
+config.level_colors.error_color = "31;4";   // Underline Red
+ 
+logger.configure(config);
+```
+ 
+Available theme presets:
+- `.default`: Standard ANSI colors
+- `.bright`: Bold/bright variants
+- `.dim`: Dim variants
+- `.minimal`: Gray-scale theme
+- `.neon`: Vivid 256-color palette
+- `.pastel`: Soft pastel colors
+- `.dark`: Optimized for dark terminals
+- `.light`: Optimized for light terminals
+- `.none`: No colors
+ 
 ### Custom Level Colors
-
+ 
 Define custom levels with your own colors:
 
 ```zig
