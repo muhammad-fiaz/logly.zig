@@ -4,17 +4,26 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Create the logly module
+    // Resolve zstd dependency
+    const zstd_dep = b.dependency("zstd", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const zstd_mod = zstd_dep.module("zstd");
+
+    // Create the logly module with zstd support
     const logly_module = b.createModule(.{
         .root_source_file = b.path("src/logly.zig"),
     });
+    logly_module.addImport("zstd", zstd_mod);
 
     // Expose the module for external projects that depend on this package.
     // This allows users to do: `const logly = @import("logly");` in their code
     // after adding logly as a dependency and calling `dep.module("logly")` in their build.zig
-    _ = b.addModule("logly", .{
+    const exposed_module = b.addModule("logly", .{
         .root_source_file = b.path("src/logly.zig"),
     });
+    exposed_module.addImport("zstd", zstd_mod);
 
     const examples = [_]struct { name: []const u8, path: []const u8, skip_run_all: bool = false }{
         .{ .name = "basic", .path = "examples/basic.zig" },
@@ -117,6 +126,7 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
+    tests.root_module.addImport("zstd", zstd_mod);
 
     if (target.result.os.tag == .windows) {
         tests.root_module.linkSystemLibrary("ws2_32", .{});
@@ -196,5 +206,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    lib.root_module.addImport("zstd", zstd_mod);
     b.installArtifact(lib);
 }

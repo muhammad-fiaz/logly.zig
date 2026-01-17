@@ -4,23 +4,23 @@ const logly = @import("logly");
 const Compression = logly.Compression;
 const CompressionPresets = logly.CompressionPresets;
 
-/// Demonstrates real compression capabilities with LZ77 + RLE algorithm.
+/// Demonstrates comprehensive compression capabilities including batch operations,
+/// pattern-based compression, and integration with scheduling.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     std.debug.print("\n", .{});
-    std.debug.print("========================================\n", .{});
-    std.debug.print("  Logly Compression Demo - LZ77 + RLE\n", .{});
-    std.debug.print("========================================\n\n", .{});
+    std.debug.print("Logly Compression Demo v0.1.5\n", .{});
+    std.debug.print("Featuring zstd, batch, and pattern compression\n\n", .{});
 
     // Initialize compression with default settings
     var comp = Compression.init(allocator);
     defer comp.deinit();
 
     // Test 1: Compress simple text
-    std.debug.print("--- Test 1: Simple Text Compression ---\n", .{});
+    std.debug.print("Test 1: Simple Text Compression\n", .{});
     const simple_text = "Hello, World! This is a test of the Logly compression system.";
     const compressed1 = try comp.compress(simple_text);
     defer allocator.free(compressed1);
@@ -35,7 +35,7 @@ pub fn main() !void {
     std.debug.print("  Roundtrip:  {s}\n", .{if (match1) "OK" else "FAILED"});
 
     // Test 2: Compress repetitive data (RLE shines here)
-    std.debug.print("\n--- Test 2: Repetitive Data (RLE) ---\n", .{});
+    std.debug.print("\nTest 2: Repetitive Data (RLE)\n", .{});
     const repetitive = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
         "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" ++
         "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
@@ -53,7 +53,7 @@ pub fn main() !void {
     std.debug.print("  Roundtrip:    {s}\n", .{if (match2) "OK" else "FAILED"});
 
     // Test 3: Compress log-like data (LZ77 finds patterns)
-    std.debug.print("\n--- Test 3: Log-like Data (LZ77) ---\n", .{});
+    std.debug.print("\nTest 3: Log-like Data (LZ77)\n", .{});
     const log_data =
         \\[2025-01-15 10:00:00] INFO  Application started successfully
         \\[2025-01-15 10:00:01] DEBUG Processing request from user 12345
@@ -80,7 +80,7 @@ pub fn main() !void {
     std.debug.print("  Roundtrip:    {s}\n", .{if (match3) "OK" else "FAILED"});
 
     // Test 4: Different compression levels
-    std.debug.print("\n--- Test 4: Compression Levels ---\n", .{});
+    std.debug.print("\nTest 4: Compression Levels\n", .{});
     const test_data = "The quick brown fox jumps over the lazy dog. " ** 50;
 
     inline for ([_]struct { name: []const u8, level: Compression.Level }{
@@ -100,7 +100,7 @@ pub fn main() !void {
     }
 
     // Test 5: Compression stats
-    std.debug.print("\n--- Test 5: Compression Statistics ---\n", .{});
+    std.debug.print("\nTest 5: Compression Statistics\n", .{});
     const stats = comp.getStats();
     std.debug.print("  Files compressed:   {}\n", .{stats.getFilesCompressed()});
     std.debug.print("  Files decompressed: {}\n", .{stats.getFilesDecompressed()});
@@ -109,7 +109,7 @@ pub fn main() !void {
     std.debug.print("  Overall ratio:      {d:.1}%\n", .{stats.compressionRatio() * 100});
 
     // Test 6: File compression (creates test file)
-    std.debug.print("\n--- Test 6: File Compression ---\n", .{});
+    std.debug.print("\nTest 6: File Compression\n", .{});
 
     // Create a test log file
     const test_file = std.fs.cwd().createFile("test_compression.log", .{}) catch |err| {
@@ -154,7 +154,7 @@ pub fn main() !void {
     }
 
     // Test 7: Streaming Compression
-    std.debug.print("\n--- Test 7: Streaming Compression ---\n", .{});
+    std.debug.print("\nTest 7: Streaming Compression\n", .{});
     const stream_data = "Streaming compression test data " ** 20;
 
     var in_stream = std.io.fixedBufferStream(stream_data);
@@ -174,11 +174,145 @@ pub fn main() !void {
     const stream_match = std.mem.eql(u8, stream_data, result_buffer.items);
     std.debug.print("  Stream Roundtrip: {s}\n", .{if (stream_match) "OK" else "FAILED"});
 
-    // Cleanup test files - Commented out so you can inspect them
-    // std.fs.cwd().deleteFile("test_compression.log") catch {};
-    // std.fs.cwd().deleteFile("test_compression.log.lgz") catch {};
+    // Test 8: Batch Compression with Multiple Files
+    std.debug.print("\nTest 8: Batch Compression\n", .{});
 
-    std.debug.print("\n========================================\n", .{});
-    std.debug.print("  Compression Demo Complete!\n", .{});
-    std.debug.print("========================================\n", .{});
+    const test_dir = "logs_test_batch";
+    std.fs.cwd().makeDir(test_dir) catch {};
+
+    // Create multiple test files
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        const name = std.fmt.allocPrint(allocator, "{s}/batch_{d}.log", .{ test_dir, i }) catch continue;
+        defer allocator.free(name);
+        const f = std.fs.cwd().createFile(name, .{}) catch continue;
+        // Create repeated content for compression testing
+        const base_content = "Log file content with some repeated data for compression test ";
+        var content_buf: [1024]u8 = undefined;
+        var pos: usize = 0;
+        for (0..10) |_| {
+            const len = @min(base_content.len, content_buf.len - pos);
+            @memcpy(content_buf[pos..][0..len], base_content[0..len]);
+            pos += len;
+        }
+        f.writeAll(content_buf[0..pos]) catch {};
+        f.close();
+    }
+    std.debug.print("  Created 5 test files in {s}/\n", .{test_dir});
+
+    // Batch compress files using pattern matching
+    const pattern_count = comp.compressPattern(test_dir, "*.log") catch 0;
+    std.debug.print("  Compressed {} files matching *.log\n", .{pattern_count});
+
+    // Test 9: Compression Utility Functions
+    std.debug.print("\nTest 9: Utility Functions\n", .{});
+
+    std.debug.print("  Algorithm: {s}\n", .{comp.algorithmName()});
+    std.debug.print("  Level: {s}\n", .{comp.levelName()});
+    std.debug.print("  Extension: {s}\n", .{comp.getExtension()});
+    std.debug.print("  Is zstd: {}\n", .{comp.isZstd()});
+    std.debug.print("  Estimated size (10KB): {} bytes\n", .{comp.estimateCompressedSize(10240)});
+
+    // Test using aliases
+    std.debug.print("\nTest 10: Compression Aliases\n", .{});
+    const alias_data = "Testing compression aliases encode/decode, deflate/inflate";
+
+    // Using encode/decode aliases
+    const encoded = try Compression.encode(&comp, alias_data);
+    defer allocator.free(encoded);
+    const decoded = try Compression.decode(&comp, encoded);
+    defer allocator.free(decoded);
+    std.debug.print("  encode/decode roundtrip: {s}\n", .{if (std.mem.eql(u8, alias_data, decoded)) "OK" else "FAILED"});
+
+    // Test 11: zstd Compression (if available)
+    std.debug.print("\nTest 11: zstd Compression\n", .{});
+    var zstd_comp = Compression.zstdCompression(allocator);
+    defer zstd_comp.deinit();
+
+    const zstd_data = "zstd provides excellent compression ratios for log data " ** 50;
+    if (zstd_comp.isZstd()) {
+        const zstd_compressed = zstd_comp.compress(zstd_data) catch |e| {
+            std.debug.print("  zstd compression error: {}\n", .{e});
+            return;
+        };
+        defer allocator.free(zstd_compressed);
+
+        const zstd_ratio = 100.0 - (@as(f64, @floatFromInt(zstd_compressed.len)) / @as(f64, @floatFromInt(zstd_data.len)) * 100.0);
+        std.debug.print("  Original:   {} bytes\n", .{zstd_data.len});
+        std.debug.print("  Compressed: {} bytes\n", .{zstd_compressed.len});
+        std.debug.print("  Saved:      {d:.1}%\n", .{zstd_ratio});
+
+        const zstd_decompressed = zstd_comp.decompress(zstd_compressed) catch |e| {
+            std.debug.print("  zstd decompression error: {}\n", .{e});
+            return;
+        };
+        defer allocator.free(zstd_decompressed);
+        std.debug.print("  Roundtrip:  {s}\n", .{if (std.mem.eql(u8, zstd_data, zstd_decompressed)) "OK" else "FAILED"});
+    } else {
+        std.debug.print("  zstd not enabled for this configuration\n", .{});
+    }
+
+    // Test 12: Compression Presets (using Compression factory methods)
+    std.debug.print("\nTest 12: Compression Presets\n", .{});
+    const preset_data = "Testing compression presets with various configurations " ** 30;
+
+    // Test using Compression factory methods (these take allocator)
+    {
+        var fast_comp = Compression.fast(allocator);
+        defer fast_comp.deinit();
+        const fast_compressed = fast_comp.compress(preset_data) catch null;
+        if (fast_compressed) |fc| {
+            defer allocator.free(fc);
+            const ratio = 100.0 - (@as(f64, @floatFromInt(fc.len)) / @as(f64, @floatFromInt(preset_data.len)) * 100.0);
+            std.debug.print("  fast:       {} -> {} bytes ({d:.1}% saved)\n", .{ preset_data.len, fc.len, ratio });
+        }
+    }
+
+    {
+        var balanced_comp = Compression.balanced(allocator);
+        defer balanced_comp.deinit();
+        const balanced_compressed = balanced_comp.compress(preset_data) catch null;
+        if (balanced_compressed) |bc| {
+            defer allocator.free(bc);
+            const ratio = 100.0 - (@as(f64, @floatFromInt(bc.len)) / @as(f64, @floatFromInt(preset_data.len)) * 100.0);
+            std.debug.print("  balanced:   {} -> {} bytes ({d:.1}% saved)\n", .{ preset_data.len, bc.len, ratio });
+        }
+    }
+
+    {
+        var best_comp = Compression.best(allocator);
+        defer best_comp.deinit();
+        const best_compressed = best_comp.compress(preset_data) catch null;
+        if (best_compressed) |bc| {
+            defer allocator.free(bc);
+            const ratio = 100.0 - (@as(f64, @floatFromInt(bc.len)) / @as(f64, @floatFromInt(preset_data.len)) * 100.0);
+            std.debug.print("  best:       {} -> {} bytes ({d:.1}% saved)\n", .{ preset_data.len, bc.len, ratio });
+        }
+    }
+
+    {
+        var logs_comp = Compression.forLogs(allocator);
+        defer logs_comp.deinit();
+        const logs_compressed = logs_comp.compress(preset_data) catch null;
+        if (logs_compressed) |lc| {
+            defer allocator.free(lc);
+            const ratio = 100.0 - (@as(f64, @floatFromInt(lc.len)) / @as(f64, @floatFromInt(preset_data.len)) * 100.0);
+            std.debug.print("  forLogs:    {} -> {} bytes ({d:.1}% saved)\n", .{ preset_data.len, lc.len, ratio });
+        }
+    }
+
+    {
+        var archive_comp = Compression.archive(allocator);
+        defer archive_comp.deinit();
+        const archive_compressed = archive_comp.compress(preset_data) catch null;
+        if (archive_compressed) |ac| {
+            defer allocator.free(ac);
+            const ratio = 100.0 - (@as(f64, @floatFromInt(ac.len)) / @as(f64, @floatFromInt(preset_data.len)) * 100.0);
+            std.debug.print("  archive:    {} -> {} bytes ({d:.1}% saved)\n", .{ preset_data.len, ac.len, ratio });
+        }
+    }
+
+    std.debug.print("\nCompression Demo Complete!\n", .{});
+    std.debug.print("Files created: test_compression.log, test_compression.log.lgz\n", .{});
+    std.debug.print("Test directory: {s}/\n", .{test_dir});
 }

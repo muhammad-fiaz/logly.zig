@@ -522,11 +522,15 @@ pub const Telemetry = struct {
         // Export based on provider
         switch (self.config.provider) {
             .file => try self.exportToFile(),
-            .jaeger, .zipkin, .datadog, .google_cloud, .google_analytics, .google_tag_manager, .aws_xray, .azure, .generic => {
-                if (self.network_socket != null) {
-                    try self.exportToNetwork();
-                }
-            },
+            .generic => try self.exportToOtlp(),
+            .jaeger => try self.exportToJaeger(),
+            .zipkin => try self.exportToZipkin(),
+            .datadog => try self.exportToDatadog(),
+            .google_cloud => try self.exportToGoogleCloud(),
+            .google_analytics => try self.exportToGoogleAnalytics(),
+            .google_tag_manager => try self.exportToGoogleTagManager(),
+            .aws_xray => try self.exportToAwsXray(),
+            .azure => try self.exportToAzure(),
             .custom => {
                 if (self.config.custom_exporter_fn) |export_fn| {
                     try export_fn();
@@ -538,6 +542,394 @@ pub const Telemetry = struct {
         self.total_spans_exported += self.completed_span_count;
         self.exporter_stats.recordExport(self.completed_span_count, 0);
         self.completed_span_count = 0;
+    }
+
+    /// Export spans in OTLP JSON format (OpenTelemetry Protocol)
+    /// Compatible with OpenTelemetry Collector and OTLP-compatible backends
+    fn exportToOtlp(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        const writer = self.batch_buffer.writer(self.allocator);
+
+        try self.writeOtlpSpans(writer);
+
+        // Export via network if socket available, otherwise to file
+        if (self.network_socket != null and self.network_address != null) {
+            try Network.sendUdp(self.network_socket.?, self.network_address.?, self.batch_buffer.items);
+            self.exporter_stats.recordNetworkExport();
+        } else if (self.config.exporter_file_path) |path| {
+            const file = try std.fs.cwd().createFile(path, .{ .truncate = false });
+            defer file.close();
+            try file.seekFromEnd(0);
+            try file.writeAll(self.batch_buffer.items);
+            try file.writeAll("\n");
+        }
+
+        self.exporter_stats.recordExport(self.completed_spans.items.len, self.batch_buffer.items.len);
+    }
+
+    /// Write spans in OTLP JSON format
+    fn writeOtlpSpans(self: *Telemetry, writer: anytype) !void {
+        try writer.writeAll("{\"resourceSpans\":[{");
+
+        // Resource section
+        try writer.writeAll("\"resource\":{\"attributes\":[");
+        var first_attr = true;
+        if (self.resource.service_name) |name| {
+            try self.writeOtlpAttribute(writer, "service.name", .{ .string = name }, &first_attr);
+        }
+        if (self.resource.service_version) |ver| {
+            try self.writeOtlpAttribute(writer, "service.version", .{ .string = ver }, &first_attr);
+        }
+        if (self.resource.environment) |env| {
+            try self.writeOtlpAttribute(writer, "deployment.environment", .{ .string = env }, &first_attr);
+        }
+        if (self.resource.datacenter) |dc| {
+            try self.writeOtlpAttribute(writer, "cloud.availability_zone", .{ .string = dc }, &first_attr);
+        }
+        try writer.writeAll("]},");
+
+        // Scope spans section
+        try writer.writeAll("\"scopeSpans\":[{\"scope\":{\"name\":\"logly.telemetry\",\"version\":\"0.1.5\"},\"spans\":[");
+
+        for (self.completed_spans.items, 0..) |span, i| {
+            if (i > 0) try writer.writeByte(',');
+            try self.writeOtlpSpan(writer, span);
+        }
+
+        try writer.writeAll("]}]}]}");
+    }
+
+    /// Write a single span in OTLP format
+    fn writeOtlpSpan(self: *Telemetry, writer: anytype, span: Span) !void {
+        _ = self;
+        try writer.writeAll("{\"traceId\":\"");
+        try writer.writeAll(span.trace_id);
+        try writer.writeAll("\",\"spanId\":\"");
+        try writer.writeAll(span.span_id);
+        try writer.writeAll("\",\"name\":\"");
+        try utils.escapeJsonString(writer, span.name);
+        try writer.writeAll("\",\"kind\":");
+        const kind_num: u8 = switch (span.kind) {
+            .internal => 1,
+            .server => 2,
+            .client => 3,
+            .producer => 4,
+            .consumer => 5,
+        };
+        try utils.writeInt(writer, kind_num);
+        try writer.writeAll(",\"startTimeUnixNano\":");
+        try utils.writeInt(writer, utils.safeToUnsigned(u64, span.start_time));
+        if (span.end_time > 0) {
+            try writer.writeAll(",\"endTimeUnixNano\":");
+            try utils.writeInt(writer, utils.safeToUnsigned(u64, span.end_time));
+        }
+        if (span.parent_span_id) |pid| {
+            try writer.writeAll(",\"parentSpanId\":\"");
+            try writer.writeAll(pid);
+            try writer.writeByte('"');
+        }
+        // Status
+        try writer.writeAll(",\"status\":{\"code\":");
+        const status_code: u8 = switch (span.status) {
+            .unset => 0,
+            .ok => 1,
+            .err => 2,
+        };
+        try utils.writeInt(writer, status_code);
+        try writer.writeAll("}");
+
+        try writer.writeByte('}');
+    }
+
+    /// Write OTLP attribute
+    fn writeOtlpAttribute(self: *Telemetry, writer: anytype, key: []const u8, value: SpanAttribute, first: *bool) !void {
+        _ = self;
+        if (!first.*) try writer.writeByte(',');
+        first.* = false;
+        try writer.writeAll("{\"key\":\"");
+        try writer.writeAll(key);
+        try writer.writeAll("\",\"value\":{");
+        switch (value) {
+            .string => |s| {
+                try writer.writeAll("\"stringValue\":\"");
+                try utils.escapeJsonString(writer, s);
+                try writer.writeByte('"');
+            },
+            .integer => |i| {
+                try writer.writeAll("\"intValue\":");
+                try std.fmt.format(writer, "{d}", .{i});
+            },
+            .float => |f| {
+                try writer.writeAll("\"doubleValue\":");
+                try std.fmt.format(writer, "{d:.6}", .{f});
+            },
+            .boolean => |b| {
+                try writer.writeAll("\"boolValue\":");
+                try writer.writeAll(if (b) "true" else "false");
+            },
+            .string_array => |arr| {
+                try writer.writeAll("\"arrayValue\":{\"values\":[");
+                for (arr, 0..) |s, j| {
+                    if (j > 0) try writer.writeByte(',');
+                    try writer.writeAll("{\"stringValue\":\"");
+                    try utils.escapeJsonString(writer, s);
+                    try writer.writeAll("\"}");
+                }
+                try writer.writeAll("]}");
+            },
+        }
+        try writer.writeAll("}}");
+    }
+
+    /// Export to Jaeger (Thrift JSON format)
+    fn exportToJaeger(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        const writer = self.batch_buffer.writer(self.allocator);
+
+        try writer.writeAll("{\"data\":[{\"traceID\":\"");
+        if (self.completed_spans.items.len > 0) {
+            try writer.writeAll(self.completed_spans.items[0].trace_id);
+        }
+        try writer.writeAll("\",\"spans\":[");
+
+        for (self.completed_spans.items, 0..) |span, i| {
+            if (i > 0) try writer.writeByte(',');
+            try self.writeJaegerSpan(writer, span);
+        }
+
+        try writer.writeAll("],\"processes\":{\"p1\":{\"serviceName\":\"");
+        try writer.writeAll(self.resource.service_name orelse "unknown");
+        try writer.writeAll("\"}}}]}");
+
+        try self.sendToEndpoint();
+    }
+
+    /// Write Jaeger span format
+    fn writeJaegerSpan(self: *Telemetry, writer: anytype, span: Span) !void {
+        _ = self;
+        try writer.writeAll("{\"traceID\":\"");
+        try writer.writeAll(span.trace_id);
+        try writer.writeAll("\",\"spanID\":\"");
+        try writer.writeAll(span.span_id);
+        try writer.writeAll("\",\"operationName\":\"");
+        try utils.escapeJsonString(writer, span.name);
+        try writer.writeAll("\",\"startTime\":");
+        const start_us = utils.safeToUnsigned(u64, span.start_time) / 1000;
+        try utils.writeInt(writer, start_us);
+        if (span.end_time > 0) {
+            try writer.writeAll(",\"duration\":");
+            const duration_us = utils.safeToUnsigned(u64, span.end_time - span.start_time) / 1000;
+            try utils.writeInt(writer, duration_us);
+        }
+        try writer.writeAll(",\"processID\":\"p1\"}");
+    }
+
+    /// Export to Zipkin format
+    fn exportToZipkin(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        const writer = self.batch_buffer.writer(self.allocator);
+
+        try writer.writeByte('[');
+        for (self.completed_spans.items, 0..) |span, i| {
+            if (i > 0) try writer.writeByte(',');
+            try self.writeZipkinSpan(writer, span);
+        }
+        try writer.writeByte(']');
+
+        try self.sendToEndpoint();
+    }
+
+    /// Write Zipkin span format
+    fn writeZipkinSpan(self: *Telemetry, writer: anytype, span: Span) !void {
+        try writer.writeAll("{\"traceId\":\"");
+        try writer.writeAll(span.trace_id);
+        try writer.writeAll("\",\"id\":\"");
+        try writer.writeAll(span.span_id);
+        try writer.writeAll("\",\"name\":\"");
+        try utils.escapeJsonString(writer, span.name);
+        try writer.writeAll("\",\"timestamp\":");
+        const start_us = utils.safeToUnsigned(u64, span.start_time) / 1000;
+        try utils.writeInt(writer, start_us);
+        if (span.end_time > 0) {
+            try writer.writeAll(",\"duration\":");
+            const duration_us = utils.safeToUnsigned(u64, span.end_time - span.start_time) / 1000;
+            try utils.writeInt(writer, duration_us);
+        }
+        try writer.writeAll(",\"localEndpoint\":{\"serviceName\":\"");
+        try writer.writeAll(self.resource.service_name orelse "unknown");
+        try writer.writeAll("\"}}");
+    }
+
+    /// Export to Datadog APM format
+    fn exportToDatadog(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        const writer = self.batch_buffer.writer(self.allocator);
+
+        try writer.writeAll("[[");
+        for (self.completed_spans.items, 0..) |span, i| {
+            if (i > 0) try writer.writeByte(',');
+            try self.writeDatadogSpan(writer, span);
+        }
+        try writer.writeAll("]]");
+
+        try self.sendToEndpoint();
+    }
+
+    /// Write Datadog span format
+    fn writeDatadogSpan(self: *Telemetry, writer: anytype, span: Span) !void {
+        try writer.writeAll("{\"name\":\"");
+        try utils.escapeJsonString(writer, span.name);
+        try writer.writeAll("\",\"service\":\"");
+        try writer.writeAll(self.resource.service_name orelse "unknown");
+        try writer.writeAll("\",\"resource\":\"");
+        try utils.escapeJsonString(writer, span.name);
+        try writer.writeAll("\",\"trace_id\":");
+        // Datadog uses numeric trace IDs
+        try writer.writeAll("0");
+        try writer.writeAll(",\"span_id\":");
+        try writer.writeAll("0");
+        try writer.writeAll(",\"start\":");
+        try utils.writeInt(writer, utils.safeToUnsigned(u64, span.start_time));
+        if (span.end_time > 0) {
+            try writer.writeAll(",\"duration\":");
+            try utils.writeInt(writer, utils.safeToUnsigned(u64, span.end_time - span.start_time));
+        }
+        try writer.writeByte('}');
+    }
+
+    /// Export to Google Cloud Trace format
+    fn exportToGoogleCloud(self: *Telemetry) !void {
+        try self.exportToOtlp(); // Google Cloud accepts OTLP
+    }
+
+    /// Export to Google Analytics 4 Measurement Protocol
+    fn exportToGoogleAnalytics(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        const writer = self.batch_buffer.writer(self.allocator);
+
+        try writer.writeAll("{\"client_id\":\"logly_");
+        if (self.completed_spans.items.len > 0) {
+            try writer.writeAll(self.completed_spans.items[0].trace_id[0..8]);
+        } else {
+            try writer.writeAll("unknown");
+        }
+        try writer.writeAll("\",\"events\":[");
+
+        for (self.completed_spans.items, 0..) |span, i| {
+            if (i > 0) try writer.writeByte(',');
+            try writer.writeAll("{\"name\":\"span_completed\",\"params\":{");
+            try writer.writeAll("\"span_name\":\"");
+            try utils.escapeJsonString(writer, span.name);
+            try writer.writeAll("\",\"trace_id\":\"");
+            try writer.writeAll(span.trace_id);
+            try writer.writeAll("\",\"duration_ms\":");
+            if (span.end_time > 0) {
+                const duration_ms = utils.safeToUnsigned(u64, span.end_time - span.start_time) / 1_000_000;
+                try utils.writeInt(writer, duration_ms);
+            } else {
+                try writer.writeAll("0");
+            }
+            try writer.writeAll("}}");
+        }
+
+        try writer.writeAll("]}");
+        try self.sendToEndpoint();
+    }
+
+    /// Export to Google Tag Manager Server-Side
+    fn exportToGoogleTagManager(self: *Telemetry) !void {
+        try self.exportToGoogleAnalytics(); // Similar format
+    }
+
+    /// Export to AWS X-Ray format
+    fn exportToAwsXray(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        const writer = self.batch_buffer.writer(self.allocator);
+
+        for (self.completed_spans.items, 0..) |span, i| {
+            if (i > 0) try writer.writeByte('\n');
+            try self.writeXraySegment(writer, span);
+        }
+
+        try self.sendToEndpoint();
+    }
+
+    /// Write AWS X-Ray segment format
+    fn writeXraySegment(self: *Telemetry, writer: anytype, span: Span) !void {
+        try writer.writeAll("{\"name\":\"");
+        try utils.escapeJsonString(writer, span.name);
+        try writer.writeAll("\",\"id\":\"");
+        try writer.writeAll(span.span_id[0..@min(16, span.span_id.len)]);
+        try writer.writeAll("\",\"trace_id\":\"1-");
+        // X-Ray format: 1-{hex timestamp}-{hex random}
+        try writer.writeAll(span.trace_id[0..8]);
+        try writer.writeAll("-");
+        try writer.writeAll(span.trace_id[8..@min(32, span.trace_id.len)]);
+        try writer.writeAll("\",\"start_time\":");
+        const start_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.start_time))) / 1_000_000_000.0;
+        try std.fmt.format(writer, "{d:.6}", .{start_s});
+        if (span.end_time > 0) {
+            try writer.writeAll(",\"end_time\":");
+            const end_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.end_time))) / 1_000_000_000.0;
+            try std.fmt.format(writer, "{d:.6}", .{end_s});
+        }
+        try writer.writeAll(",\"origin\":\"");
+        try writer.writeAll(self.resource.service_name orelse "unknown");
+        try writer.writeAll("\"}");
+    }
+
+    /// Export to Azure Application Insights format
+    fn exportToAzure(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        const writer = self.batch_buffer.writer(self.allocator);
+
+        try writer.writeByte('[');
+        for (self.completed_spans.items, 0..) |span, i| {
+            if (i > 0) try writer.writeByte(',');
+            try self.writeAzureEnvelope(writer, span);
+        }
+        try writer.writeByte(']');
+
+        try self.sendToEndpoint();
+    }
+
+    /// Write Azure Application Insights envelope
+    fn writeAzureEnvelope(self: *Telemetry, writer: anytype, span: Span) !void {
+        try writer.writeAll("{\"name\":\"Microsoft.ApplicationInsights.Request\",");
+        try writer.writeAll("\"time\":\"");
+        // Write ISO 8601 timestamp
+        const timestamp_ns = utils.safeToUnsigned(u64, span.start_time);
+        const timestamp_s = timestamp_ns / 1_000_000_000;
+        try std.fmt.format(writer, "{d}", .{timestamp_s});
+        try writer.writeAll("\",\"data\":{\"baseType\":\"RequestData\",\"baseData\":{");
+        try writer.writeAll("\"id\":\"");
+        try writer.writeAll(span.span_id);
+        try writer.writeAll("\",\"name\":\"");
+        try utils.escapeJsonString(writer, span.name);
+        try writer.writeAll("\",\"success\":");
+        try writer.writeAll(if (span.status != .err) "true" else "false");
+        if (span.end_time > 0) {
+            try writer.writeAll(",\"duration\":\"");
+            const duration_ms = utils.safeToUnsigned(u64, span.end_time - span.start_time) / 1_000_000;
+            const hours = duration_ms / 3_600_000;
+            const minutes = (duration_ms % 3_600_000) / 60_000;
+            const seconds = (duration_ms % 60_000) / 1_000;
+            const ms = duration_ms % 1_000;
+            try std.fmt.format(writer, "{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{ hours, minutes, seconds, ms });
+            try writer.writeByte('"');
+        }
+        try writer.writeAll("}},\"iKey\":\"");
+        try writer.writeAll(self.config.connection_string orelse "");
+        try writer.writeAll("\"}");
+    }
+
+    /// Send buffer to configured endpoint
+    fn sendToEndpoint(self: *Telemetry) !void {
+        if (self.network_socket != null and self.network_address != null) {
+            try Network.sendUdp(self.network_socket.?, self.network_address.?, self.batch_buffer.items);
+            self.exporter_stats.recordNetworkExport();
+        }
+        self.exporter_stats.recordExport(self.completed_spans.items.len, self.batch_buffer.items.len);
     }
 
     /// Export spans to file (JSONL format)

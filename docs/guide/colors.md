@@ -168,12 +168,140 @@ pub fn main() !void {
     try logger.addCustomLevel("METRIC", 15, "32;1");     // Bold Green
     
     // Use custom levels
-    try logger.custom("AUDIT", "User login event");
-    try logger.custom("NOTICE", "Important notice");
-    try logger.custom("ALERT", "High CPU usage detected");
-    try logger.custom("SECURITY", "Unauthorized access attempt");
-    try logger.customf("METRIC", "Response time: {d}ms", .{42});
+    try logger.custom("AUDIT", "User login event", @src());
+    try logger.custom("NOTICE", "Important notice", @src());
+    try logger.custom("ALERT", "High CPU usage detected", @src());
+    try logger.custom("SECURITY", "Unauthorized access attempt", @src());
+    try logger.customf("METRIC", "Response time: {d}ms", .{42}, @src());
 }
+```
+
+## Enhanced Color Options (v0.1.5)
+
+### Level Color Variants
+
+Each log level now supports multiple color variants:
+
+```zig
+const Level = logly.Level;
+
+// Default colors
+const trace_color = Level.trace.defaultColor();  // "36" (Cyan)
+
+// Bright/Bold variants
+const trace_bright = Level.trace.brightColor();  // "96;1" (Bright Cyan Bold)
+
+// Dim variants
+const trace_dim = Level.trace.dimColor();        // "36;2" (Cyan Dim)
+
+// Underline variants
+const trace_underline = Level.trace.underlineColor();  // "36;4"
+
+// 256-color variants
+const trace_256 = Level.trace.color256();        // "38;5;51"
+```
+
+### Color Constants
+
+Use builtin color constants from `Constants.Colors`:
+
+```zig
+const Colors = logly.Constants.Colors;
+
+// Foreground colors
+const red = Colors.Fg.red;           // "31"
+const bright_red = Colors.BrightFg.red;  // "91"
+
+// Background colors
+const red_bg = Colors.Bg.red;        // "41"
+const bright_red_bg = Colors.BrightBg.red;  // "101"
+
+// Styles
+const bold = Colors.Style.bold;      // "1"
+const underline = Colors.Style.underline;  // "4"
+const italic = Colors.Style.italic;  // "3"
+const reverse = Colors.Style.reverse;  // "7"
+```
+
+### Theme Presets
+
+Logly v0.1.5 includes multiple color theme presets:
+
+```zig
+const Formatter = logly.Formatter;
+
+// Use preset themes
+const default_theme = Formatter.Theme{};           // Standard colors
+const bright_theme = Formatter.Theme.bright();     // Bold/bright colors
+const dim_theme = Formatter.Theme.dim();           // Dim colors
+const minimal_theme = Formatter.Theme.minimal();   // Subtle grays
+const neon_theme = Formatter.Theme.neon();         // Vivid 256-colors
+const pastel_theme = Formatter.Theme.pastel();     // Soft colors
+const dark_theme = Formatter.Theme.dark();         // Dark terminal optimized
+const light_theme = Formatter.Theme.light();       // Light terminal optimized
+
+// Apply theme to formatter
+var formatter = Formatter.init(allocator);
+formatter.setTheme(Formatter.Theme.neon());
+```
+
+### 256-Color Palette
+
+Use the extended 256-color palette:
+
+```zig
+const Colors = logly.Constants.Colors;
+
+// Generate 256-color codes
+const orange = Colors.fg256(208);     // "38;5;208"
+const purple_bg = Colors.bg256(141);  // "48;5;141"
+
+// Theme presets using 256-colors
+const neon = Colors.Themes.neon;
+// trace: "38;5;51", debug: "38;5;33", err: "38;5;196"
+```
+
+### RGB Color Support
+
+Define colors using RGB values:
+
+```zig
+const Colors = logly.Constants.Colors;
+
+// Generate RGB color codes
+const coral = Colors.fgRgb(255, 127, 80);   // "38;2;255;127;80"
+const navy_bg = Colors.bgRgb(0, 0, 128);    // "48;2;0;0;128"
+
+// Custom level with RGB
+const CustomLevel = logly.CustomLevel;
+const rgb_level = CustomLevel.initRgb("CUSTOM", 42, 255, 128, 64);
+```
+
+### Advanced CustomLevel Options
+
+Create custom levels with full color control:
+
+```zig
+const CustomLevel = logly.CustomLevel;
+
+// Basic custom level
+const audit = CustomLevel.init("AUDIT", 35, "36;1");
+
+// Full color options
+const custom = CustomLevel.initFull(
+    "CUSTOM",           // name
+    42,                 // priority
+    "32",               // base color
+    "92;1",             // bright color
+    "32;2",             // dim color
+    "38;5;46",          // 256-color
+);
+
+// Styled custom level
+const styled = CustomLevel.initStyled("STYLED", 45, "31", "1;4");  // bold underline
+
+// With background color
+const alert = CustomLevel.initWithBackground("ALERT", 50, "97", "41");  // white on red
 ```
 
 ## Color Configuration

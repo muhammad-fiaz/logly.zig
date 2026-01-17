@@ -1,10 +1,10 @@
 ---
 title: Log Compression Example
-description: Example of log compression with Logly.zig using LZ77+RLE hybrid algorithm. Compress logs with CRC32 verification, configurable levels, and rotation integration.
+description: Example of log compression with Logly.zig using DEFLATE, GZIP, ZLIB, and ZSTD algorithms. Compress logs with CRC32 verification, configurable levels, and rotation integration.
 head:
   - - meta
     - name: keywords
-      content: log compression example, gzip logs, lz77 compression, log archiving, compression ratio, crc32 verification
+      content: log compression example, gzip logs, zstd compression, log archiving, compression ratio, crc32 verification
   - - meta
     - property: og:title
       content: Log Compression Example | Logly.zig
@@ -12,7 +12,7 @@ head:
 
 # Compression Example
 
-This example demonstrates log compression features in Logly, including GZIP support and Streaming APIs.
+This example demonstrates log compression features in Logly, including GZIP, ZSTD (v0.1.5+), and Streaming APIs.
 
 ## Source Code
 
@@ -20,7 +20,7 @@ This example demonstrates log compression features in Logly, including GZIP supp
 //! Compression Example
 //!
 //! Demonstrates how to use log compression features in Logly.
-//! Includes automatic compression on rotation, manual compression, GZIP, and Streaming.
+//! Includes automatic compression on rotation, manual compression, GZIP, ZSTD, and Streaming.
 
 const std = @import("std");
 const logly = @import("logly");
@@ -71,8 +71,27 @@ pub fn main() !void {
 
     std.debug.print("   GZIP compressed size: {d} bytes\n\n", .{gzip_compressed.len});
 
-    // Example 7: Streaming Compression
-    std.debug.print("7. Streaming Compression\n", .{});
+    // Example 7: Zstd Compression (v0.1.5+)
+    std.debug.print("7. Zstd Compression (v0.1.5+)\n", .{});
+    std.debug.print("   ---------------------------\n", .{});
+
+    var zstd_comp = logly.Compression.zstdCompression(allocator);
+    defer zstd_comp.deinit();
+
+    const zstd_data = "Data compressed with Zstandard algorithm - very fast decompression! " ** 5;
+    const zstd_compressed = try zstd_comp.compress(zstd_data);
+    defer allocator.free(zstd_compressed);
+
+    std.debug.print("   Original size: {d} bytes\n", .{zstd_data.len});
+    std.debug.print("   Zstd compressed size: {d} bytes\n", .{zstd_compressed.len});
+
+    const zstd_decompressed = try zstd_comp.decompress(zstd_compressed);
+    defer allocator.free(zstd_decompressed);
+    std.debug.print("   Zstd decompressed: {d} bytes\n", .{zstd_decompressed.len});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, zstd_data, zstd_decompressed)) "✓ Verified" else "✗ Failed"});
+
+    // Example 8: Streaming Compression
+    std.debug.print("8. Streaming Compression\n", .{});
     std.debug.print("   ---------------------\n", .{});
 
     var stream_comp = logly.Compression.init(allocator);
@@ -86,8 +105,8 @@ pub fn main() !void {
     try stream_comp.compressStream(input_stream.reader(), output_buffer.writer(allocator));
     std.debug.print("   Stream compressed size: {d} bytes\n", .{output_buffer.items.len});
 
-    // Example 8: Directory Compression
-    std.debug.print("8. Directory Compression\n", .{});
+    // Example 9: Directory Compression
+    std.debug.print("9. Directory Compression\n", .{});
     const files_processed = try stream_comp.compressDirectory("logs_test_batch");
     std.debug.print("   Batch compressed {d} files\n", .{files_processed});
 }

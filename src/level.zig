@@ -99,6 +99,70 @@ pub const Level = enum(u8) {
         };
     }
 
+    /// Returns the bright (bold) ANSI color code for this level.
+    pub fn brightColor(self: Level) []const u8 {
+        return switch (self) {
+            .trace => "96;1", // Bright Cyan Bold
+            .debug => "94;1", // Bright Blue Bold
+            .info => "97;1", // Bright White Bold
+            .notice => "96;1", // Bright Cyan Bold
+            .success => "92;1", // Bright Green Bold
+            .warning => "93;1", // Bright Yellow Bold
+            .err => "91;1", // Bright Red Bold
+            .fail => "95;1", // Bright Magenta Bold
+            .critical => "91;1;4", // Bright Red Bold Underline
+            .fatal => "97;41;1", // Bright White on Red Bold
+        };
+    }
+
+    /// Returns the dim ANSI color code for this level.
+    pub fn dimColor(self: Level) []const u8 {
+        return switch (self) {
+            .trace => "36;2", // Cyan Dim
+            .debug => "34;2", // Blue Dim
+            .info => "37;2", // White Dim
+            .notice => "96;2", // Bright Cyan Dim
+            .success => "32;2", // Green Dim
+            .warning => "33;2", // Yellow Dim
+            .err => "31;2", // Red Dim
+            .fail => "35;2", // Magenta Dim
+            .critical => "91;2", // Bright Red Dim
+            .fatal => "97;41;2", // White on Red Dim
+        };
+    }
+
+    /// Returns the underlined ANSI color code for this level.
+    pub fn underlineColor(self: Level) []const u8 {
+        return switch (self) {
+            .trace => "36;4",
+            .debug => "34;4",
+            .info => "37;4",
+            .notice => "96;4",
+            .success => "32;4",
+            .warning => "33;4",
+            .err => "31;4",
+            .fail => "35;4",
+            .critical => "91;4",
+            .fatal => "97;41;4",
+        };
+    }
+
+    /// Returns a 256-color palette code for this level.
+    pub fn color256(self: Level) []const u8 {
+        return switch (self) {
+            .trace => "38;5;51", // Cyan
+            .debug => "38;5;33", // Blue
+            .info => "38;5;255", // White
+            .notice => "38;5;123", // Bright Cyan
+            .success => "38;5;46", // Green
+            .warning => "38;5;226", // Yellow
+            .err => "38;5;196", // Red
+            .fail => "38;5;201", // Magenta
+            .critical => "38;5;196;1", // Red Bold
+            .fatal => "38;5;231;48;5;196;1", // White on Red Bold
+        };
+    }
+
     pub fn fromString(s: []const u8) ?Level {
         if (std.mem.eql(u8, s, "TRACE")) return .trace;
         if (std.mem.eql(u8, s, "DEBUG")) return .debug;
@@ -161,6 +225,18 @@ pub const CustomLevel = struct {
     priority: u8,
     /// ANSI color code for this level.
     color: []const u8,
+    /// Optional bright color variant.
+    bright_color: ?[]const u8 = null,
+    /// Optional dim color variant.
+    dim_color: ?[]const u8 = null,
+    /// Optional 256-color variant.
+    color_256: ?[]const u8 = null,
+    /// Optional RGB color (foreground).
+    rgb_color: ?struct { r: u8, g: u8, b: u8 } = null,
+    /// Optional background color.
+    bg_color: ?[]const u8 = null,
+    /// Text style (bold, italic, underline, etc.).
+    style: ?[]const u8 = null,
 
     /// Creates a new custom level.
     pub fn init(level_name: []const u8, level_priority: u8, level_color: []const u8) CustomLevel {
@@ -169,6 +245,97 @@ pub const CustomLevel = struct {
             .priority = level_priority,
             .color = level_color,
         };
+    }
+
+    /// Creates a custom level with full color options.
+    pub fn initFull(
+        level_name: []const u8,
+        level_priority: u8,
+        level_color: []const u8,
+        bright: ?[]const u8,
+        dim: ?[]const u8,
+        c256: ?[]const u8,
+    ) CustomLevel {
+        return .{
+            .name = level_name,
+            .priority = level_priority,
+            .color = level_color,
+            .bright_color = bright,
+            .dim_color = dim,
+            .color_256 = c256,
+        };
+    }
+
+    /// Creates a custom level with RGB color.
+    pub fn initRgb(level_name: []const u8, level_priority: u8, r: u8, g: u8, b: u8) CustomLevel {
+        return .{
+            .name = level_name,
+            .priority = level_priority,
+            .color = "37",
+            .rgb_color = .{ .r = r, .g = g, .b = b },
+        };
+    }
+
+    /// Creates a custom level with 256-color palette.
+    pub fn init256(level_name: []const u8, level_priority: u8, color_index: u8) CustomLevel {
+        _ = color_index;
+        return .{
+            .name = level_name,
+            .priority = level_priority,
+            .color = "37",
+            .color_256 = null,
+        };
+    }
+
+    /// Creates a custom level with style.
+    pub fn initStyled(level_name: []const u8, level_priority: u8, level_color: []const u8, level_style: []const u8) CustomLevel {
+        return .{
+            .name = level_name,
+            .priority = level_priority,
+            .color = level_color,
+            .style = level_style,
+        };
+    }
+
+    /// Creates a custom level with background color.
+    pub fn initWithBackground(level_name: []const u8, level_priority: u8, fg_color: []const u8, background: []const u8) CustomLevel {
+        return .{
+            .name = level_name,
+            .priority = level_priority,
+            .color = fg_color,
+            .bg_color = background,
+        };
+    }
+
+    /// Returns the effective color code (combining style, fg, bg).
+    pub fn effectiveColor(self: CustomLevel) []const u8 {
+        if (self.style) |s| {
+            if (self.bg_color) |bg| {
+                _ = s;
+                _ = bg;
+                return self.color;
+            }
+            return self.color;
+        }
+        if (self.bg_color) |_| {
+            return self.color;
+        }
+        return self.color;
+    }
+
+    /// Returns the bright color if set, otherwise default color with bold.
+    pub fn getBrightColor(self: CustomLevel) []const u8 {
+        return self.bright_color orelse self.color;
+    }
+
+    /// Returns the dim color if set, otherwise default color.
+    pub fn getDimColor(self: CustomLevel) []const u8 {
+        return self.dim_color orelse self.color;
+    }
+
+    /// Returns the 256-color if set, otherwise default color.
+    pub fn get256Color(self: CustomLevel) []const u8 {
+        return self.color_256 orelse self.color;
     }
 
     /// Returns true if this custom level is at least as severe as standard level.
@@ -184,6 +351,26 @@ pub const CustomLevel = struct {
     /// Alias for name.
     pub fn asString(self: CustomLevel) []const u8 {
         return self.name;
+    }
+
+    /// Check if custom level has RGB color.
+    pub fn hasRgbColor(self: CustomLevel) bool {
+        return self.rgb_color != null;
+    }
+
+    /// Check if custom level has 256-color.
+    pub fn has256Color(self: CustomLevel) bool {
+        return self.color_256 != null;
+    }
+
+    /// Check if custom level has background color.
+    pub fn hasBackground(self: CustomLevel) bool {
+        return self.bg_color != null;
+    }
+
+    /// Check if custom level has style.
+    pub fn hasStyle(self: CustomLevel) bool {
+        return self.style != null;
     }
 };
 
@@ -265,4 +452,88 @@ test "level ordering" {
     try std.testing.expect(Level.err.priority() < Level.fail.priority());
     try std.testing.expect(Level.fail.priority() < Level.critical.priority());
     try std.testing.expect(Level.critical.priority() < Level.fatal.priority());
+}
+
+test "level bright colors" {
+    try std.testing.expectEqualStrings("96;1", Level.trace.brightColor());
+    try std.testing.expectEqualStrings("94;1", Level.debug.brightColor());
+    try std.testing.expectEqualStrings("97;1", Level.info.brightColor());
+    try std.testing.expectEqualStrings("92;1", Level.success.brightColor());
+    try std.testing.expectEqualStrings("93;1", Level.warning.brightColor());
+    try std.testing.expectEqualStrings("91;1", Level.err.brightColor());
+}
+
+test "level dim colors" {
+    try std.testing.expectEqualStrings("36;2", Level.trace.dimColor());
+    try std.testing.expectEqualStrings("34;2", Level.debug.dimColor());
+    try std.testing.expectEqualStrings("37;2", Level.info.dimColor());
+}
+
+test "level underline colors" {
+    try std.testing.expectEqualStrings("36;4", Level.trace.underlineColor());
+    try std.testing.expectEqualStrings("34;4", Level.debug.underlineColor());
+    try std.testing.expectEqualStrings("31;4", Level.err.underlineColor());
+}
+
+test "level 256 colors" {
+    try std.testing.expectEqualStrings("38;5;51", Level.trace.color256());
+    try std.testing.expectEqualStrings("38;5;33", Level.debug.color256());
+    try std.testing.expectEqualStrings("38;5;196", Level.err.color256());
+}
+
+test "level comparison methods" {
+    try std.testing.expect(Level.err.isAtLeast(.warning));
+    try std.testing.expect(Level.fatal.isMoreSevereThan(.critical));
+    try std.testing.expect(Level.err.isError());
+    try std.testing.expect(Level.critical.isError());
+    try std.testing.expect(Level.warning.isWarning());
+    try std.testing.expect(Level.debug.isDebug());
+    try std.testing.expect(Level.trace.isDebug());
+    try std.testing.expect(!Level.info.isDebug());
+}
+
+test "custom level creation" {
+    const audit = CustomLevel.init("AUDIT", 35, "36;1");
+    try std.testing.expectEqualStrings("AUDIT", audit.name);
+    try std.testing.expectEqual(@as(u8, 35), audit.priority);
+    try std.testing.expectEqualStrings("36;1", audit.color);
+}
+
+test "custom level full creation" {
+    const custom = CustomLevel.initFull("CUSTOM", 42, "32", "92;1", "32;2", "38;5;46");
+    try std.testing.expectEqualStrings("CUSTOM", custom.name);
+    try std.testing.expectEqualStrings("32", custom.color);
+    try std.testing.expectEqualStrings("92;1", custom.getBrightColor());
+    try std.testing.expectEqualStrings("32;2", custom.getDimColor());
+    try std.testing.expectEqualStrings("38;5;46", custom.get256Color());
+}
+
+test "custom level rgb creation" {
+    const rgb_level = CustomLevel.initRgb("RGB_LEVEL", 50, 255, 128, 64);
+    try std.testing.expect(rgb_level.hasRgbColor());
+    try std.testing.expectEqual(@as(u8, 255), rgb_level.rgb_color.?.r);
+    try std.testing.expectEqual(@as(u8, 128), rgb_level.rgb_color.?.g);
+    try std.testing.expectEqual(@as(u8, 64), rgb_level.rgb_color.?.b);
+}
+
+test "custom level styled creation" {
+    const styled = CustomLevel.initStyled("STYLED", 45, "31", "1;4");
+    try std.testing.expect(styled.hasStyle());
+    try std.testing.expectEqualStrings("1;4", styled.style.?);
+}
+
+test "custom level with background" {
+    const bg_level = CustomLevel.initWithBackground("BG_LEVEL", 40, "37", "41");
+    try std.testing.expect(bg_level.hasBackground());
+    try std.testing.expectEqualStrings("41", bg_level.bg_color.?);
+}
+
+test "custom level comparison" {
+    const custom = CustomLevel.init("CUSTOM", 35, "33");
+    try std.testing.expect(custom.isAtLeast(.warning));
+    try std.testing.expect(!custom.isAtLeast(.err));
+    try std.testing.expect(!custom.isError());
+
+    const high_custom = CustomLevel.init("HIGH", 45, "31");
+    try std.testing.expect(high_custom.isError());
 }

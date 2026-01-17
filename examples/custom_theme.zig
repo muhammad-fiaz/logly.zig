@@ -12,57 +12,107 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    std.debug.print("\n=== Custom Theme Example ===\n", .{});
+    const Theme = logly.Formatter.Theme;
 
-    // 1. Define a custom theme
-    // This overrides the default colors for standard levels
-    const neon_theme = logly.Formatter.Theme{
-        .trace = "90", // Bright Black (Gray)
-        .debug = "35", // Magenta
-        .info = "36", // Cyan
-        .success = "92", // Bright Green
-        .warning = "93", // Bright Yellow
-        .err = "91", // Bright Red
-        .fail = "31;1", // Red Bold
-        .critical = "41;37;1", // White on Red Background
-    };
+    std.debug.print("\n=== Theme Presets (v0.1.5) ===\n\n", .{});
 
-    // Apply the theme to the console sink (first sink)
+    // Built-in theme presets
+    std.debug.print("Available presets:\n", .{});
+    std.debug.print("  Theme.bright()  - Bold/bright colors\n", .{});
+    std.debug.print("  Theme.dim()     - Dim colors\n", .{});
+    std.debug.print("  Theme.minimal() - Subtle grays\n", .{});
+    std.debug.print("  Theme.neon()    - Vivid 256-colors\n", .{});
+    std.debug.print("  Theme.pastel()  - Soft colors\n", .{});
+    std.debug.print("  Theme.dark()    - Dark terminal\n", .{});
+    std.debug.print("  Theme.light()   - Light terminal\n\n", .{});
+
+    // Apply neon theme preset
     if (logger.sinks.items.len > 0) {
-        logger.sinks.items[0].formatter.setTheme(neon_theme);
+        logger.sinks.items[0].formatter.setTheme(Theme.neon());
     }
 
-    try logger.trace("Trace message (Gray)", @src());
-    try logger.debug("Debug message (Magenta)", @src());
-    try logger.info("Info message (Cyan)", @src());
-    try logger.success("Success message (Bright Green)", @src());
-    try logger.warning("Warning message (Bright Yellow)", @src());
-    try logger.err("Error message (Bright Red)", @src());
-    try logger.fail("Fail message (Red Bold)", @src());
-    try logger.critical("Critical message (White on Red)", @src());
+    std.debug.print("=== Neon Theme ===\n\n", .{});
+    try logger.trace("Trace - neon cyan", @src());
+    try logger.debug("Debug - neon blue", @src());
+    try logger.info("Info - light gray", @src());
+    try logger.success("Success - neon green", @src());
+    try logger.warning("Warning - neon yellow", @src());
+    try logger.err("Error - neon red", @src());
+    try logger.critical("Critical - bold red", @src());
 
-    std.debug.print("\n=== Custom Format Example ===\n", .{});
+    // Switch to pastel theme
+    if (logger.sinks.items.len > 0) {
+        logger.sinks.items[0].formatter.setTheme(Theme.pastel());
+    }
 
-    // 2. Custom Log Format
-    // You can customize the output format using a template string
+    std.debug.print("\n=== Pastel Theme ===\n\n", .{});
+    try logger.trace("Trace - soft cyan", @src());
+    try logger.debug("Debug - soft blue", @src());
+    try logger.info("Info - light", @src());
+    try logger.success("Success - soft green", @src());
+    try logger.warning("Warning - soft yellow", @src());
+    try logger.err("Error - soft red", @src());
+
+    // Switch to dark theme
+    if (logger.sinks.items.len > 0) {
+        logger.sinks.items[0].formatter.setTheme(Theme.dark());
+    }
+
+    std.debug.print("\n=== Dark Theme ===\n\n", .{});
+    try logger.info("Info in dark theme", @src());
+    try logger.warning("Warning in dark theme", @src());
+    try logger.err("Error in dark theme", @src());
+
+    std.debug.print("\n=== Custom Theme ===\n\n", .{});
+
+    // Define a custom theme manually
+    const custom_theme = Theme{
+        .trace = "90",
+        .debug = "35",
+        .info = "36",
+        .notice = "96;1",
+        .success = "92",
+        .warning = "93",
+        .err = "91",
+        .fail = "31;1",
+        .critical = "41;37;1",
+        .fatal = "41;97;1",
+    };
+
+    if (logger.sinks.items.len > 0) {
+        logger.sinks.items[0].formatter.setTheme(custom_theme);
+    }
+
+    try logger.trace("Trace (Gray)", @src());
+    try logger.debug("Debug (Magenta)", @src());
+    try logger.info("Info (Cyan)", @src());
+    try logger.success("Success (Bright Green)", @src());
+    try logger.warning("Warning (Bright Yellow)", @src());
+    try logger.err("Error (Bright Red)", @src());
+    try logger.fail("Fail (Red Bold)", @src());
+    try logger.critical("Critical (White on Red)", @src());
+
+    std.debug.print("\n=== Theme Colors Reference ===\n\n", .{});
+
+    const neon = Theme.neon();
+    std.debug.print("Neon theme colors:\n", .{});
+    std.debug.print("  trace:    {s}\n", .{neon.trace});
+    std.debug.print("  debug:    {s}\n", .{neon.debug});
+    std.debug.print("  info:     {s}\n", .{neon.info});
+    std.debug.print("  success:  {s}\n", .{neon.success});
+    std.debug.print("  warning:  {s}\n", .{neon.warning});
+    std.debug.print("  err:      {s}\n", .{neon.err});
+    std.debug.print("  critical: {s}\n", .{neon.critical});
+    std.debug.print("  fatal:    {s}\n", .{neon.fatal});
+
+    std.debug.print("\n=== Custom Format Example ===\n\n", .{});
+
     var config = logly.Config.default();
-
-    // Available placeholders:
-    // {time}     - Timestamp
-    // {level}    - Log level name
-    // {message}  - The log message
-    // {module}   - Module name
-    // {function} - Function name
-    // {file}     - Filename
-    // {line}     - Line number
-    // {thread}   - Thread ID
-
     config.log_format = ">>> {time} | {level} | {message} <<<";
     logger.configure(config);
 
     try logger.info("This uses a custom format", @src());
 
-    // Another format style
     config.log_format = "[{level}] {message} ({file}:{line})";
     logger.configure(config);
 

@@ -98,9 +98,9 @@ pub fn main() !void {
 
 ## Why Logly.Zig?
 
-- **Out-of-Box Features**: Get file rotation, JSON logging, async I/O, compression, metrics, and more without manual implementation
+- **Out-of-Box Features**: Get file rotation, JSON logging, async I/O, compression (GZIP, ZLIB, ZSTD), metrics, and more without manual implementation
 - **Production Grade**: Aims to be production ready, built natively in Zig
-- **Zero Dependencies**: Pure Zig implementation with no external dependencies
+- **Zero Dependencies**: Pure Zig implementation with minimal external dependencies
 - **Memory Safe**: Compile-time safety guarantees from Zig
 - **Cross-Platform**: Works on Linux, Windows, macOS, and more
 - **Well Documented**: Comprehensive guides and API documentation
@@ -114,7 +114,7 @@ Logly.zig aims to be production-ready. While this is a relatively new project an
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.4.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.5.tar.gz
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.

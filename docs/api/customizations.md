@@ -76,25 +76,47 @@ pub const FormatStructureConfig = struct {
 
 ## Config.level_colors
 
-Per-level ANSI color code customization.
+Per-level ANSI color code customization with theme presets and individual overrides.
 
 **Type:** `Config.LevelColorConfig`
 
-### LevelColorConfig
+### LevelColorConfig (v0.1.5)
 
 ```zig
 pub const LevelColorConfig = struct {
+    /// Theme preset for base colors
+    theme_preset: ThemePreset = .default,
+    
+    /// Individual level color overrides (take precedence over theme)
     trace_color: ?[]const u8 = null,
     debug_color: ?[]const u8 = null,
     info_color: ?[]const u8 = null,
+    notice_color: ?[]const u8 = null,
     success_color: ?[]const u8 = null,
     warning_color: ?[]const u8 = null,
     error_color: ?[]const u8 = null,
     fail_color: ?[]const u8 = null,
     critical_color: ?[]const u8 = null,
+    fatal_color: ?[]const u8 = null,
+    
     use_rgb: bool = false,
     support_background: bool = false,
     reset_code: []const u8 = "\x1b[0m",
+    
+    pub const ThemePreset = enum {
+        default,   // Standard ANSI colors
+        bright,    // Bold/bright variants
+        dim,       // Dim variants
+        minimal,   // Gray-scale theme
+        neon,      // Vivid 256-colors
+        pastel,    // Soft colors
+        dark,      // Dark terminal optimized
+        light,     // Light terminal optimized
+        none,      // No colors (plain text)
+    };
+    
+    /// Get effective color for a level (override or theme)
+    pub fn getColorForLevel(self: LevelColorConfig, level: Level) []const u8;
 };
 ```
 
@@ -102,27 +124,74 @@ pub const LevelColorConfig = struct {
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `trace_color` | `?[]const u8` | `null` | ANSI code for TRACE level |
-| `debug_color` | `?[]const u8` | `null` | ANSI code for DEBUG level |
-| `info_color` | `?[]const u8` | `null` | ANSI code for INFO level |
-| `success_color` | `?[]const u8` | `null` | ANSI code for SUCCESS level |
-| `warning_color` | `?[]const u8` | `null` | ANSI code for WARNING level |
-| `error_color` | `?[]const u8` | `null` | ANSI code for ERROR level |
-| `fail_color` | `?[]const u8` | `null` | ANSI code for FAIL level |
-| `critical_color` | `?[]const u8` | `null` | ANSI code for CRITICAL level |
+| `theme_preset` | `ThemePreset` | `.default` | Base theme for all levels |
+| `trace_color` | `?[]const u8` | `null` | Override for TRACE level |
+| `debug_color` | `?[]const u8` | `null` | Override for DEBUG level |
+| `info_color` | `?[]const u8` | `null` | Override for INFO level |
+| `notice_color` | `?[]const u8` | `null` | Override for NOTICE level |
+| `success_color` | `?[]const u8` | `null` | Override for SUCCESS level |
+| `warning_color` | `?[]const u8` | `null` | Override for WARNING level |
+| `error_color` | `?[]const u8` | `null` | Override for ERROR level |
+| `fail_color` | `?[]const u8` | `null` | Override for FAIL level |
+| `critical_color` | `?[]const u8` | `null` | Override for CRITICAL level |
+| `fatal_color` | `?[]const u8` | `null` | Override for FATAL level |
 | `use_rgb` | `bool` | `false` | Enable RGB color mode |
 | `support_background` | `bool` | `false` | Support background colors |
-| `reset_code` | `[]const u8` | `"\x1b[0m"` | Reset code at end of colored output |
+| `reset_code` | `[]const u8` | `"\x1b[0m"` | Reset code at end |
 
-### Example
+### Theme Presets
+
+| Preset | Description | Example Colors |
+|--------|-------------|----------------|
+| `default` | Standard ANSI colors | trace=36, debug=34, err=31 |
+| `bright` | Bold/bright variants | trace=96;1, debug=94;1, err=91;1 |
+| `dim` | Dim variants | trace=36;2, debug=34;2, err=31;2 |
+| `minimal` | Gray-scale theme | trace=90, debug=90, err=31 |
+| `neon` | Vivid 256-colors | trace=38;5;51, debug=38;5;33 |
+| `pastel` | Soft colors | trace=38;5;159, debug=38;5;117 |
+| `dark` | Dark terminal optimized | 256-color palette |
+| `light` | Light terminal optimized | 256-color palette |
+| `none` | No colors (plain text) | All empty strings |
+
+### Example: Theme-Based
 
 ```zig
+// Use neon theme for all levels
 config.level_colors = .{
-    .info_color = "\x1b[34m",      // Blue
-    .warning_color = "\x1b[33m",   // Yellow
-    .error_color = "\x1b[31m",     // Red
-    .critical_color = "\x1b[1;31m", // Bold Red
+    .theme_preset = .neon,
 };
+```
+
+### Example: Theme with Overrides
+
+```zig
+// Use neon theme but override error color
+config.level_colors = .{
+    .theme_preset = .neon,
+    .error_color = "91;1;4",  // Bright red bold underline
+    .fatal_color = "97;41;1", // White on red bold
+};
+```
+
+### Example: Individual Colors Only
+
+```zig
+// Set individual colors (theme_preset = .default)
+config.level_colors = .{
+    .info_color = "34",       // Blue
+    .warning_color = "33;1",  // Yellow bold
+    .error_color = "91",      // Bright red
+    .critical_color = "91;1;4", // Bright red bold underline
+};
+```
+
+### Using getColorForLevel()
+
+```zig
+const color_config = config.level_colors;
+const trace_color = color_config.getColorForLevel(.trace);
+const err_color = color_config.getColorForLevel(.err);
+// Returns override if set, otherwise theme color
 ```
 
 ## Config.highlighters

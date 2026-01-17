@@ -43,7 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-  - [Version 0.1.4](#version-014)
+  - [Version 0.1.5](#version-015)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended)](#method-1-zig-fetch-recommended)
   - [Method 2: Project Starter Template (Quick Start)](#method-2-project-starter-template-quick-start)
@@ -109,7 +109,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Custom Formats** | Customizable log message and timestamp formats | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/formatting) |
 | **Network Logging** | Send logs over TCP/UDP with JSON support and automatic reconnection | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/network-logging) |
 | **Stack Traces** | Automatic stack trace capture for errors and critical logs | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/stack-traces) |
-| **Compression** | Built-in support for GZIP, ZLIB, and DEFLATE compression | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/compression) |
+| **Compression** | Built-in support for GZIP, ZLIB, DEFLATE, and ZSTD compression | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/compression) |
 | **Metrics** | Track logger performance, throughput, and error rates | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/metrics) |
 | **System Diagnostics** | Emit OS/CPU/memory (and drives) on startup or on-demand | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/diagnostics) |
 | **Scoped Logging** | Create child loggers with bound context that persists across calls | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/context) |
@@ -137,7 +137,6 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Metrics** | Built-in observability with log counters and statistics | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/metrics) |
 | **Distributed Tracing** | Trace ID, span ID, and correlation ID support | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/tracing) |
 | **Configuration Presets** | Production, development, high-throughput, and secure presets | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/configuration) |
-| **Compression** | Automatic and manual log compression (deflate, gzip, lz4, zstd) | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/compression) |
 | **Async Logger** | Ring buffer-based async logging with background workers | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/async) |
 | **Thread Pool** | Parallel log processing with work stealing | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/thread-pool) |
 | **Scheduler** | Automatic log cleanup, compression, and maintenance | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/scheduler) |
@@ -207,20 +206,28 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.4
+### Version 0.1.5
 
 **New Features:**
 
-- **OpenTelemetry Integration**: Full OpenTelemetry support with multiple providers (Jaeger, Zipkin, Datadog, Google Cloud, Google Analytics 4, Google Tag Manager, AWS X-Ray, Azure, and generic OTEL Collector).
-- **Distributed Tracing**: Native span and trace management with W3C Trace Context propagation.
-- **W3C Baggage Support**: Context propagation for arbitrary key-value pairs across service boundaries.
-- **Metrics Export**: Comprehensive metrics collection and export in OTLP, Prometheus, and JSON formats.
-- **Exporter Statistics**: Real-time monitoring of export performance with atomic counters.
-- **Custom Exporters**: Plugin architecture for custom exporter implementations with callback function interface.
-- **Sampling Strategies**: Multiple sampling strategies (always-on, always-off, trace-id-ratio, parent-based).
-- **Telemetry Callbacks**: Custom callbacks for span lifecycle and metric recording events.
-- **Update Checker Control**: Global `setEnabled()` function to enable/disable update checks project-wide.
-- **File Exporter**: JSONL-based file exporter for development and testing.
+- **Zstd Compression**: High-performance Zstandard compression algorithm (1400 MB/s decompression).
+  - Presets: `zstd()`, `zstdFast()`, `zstdBest()`, `zstdProduction()`
+  - Custom levels 1-22: `zstdWithLevel(15)`
+- **Batch Compression Operations**: Compress multiple files efficiently.
+  - `compressBatch(files)`, `compressPattern(dir, pattern)`, `compressOldest(dir, count)`, `compressLargerThan(dir, size)`
+- **OpenTelemetry Protocol (OTLP) Export**: Full OTLP JSON format for span export.
+  - Provider-specific exporters: Jaeger, Zipkin, Datadog, Google Cloud, GA4, AWS X-Ray, Azure
+- **Scheduler Compression Presets**: Pre-configured task configurations.
+  - `hourlyArchive()`, `compressOnRotation()`, `sizeBasedCompression()`, `diskUsageTriggered()`, `recursiveCompression()`
+- **Enhanced Color System**: Comprehensive color support with theme presets, 256-color palette, and RGB colors.
+- **Theme Presets**: Built-in themes (default, bright, dim, minimal, neon, pastel, dark, light).
+- **Per-Level Color Override**: Set individual colors for each log level while using a theme.
+- **Level Color Variants**: New methods `brightColor()`, `dimColor()`, `underlineColor()`, `color256()` on Level enum.
+- **Advanced CustomLevel**: Full color control with `initFull()`, `initRgb()`, `initStyled()`, `initWithBackground()`.
+- **Color Constants**: New `Constants.Colors` with Fg, BrightFg, Bg, BrightBg, Style structs.
+- **RGB/256-Color Functions**: `Colors.fgRgb()`, `Colors.bgRgb()`, `Colors.fg256()`, `Colors.bg256()`.
+- **Config Theme Integration**: `level_colors.theme_preset` for global theme selection.
+- **ColorStyle Enum**: Formatter color style selection for output formatting.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -234,7 +241,7 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.4.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.5.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -283,7 +290,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.4.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.5.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

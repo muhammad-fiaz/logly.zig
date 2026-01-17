@@ -152,13 +152,15 @@ The `Theme` struct defines custom ANSI color codes for each log level.
 | `trace` | `[]const u8` | `"36"` (Cyan) | Color for TRACE level |
 | `debug` | `[]const u8` | `"34"` (Blue) | Color for DEBUG level |
 | `info` | `[]const u8` | `"37"` (White) | Color for INFO level |
+| `notice` | `[]const u8` | `"96"` (Bright Cyan) | Color for NOTICE level (v0.1.5) |
 | `success` | `[]const u8` | `"32"` (Green) | Color for SUCCESS level |
 | `warning` | `[]const u8` | `"33"` (Yellow) | Color for WARNING level |
 | `err` | `[]const u8` | `"31"` (Red) | Color for ERROR level |
 | `fail` | `[]const u8` | `"35"` (Magenta) | Color for FAIL level |
 | `critical` | `[]const u8` | `"91"` (Bright Red) | Color for CRITICAL level |
+| `fatal` | `[]const u8` | `"91;1"` (Bright Red Bold) | Color for FATAL level (v0.1.5) |
 
-### Usage
+### Basic Usage
 
 ```zig
 var theme = logly.Formatter.Theme{};
@@ -167,6 +169,72 @@ theme.err = "1;31"; // Change ERROR to Bold Red
 
 // Apply to a sink
 logger.sinks.items[0].formatter.setTheme(theme);
+```
+
+### Theme Presets (v0.1.5)
+
+```zig
+const Theme = logly.Formatter.Theme;
+
+// Built-in theme presets
+const default_theme = Theme{};              // Standard colors
+const bright = Theme.bright();              // Bold/bright colors
+const dim = Theme.dim();                    // Dim colors
+const minimal = Theme.minimal();            // Subtle grays
+const neon = Theme.neon();                  // Vivid 256-colors
+const pastel = Theme.pastel();              // Soft colors
+const dark = Theme.dark();                  // Dark terminal optimized
+const light = Theme.light();                // Light terminal optimized
+
+// Apply preset to formatter
+var formatter = logly.Formatter.init(allocator);
+formatter.setTheme(Theme.neon());
+```
+
+### Theme Preset Details
+
+| Preset | Trace | Debug | Info | Success | Warning | Error | Critical |
+|--------|-------|-------|------|---------|---------|-------|----------|
+| `default` | 36 | 34 | 37 | 32 | 33 | 31 | 91 |
+| `bright()` | 96;1 | 94;1 | 97;1 | 92;1 | 93;1 | 91;1 | 91;1;4 |
+| `dim()` | 36;2 | 34;2 | 37;2 | 32;2 | 33;2 | 31;2 | 91;2 |
+| `minimal()` | 90 | 90 | 37 | 32 | 33 | 31 | 91 |
+| `neon()` | 38;5;51 | 38;5;33 | 38;5;252 | 38;5;46 | 38;5;226 | 38;5;196 | 38;5;196;1 |
+| `pastel()` | 38;5;152 | 38;5;111 | 38;5;253 | 38;5;157 | 38;5;228 | 38;5;210 | 38;5;203 |
+| `dark()` | 38;5;37 | 38;5;33 | 38;5;245 | 38;5;34 | 38;5;214 | 38;5;160 | 38;5;196 |
+| `light()` | 38;5;30 | 38;5;27 | 38;5;238 | 38;5;28 | 38;5;172 | 38;5;124 | 38;5;160 |
+
+### Custom RGB Theme (v0.1.5)
+
+```zig
+// Create a theme from RGB values
+const custom = Theme.fromRgb(
+    .{ 0, 255, 255 },    // trace (cyan)
+    .{ 0, 128, 255 },    // debug (blue)
+    .{ 240, 240, 240 },  // info (white)
+    .{ 0, 255, 128 },    // success (green)
+    .{ 255, 200, 0 },    // warning (orange)
+    .{ 255, 64, 64 },    // error (red)
+    .{ 255, 0, 0 },      // critical (bright red)
+);
+```
+
+## ColorStyle (v0.1.5)
+
+The `ColorStyle` enum controls which color variant to use:
+
+```zig
+pub const ColorStyle = enum {
+    default,     // Standard ANSI colors (30-37, 90-97)
+    bright,      // Bold/bright variants
+    dim,         // Dim variants
+    color256,    // 256-color palette
+    minimal,     // Minimal styling
+    neon,        // Vivid neon colors
+    pastel,      // Soft pastel colors
+    dark,        // Optimized for dark terminals
+    light,       // Optimized for light terminals
+};
 ```
 
 ## FormatterStats

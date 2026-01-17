@@ -17,7 +17,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| Current Version | 0.1.1 | 0.7.2 | 0.0.0 | Built-in |
+| Current Version | 0.1.5 | 0.7.2 | 0.0.0 | Built-in |
 | Min Zig Version | 0.15.0+ | 0.14, 0.15-dev | 0.11+ | Any |
 | API Style | User-friendly | Builder/Fluent | Pool/Fluent | Basic/Manual |
 | Structured Logging | ✅ Automatic | ✅ JSON/logfmt | ✅ JSON/logfmt | ❌ Manual |
@@ -29,12 +29,15 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | File Logging | ✅ Automatic | ✅ | ✅ | ❌ Manual |
 | File Rotation | ✅ Automatic (Time + Size) | ✅ Size | ❌ | ❌ |
 | Retention Policy | ✅ Automatic | ❌ | ❌ | ❌ |
-| Compression | ✅ Automatic (gzip/zlib/zstd) | ❌ | ❌ | ❌ |
+| Compression | ✅ Automatic (gzip/zlib/deflate/zstd) | ❌ | ❌ | ❌ |
+| Zstd Compression (v0.1.5+) | ✅ Levels 1-22, presets, batch ops | ❌ | ❌ | ❌ |
+| Rotation Presets (v0.1.5+) | ✅ 25+ presets (time/size/hybrid/production) | ❌ | ❌ | ❌ |
 | Network Logging | ✅ Automatic (TCP/UDP) | ❌ | ❌ | ❌ |
 | Stack Traces | ✅ Automatic | ❌ | ❌ | ❌ Manual |
 | Redaction (PII) | ✅ Automatic | ❌ | ❌ | ❌ |
 | Sampling/Rate Limit | ✅ Automatic | ❌ | ❌ | ❌ |
 | Distributed Tracing | ✅ Automatic (Trace/Span/Correlation IDs) + Callbacks | ⚠ Context only | ❌ | ❌ |
+| OpenTelemetry (v0.1.4+) | ✅ Full OTLP/Jaeger/Zipkin/Datadog/AWS/Azure | ❌ | ❌ | ❌ |
 | Metrics | ✅ Automatic | ❌ | ⚠ Prometheus | ❌ |
 | System Diagnostics | ✅ Automatic | ❌ | ❌ | ❌ |
 | Filtering | ✅ Automatic | ❌ | ❌ | ✅ Manual |
@@ -154,6 +157,56 @@ This feature is **not available** in std.log, nexlog, or log.zig.
 6. **Developer Friendly**: Intuitive API with extensive documentation
 7. **Production Tested**: Compression, rotation, and retention policies
 8. **Cross-Platform**: Works on Linux, macOS, Windows, and bare-metal
+9. **Multiple Compression Algorithms**: DEFLATE, GZIP, ZLIB, and Zstd (v0.1.5+) with automatic detection
+
+## Compression Algorithm Comparison (v0.1.5+)
+
+Logly.zig supports multiple compression algorithms for log archival:
+
+| Algorithm | Ratio | Compress Speed | Decompress Speed | Extension | Best For |
+|:----------|:------|:---------------|:-----------------|:----------|:---------|
+| **zstd** | 3-6x | ~400 MB/s | ~1400 MB/s | `.zst` | High-throughput, streaming, production |
+| **gzip** | 3-5x | ~190 MB/s | ~290 MB/s | `.gz` | Compatibility, standard tooling |
+| **deflate** | 3-5x | ~200 MB/s | ~300 MB/s | `.gz` | General purpose |
+| **zlib** | 3-5x | ~180 MB/s | ~280 MB/s | `.gz` | Network transport |
+
+::: tip Recommendation
+Use **zstd** (v0.1.5+) for best performance. It offers excellent compression ratios with very fast decompression, making it ideal for log files that need to be queried frequently.
+:::
+
+## OpenTelemetry Comparison (v0.1.4+)
+
+Logly.zig provides comprehensive OpenTelemetry integration:
+
+| Feature | logly.zig | nexlog | log.zig | std.log |
+|:--------|:----------|:-------|:--------|:--------|
+| OpenTelemetry Support | ✅ Full | ❌ | ❌ | ❌ |
+| OTLP Export | ✅ JSON format | ❌ | ❌ | ❌ |
+| Jaeger Integration | ✅ Thrift format | ❌ | ❌ | ❌ |
+| Zipkin Integration | ✅ JSON format | ❌ | ❌ | ❌ |
+| Datadog APM | ✅ Native format | ❌ | ❌ | ❌ |
+| Google Cloud Trace | ✅ Native format | ❌ | ❌ | ❌ |
+| Google Analytics 4 | ✅ Measurement Protocol | ❌ | ❌ | ❌ |
+| AWS X-Ray | ✅ Segment format | ❌ | ❌ | ❌ |
+| Azure App Insights | ✅ Envelope format | ❌ | ❌ | ❌ |
+| W3C Trace Context | ✅ Full spec | ⚠ Partial | ❌ | ❌ |
+| W3C Baggage | ✅ Full spec | ❌ | ❌ | ❌ |
+| Span Sampling | ✅ 4 strategies | ❌ | ❌ | ❌ |
+| Metrics Export | ✅ OTLP/Prometheus/JSON | ❌ | ⚠ Prometheus | ❌ |
+| File Exporter | ✅ JSONL | ❌ | ❌ | ❌ |
+| Custom Exporters | ✅ Plugin API | ❌ | ❌ | ❌ |
+
+## Rotation Presets Comparison (v0.1.5+)
+
+Logly.zig offers 25+ rotation presets for common scenarios:
+
+| Category | Presets | Other Libraries |
+|:---------|:--------|:----------------|
+| **Time-Based** | `daily7Days`, `daily30Days`, `daily90Days`, `daily365Days`, `hourly24Hours`, `hourly48Hours`, `hourly7Days`, `weekly4Weeks`, `weekly12Weeks`, `monthly12Months`, `minutely60` | ❌ Manual config |
+| **Size-Based** | `size1MB`, `size5MB`, `size10MB`, `size25MB`, `size50MB`, `size100MB`, `size250MB`, `size500MB`, `size1GB` | ❌ Manual config |
+| **Hybrid** | `dailyOr100MB`, `hourlyOr50MB`, `dailyOr500MB` | ❌ Not supported |
+| **Production** | `production`, `enterprise`, `debug`, `highVolume`, `audit`, `minimal` | ❌ Not supported |
+| **Sink Helpers** | `dailySink`, `hourlySink`, `weeklySink`, `monthlySink`, `sizeSink` | ❌ Not supported |
 
 ### When to Use std.log Instead
 

@@ -14,7 +14,7 @@ export const GTM_ID = "GTM-P4M9T8ZR";
 export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
 
 // SEO Keywords
-export const KEYWORDS = "zig, logging, logger, structured logging, async logging, json logging, file rotation, log rotation, thread pool, metrics, tracing, redaction, filtering, sampling, compression, network logging, zig library, production logging, enterprise logging";
+export const KEYWORDS = "zig, logging, logger, structured logging, async logging, json logging, file rotation, log rotation, thread pool, metrics, tracing, redaction, filtering, sampling, compression, zstd compression, gzip, network logging, zig library, production logging, enterprise logging";
 
 export default defineConfig({
   lang: "en-US",
@@ -213,7 +213,7 @@ gtag('config', '${GA_ID}');`,
           "priceCurrency": "USD"
         },
         "downloadUrl": "https://github.com/muhammad-fiaz/logly.zig",
-        "softwareVersion": "0.1.4", 
+        "softwareVersion": "0.1.5", 
         "license": "https://opensource.org/licenses/MIT"
       });
     } else {

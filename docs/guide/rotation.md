@@ -196,5 +196,79 @@ You can move rotated files to a specific directory to keep your main log folder 
 try rot.withArchiveDir("logs/archive");
 ```
 
+## Presets
+
+Logly provides comprehensive presets for common rotation scenarios. Use `RotationPresets` for quick setup.
+
+### Time-Based Presets
+
+| Preset | Interval | Retention | Use Case |
+|--------|----------|-----------|----------|
+| `daily7Days()` | Daily | 7 | Standard weekly cleanup |
+| `daily30Days()` | Daily | 30 | Monthly retention |
+| `daily90Days()` | Daily | 90 | Quarterly retention |
+| `daily365Days()` | Daily | 365 | Yearly archive |
+| `hourly24Hours()` | Hourly | 24 | High-volume daily cleanup |
+| `hourly7Days()` | Hourly | 168 | Week-long hourly logs |
+| `weekly4Weeks()` | Weekly | 4 | Monthly cleanup |
+| `monthly12Months()` | Monthly | 12 | Yearly archive |
+
+### Size-Based Presets
+
+| Preset | Size | Retention | Use Case |
+|--------|------|-----------|----------|
+| `size1MB()` | 1 MB | 5 | Embedded systems |
+| `size10MB()` | 10 MB | 5 | Standard apps |
+| `size100MB()` | 100 MB | 10 | Enterprise apps |
+| `size500MB()` | 500 MB | 3 | High-volume logs |
+| `size1GB()` | 1 GB | 2 | Maximum size logs |
+
+### Hybrid Presets (Time OR Size)
+
+| Preset | Interval | Size | Retention |
+|--------|----------|------|-----------|
+| `dailyOr100MB()` | Daily | 100 MB | 30 |
+| `hourlyOr50MB()` | Hourly | 50 MB | 48 |
+| `dailyOr500MB()` | Daily | 500 MB | 7 |
+
+### Production Presets
+
+```zig
+const RotationPresets = @import("logly").RotationPresets;
+
+// Production: daily, 30 days, gzip compression
+var rot = try RotationPresets.production(allocator, "app.log");
+defer rot.deinit();
+
+// Enterprise: daily, 90 days, best compression, ISO naming
+var ent = try RotationPresets.enterprise(allocator, "server.log");
+defer ent.deinit();
+
+// Audit: daily, 365 days, keep all archives
+var audit = try RotationPresets.audit(allocator, "audit.log");
+defer audit.deinit();
+
+// Debug: minutely, 60 files (for development)
+var debug = try RotationPresets.debug(allocator, "debug.log");
+defer debug.deinit();
+
+// High-volume: hourly OR 500MB
+var hv = try RotationPresets.highVolume(allocator, "traffic.log");
+defer hv.deinit();
+
+// Minimal: 10MB, 3 files (resource constrained)
+var min = try RotationPresets.minimal(allocator, "embedded.log");
+defer min.deinit();
+```
+
+### Sink Preset Helpers
+
+```zig
+// Quick sink configuration
+try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
+try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
+try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
+```
+
 ## Performance
 Rotation checks are optimized to be `O(1)` (simple time or size check). The actual rotation involves file I/O (renaming, creating) and is protected by a mutex to ensure thread safety. Compression happens after the critical logic, so the impact on the logging thread is managed, but for extremely large files, consider scheduling compression separately.

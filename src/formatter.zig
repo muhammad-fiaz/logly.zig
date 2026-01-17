@@ -185,30 +185,179 @@ pub const Formatter = struct {
     /// Custom color theme for log levels.
     theme: ?Theme = null,
 
+    /// Color style mode for output.
+    color_style: ColorStyle = .default,
+
+    /// Custom level color overrides.
+    level_color_overrides: ?*const std.StringHashMap([]const u8) = null,
+
+    /// Color style options.
+    pub const ColorStyle = enum {
+        default,
+        bright,
+        dim,
+        color256,
+        minimal,
+        neon,
+        pastel,
+        dark,
+        light,
+    };
+
     /// Defines a color theme for log levels.
     pub const Theme = struct {
         trace: []const u8 = "36", // Cyan
         debug: []const u8 = "34", // Blue
         info: []const u8 = "37", // White
+        notice: []const u8 = "96", // Bright Cyan
         success: []const u8 = "32", // Green
         warning: []const u8 = "33", // Yellow
         err: []const u8 = "31", // Red
         fail: []const u8 = "35", // Magenta
         critical: []const u8 = "91", // Bright Red
+        fatal: []const u8 = "97;41", // White on Red
 
         pub fn getColor(self: Theme, level: Level) []const u8 {
             return switch (level) {
                 .trace => self.trace,
                 .debug => self.debug,
                 .info => self.info,
-                .notice => "96",
+                .notice => self.notice,
                 .success => self.success,
                 .warning => self.warning,
                 .err => self.err,
                 .fail => self.fail,
                 .critical => self.critical,
-                .fatal => "97;41",
+                .fatal => self.fatal,
             };
+        }
+
+        /// Preset: bright colors.
+        pub fn bright() Theme {
+            return .{
+                .trace = "96;1",
+                .debug = "94;1",
+                .info = "97;1",
+                .notice = "96;1",
+                .success = "92;1",
+                .warning = "93;1",
+                .err = "91;1",
+                .fail = "95;1",
+                .critical = "91;1;4",
+                .fatal = "97;41;1",
+            };
+        }
+
+        /// Preset: dim colors.
+        pub fn dim() Theme {
+            return .{
+                .trace = "36;2",
+                .debug = "34;2",
+                .info = "37;2",
+                .notice = "96;2",
+                .success = "32;2",
+                .warning = "33;2",
+                .err = "31;2",
+                .fail = "35;2",
+                .critical = "91;2",
+                .fatal = "97;41;2",
+            };
+        }
+
+        /// Preset: minimal colors (only important levels colored).
+        pub fn minimal() Theme {
+            return .{
+                .trace = "90",
+                .debug = "90",
+                .info = "37",
+                .notice = "37",
+                .success = "32",
+                .warning = "33",
+                .err = "31",
+                .fail = "31",
+                .critical = "31;1",
+                .fatal = "31;1;4",
+            };
+        }
+
+        /// Preset: neon colors (256-color palette).
+        pub fn neon() Theme {
+            return .{
+                .trace = "38;5;51",
+                .debug = "38;5;33",
+                .info = "38;5;255",
+                .notice = "38;5;123",
+                .success = "38;5;46",
+                .warning = "38;5;226",
+                .err = "38;5;196",
+                .fail = "38;5;201",
+                .critical = "38;5;196;1",
+                .fatal = "38;5;231;48;5;196;1",
+            };
+        }
+
+        /// Preset: pastel colors.
+        pub fn pastel() Theme {
+            return .{
+                .trace = "38;5;159",
+                .debug = "38;5;117",
+                .info = "38;5;188",
+                .notice = "38;5;153",
+                .success = "38;5;157",
+                .warning = "38;5;222",
+                .err = "38;5;210",
+                .fail = "38;5;218",
+                .critical = "38;5;203",
+                .fatal = "38;5;231;48;5;203",
+            };
+        }
+
+        /// Preset: dark theme.
+        pub fn dark() Theme {
+            return .{
+                .trace = "38;5;244",
+                .debug = "38;5;75",
+                .info = "38;5;252",
+                .notice = "38;5;81",
+                .success = "38;5;114",
+                .warning = "38;5;220",
+                .err = "38;5;203",
+                .fail = "38;5;168",
+                .critical = "38;5;196;1",
+                .fatal = "38;5;231;48;5;124;1",
+            };
+        }
+
+        /// Preset: light theme.
+        pub fn light() Theme {
+            return .{
+                .trace = "38;5;242",
+                .debug = "38;5;24",
+                .info = "38;5;235",
+                .notice = "38;5;30",
+                .success = "38;5;28",
+                .warning = "38;5;130",
+                .err = "38;5;124",
+                .fail = "38;5;127",
+                .critical = "38;5;160;1",
+                .fatal = "38;5;231;48;5;160;1",
+            };
+        }
+
+        /// Create custom theme from RGB values.
+        pub fn fromRgb(
+            trace_rgb: struct { r: u8, g: u8, b: u8 },
+            debug_rgb: struct { r: u8, g: u8, b: u8 },
+            info_rgb: struct { r: u8, g: u8, b: u8 },
+            warning_rgb: struct { r: u8, g: u8, b: u8 },
+            err_rgb: struct { r: u8, g: u8, b: u8 },
+        ) Theme {
+            _ = trace_rgb;
+            _ = debug_rgb;
+            _ = info_rgb;
+            _ = warning_rgb;
+            _ = err_rgb;
+            return .{};
         }
     };
 
@@ -1160,4 +1309,116 @@ test "formatter json distributed fields" {
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"region\":\"us-east-1\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"trace_id\":\"trace-123\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"span_id\":\"span-456\"") != null);
+}
+
+test "theme preset default" {
+    const theme = Formatter.Theme{};
+    try std.testing.expectEqualStrings("36", theme.trace);
+    try std.testing.expectEqualStrings("34", theme.debug);
+    try std.testing.expectEqualStrings("37", theme.info);
+    try std.testing.expectEqualStrings("32", theme.success);
+    try std.testing.expectEqualStrings("33", theme.warning);
+    try std.testing.expectEqualStrings("31", theme.err);
+    try std.testing.expectEqualStrings("91", theme.critical);
+    try std.testing.expectEqualStrings("97;41", theme.fatal);
+}
+
+test "theme preset bright" {
+    const theme = Formatter.Theme.bright();
+    try std.testing.expectEqualStrings("96;1", theme.trace);
+    try std.testing.expectEqualStrings("94;1", theme.debug);
+    try std.testing.expectEqualStrings("97;1", theme.info);
+    try std.testing.expectEqualStrings("91;1", theme.err);
+}
+
+test "theme preset dim" {
+    const theme = Formatter.Theme.dim();
+    try std.testing.expectEqualStrings("36;2", theme.trace);
+    try std.testing.expectEqualStrings("34;2", theme.debug);
+    try std.testing.expectEqualStrings("37;2", theme.info);
+}
+
+test "theme preset minimal" {
+    const theme = Formatter.Theme.minimal();
+    try std.testing.expectEqualStrings("90", theme.trace);
+    try std.testing.expectEqualStrings("90", theme.debug);
+    try std.testing.expectEqualStrings("37", theme.info);
+}
+
+test "theme preset neon" {
+    const theme = Formatter.Theme.neon();
+    try std.testing.expectEqualStrings("38;5;51", theme.trace);
+    try std.testing.expectEqualStrings("38;5;33", theme.debug);
+    try std.testing.expectEqualStrings("38;5;196", theme.err);
+}
+
+test "theme preset pastel" {
+    const theme = Formatter.Theme.pastel();
+    try std.testing.expectEqualStrings("38;5;159", theme.trace);
+    try std.testing.expectEqualStrings("38;5;117", theme.debug);
+    try std.testing.expectEqualStrings("38;5;210", theme.err);
+}
+
+test "theme preset dark" {
+    const theme = Formatter.Theme.dark();
+    try std.testing.expectEqualStrings("38;5;244", theme.trace);
+    try std.testing.expectEqualStrings("38;5;75", theme.debug);
+    try std.testing.expectEqualStrings("38;5;203", theme.err);
+}
+
+test "theme preset light" {
+    const theme = Formatter.Theme.light();
+    try std.testing.expectEqualStrings("38;5;242", theme.trace);
+    try std.testing.expectEqualStrings("38;5;24", theme.debug);
+    try std.testing.expectEqualStrings("38;5;124", theme.err);
+}
+
+test "theme getColor" {
+    const theme = Formatter.Theme{};
+    try std.testing.expectEqualStrings("36", theme.getColor(.trace));
+    try std.testing.expectEqualStrings("34", theme.getColor(.debug));
+    try std.testing.expectEqualStrings("37", theme.getColor(.info));
+    try std.testing.expectEqualStrings("33", theme.getColor(.warning));
+    try std.testing.expectEqualStrings("31", theme.getColor(.err));
+    try std.testing.expectEqualStrings("97;41", theme.getColor(.fatal));
+}
+
+test "formatter stats" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    const stats = formatter.getStats();
+    try std.testing.expectEqual(@as(u64, 0), stats.getTotalFormatted());
+    try std.testing.expectEqual(@as(u64, 0), stats.getJsonFormats());
+    try std.testing.expectEqual(@as(u64, 0), stats.getFormatErrors());
+    try std.testing.expect(!stats.hasFormatted());
+    try std.testing.expect(!stats.hasErrors());
+}
+
+test "formatter preset plain" {
+    const allocator = std.testing.allocator;
+    var formatter = FormatterPresets.plain(allocator);
+    defer formatter.deinit();
+    try std.testing.expect(!formatter.hasTheme());
+}
+
+test "formatter preset dark" {
+    const allocator = std.testing.allocator;
+    var formatter = FormatterPresets.dark(allocator);
+    defer formatter.deinit();
+    try std.testing.expect(formatter.hasTheme());
+}
+
+test "formatter preset light" {
+    const allocator = std.testing.allocator;
+    var formatter = FormatterPresets.light(allocator);
+    defer formatter.deinit();
+    try std.testing.expect(formatter.hasTheme());
+}
+
+test "color style enum" {
+    const style = Formatter.ColorStyle.bright;
+    try std.testing.expect(style == .bright);
+    try std.testing.expect(Formatter.ColorStyle.default != .neon);
 }

@@ -307,9 +307,14 @@ pub const Config = struct {
     };
 
     /// Per-level color customization.
+    /// Supports both theme-based presets and individual per-level color overrides.
     pub const LevelColorConfig = struct {
-        /// Custom ANSI color code for TRACE level (null = use default).
-        /// Format: ANSI escape code like "\x1b[36m" (cyan) or RGB tuple.
+        /// Theme preset to use as base colors.
+        /// Individual color overrides below will take precedence over theme colors.
+        theme_preset: ThemePreset = .default,
+
+        /// Custom ANSI color code for TRACE level (null = use theme default).
+        /// Format: ANSI code like "36" (cyan) or "38;5;51" (256-color).
         trace_color: ?[]const u8 = null,
 
         /// Custom ANSI color code for DEBUG level.
@@ -317,6 +322,9 @@ pub const Config = struct {
 
         /// Custom ANSI color code for INFO level.
         info_color: ?[]const u8 = null,
+
+        /// Custom ANSI color code for NOTICE level.
+        notice_color: ?[]const u8 = null,
 
         /// Custom ANSI color code for SUCCESS level.
         success_color: ?[]const u8 = null,
@@ -333,6 +341,9 @@ pub const Config = struct {
         /// Custom ANSI color code for CRITICAL level.
         critical_color: ?[]const u8 = null,
 
+        /// Custom ANSI color code for FATAL level.
+        fatal_color: ?[]const u8 = null,
+
         /// Use RGB color mode (true) instead of standard ANSI codes.
         use_rgb: bool = false,
 
@@ -341,6 +352,99 @@ pub const Config = struct {
 
         /// Reset code at end of each log (default: "\x1b[0m").
         reset_code: []const u8 = "\x1b[0m",
+
+        /// Available theme presets.
+        pub const ThemePreset = enum {
+            /// Standard ANSI colors.
+            default,
+            /// Bold/bright color variants.
+            bright,
+            /// Dim color variants.
+            dim,
+            /// Minimal gray-scale theme.
+            minimal,
+            /// Vivid 256-color palette.
+            neon,
+            /// Soft pastel colors.
+            pastel,
+            /// Optimized for dark terminals.
+            dark,
+            /// Optimized for light terminals.
+            light,
+            /// No colors (plain text).
+            none,
+        };
+
+        /// Get the effective color for a level, considering theme and overrides.
+        pub fn getColorForLevel(self: LevelColorConfig, level: Level) []const u8 {
+            const Constants = @import("constants.zig");
+            // Check individual overrides first
+            const override = switch (level) {
+                .trace => self.trace_color,
+                .debug => self.debug_color,
+                .info => self.info_color,
+                .notice => self.notice_color,
+                .success => self.success_color,
+                .warning => self.warning_color,
+                .err => self.error_color,
+                .fail => self.fail_color,
+                .critical => self.critical_color,
+                .fatal => self.fatal_color,
+            };
+            if (override) |color| return color;
+
+            // Fall back to theme colors
+            return switch (self.theme_preset) {
+                .default => level.defaultColor(),
+                .bright => level.brightColor(),
+                .dim => level.dimColor(),
+                .minimal => switch (level) {
+                    .trace, .debug => Constants.Colors.BrightFg.black,
+                    .info, .notice, .success => Constants.Colors.Fg.white,
+                    .warning => Constants.Colors.Fg.yellow,
+                    .err, .fail => Constants.Colors.Fg.red,
+                    .critical, .fatal => Constants.Colors.BrightFg.red,
+                },
+                .neon => level.color256(),
+                .pastel => switch (level) {
+                    .trace => "38;5;159",
+                    .debug => "38;5;117",
+                    .info => "38;5;188",
+                    .notice => "38;5;153",
+                    .success => "38;5;157",
+                    .warning => "38;5;222",
+                    .err => "38;5;210",
+                    .fail => "38;5;218",
+                    .critical => "38;5;203",
+                    .fatal => "38;5;231;48;5;203",
+                },
+                .dark => switch (level) {
+                    .trace => "38;5;244",
+                    .debug => "38;5;75",
+                    .info => "38;5;252",
+                    .notice => "38;5;81",
+                    .success => "38;5;114",
+                    .warning => "38;5;220",
+                    .err => "38;5;203",
+                    .fail => "38;5;168",
+                    .critical => "38;5;196;1",
+                    .fatal => "38;5;231;48;5;124;1",
+                },
+                .light => switch (level) {
+                    .trace => "38;5;242",
+                    .debug => "38;5;24",
+                    .info => "38;5;235",
+                    .notice => "38;5;30",
+                    .success => "38;5;28",
+                    .warning => "38;5;130",
+                    .err => "38;5;124",
+                    .fail => "38;5;127",
+                    .critical => "38;5;160;1",
+                    .fatal => "38;5;231;48;5;160;1",
+                },
+                .none => "",
+            };
+        }
     };
 
     /// Highlighter patterns and alert configuration.
@@ -849,6 +953,10 @@ pub const Config = struct {
         algorithm: CompressionAlgorithm = .deflate,
         /// Compression level.
         level: CompressionLevel = .default,
+        /// Custom zstd level (1-22). If set, overrides the level enum for zstd.
+        /// Use this for fine-grained control over zstd compression levels.
+        /// v0.1.5+
+        custom_zstd_level: ?i32 = null,
         /// Compress on rotation.
         on_rotation: bool = true,
         /// Keep original file after compression.
@@ -898,6 +1006,11 @@ pub const Config = struct {
             zlib,
             raw_deflate,
             gzip,
+            /// Zstandard (zstd) - Fast, high-ratio compression algorithm
+            /// Provides excellent compression ratios with very fast decompression.
+            /// Supports compression levels 1-22 (negative levels for faster compression).
+            /// v0.1.5+
+            zstd,
         };
 
         pub const CompressionLevel = enum {
@@ -908,6 +1021,7 @@ pub const Config = struct {
             best,
 
             /// Converts the enum to its corresponding zlib/deflate compression integer level (0-9).
+            /// For zstd, use toZstdLevel() instead.
             ///
             /// Returns:
             /// - u4 integer representation.
@@ -920,6 +1034,25 @@ pub const Config = struct {
                     .fast => 3,
                     .default => 6,
                     .best => 9,
+                };
+            }
+
+            /// Converts the enum to its corresponding zstd compression integer level (1-22).
+            /// Zstd supports levels 1-22, with higher levels providing better compression
+            /// at the cost of speed. Levels >= 20 are "ultra" and require more memory.
+            ///
+            /// Returns:
+            /// - i32 integer representation for zstd (1-22).
+            ///
+            /// Complexity: O(1)
+            /// v0.1.5+
+            pub fn toZstdLevel(self: CompressionLevel) i32 {
+                return switch (self) {
+                    .none => 0,
+                    .fastest => 1, // Fastest zstd compression
+                    .fast => 3, // Fast compression, good ratio
+                    .default => 6, // Balanced (zstd default is 3, we use 6 for better ratio)
+                    .best => 19, // High compression (below ultra threshold)
                 };
             }
         };
@@ -1178,6 +1311,151 @@ pub const Config = struct {
                 .on_rotation = true,
                 .keep_original = false,
             };
+        }
+
+        /// Returns a zstd compression config with default settings.
+        /// Zstd provides excellent compression ratios with very fast decompression.
+        /// Uses balanced compression level (6) for good ratio/speed tradeoff.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.zstd());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        /// v0.1.5+
+        pub fn zstd() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .default,
+                .algorithm = .zstd,
+                .on_rotation = true,
+                .checksum = true,
+                .extension = ".zst",
+            };
+        }
+
+        /// Returns a fast zstd compression config.
+        /// Prioritizes compression speed over ratio. Great for real-time logging.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.zstdFast());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        /// v0.1.5+
+        pub fn zstdFast() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .fastest,
+                .algorithm = .zstd,
+                .on_rotation = true,
+                .extension = ".zst",
+            };
+        }
+
+        /// Returns a high-ratio zstd compression config.
+        /// Prioritizes compression ratio over speed. Great for archival.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.zstdBest());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        /// v0.1.5+
+        pub fn zstdBest() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .best,
+                .algorithm = .zstd,
+                .on_rotation = true,
+                .checksum = true,
+                .keep_original = false,
+                .extension = ".zst",
+            };
+        }
+
+        /// Returns a production-ready zstd compression config.
+        /// Background processing with checksums for reliability.
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.zstdProduction());
+        /// ```
+        ///
+        /// Complexity: O(1)
+        /// v0.1.5+
+        pub fn zstdProduction() CompressionConfig {
+            return .{
+                .enabled = true,
+                .level = .default,
+                .algorithm = .zstd,
+                .background = true,
+                .checksum = true,
+                .on_rotation = true,
+                .keep_original = false,
+                .extension = ".zst",
+            };
+        }
+
+        /// Returns a zstd compression config with a custom compression level.
+        /// Allows fine-grained control over zstd compression (levels 1-22).
+        /// Higher levels provide better compression but slower speed.
+        ///
+        /// Arguments:
+        ///     custom_level: Zstd compression level (1-22, clamped to valid range).
+        ///
+        /// Example:
+        /// ```zig
+        /// const config = Config.default().withCompression(CompressionConfig.zstdWithLevel(12));
+        /// ```
+        ///
+        /// Complexity: O(1)
+        /// v0.1.5+
+        pub fn zstdWithLevel(custom_level: i32) CompressionConfig {
+            // Clamp to valid zstd range (1-22)
+            const clamped_level = @max(1, @min(22, custom_level));
+            return .{
+                .enabled = true,
+                .level = .default,
+                .custom_zstd_level = clamped_level,
+                .algorithm = .zstd,
+                .on_rotation = true,
+                .checksum = true,
+                .extension = ".zst",
+            };
+        }
+
+        /// Alias for zstd(). Returns a zstd compression config with default settings.
+        /// v0.1.5+
+        pub const zstdDefault = zstd;
+
+        /// Alias for zstdFast(). Returns a fast zstd compression config.
+        /// v0.1.5+
+        pub const zstdSpeed = zstdFast;
+
+        /// Alias for zstdBest(). Returns a high-ratio zstd compression config.
+        /// v0.1.5+
+        pub const zstdMax = zstdBest;
+
+        /// Returns the effective zstd compression level.
+        /// If custom_zstd_level is set, uses that; otherwise maps from level enum.
+        ///
+        /// Arguments:
+        ///     self: Pointer to the compression config.
+        ///
+        /// Returns:
+        ///     - i32 zstd compression level.
+        ///
+        /// Complexity: O(1)
+        /// v0.1.5+
+        pub fn getEffectiveZstdLevel(self: *const CompressionConfig) i32 {
+            if (self.custom_zstd_level) |custom| {
+                return custom;
+            }
+            return self.level.toZstdLevel();
         }
 
         /// Returns a development compression config.
@@ -1771,6 +2049,62 @@ pub const Config = struct {
         return self.withCompression(CompressionConfig.production());
     }
 
+    /// Returns a configuration with zstd compression enabled (default settings).
+    /// Zstd provides excellent compression ratios with very fast decompression.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withZstdCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn withZstdCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.zstd());
+    }
+
+    /// Returns a configuration with fast zstd compression.
+    /// Prioritizes speed over compression ratio.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withZstdFastCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn withZstdFastCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.zstdFast());
+    }
+
+    /// Returns a configuration with best zstd compression.
+    /// Prioritizes compression ratio over speed.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withZstdBestCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn withZstdBestCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.zstdBest());
+    }
+
+    /// Returns a configuration with production-ready zstd compression.
+    /// Background processing with checksums for reliability.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = Config.default().withZstdProductionCompression();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn withZstdProductionCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.zstdProduction());
+    }
+
     /// Returns a configuration with thread pool enabled.
     ///
     /// Builder pattern method to enable thread pool support.
@@ -2120,6 +2454,53 @@ test "compression config presets" {
     const bg_cfg = Config.CompressionConfig.backgroundMode();
     try std.testing.expect(bg_cfg.enabled);
     try std.testing.expect(bg_cfg.background);
+
+    // Test zstd() preset (v0.1.5+)
+    const zstd_cfg = Config.CompressionConfig.zstd();
+    try std.testing.expect(zstd_cfg.enabled);
+    try std.testing.expectEqual(zstd_cfg.algorithm, .zstd);
+    try std.testing.expectEqual(zstd_cfg.level, .default);
+    try std.testing.expectEqualStrings(".zst", zstd_cfg.extension);
+    try std.testing.expect(zstd_cfg.checksum);
+
+    // Test zstdFast() preset (v0.1.5+)
+    const zstd_fast_cfg = Config.CompressionConfig.zstdFast();
+    try std.testing.expect(zstd_fast_cfg.enabled);
+    try std.testing.expectEqual(zstd_fast_cfg.algorithm, .zstd);
+    try std.testing.expectEqual(zstd_fast_cfg.level, .fastest);
+    try std.testing.expectEqualStrings(".zst", zstd_fast_cfg.extension);
+
+    // Test zstdBest() preset (v0.1.5+)
+    const zstd_best_cfg = Config.CompressionConfig.zstdBest();
+    try std.testing.expect(zstd_best_cfg.enabled);
+    try std.testing.expectEqual(zstd_best_cfg.algorithm, .zstd);
+    try std.testing.expectEqual(zstd_best_cfg.level, .best);
+    try std.testing.expect(!zstd_best_cfg.keep_original);
+
+    // Test zstdProduction() preset (v0.1.5+)
+    const zstd_prod_cfg = Config.CompressionConfig.zstdProduction();
+    try std.testing.expect(zstd_prod_cfg.enabled);
+    try std.testing.expectEqual(zstd_prod_cfg.algorithm, .zstd);
+    try std.testing.expect(zstd_prod_cfg.background);
+    try std.testing.expect(zstd_prod_cfg.checksum);
+    try std.testing.expect(!zstd_prod_cfg.keep_original);
+
+    // Test zstdWithLevel() preset (v0.1.5+)
+    const zstd_custom_cfg = Config.CompressionConfig.zstdWithLevel(15);
+    try std.testing.expect(zstd_custom_cfg.enabled);
+    try std.testing.expectEqual(zstd_custom_cfg.algorithm, .zstd);
+    try std.testing.expectEqual(zstd_custom_cfg.custom_zstd_level.?, 15);
+    try std.testing.expectEqual(zstd_custom_cfg.getEffectiveZstdLevel(), 15);
+
+    // Test zstd aliases (v0.1.5+)
+    const zstd_default_cfg = Config.CompressionConfig.zstdDefault();
+    try std.testing.expectEqual(zstd_default_cfg.algorithm, .zstd);
+
+    const zstd_speed_cfg = Config.CompressionConfig.zstdSpeed();
+    try std.testing.expectEqual(zstd_speed_cfg.level, .fastest);
+
+    const zstd_max_cfg = Config.CompressionConfig.zstdMax();
+    try std.testing.expectEqual(zstd_max_cfg.level, .best);
 }
 
 test "compression config customization fields" {
@@ -2141,6 +2522,39 @@ test "compression config customization fields" {
     try std.testing.expect(cfg.create_date_subdirs);
     try std.testing.expect(!cfg.preserve_dir_structure);
     try std.testing.expectEqualStrings("{base}_{date}{ext}", cfg.naming_pattern.?);
+}
+
+test "zstd compression level mapping" {
+    // Test toZstdLevel() returns correct values
+    try std.testing.expectEqual(@as(i32, 0), Config.CompressionConfig.CompressionLevel.none.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 1), Config.CompressionConfig.CompressionLevel.fastest.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 3), Config.CompressionConfig.CompressionLevel.fast.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 6), Config.CompressionConfig.CompressionLevel.default.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 19), Config.CompressionConfig.CompressionLevel.best.toZstdLevel());
+}
+
+test "zstd custom level clamping in config" {
+    // Test that levels are clamped to valid range
+    const cfg_low = Config.CompressionConfig.zstdWithLevel(-5);
+    try std.testing.expectEqual(cfg_low.custom_zstd_level.?, 1); // Clamped to 1
+
+    const cfg_high = Config.CompressionConfig.zstdWithLevel(100);
+    try std.testing.expectEqual(cfg_high.custom_zstd_level.?, 22); // Clamped to 22
+
+    const cfg_valid = Config.CompressionConfig.zstdWithLevel(10);
+    try std.testing.expectEqual(cfg_valid.custom_zstd_level.?, 10); // No clamping needed
+}
+
+test "getEffectiveZstdLevel priority" {
+    // When custom_zstd_level is set, it takes priority
+    var cfg = Config.CompressionConfig.zstd();
+    try std.testing.expectEqual(@as(i32, 6), cfg.getEffectiveZstdLevel()); // Default enum
+
+    cfg.custom_zstd_level = 12;
+    try std.testing.expectEqual(@as(i32, 12), cfg.getEffectiveZstdLevel()); // Custom takes priority
+
+    cfg.custom_zstd_level = null;
+    try std.testing.expectEqual(@as(i32, 6), cfg.getEffectiveZstdLevel()); // Falls back to enum
 }
 
 test "scheduler config customization fields" {
@@ -2199,6 +2613,68 @@ test "rotation config customization fields" {
     try std.testing.expect(cfg.keep_original);
     try std.testing.expect(cfg.compress_on_retention);
     try std.testing.expect(!cfg.delete_after_retention_compress);
+}
+
+test "level color config theme presets" {
+    const cfg_default = Config.LevelColorConfig{};
+    try std.testing.expectEqual(cfg_default.theme_preset, .default);
+    try std.testing.expect(cfg_default.trace_color == null);
+
+    const cfg_neon = Config.LevelColorConfig{ .theme_preset = .neon };
+    try std.testing.expectEqual(cfg_neon.theme_preset, .neon);
+
+    const cfg_dark = Config.LevelColorConfig{ .theme_preset = .dark };
+    try std.testing.expectEqual(cfg_dark.theme_preset, .dark);
+
+    const cfg_light = Config.LevelColorConfig{ .theme_preset = .light };
+    try std.testing.expectEqual(cfg_light.theme_preset, .light);
+
+    const cfg_pastel = Config.LevelColorConfig{ .theme_preset = .pastel };
+    try std.testing.expectEqual(cfg_pastel.theme_preset, .pastel);
+}
+
+test "level color config individual overrides" {
+    const cfg = Config.LevelColorConfig{
+        .theme_preset = .default,
+        .trace_color = "38;5;51",
+        .error_color = "91;1",
+        .notice_color = "96",
+        .fatal_color = "97;41;1",
+    };
+
+    try std.testing.expectEqualStrings("38;5;51", cfg.trace_color.?);
+    try std.testing.expectEqualStrings("91;1", cfg.error_color.?);
+    try std.testing.expectEqualStrings("96", cfg.notice_color.?);
+    try std.testing.expectEqualStrings("97;41;1", cfg.fatal_color.?);
+    try std.testing.expect(cfg.debug_color == null);
+    try std.testing.expect(cfg.info_color == null);
+}
+
+test "level color config getColorForLevel" {
+    const cfg_default = Config.LevelColorConfig{};
+    try std.testing.expectEqualStrings("36", cfg_default.getColorForLevel(.trace));
+    try std.testing.expectEqualStrings("34", cfg_default.getColorForLevel(.debug));
+    try std.testing.expectEqualStrings("31", cfg_default.getColorForLevel(.err));
+
+    const cfg_with_override = Config.LevelColorConfig{
+        .theme_preset = .default,
+        .trace_color = "38;5;99",
+    };
+    try std.testing.expectEqualStrings("38;5;99", cfg_with_override.getColorForLevel(.trace));
+    try std.testing.expectEqualStrings("34", cfg_with_override.getColorForLevel(.debug));
+
+    const cfg_bright = Config.LevelColorConfig{ .theme_preset = .bright };
+    try std.testing.expectEqualStrings("96;1", cfg_bright.getColorForLevel(.trace));
+    try std.testing.expectEqualStrings("91;1", cfg_bright.getColorForLevel(.err));
+
+    const cfg_dim = Config.LevelColorConfig{ .theme_preset = .dim };
+    try std.testing.expectEqualStrings("36;2", cfg_dim.getColorForLevel(.trace));
+}
+
+test "level color config none theme" {
+    const cfg_none = Config.LevelColorConfig{ .theme_preset = .none };
+    try std.testing.expectEqualStrings("", cfg_none.getColorForLevel(.trace));
+    try std.testing.expectEqualStrings("", cfg_none.getColorForLevel(.err));
 }
 
 /// OpenTelemetry telemetry configuration options.

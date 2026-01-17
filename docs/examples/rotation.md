@@ -1,6 +1,6 @@
 # Rotation Examples
 
-This page demonstrates various ways to configure file rotation and retention in Logly, covering basic usage, global configuration, advanced retention, and compression.
+This page demonstrates various ways to configure file rotation and retention in Logly, covering basic usage, presets, global configuration, advanced retention, and compression.
 
 ## Basic Usage
 
@@ -43,6 +43,116 @@ _ = try logger.add(.{
     .retention = 5,                 // Keep 5 rotated files
     .rotation = "daily",            // Optional: Combine time and size
 });
+```
+
+---
+
+## Using Presets
+
+Logly provides comprehensive presets for common rotation scenarios.
+
+### Time-Based Presets
+
+```zig
+const RotationPresets = logly.RotationPresets;
+
+// Standard weekly cleanup
+var daily7 = try RotationPresets.daily7Days(allocator, "logs/app.log");
+defer daily7.deinit();
+
+// Monthly retention
+var daily30 = try RotationPresets.daily30Days(allocator, "logs/server.log");
+defer daily30.deinit();
+
+// Quarterly retention
+var daily90 = try RotationPresets.daily90Days(allocator, "logs/audit.log");
+defer daily90.deinit();
+
+// Yearly archive
+var daily365 = try RotationPresets.daily365Days(allocator, "logs/archive.log");
+defer daily365.deinit();
+
+// Hourly rotation variants
+var hourly24 = try RotationPresets.hourly24Hours(allocator, "logs/access.log");
+defer hourly24.deinit();
+
+var hourly7d = try RotationPresets.hourly7Days(allocator, "logs/traffic.log");
+defer hourly7d.deinit();
+
+// Weekly and monthly
+var weekly = try RotationPresets.weekly4Weeks(allocator, "logs/weekly.log");
+defer weekly.deinit();
+
+var monthly = try RotationPresets.monthly12Months(allocator, "logs/monthly.log");
+defer monthly.deinit();
+```
+
+### Size-Based Presets
+
+```zig
+// Various size limits
+var size1mb = try RotationPresets.size1MB(allocator, "logs/small.log");
+defer size1mb.deinit();
+
+var size10mb = try RotationPresets.size10MB(allocator, "logs/standard.log");
+defer size10mb.deinit();
+
+var size100mb = try RotationPresets.size100MB(allocator, "logs/large.log");
+defer size100mb.deinit();
+
+var size1gb = try RotationPresets.size1GB(allocator, "logs/huge.log");
+defer size1gb.deinit();
+```
+
+### Hybrid Presets (Time OR Size)
+
+```zig
+// Rotate daily OR when file reaches 100MB
+var hybrid = try RotationPresets.dailyOr100MB(allocator, "logs/hybrid.log");
+defer hybrid.deinit();
+
+// Rotate hourly OR when file reaches 50MB
+var fast = try RotationPresets.hourlyOr50MB(allocator, "logs/fast.log");
+defer fast.deinit();
+```
+
+### Production-Ready Presets
+
+```zig
+// Production: daily, 30 days, gzip compression, date naming
+var prod = try RotationPresets.production(allocator, "logs/production.log");
+defer prod.deinit();
+
+// Enterprise: daily, 90 days, best compression, ISO naming
+var ent = try RotationPresets.enterprise(allocator, "logs/enterprise.log");
+defer ent.deinit();
+
+// Audit: daily, 365 days, keep ALL archives (compliance)
+var audit = try RotationPresets.audit(allocator, "logs/audit.log");
+defer audit.deinit();
+
+// Debug: minutely, 60 files (development/testing)
+var debug = try RotationPresets.debug(allocator, "logs/debug.log");
+defer debug.deinit();
+
+// High-volume: hourly OR 500MB, 7 days
+var highvol = try RotationPresets.highVolume(allocator, "logs/traffic.log");
+defer highvol.deinit();
+
+// Minimal: 10MB, 3 files (embedded/resource-constrained)
+var minimal = try RotationPresets.minimal(allocator, "logs/embedded.log");
+defer minimal.deinit();
+```
+
+### Quick Sink Helpers
+
+```zig
+// Use preset helpers to create sink configs
+try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
+try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
+try logger.addSink(RotationPresets.weeklySink("logs/weekly.log", 12));
+try logger.addSink(RotationPresets.monthlySink("logs/monthly.log", 12));
+try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
 ```
 
 ---
@@ -144,12 +254,9 @@ rot.withMaxAge(7 * 24 * 3600);
 Mimic standard Unix `logrotate` behavior: `app.log` -> `app.log.1` -> `app.log.2`.
 
 ```zig
-var rot = try Rotation.init(allocator, "sys.log", "size", 10 * 1024 * 1024, 5);
+var rot = try Rotation.init(allocator, "sys.log", null, 10 * 1024 * 1024, 5);
 rot.withNaming(.index);
 
-// Result: 
-// sys.log (current)
-// sys.log.1 (previous)
 // Result: 
 // sys.log (current)
 // sys.log.1 (previous)

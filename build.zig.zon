@@ -1,9 +1,14 @@
 .{
     .name = .logly,
-    .version = "0.1.4",
+    .version = "0.1.5",
     .fingerprint = 0x54acba927bcb9891,
     .minimum_zig_version = "0.15.1",
-    .dependencies = .{},
+    .dependencies = .{
+        .zstd = .{
+            .url = "git+https://github.com/muhammad-fiaz/zstd.zig.git#069506fbffc9529ed19c95e696ca420de6f3fd09",
+            .hash = "zstd-1.6.0-biH4jEaKMgBhxd8T4gmKxBH3SqBqzAQJptWjywki6uU7",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

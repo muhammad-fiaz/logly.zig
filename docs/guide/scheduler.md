@@ -78,7 +78,7 @@ config.scheduler = .{
 | `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
 | `archive_root_dir` | `?[]const u8` | `null` | Root directory for archives |
 | `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD structure |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Compression algorithm |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Compression algorithm (gzip, zlib, deflate, zstd v0.1.5+) |
 | `compression_level` | `CompressionLevel` | `.default` | Compression level |
 | `keep_originals` | `bool` | `false` | Keep original files |
 | `archive_file_prefix` | `?[]const u8` | `null` | Prefix for file names |

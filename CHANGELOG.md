@@ -9,6 +9,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.5]
+
+### Added
+
+- **Zstd Compression Support**: High-performance Zstandard compression algorithm for log files.
+  - New algorithm: `CompressionAlgorithm.zstd` with excellent compression ratios and very fast decompression.
+  - Compression presets: `zstd()`, `zstdFast()`, `zstdBest()`, `zstdProduction()`.
+  - Config builder methods: `withZstdCompression()`, `withZstdFastCompression()`, `withZstdBestCompression()`, `withZstdProductionCompression()`.
+  - Compression factory methods: `Compression.zstdCompression()`, `Compression.zstdFast()`, `Compression.zstdBest()`, `Compression.zstdProduction()`.
+  - `CompressionLevel.toZstdLevel()` method for mapping compression levels to zstd-specific levels (1-22).
+  - Uses `.zst` file extension for zstd-compressed files.
+  - Integrated via [zstd.zig](https://github.com/muhammad-fiaz/zstd.zig) wrapper for Facebook's zstd library.
+- **Custom Zstd Levels**: Fine-grained control over zstd compression levels (1-22).
+  - New field: `CompressionConfig.custom_zstd_level` for custom level specification.
+  - New preset: `CompressionConfig.zstdWithLevel(level)` for custom level configs.
+  - New factory: `Compression.zstdWithLevel(allocator, level)` for custom level compressors.
+  - New method: `CompressionConfig.getEffectiveZstdLevel()` returns the effective zstd level.
+- **Batch Compression Operations**: Compress multiple files in a single operation.
+  - `Compression.compressBatch(file_paths)` - Compress multiple files at once.
+  - `Compression.compressPattern(dir, pattern)` - Compress files matching a glob pattern (e.g., `*.log`).
+  - `Compression.compressOldest(dir, count)` - Compress the N oldest files in a directory.
+  - `Compression.compressLargerThan(dir, min_size)` - Compress files larger than a threshold.
+- **Compression Utility Methods**: Additional helper methods for compression.
+  - `Compression.estimateCompressedSize(data_size)` - Estimate compressed size for given data.
+  - `Compression.getExtension()` - Get the file extension for the configured algorithm.
+  - `Compression.isZstd()` - Check if using zstd algorithm.
+  - `Compression.algorithmName()` - Get the algorithm name as a string.
+  - `Compression.levelName()` - Get the compression level name as a string.
+- **Enhanced Compression Aliases**: More convenient alias methods.
+  - `Compression.packDirectory()` / `archiveFolder()` aliases for `compressDirectory()`.
+  - `Compression.clearStats()` alias for `resetStats()`.
+  - `Compression.setConfig()` / `updateConfig()` aliases for `configure()`.
+- **OpenTelemetry Protocol (OTLP) Export**: Full OTLP JSON format support for span export.
+  - `Telemetry.exportToOtlp()` - Export spans in OTLP-compatible format.
+  - Proper `resourceSpans` structure with `scopeSpans` and full span attributes.
+  - Compatible with OpenTelemetry Collector and OTLP receivers.
+- **Provider-Specific Span Exporters**: Dedicated export methods for each telemetry provider.
+  - `exportToJaeger()` - Jaeger Thrift format export.
+  - `exportToZipkin()` - Zipkin JSON format export.
+  - `exportToDatadog()` - Datadog APM format export.
+  - `exportToGoogleCloud()` - Google Cloud Trace format.
+  - `exportToGoogleAnalytics()` - GA4 Measurement Protocol format.
+  - `exportToGoogleTagManager()` - GTM server-side format.
+  - `exportToAwsXray()` - AWS X-Ray segment format.
+  - `exportToAzure()` - Azure Application Insights envelope format.
+- **Scheduler Compression Presets**: Pre-configured task configurations for common scenarios.
+  - `SchedulerPresets.hourlyArchive(path)` - Compress files hourly after 1 day.
+  - `SchedulerPresets.compressOnRotation(path)` - Compress files after rotation.
+  - `SchedulerPresets.sizeBasedCompression(path, max_bytes)` - Compress when size exceeds threshold.
+  - `SchedulerPresets.diskUsageTriggered(path, percent)` - Compress when disk usage is high.
+  - `SchedulerPresets.lowDiskSpaceTriggered(path, min_free)` - Compress when disk space is low.
+  - `SchedulerPresets.recursiveCompression(path, min_age_days)` - Recursive directory compression.
+- **Additional Schedule Presets**: More scheduling convenience methods.
+  - `SchedulerPresets.every15Minutes()` - Run every 15 minutes.
+  - `SchedulerPresets.onceAfter(seconds)` - Run once after delay.
+  - `SchedulerPresets.healthCheckSchedule()` - Standard health check interval (5 min).
+  - `SchedulerPresets.metricsSchedule()` - Standard metrics collection interval (1 min).
+- **Rotation Presets**: Comprehensive pre-configured rotation strategies for common use cases.
+  - **Time-Based Presets**: `daily7Days()`, `daily30Days()`, `daily90Days()`, `daily365Days()`, `hourly24Hours()`, `hourly48Hours()`, `hourly7Days()`, `weekly4Weeks()`, `weekly12Weeks()`, `monthly12Months()`, `minutely60()`.
+  - **Size-Based Presets**: `size1MB()`, `size5MB()`, `size10MB()`, `size25MB()`, `size50MB()`, `size100MB()`, `size250MB()`, `size500MB()`, `size1GB()`.
+  - **Hybrid Presets**: `dailyOr100MB()`, `hourlyOr50MB()`, `dailyOr500MB()` - Rotate on time OR size.
+  - **Production Presets**: `production()` (daily, 30 days, gzip), `enterprise()` (daily, 90 days, best compression, ISO naming), `debug()` (minutely, 60 files), `highVolume()` (hourly OR 500MB, 7 days), `audit()` (daily, 365 days, keep all archives), `minimal()` (10MB, 3 files, index naming).
+  - **Sink Helpers**: `dailySink()`, `hourlySink()`, `weeklySink()`, `monthlySink()`, `sizeSink()`.
+  - **Preset Aliases**: `daily`, `hourly`, `weekly`, `monthly` shortcuts.
+- **Rotation Tests**: Added 10 new test cases for rotation presets, intervals, stats, and configuration methods.
+- **Compression Aliases**: Convenient alias methods for common compression operations.
+  - `Compression.create()` alias for `init()`, `Compression.destroy()` alias for `deinit()`.
+  - `Compression.encode()` / `decode()` aliases for `compress()` / `decompress()`.
+  - `Compression.deflate()` / `inflate()` aliases for `compress()` / `decompress()`.
+  - `Compression.packFile()` / `unpackFile()` aliases for file operations.
+  - `Compression.statistics()` alias for `getStats()`.
+  - `Compression.needsCompression()` alias for `shouldCompress()`.
+  - `Compression.zstdDefault()`, `zstdSpeed()`, `zstdMax()` preset aliases.
+  - `CompressionConfig.zstdDefault()`, `zstdSpeed()`, `zstdMax()` config aliases.
+- **Compression Callbacks**: Event hooks for monitoring compression operations.
+  - `on_compression_start` callback before compression begins.
+  - `on_compression_complete` callback after successful compression.
+  - `on_compression_error` callback on compression failures.
+  - `on_decompression_complete` callback after decompression.
+  - `on_archive_deleted` callback when archived files are deleted.
+  - Setter methods: `setCompressionStartCallback()`, `setCompressionCompleteCallback()`, etc.
+- **Enhanced Color System**: Comprehensive ANSI color support with theme presets and individual level overrides.
+- **Theme Presets**: Built-in color themes - `default`, `bright`, `dim`, `minimal`, `neon`, `pastel`, `dark`, `light`.
+- **Per-Level Color Override**: Configure individual colors per log level while using a base theme via `Config.level_colors`.
+- **Level Color Variants**: New methods on `Level` enum - `brightColor()`, `dimColor()`, `underlineColor()`, `color256()`.
+- **Advanced CustomLevel**: Full color control with new constructors:
+  - `initFull()` - All color variants (base, bright, dim, 256-color)
+  - `initRgb()` - RGB color specification
+  - `initStyled()` - With text style (bold, italic, underline)
+  - `initWithBackground()` - With background color
+- **Color Constants**: New `Constants.Colors` struct with comprehensive color definitions:
+  - `Fg` - Standard foreground colors (30-37)
+  - `BrightFg` - Bright foreground colors (90-97)
+  - `Bg` - Background colors (40-47)
+  - `BrightBg` - Bright background colors (100-107)
+  - `Style` - Text styles (bold, dim, italic, underline, blink, reverse, strikethrough)
+  - `LevelColors` - Predefined level color mappings
+  - `Themes` - Theme preset definitions
+- **RGB/256-Color Functions**: 
+  - `Colors.fgRgb(r, g, b)` - RGB foreground color code
+  - `Colors.bgRgb(r, g, b)` - RGB background color code
+  - `Colors.fg256(index)` - 256-color palette foreground
+  - `Colors.bg256(index)` - 256-color palette background
+- **Config Theme Integration**: `LevelColorConfig.theme_preset` for global theme selection.
+- **Theme/Override Combination**: Use theme as base with individual level overrides taking precedence.
+- **ColorStyle Enum**: Formatter color style selection (`default`, `bright`, `dim`, `color256`, `minimal`, `neon`, `pastel`, `dark`, `light`).
+- **Formatter Theme Presets**: `Theme.bright()`, `Theme.dim()`, `Theme.minimal()`, `Theme.neon()`, `Theme.pastel()`, `Theme.dark()`, `Theme.light()`.
+- **CustomLevel Helper Methods**: `effectiveColor()`, `getBrightColor()`, `getDimColor()`, `get256Color()`, `hasRgbColor()`, `has256Color()`, `hasBackground()`, `hasStyle()`.
+- **Comprehensive Compression Tests**: Test coverage for all algorithms (deflate, zlib, raw_deflate, gzip, zstd), levels, presets, aliases, callbacks, and statistics.
+
+### Enhanced
+
+- **LevelColorConfig**: Added `theme_preset`, `notice_color`, `fatal_color` fields and `getColorForLevel()` method.
+- **Formatter.Theme**: Added `notice` and `fatal` fields for complete level coverage.
+- **Telemetry Export**: Improved provider detection and format-specific export with proper JSON structures.
+- **Documentation**: Updated compression, telemetry, and scheduler guides with v0.1.5 features.
+- **Examples**: Updated `compression_demo.zig`, `scheduler_demo.zig`, and `telemetry.zig` with v0.1.5 features.
+
+---
+
 ## [0.1.4]
 
 ### API Changes Summary

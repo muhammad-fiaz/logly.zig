@@ -191,11 +191,13 @@ Custom format structure configuration.
 
 #### `level_colors: LevelColorConfig`
 
-Level-specific color customization.
-- `trace_color`, `debug_color`, `info_color`, `success_color`, `warning_color`, `error_color`, `fail_color`, `critical_color`: Custom ANSI color codes.
+Level-specific color customization with theme presets (v0.1.5).
+- `theme_preset`: Theme preset for base colors (`.default`, `.bright`, `.dim`, `.minimal`, `.neon`, `.pastel`, `.dark`, `.light`, `.none`).
+- `trace_color`, `debug_color`, `info_color`, `notice_color`, `success_color`, `warning_color`, `error_color`, `fail_color`, `critical_color`, `fatal_color`: Individual color overrides (take precedence over theme).
 - `use_rgb`: Use RGB color mode.
 - `support_background`: Background color support.
 - `reset_code`: Reset code at end of each log.
+- `getColorForLevel(level)`: Returns the effective color (override or theme-based).
 
 #### `highlighters: HighlighterConfig`
 
@@ -478,6 +480,56 @@ Enables async logging with the provided configuration.
 
 Enables compression with the provided configuration.
 
+### `withCompressionEnabled() Config`
+
+Enables compression with default settings.
+
+### `withImplicitCompression() Config`
+
+Enables automatic compression on rotation.
+
+### `withExplicitCompression() Config`
+
+Enables manual compression control.
+
+### `withFastCompression() Config`
+
+Enables fast compression (speed priority).
+
+### `withBestCompression() Config`
+
+Enables best compression (ratio priority).
+
+### `withBackgroundCompression() Config`
+
+Enables background thread compression.
+
+### `withLogCompression() Config`
+
+Enables log-optimized compression (text strategy).
+
+### `withProductionCompression() Config`
+
+Enables production-ready compression (balanced, checksums, background).
+
+### Zstd Compression Methods (v0.1.5+)
+
+### `withZstdCompression() Config`
+
+Enables default zstd compression (level 6). Uses `.zst` extension.
+
+### `withZstdFastCompression() Config`
+
+Enables fast zstd compression (level 1). Prioritizes speed over ratio.
+
+### `withZstdBestCompression() Config`
+
+Enables best zstd compression (level 19). Prioritizes ratio over speed.
+
+### `withZstdProductionCompression() Config`
+
+Enables production zstd compression with background processing and checksums.
+
 ### `withThreadPool(config: ThreadPoolConfig) Config`
 
 Enables thread pool with the provided configuration.
@@ -668,6 +720,8 @@ pub const CompressionConfig = struct {
         deflate,
         zlib,
         raw_deflate,
+        gzip,
+        zstd,  // v0.1.5+ - Zstandard compression
     };
 
     pub const CompressionLevel = enum {
@@ -676,6 +730,10 @@ pub const CompressionConfig = struct {
         fast,
         default,
         best,
+
+        /// Convert to zstd compression level (1-22).
+        /// v0.1.5+
+        pub fn toZstdLevel(self: CompressionLevel) c_int;
     };
 
     pub const Mode = enum {
@@ -694,6 +752,25 @@ pub const CompressionConfig = struct {
         rle_only,
         adaptive,
     };
+
+    // Preset factory methods
+    pub fn enable() CompressionConfig;
+    pub fn disable() CompressionConfig;
+    pub fn fast() CompressionConfig;
+    pub fn balanced() CompressionConfig;
+    pub fn best() CompressionConfig;
+    pub fn production() CompressionConfig;
+    pub fn development() CompressionConfig;
+    pub fn forLogs() CompressionConfig;
+    pub fn archive() CompressionConfig;
+    pub fn backgroundMode() CompressionConfig;
+    pub fn streamingMode() CompressionConfig;
+    
+    // Zstd presets (v0.1.5+)
+    pub fn zstd() CompressionConfig;           // Default zstd (level 6)
+    pub fn zstdFast() CompressionConfig;       // Fast zstd (level 1)
+    pub fn zstdBest() CompressionConfig;       // Best zstd (level 19)
+    pub fn zstdProduction() CompressionConfig; // Production zstd with background
 };
 ```
 

@@ -208,6 +208,150 @@ pub const RulesConstants = struct {
 };
 ```
 
+## Colors Constants (v0.1.5)
+
+Comprehensive color system with ANSI codes, 256-color, and RGB support.
+
+```zig
+pub const Colors = struct {
+    /// Standard foreground colors (30-37)
+    pub const Fg = struct {
+        pub const black: []const u8 = "30";
+        pub const red: []const u8 = "31";
+        pub const green: []const u8 = "32";
+        pub const yellow: []const u8 = "33";
+        pub const blue: []const u8 = "34";
+        pub const magenta: []const u8 = "35";
+        pub const cyan: []const u8 = "36";
+        pub const white: []const u8 = "37";
+    };
+
+    /// Bright foreground colors (90-97)
+    pub const BrightFg = struct {
+        pub const black: []const u8 = "90";
+        pub const red: []const u8 = "91";
+        pub const green: []const u8 = "92";
+        pub const yellow: []const u8 = "93";
+        pub const blue: []const u8 = "94";
+        pub const magenta: []const u8 = "95";
+        pub const cyan: []const u8 = "96";
+        pub const white: []const u8 = "97";
+    };
+
+    /// Standard background colors (40-47)
+    pub const Bg = struct {
+        pub const black: []const u8 = "40";
+        pub const red: []const u8 = "41";
+        pub const green: []const u8 = "42";
+        pub const yellow: []const u8 = "43";
+        pub const blue: []const u8 = "44";
+        pub const magenta: []const u8 = "45";
+        pub const cyan: []const u8 = "46";
+        pub const white: []const u8 = "47";
+    };
+
+    /// Bright background colors (100-107)
+    pub const BrightBg = struct {
+        pub const black: []const u8 = "100";
+        pub const red: []const u8 = "101";
+        pub const green: []const u8 = "102";
+        pub const yellow: []const u8 = "103";
+        pub const blue: []const u8 = "104";
+        pub const magenta: []const u8 = "105";
+        pub const cyan: []const u8 = "106";
+        pub const white: []const u8 = "107";
+    };
+
+    /// Text style modifiers
+    pub const Style = struct {
+        pub const reset: []const u8 = "0";
+        pub const bold: []const u8 = "1";
+        pub const dim: []const u8 = "2";
+        pub const italic: []const u8 = "3";
+        pub const underline: []const u8 = "4";
+        pub const blink: []const u8 = "5";
+        pub const rapid_blink: []const u8 = "6";
+        pub const reverse: []const u8 = "7";
+        pub const hidden: []const u8 = "8";
+        pub const strikethrough: []const u8 = "9";
+    };
+
+    /// Pre-defined level colors
+    pub const LevelColors = struct {
+        pub const trace: []const u8 = "36";    // Cyan
+        pub const debug: []const u8 = "34";    // Blue
+        pub const info: []const u8 = "37";     // White
+        pub const notice: []const u8 = "36;1"; // Cyan Bold
+        pub const success: []const u8 = "32";  // Green
+        pub const warning: []const u8 = "33";  // Yellow
+        pub const err: []const u8 = "31";      // Red
+        pub const fail: []const u8 = "35";     // Magenta
+        pub const critical: []const u8 = "91"; // Bright Red
+        pub const fatal: []const u8 = "91;1";  // Bright Red Bold
+    };
+
+    /// Theme presets
+    pub const Themes = struct {
+        pub const default = struct {
+            pub const trace: []const u8 = "36";
+            pub const debug: []const u8 = "34";
+            pub const info: []const u8 = "37";
+            pub const success: []const u8 = "32";
+            pub const warning: []const u8 = "33";
+            pub const err: []const u8 = "31";
+            pub const critical: []const u8 = "91";
+        };
+        pub const bright = struct { ... };  // Bold colors
+        pub const neon = struct { ... };    // 256-color vivid
+        pub const pastel = struct { ... };  // Soft colors
+        pub const dark = struct { ... };    // Dark terminal
+        pub const light = struct { ... };   // Light terminal
+    };
+
+    /// Generate 256-color foreground code
+    pub fn fg256(color: u8) []const u8;
+
+    /// Generate 256-color background code
+    pub fn bg256(color: u8) []const u8;
+
+    /// Generate RGB foreground code
+    pub fn fgRgb(r: u8, g: u8, b: u8) []const u8;
+
+    /// Generate RGB background code
+    pub fn bgRgb(r: u8, g: u8, b: u8) []const u8;
+};
+```
+
+### Using Colors
+
+```zig
+const Colors = logly.Constants.Colors;
+
+// Basic colors
+const red_text = Colors.Fg.red;           // "31"
+const bright_red = Colors.BrightFg.red;   // "91"
+
+// With background
+const on_red = Colors.Bg.red;             // "41"
+const white_on_red = "97;41";             // Combined
+
+// With styles
+const bold = Colors.Style.bold;           // "1"
+const underline = Colors.Style.underline; // "4"
+const bold_red = "31;1";                  // Combined
+
+// 256-color palette
+const orange = Colors.fg256(208);         // "38;5;208"
+const purple_bg = Colors.bg256(141);      // "48;5;141"
+
+// RGB colors
+const coral = Colors.fgRgb(255, 127, 80); // "38;2;255;127;80"
+
+// Theme colors
+const trace_color = Colors.Themes.default.trace;  // "36"
+const neon_trace = Colors.Themes.neon.trace;      // "38;5;51"
+```
+
 ## Example Usage
 
 ```zig

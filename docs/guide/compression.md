@@ -1,10 +1,10 @@
 ---
 title: Log Compression Guide
-description: Learn how to compress log files with Logly.zig using DEFLATE, GZIP, or ZLIB algorithms. Covers automatic rotation compression, background processing, streaming mode, and performance optimization.
+description: Learn how to compress log files with Logly.zig using DEFLATE, GZIP, ZLIB, or ZSTD algorithms. Covers automatic rotation compression, background processing, streaming mode, and performance optimization.
 head:
   - - meta
     - name: keywords
-      content: log compression, gzip logs, zlib compression, log archiving, storage optimization, compressed logging, log backup
+      content: log compression, gzip logs, zlib compression, zstd compression, log archiving, storage optimization, compressed logging, log backup
 ---
 
 # Compression Guide
@@ -15,14 +15,14 @@ This guide covers log compression in Logly, including automatic and manual compr
 
 Logly provides a comprehensive compression module with advanced features:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE
+- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD (v0.1.5+)
 - **Smart Strategies**: Text-optimized, binary, RLE, adaptive auto-detection
 - **Flexible Modes**: Manual, on-rotation, size-based, scheduled, streaming
 - **Background Processing**: Offload compression to thread pool
 - **Real-time Monitoring**: Detailed statistics with atomic counters
 - **Callback System**: 5 callback types for complete observability
 - **Data Integrity**: CRC32 checksums with corruption detection
-- **Performance**: 100-500 MB/s compression, 200-800 MB/s decompression
+- **Performance**: 100-500 MB/s compression, 200-1400 MB/s decompression (zstd fastest)
 
 ## Quick Start
 
@@ -105,11 +105,20 @@ const disable_cfg = CompressionConfig.disable();      // Disabled
 const bg_cfg = CompressionConfig.backgroundMode();    // Background thread
 const stream_cfg = CompressionConfig.streamingMode(); // Streaming mode
 
+// Zstd presets (v0.1.5+) - excellent compression with very fast decompression
+const zstd_cfg = CompressionConfig.zstd();            // Default zstd
+const zstd_fast_cfg = CompressionConfig.zstdFast();   // Fast zstd
+const zstd_best_cfg = CompressionConfig.zstdBest();   // Best zstd ratio
+const zstd_prod_cfg = CompressionConfig.zstdProduction(); // Production zstd
+
 // Size-based trigger (compress when file exceeds 5MB)
 const size_cfg = CompressionConfig.onSize(5 * 1024 * 1024);
 
 // Use with Config
 var config = logly.Config.default().withCompression(prod_cfg);
+
+// Or use zstd for best performance (v0.1.5+)
+var zstd_config = logly.Config.default().withZstdCompression();
 ```
 
 ### Compression Instance Presets
@@ -132,8 +141,90 @@ var comp11 = logly.Compression.development(allocator); // Development mode
 var comp12 = logly.Compression.background(allocator);  // Background thread
 var comp13 = logly.Compression.streaming(allocator);   // Streaming mode
 
+// Zstd compression instances (v0.1.5+)
+var comp14 = logly.Compression.zstdCompression(allocator);   // Default zstd
+var comp15 = logly.Compression.zstdFast(allocator);          // Fast zstd
+var comp16 = logly.Compression.zstdBest(allocator);          // Best zstd ratio
+var comp17 = logly.Compression.zstdProduction(allocator);    // Production zstd
+
 defer comp1.deinit();
 // ... defer for others
+```
+
+## Zstd Compression (v0.1.5+)
+
+Zstandard (zstd) is a high-performance compression algorithm that provides excellent compression ratios with very fast decompression. It's ideal for log files, especially in production environments.
+
+### Why Use Zstd?
+
+| Feature | Zstd | GZIP/DEFLATE |
+|---------|------|--------------|
+| **Compression Ratio** | 3-6x | 3-5x |
+| **Compression Speed** | ~400 MB/s | ~200 MB/s |
+| **Decompression Speed** | ~1400 MB/s | ~300 MB/s |
+| **File Extension** | `.zst` | `.gz` |
+| **Best For** | High-throughput, streaming | Compatibility |
+
+### Quick Zstd Setup
+
+```zig
+const logly = @import("logly");
+
+// One-liner zstd compression
+var config = logly.Config.default().withZstdCompression();
+
+// Or with specific settings
+var config2 = logly.Config.default().withZstdFastCompression();      // Speed priority
+var config3 = logly.Config.default().withZstdBestCompression();      // Ratio priority
+var config4 = logly.Config.default().withZstdProductionCompression(); // Background + checksums
+```
+
+### Zstd Compression Levels
+
+| Preset | Level | Speed | Ratio | Use Case |
+|--------|-------|-------|-------|----------|
+| `zstdFast()` | 1 | Fastest | Good | High-throughput logging |
+| `zstd()` | 6 | Balanced | Better | Default, general purpose |
+| `zstdBest()` | 19 | Slower | Best | Long-term archival |
+| `zstdProduction()` | 6 | Balanced | Better | Production with checksums + background |
+
+### Direct Zstd Compression
+
+```zig
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+defer _ = gpa.deinit();
+const allocator = gpa.allocator();
+
+// Create zstd compressor
+var compressor = logly.Compression.zstdCompression(allocator);
+defer compressor.deinit();
+
+// Compress data
+const data = "Log data to compress..." ** 100;
+const compressed = try compressor.compress(data);
+defer allocator.free(compressed);
+
+// Decompress
+const decompressed = try compressor.decompress(compressed);
+defer allocator.free(decompressed);
+
+std.debug.print("Original: {d} bytes, Compressed: {d} bytes\n", 
+    .{data.len, compressed.len});
+```
+
+### Zstd File Compression
+
+```zig
+var compressor = logly.Compression.zstdProduction(allocator);
+defer compressor.deinit();
+
+// Compress a log file (creates .zst file)
+try compressor.compressFile("logs/app.log", null);
+// Result: logs/app.log.zst
+
+// Compress directory
+const files_compressed = try compressor.compressDirectory("logs/archive/");
+std.debug.print("Compressed {d} files\n", .{files_compressed});
 ```
 
 ## File Name Customization

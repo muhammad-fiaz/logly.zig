@@ -121,7 +121,7 @@ pub const SchedulerConfig = struct {
 | `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
 | `archive_root_dir` | `?[]const u8` | `null` | Centralized archive location |
 | `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd v0.1.5+) |
 | `compression_level` | `CompressionLevel` | `.default` | Compression level |
 | `keep_originals` | `bool` | `false` | Keep originals after compression |
 | `archive_file_prefix` | `?[]const u8` | `null` | Prefix for archived files |
@@ -606,20 +606,71 @@ The Scheduler module provides convenience aliases:
 
 Helper functions for creating common schedules and task configurations.
 
+### Schedule Presets
+
+| Method | Description |
+|--------|-------------|
+| `hourlyCompression()` | Compression every hour |
+| `everyMinutes(n)` | Every N minutes |
+| `every15Minutes()` | Every 15 minutes (v0.1.5+) |
+| `every30Minutes()` | Every 30 minutes |
+| `every6Hours()` | Every 6 hours |
+| `every12Hours()` | Every 12 hours |
+| `dailyAt(hour, minute)` | Daily at specific time |
+| `dailyMidnight()` | Daily at midnight |
+| `dailyMaintenance()` | Daily at 2 AM |
+| `weeklyCleanup()` | Weekly on Sunday at 2 AM |
+| `onceAfter(seconds)` | Once after delay (v0.1.5+) |
+| `healthCheckSchedule()` | Every 5 minutes (v0.1.5+) |
+| `metricsSchedule()` | Every minute (v0.1.5+) |
+
+### Task Config Presets
+
+| Method | Description |
+|--------|-------------|
+| `dailyCleanup(path, days)` | Delete logs older than N days |
+| `compressThenDelete(path, days)` | Compress then delete originals |
+| `compressAndKeep(path, days)` | Compress, keep both versions |
+| `compressOnly(path, days)` | Compress only, never delete |
+| `archiveOldLogs(path, compress_days, delete_days)` | Archive with age limits |
+| `aggressiveCleanup(path, days, max_files)` | Compress + file count limit |
+| `hourlyArchive(path)` | Compress files older than 1 day (v0.1.5+) |
+| `compressOnRotation(path)` | Compress just-rotated files (v0.1.5+) |
+| `sizeBasedCompression(path, bytes)` | Compress when size exceeds threshold (v0.1.5+) |
+| `diskUsageTriggered(path, percent)` | Compress when disk usage high (v0.1.5+) |
+| `lowDiskSpaceTriggered(path, min_free)` | Compress when disk space low (v0.1.5+) |
+| `recursiveCompression(path, days)` | Recursive directory compression (v0.1.5+) |
+
 ```zig
 pub const SchedulerPresets = struct {
     // Schedules
     pub fn hourlyCompression() Schedule;
     pub fn everyMinutes(n: u64) Schedule;
-    pub fn dailyAt(hour: u8, minute: u8) Schedule;
+    pub fn every15Minutes() Schedule;          // v0.1.5+
     pub fn every30Minutes() Schedule;
     pub fn every6Hours() Schedule;
     pub fn every12Hours() Schedule;
+    pub fn dailyAt(hour: u8, minute: u8) Schedule;
     pub fn dailyMidnight() Schedule;
     pub fn dailyMaintenance() Schedule;
+    pub fn weeklyCleanup() Schedule;
+    pub fn onceAfter(seconds: u64) Schedule;   // v0.1.5+
+    pub fn healthCheckSchedule() Schedule;     // v0.1.5+
+    pub fn metricsSchedule() Schedule;         // v0.1.5+
 
     // Task Configurations
     pub fn dailyCleanup(path: []const u8, max_age_days: u64) TaskConfig;
+    pub fn compressThenDelete(path: []const u8, min_age_days: u64) TaskConfig;
+    pub fn compressAndKeep(path: []const u8, min_age_days: u64) TaskConfig;
+    pub fn compressOnly(path: []const u8, min_age_days: u64) TaskConfig;
+    pub fn archiveOldLogs(path: []const u8, compress_days: u64, delete_days: u64) TaskConfig;
+    pub fn aggressiveCleanup(path: []const u8, max_age_days: u64, max_files: usize) TaskConfig;
+    pub fn hourlyArchive(path: []const u8) TaskConfig;             // v0.1.5+
+    pub fn compressOnRotation(path: []const u8) TaskConfig;        // v0.1.5+
+    pub fn sizeBasedCompression(path: []const u8, bytes: u64) TaskConfig;  // v0.1.5+
+    pub fn diskUsageTriggered(path: []const u8, percent: u8) TaskConfig;   // v0.1.5+
+    pub fn lowDiskSpaceTriggered(path: []const u8, min_free: u64) TaskConfig;  // v0.1.5+
+    pub fn recursiveCompression(path: []const u8, days: u64) TaskConfig;   // v0.1.5+
 };
 ```
 

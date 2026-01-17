@@ -184,7 +184,7 @@ pub const RotationConfig = struct {
 | `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
 | `file_prefix` | `?[]const u8` | `null` | Prefix for rotated file names |
 | `file_suffix` | `?[]const u8` | `null` | Suffix for rotated file names |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd v0.1.5+) |
 | `compression_level` | `CompressionLevel` | `.default` | Compression level |
 | `keep_original` | `bool` | `false` | Keep original after compression |
 | `compress_on_retention` | `bool` | `false` | Compress instead of delete |
@@ -283,14 +283,108 @@ The `RotationStats` struct provides insights into the rotation process.
 
 ## Presets
 
-The `RotationPresets` struct offers common configurations.
+The `RotationPresets` struct offers comprehensive pre-configured rotation strategies for common use cases.
+
+### Time-Based Presets
+
+| Method | Interval | Retention | Description |
+|--------|----------|-----------|-------------|
+| `daily7Days()` | daily | 7 | Standard weekly cleanup |
+| `daily30Days()` | daily | 30 | Monthly cleanup |
+| `daily90Days()` | daily | 90 | Quarterly cleanup |
+| `daily365Days()` | daily | 365 | Yearly archive |
+| `hourly24Hours()` | hourly | 24 | Daily cleanup |
+| `hourly48Hours()` | hourly | 48 | Two-day buffer |
+| `hourly7Days()` | hourly | 168 | Weekly retention |
+| `weekly4Weeks()` | weekly | 4 | Monthly cleanup |
+| `weekly12Weeks()` | weekly | 12 | Quarterly cleanup |
+| `monthly12Months()` | monthly | 12 | Yearly retention |
+| `minutely60()` | minutely | 60 | Debug/testing |
+
+### Size-Based Presets
+
+| Method | Size Limit | Retention | Description |
+|--------|------------|-----------|-------------|
+| `size1MB()` | 1 MB | 5 | Small logs |
+| `size5MB()` | 5 MB | 5 | Compact logs |
+| `size10MB()` | 10 MB | 5 | Standard size |
+| `size25MB()` | 25 MB | 10 | Medium size |
+| `size50MB()` | 50 MB | 10 | Large size |
+| `size100MB()` | 100 MB | 10 | Enterprise size |
+| `size250MB()` | 250 MB | 5 | High volume |
+| `size500MB()` | 500 MB | 3 | Very high volume |
+| `size1GB()` | 1 GB | 2 | Maximum size |
+
+### Hybrid Presets (Time + Size)
+
+| Method | Interval | Size Limit | Retention | Description |
+|--------|----------|------------|-----------|-------------|
+| `dailyOr100MB()` | daily | 100 MB | 30 | Rotate on time OR size |
+| `hourlyOr50MB()` | hourly | 50 MB | 48 | Fast rotation |
+| `dailyOr500MB()` | daily | 500 MB | 7 | High volume |
+
+### Production Presets
+
+| Method | Description |
+|--------|-------------|
+| `production()` | Daily, 30 days, gzip compression, date naming |
+| `enterprise()` | Daily, 90 days, best compression, ISO naming, compress on retention |
+| `debug()` | Minutely, 60 files, timestamp naming, no compression |
+| `highVolume()` | Hourly OR 500MB, 7 days, ISO naming, compression |
+| `audit()` | Daily, 365 days, best compression, keep all archives |
+| `minimal()` | Size 10MB, 3 files, index naming (embedded systems) |
+
+### Sink Configuration Helpers
+
+| Method | Description |
+|--------|-------------|
+| `dailySink(path, retention)` | Create daily rotation sink config |
+| `hourlySink(path, retention)` | Create hourly rotation sink config |
+| `weeklySink(path, retention)` | Create weekly rotation sink config |
+| `monthlySink(path, retention)` | Create monthly rotation sink config |
+| `sizeSink(path, bytes, retention)` | Create size-based rotation sink config |
+
+### Preset Aliases
+
+| Alias | Target |
+|-------|--------|
+| `daily` | `daily7Days` |
+| `hourly` | `hourly24Hours` |
+| `weekly` | `weekly4Weeks` |
+| `monthly` | `monthly12Months` |
+
+### Example Usage
 
 ```zig
-// Daily rotation, keep 7 days
-const rot = try RotationPresets.daily7Days(allocator, path);
+const RotationPresets = @import("logly").RotationPresets;
 
-// Size based (10MB), keep 5 files
-const rot = try RotationPresets.size10MB(allocator, path);
+// Quick preset usage
+var rot = try RotationPresets.daily7Days(allocator, "app.log");
+defer rot.deinit();
+
+// Using alias
+var rot2 = try RotationPresets.daily(allocator, "server.log");
+defer rot2.deinit();
+
+// Production preset with compression enabled
+var prod = try RotationPresets.production(allocator, "production.log");
+defer prod.deinit();
+
+// Enterprise preset with full archival
+var ent = try RotationPresets.enterprise(allocator, "enterprise.log");
+defer ent.deinit();
+
+// Audit log with maximum retention
+var audit = try RotationPresets.audit(allocator, "audit.log");
+defer audit.deinit();
+
+// Hybrid: rotate daily OR when file reaches 100MB
+var hybrid = try RotationPresets.dailyOr100MB(allocator, "hybrid.log");
+defer hybrid.deinit();
+
+// Create sink configs for logger
+const sink = RotationPresets.dailySink("logs/app.log", 30);
+try logger.addSink(sink);
 ```
 
 ## Example Usage

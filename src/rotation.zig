@@ -782,21 +782,75 @@ pub const Rotation = struct {
     pub const sizeSink = createSizeRotatingSink;
 };
 
-/// Preset rotation configurations.
+/// Preset rotation configurations for common use cases.
 pub const RotationPresets = struct {
-    /// Daily rotation with 7 day retention.
+    // Time-Based Presets
+
+    /// Daily rotation with 7 day retention (standard weekly cleanup).
     pub fn daily7Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         return Rotation.init(allocator, path, "daily", null, 7);
     }
 
-    /// Daily rotation with 30 day retention.
+    /// Daily rotation with 30 day retention (monthly cleanup).
     pub fn daily30Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         return Rotation.init(allocator, path, "daily", null, 30);
     }
 
-    /// Hourly rotation with 24 hour retention.
+    /// Daily rotation with 90 day retention (quarterly cleanup).
+    pub fn daily90Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "daily", null, 90);
+    }
+
+    /// Daily rotation with 365 day retention (yearly archive).
+    pub fn daily365Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "daily", null, 365);
+    }
+
+    /// Hourly rotation with 24 hour retention (daily cleanup).
     pub fn hourly24Hours(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         return Rotation.init(allocator, path, "hourly", null, 24);
+    }
+
+    /// Hourly rotation with 48 hour retention (two-day buffer).
+    pub fn hourly48Hours(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "hourly", null, 48);
+    }
+
+    /// Hourly rotation with 168 hour (7 day) retention.
+    pub fn hourly7Days(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "hourly", null, 168);
+    }
+
+    /// Weekly rotation with 4 week retention.
+    pub fn weekly4Weeks(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "weekly", null, 4);
+    }
+
+    /// Weekly rotation with 12 week (quarterly) retention.
+    pub fn weekly12Weeks(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "weekly", null, 12);
+    }
+
+    /// Monthly rotation with 12 month retention.
+    pub fn monthly12Months(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "monthly", null, 12);
+    }
+
+    /// Minutely rotation with 60 file retention (debugging).
+    pub fn minutely60(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "minutely", null, 60);
+    }
+
+    // Size-Based Presets
+
+    /// 1MB size-based rotation with 5 file retention (small logs).
+    pub fn size1MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, null, 1 * 1024 * 1024, 5);
+    }
+
+    /// 5MB size-based rotation with 5 file retention.
+    pub fn size5MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, null, 5 * 1024 * 1024, 5);
     }
 
     /// 10MB size-based rotation with 5 file retention.
@@ -804,10 +858,105 @@ pub const RotationPresets = struct {
         return Rotation.init(allocator, path, null, 10 * 1024 * 1024, 5);
     }
 
+    /// 25MB size-based rotation with 10 file retention.
+    pub fn size25MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, null, 25 * 1024 * 1024, 10);
+    }
+
+    /// 50MB size-based rotation with 10 file retention.
+    pub fn size50MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, null, 50 * 1024 * 1024, 10);
+    }
+
     /// 100MB size-based rotation with 10 file retention.
     pub fn size100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         return Rotation.init(allocator, path, null, 100 * 1024 * 1024, 10);
     }
+
+    /// 250MB size-based rotation with 5 file retention (large logs).
+    pub fn size250MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, null, 250 * 1024 * 1024, 5);
+    }
+
+    /// 500MB size-based rotation with 3 file retention.
+    pub fn size500MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, null, 500 * 1024 * 1024, 3);
+    }
+
+    /// 1GB size-based rotation with 2 file retention.
+    pub fn size1GB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, null, 1024 * 1024 * 1024, 2);
+    }
+
+    // Hybrid Presets (Time + Size)
+
+    /// Daily rotation OR 100MB, 30 day retention.
+    pub fn dailyOr100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "daily", 100 * 1024 * 1024, 30);
+    }
+
+    /// Hourly rotation OR 50MB, 48 hour retention.
+    pub fn hourlyOr50MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "hourly", 50 * 1024 * 1024, 48);
+    }
+
+    /// Daily rotation OR 500MB, 7 day retention (high volume).
+    pub fn dailyOr500MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        return Rotation.init(allocator, path, "daily", 500 * 1024 * 1024, 7);
+    }
+
+    // Production Presets
+
+    /// Production preset: daily rotation, 30 days, with compression.
+    pub fn production(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        var rot = try Rotation.init(allocator, path, "daily", null, 30);
+        rot.withNaming(.date);
+        try rot.withCompression(.{ .algorithm = .deflate });
+        return rot;
+    }
+
+    /// Enterprise preset: daily rotation, 90 days, compressed archive.
+    pub fn enterprise(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        var rot = try Rotation.init(allocator, path, "daily", null, 90);
+        rot.withNaming(.iso_datetime);
+        try rot.withCompression(.{ .algorithm = .deflate, .level = .best });
+        rot.withCompressOnRetention(true);
+        return rot;
+    }
+
+    /// Debug preset: minutely rotation, 60 files, no compression.
+    pub fn debug(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        var rot = try Rotation.init(allocator, path, "minutely", null, 60);
+        rot.withNaming(.timestamp);
+        return rot;
+    }
+
+    /// High-volume preset: hourly OR 500MB, 7 days, compressed.
+    pub fn highVolume(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        var rot = try Rotation.init(allocator, path, "hourly", 500 * 1024 * 1024, 168);
+        rot.withNaming(.iso_datetime);
+        try rot.withCompression(.{ .algorithm = .deflate });
+        return rot;
+    }
+
+    /// Audit preset: daily rotation, 365 days, compressed archive, ISO naming.
+    pub fn audit(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        var rot = try Rotation.init(allocator, path, "daily", null, 365);
+        rot.withNaming(.iso_datetime);
+        try rot.withCompression(.{ .algorithm = .deflate, .level = .best });
+        rot.withCompressOnRetention(true);
+        rot.withDeleteAfterRetentionCompress(false);
+        return rot;
+    }
+
+    /// Minimal preset: size-only 10MB, 3 files (embedded/resource constrained).
+    pub fn minimal(allocator: std.mem.Allocator, path: []const u8) !Rotation {
+        var rot = try Rotation.init(allocator, path, null, 10 * 1024 * 1024, 3);
+        rot.withNaming(.index);
+        return rot;
+    }
+
+    // Sink Configuration Helpers
 
     /// Creates a daily rotation sink config.
     pub fn dailySink(file_path: []const u8, retention_days: usize) SinkConfig {
@@ -818,6 +967,27 @@ pub const RotationPresets = struct {
     pub fn hourlySink(file_path: []const u8, retention_hours: usize) SinkConfig {
         return Rotation.createRotatingSink(file_path, "hourly", retention_hours);
     }
+
+    /// Creates a weekly rotation sink config.
+    pub fn weeklySink(file_path: []const u8, retention_weeks: usize) SinkConfig {
+        return Rotation.createRotatingSink(file_path, "weekly", retention_weeks);
+    }
+
+    /// Creates a monthly rotation sink config.
+    pub fn monthlySink(file_path: []const u8, retention_months: usize) SinkConfig {
+        return Rotation.createRotatingSink(file_path, "monthly", retention_months);
+    }
+
+    /// Creates a size-based rotation sink config.
+    pub fn sizeSink(file_path: []const u8, size_bytes: u64, retention: usize) SinkConfig {
+        return Rotation.createSizeRotatingSink(file_path, size_bytes, retention);
+    }
+
+    // Aliases for common presets
+    pub const weekly = weekly4Weeks;
+    pub const monthly = monthly12Months;
+    pub const hourly = hourly24Hours;
+    pub const daily = daily7Days;
 };
 
 test "rotation functionality" {
@@ -834,4 +1004,193 @@ test "rotation functionality" {
 
     try rot.withCompression(CompressionConfig{ .algorithm = .deflate });
     try std.testing.expect(rot.compression != null);
+}
+
+test "rotation interval seconds" {
+    try std.testing.expectEqual(@as(i64, 60), Rotation.RotationInterval.minutely.seconds());
+    try std.testing.expectEqual(@as(i64, 3600), Rotation.RotationInterval.hourly.seconds());
+    try std.testing.expectEqual(@as(i64, 86400), Rotation.RotationInterval.daily.seconds());
+    try std.testing.expectEqual(@as(i64, 604800), Rotation.RotationInterval.weekly.seconds());
+    try std.testing.expectEqual(@as(i64, 2592000), Rotation.RotationInterval.monthly.seconds());
+    try std.testing.expectEqual(@as(i64, 31536000), Rotation.RotationInterval.yearly.seconds());
+}
+
+test "rotation interval from string" {
+    try std.testing.expectEqual(Rotation.RotationInterval.minutely, Rotation.RotationInterval.fromString("minutely"));
+    try std.testing.expectEqual(Rotation.RotationInterval.hourly, Rotation.RotationInterval.fromString("hourly"));
+    try std.testing.expectEqual(Rotation.RotationInterval.daily, Rotation.RotationInterval.fromString("daily"));
+    try std.testing.expectEqual(Rotation.RotationInterval.weekly, Rotation.RotationInterval.fromString("weekly"));
+    try std.testing.expectEqual(Rotation.RotationInterval.monthly, Rotation.RotationInterval.fromString("monthly"));
+    try std.testing.expectEqual(Rotation.RotationInterval.yearly, Rotation.RotationInterval.fromString("yearly"));
+    try std.testing.expectEqual(@as(?Rotation.RotationInterval, null), Rotation.RotationInterval.fromString("invalid"));
+}
+
+test "rotation stats" {
+    var stats = Rotation.RotationStats{};
+
+    // Initial values
+    try std.testing.expectEqual(@as(u64, 0), stats.rotationCount());
+    try std.testing.expectEqual(@as(u64, 0), stats.errorCount());
+    try std.testing.expectEqual(@as(f64, 1.0), stats.successRate());
+    try std.testing.expect(!stats.hasErrors());
+
+    // Increment counters
+    _ = stats.total_rotations.fetchAdd(10, .monotonic);
+    _ = stats.rotation_errors.fetchAdd(2, .monotonic);
+
+    try std.testing.expectEqual(@as(u64, 10), stats.rotationCount());
+    try std.testing.expectEqual(@as(u64, 2), stats.errorCount());
+    try std.testing.expect(stats.hasErrors());
+    try std.testing.expectApproxEqAbs(@as(f64, 0.8), stats.successRate(), 0.01);
+
+    // Reset
+    stats.reset();
+    try std.testing.expectEqual(@as(u64, 0), stats.rotationCount());
+    try std.testing.expect(!stats.hasErrors());
+}
+
+test "rotation presets time-based" {
+    const allocator = std.testing.allocator;
+
+    // Daily presets
+    var daily7 = try RotationPresets.daily7Days(allocator, "test.log");
+    defer daily7.deinit();
+    try std.testing.expectEqual(Rotation.RotationInterval.daily, daily7.interval.?);
+    try std.testing.expectEqual(@as(?usize, 7), daily7.retention);
+
+    var daily30 = try RotationPresets.daily30Days(allocator, "test.log");
+    defer daily30.deinit();
+    try std.testing.expectEqual(@as(?usize, 30), daily30.retention);
+
+    var daily90 = try RotationPresets.daily90Days(allocator, "test.log");
+    defer daily90.deinit();
+    try std.testing.expectEqual(@as(?usize, 90), daily90.retention);
+
+    // Hourly presets
+    var hourly24 = try RotationPresets.hourly24Hours(allocator, "test.log");
+    defer hourly24.deinit();
+    try std.testing.expectEqual(Rotation.RotationInterval.hourly, hourly24.interval.?);
+    try std.testing.expectEqual(@as(?usize, 24), hourly24.retention);
+
+    // Weekly presets
+    var weekly4 = try RotationPresets.weekly4Weeks(allocator, "test.log");
+    defer weekly4.deinit();
+    try std.testing.expectEqual(Rotation.RotationInterval.weekly, weekly4.interval.?);
+    try std.testing.expectEqual(@as(?usize, 4), weekly4.retention);
+}
+
+test "rotation presets size-based" {
+    const allocator = std.testing.allocator;
+
+    var size1 = try RotationPresets.size1MB(allocator, "test.log");
+    defer size1.deinit();
+    try std.testing.expectEqual(@as(?u64, 1 * 1024 * 1024), size1.size_limit);
+
+    var size10 = try RotationPresets.size10MB(allocator, "test.log");
+    defer size10.deinit();
+    try std.testing.expectEqual(@as(?u64, 10 * 1024 * 1024), size10.size_limit);
+
+    var size100 = try RotationPresets.size100MB(allocator, "test.log");
+    defer size100.deinit();
+    try std.testing.expectEqual(@as(?u64, 100 * 1024 * 1024), size100.size_limit);
+
+    var size1gb = try RotationPresets.size1GB(allocator, "test.log");
+    defer size1gb.deinit();
+    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024), size1gb.size_limit);
+}
+
+test "rotation presets hybrid" {
+    const allocator = std.testing.allocator;
+
+    var hybrid = try RotationPresets.dailyOr100MB(allocator, "test.log");
+    defer hybrid.deinit();
+    try std.testing.expectEqual(Rotation.RotationInterval.daily, hybrid.interval.?);
+    try std.testing.expectEqual(@as(?u64, 100 * 1024 * 1024), hybrid.size_limit);
+    try std.testing.expectEqual(@as(?usize, 30), hybrid.retention);
+}
+
+test "rotation presets production configs" {
+    const allocator = std.testing.allocator;
+
+    // Production preset
+    var prod = try RotationPresets.production(allocator, "test.log");
+    defer prod.deinit();
+    try std.testing.expectEqual(Rotation.RotationInterval.daily, prod.interval.?);
+    try std.testing.expectEqual(Rotation.NamingStrategy.date, prod.naming);
+    try std.testing.expect(prod.compression != null);
+
+    // Enterprise preset
+    var ent = try RotationPresets.enterprise(allocator, "test.log");
+    defer ent.deinit();
+    try std.testing.expectEqual(@as(?usize, 90), ent.retention);
+    try std.testing.expectEqual(Rotation.NamingStrategy.iso_datetime, ent.naming);
+    try std.testing.expect(ent.compress_on_retention);
+
+    // Audit preset
+    var audit = try RotationPresets.audit(allocator, "test.log");
+    defer audit.deinit();
+    try std.testing.expectEqual(@as(?usize, 365), audit.retention);
+    try std.testing.expect(audit.compress_on_retention);
+    try std.testing.expect(!audit.delete_after_retention_compress);
+
+    // Minimal preset
+    var min = try RotationPresets.minimal(allocator, "test.log");
+    defer min.deinit();
+    try std.testing.expectEqual(@as(?usize, 3), min.retention);
+    try std.testing.expectEqual(Rotation.NamingStrategy.index, min.naming);
+}
+
+test "rotation configuration methods" {
+    const allocator = std.testing.allocator;
+
+    var rot = try Rotation.init(allocator, "test.log", "daily", null, 7);
+    defer rot.deinit();
+
+    // Test configuration methods
+    rot.withKeepOriginal(true);
+    try std.testing.expect(rot.keep_original);
+
+    rot.withCompressOnRetention(true);
+    try std.testing.expect(rot.compress_on_retention);
+
+    rot.withDeleteAfterRetentionCompress(false);
+    try std.testing.expect(!rot.delete_after_retention_compress);
+
+    rot.withMaxAge(86400 * 7);
+    try std.testing.expectEqual(@as(?i64, 604800), rot.max_age_seconds);
+
+    rot.setCleanEmptyDirs(true);
+    try std.testing.expect(rot.clean_empty_dirs);
+}
+
+test "rotation sink creation" {
+    // Daily sink
+    const daily_sink = RotationPresets.dailySink("logs/app.log", 7);
+    try std.testing.expectEqualStrings("logs/app.log", daily_sink.path.?);
+    try std.testing.expectEqualStrings("daily", daily_sink.rotation.?);
+    try std.testing.expectEqual(@as(?usize, 7), daily_sink.retention);
+
+    // Size sink
+    const size_sink = RotationPresets.sizeSink("logs/app.log", 50 * 1024 * 1024, 5);
+    try std.testing.expectEqual(@as(?u64, 50 * 1024 * 1024), size_sink.size_limit);
+    try std.testing.expectEqual(@as(?usize, 5), size_sink.retention);
+}
+
+test "rotation is enabled check" {
+    const allocator = std.testing.allocator;
+
+    // Time-based enabled
+    var rot1 = try Rotation.init(allocator, "test.log", "daily", null, null);
+    defer rot1.deinit();
+    try std.testing.expect(rot1.isEnabled());
+
+    // Size-based enabled
+    var rot2 = try Rotation.init(allocator, "test.log", null, 1024, null);
+    defer rot2.deinit();
+    try std.testing.expect(rot2.isEnabled());
+
+    // Neither enabled (though this is unusual usage)
+    var rot3 = try Rotation.init(allocator, "test.log", null, null, null);
+    defer rot3.deinit();
+    try std.testing.expect(!rot3.isEnabled());
 }

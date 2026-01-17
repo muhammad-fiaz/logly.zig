@@ -1,10 +1,10 @@
 ---
 title: Compression API Reference
-description: API reference for Logly.zig Compression module. DEFLATE, GZIP, ZLIB algorithms with streaming support, background processing, and performance monitoring.
+description: API reference for Logly.zig Compression module. DEFLATE, GZIP, ZLIB, ZSTD algorithms with streaming support, background processing, and performance monitoring.
 head:
   - - meta
     - name: keywords
-      content: compression api, gzip api, zlib api, deflate, log compression, streaming compression
+      content: compression api, gzip api, zlib api, zstd api, deflate, log compression, streaming compression
   - - meta
     - property: og:title
       content: Compression API Reference | Logly.zig
@@ -20,12 +20,43 @@ Comprehensive log file compression with multiple algorithms, streaming support, 
 |-------------|-----------|-------------|
 | `init()` | `create()` | Initialize compression |
 | `deinit()` | `destroy()` | Deinitialize compression |
+| `compress()` | `encode()`, `deflate()` | Compress data |
+| `decompress()` | `decode()`, `inflate()` | Decompress data |
+| `compressFile()` | `packFile()` | Compress a file |
+| `decompressFile()` | `unpackFile()` | Decompress a file |
+| `compressDirectory()` | `packDirectory()`, `archiveFolder()` | Compress directory (v0.1.5+) |
+| `getStats()` | `statistics()` | Get compression statistics |
+| `resetStats()` | `clearStats()` | Reset statistics (v0.1.5+) |
+| `configure()` | `setConfig()`, `updateConfig()` | Update configuration (v0.1.5+) |
+| `shouldCompress()` | `needsCompression()` | Check if file needs compression |
+| `zstdCompression()` | `zstdDefault()` | Create zstd compressor (v0.1.5+) |
+| `zstdFast()` | `zstdSpeed()` | Create fast zstd compressor (v0.1.5+) |
+| `zstdBest()` | `zstdMax()` | Create best zstd compressor (v0.1.5+) |
+
+## Batch Compression Methods (v0.1.5+)
+
+| Method | Description |
+|--------|-------------|
+| `compressBatch(files)` | Compress multiple files at once |
+| `compressPattern(dir, pattern)` | Compress files matching a glob pattern |
+| `compressOldest(dir, count)` | Compress N oldest files in directory |
+| `compressLargerThan(dir, size)` | Compress files larger than threshold |
+
+## Utility Methods (v0.1.5+)
+
+| Method | Description |
+|--------|-------------|
+| `estimateCompressedSize(size)` | Estimate compressed size for data |
+| `getExtension()` | Get file extension for algorithm |
+| `isZstd()` | Check if using zstd algorithm |
+| `algorithmName()` | Get algorithm name as string |
+| `levelName()` | Get compression level as string |
 
 ## Overview
 
 The Compression module provides high-performance log file compression with:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, RAW
+- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, ZSTD, RAW
 - **Compression Strategies**: Text-optimized, binary, RLE, adaptive
 - **Streaming Support**: `compressStream` and `decompressStream` helpers
 - **Background Compression**: Offload compression to background threads
@@ -165,6 +196,8 @@ pub const Algorithm = enum {
     raw_deflate,
     /// GZIP format (standard compression)
     gzip,
+    /// Zstandard compression (high performance)
+    zstd,  // v0.1.5+
 };
 ```
 
@@ -207,6 +240,70 @@ The `CompressionConfig` struct provides preset factory methods for minimal confi
 | `keepOriginals()` | Keep original files after compression |
 | `production()` | Production-ready (balanced, background, checksums) |
 | `development()` | Development mode (fast, keep originals) |
+
+### Zstd Presets (v0.1.5+)
+
+Zstandard (zstd) compression provides excellent compression ratios with very fast decompression. It's particularly well-suited for log files and streaming scenarios.
+
+| Method | Description |
+|--------|-------------|
+| `zstd()` | Default zstd compression (level 6) |
+| `zstdDefault()` | Alias for zstd() |
+| `zstdFast()` | Fast zstd compression (level 1) |
+| `zstdSpeed()` | Alias for zstdFast() |
+| `zstdBest()` | Best zstd compression (level 19) |
+| `zstdMax()` | Alias for zstdBest() |
+| `zstdProduction()` | Production zstd with background processing |
+| `zstdWithLevel(level)` | Custom zstd level (1-22) |
+
+### Custom Zstd Levels (v0.1.5+)
+
+Zstd supports compression levels from 1 to 22. Higher levels provide better compression but slower speed.
+
+| Level Range | Use Case |
+|------------|----------|
+| 1-3 | Speed priority, real-time logging |
+| 4-9 | Balanced speed/ratio |
+| 10-15 | Good ratio, moderate speed |
+| 16-19 | High compression, slower |
+| 20-22 | Ultra compression (high memory) |
+
+```zig
+// Custom zstd level for fine-grained control
+const cfg = CompressionConfig.zstdWithLevel(15);
+
+// Get the effective level
+const level = cfg.getEffectiveZstdLevel(); // Returns 15
+```
+
+### getEffectiveZstdLevel
+
+Returns the effective zstd compression level, taking custom_zstd_level into account.
+
+```zig
+pub fn getEffectiveZstdLevel(self: *const CompressionConfig) i32
+```
+
+**Example: Zstd Compression**
+
+```zig
+const CompressionConfig = logly.Config.CompressionConfig;
+
+// Default zstd compression
+const cfg1 = CompressionConfig.zstd();
+
+// Fast zstd for high-throughput scenarios
+const cfg2 = CompressionConfig.zstdFast();
+
+// Best zstd for archival
+const cfg3 = CompressionConfig.zstdBest();
+
+// Production-ready zstd with background processing
+const cfg4 = CompressionConfig.zstdProduction();
+
+// Custom level for specific use case
+const cfg5 = CompressionConfig.zstdWithLevel(12);
+```
 
 ## File Name Customization Options
 
@@ -276,6 +373,10 @@ The `Config` struct provides quick-enable methods for compression:
 | `withBackgroundCompression()` | Background thread |
 | `withLogCompression()` | Log-optimized |
 | `withProductionCompression()` | Production-ready |
+| `withZstdCompression()` | Default zstd compression (v0.1.5+) |
+| `withZstdFastCompression()` | Fast zstd compression (v0.1.5+) |
+| `withZstdBestCompression()` | Best zstd compression (v0.1.5+) |
+| `withZstdProductionCompression()` | Production zstd (v0.1.5+) |
 
 **Usage Examples:**
 
@@ -286,10 +387,18 @@ var config = logly.Config.default().withCompressionEnabled();
 // Production-ready in one line
 var config2 = logly.Config.default().withProductionCompression();
 
+// Zstd compression with one line (v0.1.5+)
+var config3 = logly.Config.default().withZstdCompression();
+
 // Chain with other settings
-var config3 = logly.Config.default()
+var config4 = logly.Config.default()
     .withFastCompression()
     .withRotation(.{ .enabled = true });
+
+// Production zstd with rotation
+var config5 = logly.Config.default()
+    .withZstdProductionCompression()
+    .withRotation(.{ .enabled = true, .max_size = 10 * 1024 * 1024 });
 ```
 
 ## Compression Instance Presets
@@ -310,6 +419,10 @@ The `Compression` struct provides preset factory methods for direct instantiatio
 | `development(allocator)` | Development mode |
 | `background(allocator)` | Background thread |
 | `streaming(allocator)` | Streaming mode |
+| `zstdCompression(allocator)` | Default zstd (v0.1.5+) |
+| `zstdFast(allocator)` | Fast zstd (v0.1.5+) |
+| `zstdBest(allocator)` | Best zstd (v0.1.5+) |
+| `zstdProduction(allocator)` | Production zstd (v0.1.5+) |
 
 **Usage Examples:**
 
@@ -319,17 +432,25 @@ var compressor = logly.Compression.production(allocator);
 defer compressor.deinit();
 
 try compressor.compressFile("logs/app.log", null);
+
+// Zstd compression instance (v0.1.5+)
+var zstd_compressor = logly.Compression.zstdCompression(allocator);
+defer zstd_compressor.deinit();
+
+try zstd_compressor.compressFile("logs/app.log", null);
+// Creates: logs/app.log.zst
 ```
 
 **Algorithm Comparison:**
 
-| Algorithm | Ratio | Speed | Use Case |
-|-----------|-------|-------|----------|
-| `none` | 1.0x | Instant | Testing, debugging |
-| `deflate` | 3-5x | ~200 MB/s | General purpose logs |
-| `zlib` | 3-5x | ~180 MB/s | Network transport |
-| `raw_deflate` | 3-5x | ~220 MB/s | Custom headers |
-| `gzip` | 3-5x | ~190 MB/s | Standard file compatibility |
+| Algorithm | Ratio | Compress Speed | Decompress Speed | Use Case |
+|-----------|-------|----------------|------------------|----------|
+| `none` | 1.0x | Instant | Instant | Testing, debugging |
+| `deflate` | 3-5x | ~200 MB/s | ~300 MB/s | General purpose logs |
+| `zlib` | 3-5x | ~180 MB/s | ~280 MB/s | Network transport |
+| `raw_deflate` | 3-5x | ~220 MB/s | ~320 MB/s | Custom headers |
+| `gzip` | 3-5x | ~190 MB/s | ~290 MB/s | Standard file compatibility |
+| `zstd` | 3-6x | ~400 MB/s | ~1400 MB/s | High-performance, streaming (v0.1.5+) |
 
 
 ### Level
@@ -694,6 +815,150 @@ pub fn compressDirectory(self: *Compression, dir_path: []const u8) !u64
 ```zig
 const count = try compression.compressDirectory("logs/");
 std.debug.print("Compressed {d} files\n", .{count});
+```
+
+### compressBatch (v0.1.5+)
+
+Compresses multiple files in a batch operation.
+
+```zig
+pub fn compressBatch(self: *Compression, file_paths: []const []const u8) u64
+```
+
+**Returns:** Number of successfully compressed files.
+
+**Example:**
+```zig
+const files = &[_][]const u8{
+    "logs/app.log",
+    "logs/error.log",
+    "logs/access.log",
+};
+const count = compression.compressBatch(files);
+std.debug.print("Compressed {d} files\n", .{count});
+```
+
+### compressPattern (v0.1.5+)
+
+Compresses files matching a glob pattern in a directory.
+
+```zig
+pub fn compressPattern(self: *Compression, dir_path: []const u8, pattern: []const u8) !u64
+```
+
+**Pattern Support:**
+- `*.log` - Match all `.log` files
+- `*` - Match all files
+- Exact name - Match specific file
+
+**Example:**
+```zig
+// Compress all log files
+const count = try compression.compressPattern("logs/", "*.log");
+std.debug.print("Compressed {d} log files\n", .{count});
+
+// Compress all json files
+const json_count = try compression.compressPattern("data/", "*.json");
+```
+
+### compressOldest (v0.1.5+)
+
+Compresses the N oldest files in a directory based on modification time.
+
+```zig
+pub fn compressOldest(self: *Compression, dir_path: []const u8, count: usize) !u64
+```
+
+**Features:**
+- Sorts files by modification time (oldest first)
+- Compresses specified number of oldest files
+- Useful for rotation-based compression
+
+**Example:**
+```zig
+// Compress the 5 oldest log files
+const count = try compression.compressOldest("logs/", 5);
+std.debug.print("Compressed {d} oldest files\n", .{count});
+```
+
+### compressLargerThan (v0.1.5+)
+
+Compresses files larger than a specified size threshold.
+
+```zig
+pub fn compressLargerThan(self: *Compression, dir_path: []const u8, min_size: u64) !u64
+```
+
+**Example:**
+```zig
+// Compress files larger than 1MB
+const count = try compression.compressLargerThan("logs/", 1024 * 1024);
+std.debug.print("Compressed {d} large files\n", .{count});
+
+// Compress files larger than 10MB
+const large_count = try compression.compressLargerThan("logs/", 10 * 1024 * 1024);
+```
+
+## Utility Methods (v0.1.5+)
+
+### estimateCompressedSize
+
+Estimates the compressed size based on the configured algorithm and level.
+
+```zig
+pub fn estimateCompressedSize(self: *const Compression, data_size: u64) u64
+```
+
+**Example:**
+```zig
+const estimated = compression.estimateCompressedSize(1024 * 1024); // 1MB
+std.debug.print("Estimated compressed size: {} bytes\n", .{estimated});
+```
+
+### getExtension
+
+Returns the file extension for the configured compression algorithm.
+
+```zig
+pub fn getExtension(self: *const Compression) []const u8
+```
+
+**Returns:** `.gz`, `.zst`, `.lgz`, etc.
+
+### isZstd
+
+Returns true if using zstd compression algorithm.
+
+```zig
+pub fn isZstd(self: *const Compression) bool
+```
+
+### algorithmName
+
+Returns the algorithm name as a string.
+
+```zig
+pub fn algorithmName(self: *const Compression) []const u8
+```
+
+**Returns:** `"none"`, `"deflate"`, `"zlib"`, `"gzip"`, `"zstd"`, etc.
+
+### levelName
+
+Returns the compression level name as a string.
+
+```zig
+pub fn levelName(self: *const Compression) []const u8
+```
+
+**Returns:** `"none"`, `"fastest"`, `"fast"`, `"default"`, `"best"`
+
+**Example:**
+```zig
+std.debug.print("Algorithm: {s}\n", .{compression.algorithmName()});
+std.debug.print("Level: {s}\n", .{compression.levelName()});
+std.debug.print("Extension: {s}\n", .{compression.getExtension()});
+std.debug.print("Is zstd: {}\n", .{compression.isZstd()});
 ```
 
 ### compressStream

@@ -1524,6 +1524,93 @@ pub const SchedulerPresets = struct {
             .skip_already_compressed = true,
         };
     }
+
+    /// Compress files older than 1 day on an hourly schedule.
+    pub fn hourlyArchive(path: []const u8) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .min_age_seconds = 24 * 60 * 60, // 1 day
+            .file_pattern = "*.log",
+            .compress_only = true,
+            .skip_already_compressed = true,
+        };
+    }
+
+    /// Compress on rotation: for files that have just rotated.
+    pub fn compressOnRotation(path: []const u8) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .min_age_seconds = 60, // At least 1 minute old (just rotated)
+            .file_pattern = "*.log.*",
+            .compress_only = true,
+            .skip_already_compressed = true,
+        };
+    }
+
+    /// Size-based compression trigger: compress when total size exceeds threshold.
+    pub fn sizeBasedCompression(path: []const u8, max_total_bytes: u64) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .max_total_size = max_total_bytes,
+            .file_pattern = "*.log",
+            .compress_only = true,
+            .skip_already_compressed = true,
+        };
+    }
+
+    /// Disk usage triggered compression: only run when disk usage exceeds threshold.
+    pub fn diskUsageTriggered(path: []const u8, disk_usage_percent: u8) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .file_pattern = "*.log",
+            .compress_before_delete = true,
+            .skip_already_compressed = true,
+            .trigger_disk_usage_percent = disk_usage_percent,
+        };
+    }
+
+    /// Low disk space triggered: only run when free space is below threshold.
+    pub fn lowDiskSpaceTriggered(path: []const u8, min_free_bytes: u64) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .file_pattern = "*.log",
+            .compress_before_delete = true,
+            .skip_already_compressed = true,
+            .min_free_space_bytes = min_free_bytes,
+        };
+    }
+
+    /// Recursive directory compression for nested log structures.
+    pub fn recursiveCompression(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+        return .{
+            .path = path,
+            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .file_pattern = "*.log",
+            .compress_only = true,
+            .skip_already_compressed = true,
+            .recursive = true,
+        };
+    }
+
+    /// Every 15 minutes.
+    pub fn every15Minutes() Scheduler.Schedule {
+        return .{ .interval = 15 * 60 * 1000 };
+    }
+
+    /// Once after delay in seconds.
+    pub fn onceAfter(seconds: u64) Scheduler.Schedule {
+        return .{ .once = seconds * 1000 };
+    }
+
+    /// Creates a health check schedule (every 5 minutes).
+    pub fn healthCheckSchedule() Scheduler.Schedule {
+        return .{ .interval = 5 * 60 * 1000 };
+    }
+
+    /// Creates a metrics collection schedule (every minute).
+    pub fn metricsSchedule() Scheduler.Schedule {
+        return .{ .interval = 60 * 1000 };
+    }
 };
 
 test "scheduler basic" {

@@ -95,19 +95,61 @@ const level = Level.fatal;
 const color = level.defaultColor(); // Returns "97;41" (white on red)
 ```
 
+### brightColor (v0.1.5)
+
+Returns the bright/bold color variant.
+
+```zig
+const level = Level.trace;
+const bright = level.brightColor(); // Returns "96;1" (bright cyan bold)
+```
+
+### dimColor (v0.1.5)
+
+Returns the dim color variant.
+
+```zig
+const level = Level.info;
+const dim = level.dimColor(); // Returns "37;2" (white dim)
+```
+
+### underlineColor (v0.1.5)
+
+Returns the underline color variant.
+
+```zig
+const level = Level.warning;
+const underline = level.underlineColor(); // Returns "33;4" (yellow underline)
+```
+
+### color256 (v0.1.5)
+
+Returns the 256-color palette code.
+
+```zig
+const level = Level.success;
+const code = level.color256(); // Returns "38;5;46"
+```
+
 ## CustomLevel
 
 For dynamic custom levels, use the CustomLevel struct:
 
 ```zig
 pub const CustomLevel = struct {
-    name: []const u8,     // Display name (e.g., "AUDIT")
-    priority: u8,         // Numeric priority
-    color: []const u8,    // ANSI color code
+    name: []const u8,           // Display name (e.g., "AUDIT")
+    priority: u8,               // Numeric priority
+    color: []const u8,          // ANSI color code
+    bright_color: ?[]const u8,  // Bright color variant (v0.1.5)
+    dim_color: ?[]const u8,     // Dim color variant (v0.1.5)
+    color_256: ?[]const u8,     // 256-color code (v0.1.5)
+    rgb_color: ?struct { r: u8, g: u8, b: u8 },  // RGB color (v0.1.5)
+    bg_color: ?[]const u8,      // Background color (v0.1.5)
+    style: ?[]const u8,         // Text style (v0.1.5)
 };
 ```
 
-### Usage
+### Basic Usage
 
 ```zig
 // Register a custom level
@@ -119,6 +161,54 @@ try logger.customf("AUDIT", "User {s} logged in", .{"admin"}, @src());
 
 // Remove a custom level
 logger.removeCustomLevel("AUDIT");
+```
+
+### Advanced CustomLevel Constructors (v0.1.5)
+
+```zig
+const CustomLevel = logly.CustomLevel;
+
+// Basic initialization
+const audit = CustomLevel.init("AUDIT", 35, "35");
+
+// Full color options
+const custom = CustomLevel.initFull(
+    "CUSTOM",           // name
+    42,                 // priority
+    "32",               // base color
+    "92;1",             // bright color
+    "32;2",             // dim color
+    "38;5;46",          // 256-color
+);
+
+// RGB color
+const rgb_level = CustomLevel.initRgb("METRIC", 25, 50, 205, 50);
+
+// With style (bold, underline, etc.)
+const styled = CustomLevel.initStyled("STYLED", 45, "31", "1;4");
+
+// With background
+const alert = CustomLevel.initWithBackground("ALERT", 50, "97", "41");
+```
+
+### CustomLevel Methods (v0.1.5)
+
+```zig
+const custom = CustomLevel.initFull("TEST", 42, "32", "92;1", "32;2", "38;5;46");
+
+// Get effective color for current context
+const color = custom.effectiveColor();      // Returns "32"
+
+// Get color variants
+const bright = custom.getBrightColor();     // Returns "92;1"
+const dim = custom.getDimColor();           // Returns "32;2"
+const c256 = custom.get256Color();          // Returns "38;5;46"
+
+// Check capabilities
+const has_rgb = custom.hasRgbColor();       // Returns false
+const has_256 = custom.has256Color();       // Returns true
+const has_bg = custom.hasBackground();      // Returns false
+const has_style = custom.hasStyle();        // Returns false
 ```
 
 ## Level Filtering

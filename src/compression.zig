@@ -7,12 +7,14 @@
 //! - deflate: Standard DEFLATE (gzip compatible)
 //! - zlib: ZLIB format (RFC 1950)
 //! - raw_deflate: Raw DEFLATE without headers (RFC 1951)
+//! - gzip: GZIP format with headers
+//! - zstd: Zstandard compression (v0.1.5+) - excellent ratio, very fast decompression
 //!
 //! Compression Levels:
 //! - fast: Quick compression, larger output
 //! - balanced: Good compression/speed tradeoff
 //! - best: Maximum compression, slower
-//! - custom: User-specified level (1-9)
+//! - custom: User-specified level (1-9, or 1-22 for zstd)
 //!
 //! Features:
 //! - File compression/decompression
@@ -31,10 +33,13 @@ const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
+/// Optional zstd support - imported when available
+const zstd = @import("zstd");
+
 /// Log compression utilities with callback support and comprehensive monitoring.
 ///
 /// Provides compression and decompression capabilities for log files using
-/// various algorithms (deflate, zlib, raw_deflate).
+/// various algorithms (deflate, zlib, raw_deflate, zstd).
 pub const Compression = struct {
     /// Memory allocator for compression operations.
     allocator: std.mem.Allocator,
@@ -432,6 +437,94 @@ pub const Compression = struct {
         return initWithConfig(allocator, CompressionConfig.development());
     }
 
+    /// Creates a Compression instance with zstd algorithm (default settings).
+    /// Zstd provides excellent compression ratios with very fast decompression.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.zstd(allocator);
+    /// defer compressor.deinit();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn zstdCompression(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.zstd());
+    }
+
+    /// Creates a Compression instance with fast zstd algorithm.
+    /// Prioritizes speed over compression ratio.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.zstdFast(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn zstdFast(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.zstdFast());
+    }
+
+    /// Creates a Compression instance with best zstd compression.
+    /// Prioritizes compression ratio over speed.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.zstdBest(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn zstdBest(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.zstdBest());
+    }
+
+    /// Creates a Compression instance with production-ready zstd settings.
+    /// Background processing with checksums for reliability.
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.zstdProduction(allocator);
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn zstdProduction(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.zstdProduction());
+    }
+
+    /// Creates a Compression instance with a custom zstd compression level (1-22).
+    /// Allows fine-grained control over compression ratio vs speed tradeoff.
+    ///
+    /// Arguments:
+    ///     allocator: Memory allocator for internal operations.
+    ///     level: Zstd compression level (1-22, clamped to valid range).
+    ///
+    /// Example:
+    /// ```zig
+    /// var compressor = Compression.zstdWithLevel(allocator, 12);
+    /// defer compressor.deinit();
+    /// ```
+    ///
+    /// Complexity: O(1)
+    /// v0.1.5+
+    pub fn zstdWithLevel(allocator: std.mem.Allocator, level: i32) Compression {
+        return initWithConfig(allocator, CompressionConfig.zstdWithLevel(level));
+    }
+
+    /// Alias for zstdCompression(). Creates a Compression instance with default zstd settings.
+    /// v0.1.5+
+    pub const zstdDefault = zstdCompression;
+
+    /// Alias for zstdFast(). Creates a Compression instance with fast zstd settings.
+    /// v0.1.5+
+    pub const zstdSpeed = zstdFast;
+
+    /// Alias for zstdBest(). Creates a Compression instance with best zstd settings.
+    /// v0.1.5+
+    pub const zstdMax = zstdBest;
+
     /// Creates a Compression instance with background processing.
     ///
     /// Example:
@@ -608,6 +701,9 @@ pub const Compression = struct {
             .deflate, .zlib, .raw_deflate, .gzip => {
                 try self.compressDeflateWithAllocator(data, &result, alloc);
             },
+            .zstd => {
+                try self.compressZstdWithAllocator(data, &result, alloc);
+            },
         }
 
         _ = self.stats.bytes_before.fetchAdd(@intCast(data.len), .monotonic);
@@ -753,6 +849,94 @@ pub const Compression = struct {
         try result.append(alloc, 0x00);
     }
 
+    /// Compresses data using zstd algorithm.
+    /// Uses the zstd C library for high-performance compression.
+    ///
+    /// Arguments:
+    ///     self: Pointer to compression instance.
+    ///     data: The raw data to compress.
+    ///     result: Destination buffer.
+    ///     alloc: Allocator for buffer operations.
+    ///
+    /// Complexity: O(N) where N is data length.
+    /// v0.1.5+
+    fn compressZstdWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
+        if (data.len == 0) return;
+
+        // Calculate maximum compressed size
+        const max_dst_size = zstd.c.ZSTD_compressBound(data.len);
+        if (max_dst_size == 0) return error.ZstdError;
+
+        // Allocate destination buffer
+        const dest_buffer = try alloc.alloc(u8, max_dst_size);
+        defer alloc.free(dest_buffer);
+
+        // Get compression level from config (supports custom zstd levels 1-22)
+        const compression_level = self.config.getEffectiveZstdLevel();
+
+        // Compress the data
+        const compressed_size = zstd.c.ZSTD_compress(
+            dest_buffer.ptr,
+            max_dst_size,
+            data.ptr,
+            data.len,
+            compression_level,
+        );
+
+        // Check for errors
+        if (zstd.c.ZSTD_isError(compressed_size) != 0) {
+            return error.ZstdCompressionFailed;
+        }
+
+        // Append compressed data to result
+        try result.appendSlice(alloc, dest_buffer[0..compressed_size]);
+    }
+
+    /// Decompresses zstd-compressed data.
+    /// Uses the zstd C library for high-performance decompression.
+    ///
+    /// Arguments:
+    ///     self: Pointer to compression instance.
+    ///     data: The zstd-compressed data (after header).
+    ///     original_size: The expected original size.
+    ///     alloc: Allocator for buffer operations.
+    ///
+    /// Returns:
+    ///     - Decompressed data slice.
+    ///
+    /// Complexity: O(N) where N is decompressed data length.
+    /// v0.1.5+
+    fn decompressZstdWithAllocator(self: *Compression, data: []const u8, original_size: usize, alloc: std.mem.Allocator) ![]u8 {
+        _ = self;
+        if (data.len == 0 or original_size == 0) {
+            return alloc.alloc(u8, 0);
+        }
+
+        // Allocate destination buffer
+        const dest_buffer = try alloc.alloc(u8, original_size);
+        errdefer alloc.free(dest_buffer);
+
+        // Decompress the data
+        const decompressed_size = zstd.c.ZSTD_decompress(
+            dest_buffer.ptr,
+            original_size,
+            data.ptr,
+            data.len,
+        );
+
+        // Check for errors
+        if (zstd.c.ZSTD_isError(decompressed_size) != 0) {
+            return error.ZstdDecompressionFailed;
+        }
+
+        // Verify size matches expected
+        if (decompressed_size != original_size) {
+            return error.ZstdSizeMismatch;
+        }
+
+        return dest_buffer;
+    }
+
     /// Writes a block of literal bytes to the output, applying RLE (Run-Length Encoding) where efficient.
     /// Uses the instance allocator.
     fn writeLiteralBlock(self: *Compression, data: []const u8, result: *std.ArrayList(u8)) !void {
@@ -849,7 +1033,6 @@ pub const Compression = struct {
         if (self.on_decompression_complete) |callback| {
             callback("<memory>", "<memory>");
         }
-        _ = algorithm;
 
         const original_size = std.mem.bytesToValue(u32, data[4..8]);
         const stored_checksum = std.mem.bytesToValue(u32, data[8..12]);
@@ -859,7 +1042,25 @@ pub const Compression = struct {
             return self.allocator.alloc(u8, 0);
         }
 
-        // Decompress the data
+        // Handle zstd separately - it uses native zstd format after the LGZ header
+        if (algorithm == .zstd) {
+            const result = try self.decompressZstdWithAllocator(data[12..], original_size, self.allocator);
+            errdefer self.allocator.free(result);
+
+            // Verify checksum if enabled
+            if (self.config.checksum and stored_checksum != 0) {
+                const computed_checksum = calculateCRC32(result);
+                if (computed_checksum != stored_checksum) {
+                    self.allocator.free(result);
+                    return error.ChecksumMismatch;
+                }
+            }
+
+            _ = self.stats.files_decompressed.fetchAdd(1, .monotonic);
+            return result;
+        }
+
+        // Decompress the data (standard LGZ format for deflate/zlib/gzip/raw_deflate)
         var result: std.ArrayList(u8) = .empty;
         errdefer result.deinit(self.allocator);
 
@@ -1293,6 +1494,251 @@ pub const Compression = struct {
 
     /// Alias for shouldCompress
     pub const needsCompression = shouldCompress;
+
+    /// Alias for compressDirectory
+    pub const packDirectory = compressDirectory;
+    pub const archiveFolder = compressDirectory;
+
+    /// Alias for resetStats
+    pub const clearStats = resetStats;
+
+    /// Alias for configure
+    pub const setConfig = configure;
+    pub const updateConfig = configure;
+
+    /// Compresses multiple files in a batch operation.
+    /// Returns the number of successfully compressed files.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     file_paths: Array of file paths to compress.
+    ///
+    /// Returns:
+    ///     Number of files successfully compressed.
+    pub fn compressBatch(self: *Compression, file_paths: []const []const u8) u64 {
+        var count: u64 = 0;
+        for (file_paths) |path| {
+            const result = self.compressFile(path, null) catch continue;
+            if (result.output_path) |p| {
+                self.allocator.free(p);
+            }
+            if (result.success) {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
+    /// Compresses files matching a pattern in a directory.
+    /// Pattern supports simple glob matching (e.g., "*.log").
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     dir_path: Path to the directory.
+    ///     pattern: File name pattern to match (e.g., "*.log").
+    ///
+    /// Returns:
+    ///     Number of files successfully compressed.
+    pub fn compressPattern(self: *Compression, dir_path: []const u8, pattern: []const u8) !u64 {
+        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close();
+
+        var iterator = dir.iterate();
+        var count: u64 = 0;
+
+        while (try iterator.next()) |entry| {
+            if (entry.kind != .file) continue;
+
+            if (matchGlob(entry.name, pattern)) {
+                const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
+                defer self.allocator.free(file_path);
+
+                if (self.shouldCompress(file_path)) {
+                    const result = self.compressFile(file_path, null) catch continue;
+                    if (result.output_path) |p| {
+                        self.allocator.free(p);
+                    }
+                    if (result.success) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    /// Compresses the N oldest files in a directory.
+    /// Useful for rotation-based compression.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     dir_path: Path to the directory.
+    ///     count: Maximum number of files to compress.
+    ///
+    /// Returns:
+    ///     Number of files successfully compressed.
+    pub fn compressOldest(self: *Compression, dir_path: []const u8, count: usize) !u64 {
+        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close();
+
+        // Collect file info
+        var files = std.ArrayList(FileEntry).init(self.allocator);
+        defer {
+            for (files.items) |f| {
+                self.allocator.free(f.name);
+            }
+            files.deinit();
+        }
+
+        var iterator = dir.iterate();
+        while (try iterator.next()) |entry| {
+            if (entry.kind != .file) continue;
+
+            const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
+            defer self.allocator.free(file_path);
+
+            if (!self.shouldCompress(file_path)) continue;
+
+            const file = std.fs.cwd().openFile(file_path, .{}) catch continue;
+            defer file.close();
+
+            const stat = file.stat() catch continue;
+            try files.append(.{
+                .name = try self.allocator.dupe(u8, entry.name),
+                .mtime = stat.mtime,
+            });
+        }
+
+        // Sort by modification time (oldest first)
+        std.mem.sort(FileEntry, files.items, {}, struct {
+            fn lessThan(_: void, a: FileEntry, b: FileEntry) bool {
+                return a.mtime < b.mtime;
+            }
+        }.lessThan);
+
+        // Compress the oldest N files
+        var compressed_count: u64 = 0;
+        for (files.items[0..@min(count, files.items.len)]) |f| {
+            const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, f.name });
+            defer self.allocator.free(file_path);
+
+            const result = self.compressFile(file_path, null) catch continue;
+            if (result.output_path) |p| {
+                self.allocator.free(p);
+            }
+            if (result.success) {
+                compressed_count += 1;
+            }
+        }
+
+        return compressed_count;
+    }
+
+    /// File entry for sorting operations.
+    const FileEntry = struct {
+        name: []const u8,
+        mtime: i128,
+    };
+
+    /// Simple glob pattern matching for file names.
+    fn matchGlob(name: []const u8, pattern: []const u8) bool {
+        // Handle "*.ext" pattern
+        if (std.mem.startsWith(u8, pattern, "*.")) {
+            const ext = pattern[1..];
+            return std.mem.endsWith(u8, name, ext);
+        }
+        // Handle "*" wildcard
+        if (std.mem.eql(u8, pattern, "*")) {
+            return true;
+        }
+        // Exact match
+        return std.mem.eql(u8, name, pattern);
+    }
+
+    /// Compresses files larger than a given size threshold.
+    ///
+    /// Arguments:
+    ///     self: Pointer to the compression instance.
+    ///     dir_path: Path to the directory.
+    ///     min_size: Minimum file size in bytes to compress.
+    ///
+    /// Returns:
+    ///     Number of files successfully compressed.
+    pub fn compressLargerThan(self: *Compression, dir_path: []const u8, min_size: u64) !u64 {
+        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close();
+
+        var iterator = dir.iterate();
+        var count: u64 = 0;
+
+        while (try iterator.next()) |entry| {
+            if (entry.kind != .file) continue;
+
+            const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
+            defer self.allocator.free(file_path);
+
+            if (!self.shouldCompress(file_path)) continue;
+
+            const file = std.fs.cwd().openFile(file_path, .{}) catch continue;
+            defer file.close();
+
+            const stat = file.stat() catch continue;
+            if (stat.size < min_size) continue;
+
+            const result = self.compressFile(file_path, null) catch continue;
+            if (result.output_path) |p| {
+                self.allocator.free(p);
+            }
+            if (result.success) {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
+    /// Returns the estimated compressed size for given data.
+    /// Uses a heuristic based on data entropy.
+    pub fn estimateCompressedSize(self: *const Compression, data_size: u64) u64 {
+        // Estimate based on algorithm and level
+        const ratio_estimate: f64 = switch (self.config.algorithm) {
+            .none => 1.0,
+            .zstd => switch (self.config.level) {
+                .none => 1.0,
+                .fastest => 0.5,
+                .fast => 0.4,
+                .default => 0.3,
+                .best => 0.2,
+            },
+            else => switch (self.config.level) {
+                .none => 1.0,
+                .fastest => 0.7,
+                .fast => 0.6,
+                .default => 0.5,
+                .best => 0.4,
+            },
+        };
+        return @intFromFloat(@as(f64, @floatFromInt(data_size)) * ratio_estimate);
+    }
+
+    /// Returns the file extension for the configured algorithm.
+    pub fn getExtension(self: *const Compression) []const u8 {
+        return self.config.extension;
+    }
+
+    /// Returns true if using zstd algorithm.
+    pub fn isZstd(self: *const Compression) bool {
+        return self.config.algorithm == .zstd;
+    }
+
+    /// Returns the current algorithm name as a string.
+    pub fn algorithmName(self: *const Compression) []const u8 {
+        return @tagName(self.config.algorithm);
+    }
+
+    /// Returns the current level name as a string.
+    pub fn levelName(self: *const Compression) []const u8 {
+        return @tagName(self.config.level);
+    }
 };
 
 /// Preset compression configurations for common use cases.
@@ -1620,4 +2066,694 @@ test "directory compression" {
     }
 
     try std.testing.expectEqual(@as(usize, 3), count);
+}
+
+test "zstd compression basic" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.zstdCompression(allocator);
+    defer comp.deinit();
+
+    const data = "Hello, World! This is test data for zstd compression.";
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    // Compressed data should exist
+    try std.testing.expect(compressed.len > 0);
+
+    // Verify we can decompress back to original
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "zstd compression with repetitive data" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.zstdCompression(allocator);
+    defer comp.deinit();
+
+    // Repetitive data compresses well
+    const data = "AAAAAAAAAAAAAAAA" ** 50; // 800 bytes of 'A'
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    // Zstd should achieve very significant compression on repetitive data
+    try std.testing.expect(compressed.len < data.len);
+
+    // Verify roundtrip
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "zstd compression presets" {
+    const allocator = std.testing.allocator;
+    const test_data = "The quick brown fox jumps over the lazy dog. " ** 20;
+
+    // Test zstd presets
+    {
+        var comp = Compression.zstdCompression(allocator);
+        defer comp.deinit();
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+
+    {
+        var comp = Compression.zstdFast(allocator);
+        defer comp.deinit();
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+
+    {
+        var comp = Compression.zstdBest(allocator);
+        defer comp.deinit();
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+
+    {
+        var comp = Compression.zstdProduction(allocator);
+        defer comp.deinit();
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+}
+
+test "zstd compression levels" {
+    const allocator = std.testing.allocator;
+    const test_data = "Log data: " ** 100; // Good test data for compression
+
+    // Test all standard levels via CompressionLevel enum
+    inline for ([_]Compression.Level{ .fastest, .fast, .default, .best }) |level| {
+        var comp = Compression.init(allocator);
+        comp.config.algorithm = .zstd;
+        comp.config.level = level;
+        comp.config.extension = ".zst";
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+}
+
+test "zstd compression with log-like data" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.zstdCompression(allocator);
+    defer comp.deinit();
+
+    const data =
+        \\[2025-01-17 10:00:00] INFO  Application started successfully
+        \\[2025-01-17 10:00:01] DEBUG Processing request from user 12345
+        \\[2025-01-17 10:00:02] INFO  Database connection established
+        \\[2025-01-17 10:00:03] DEBUG Processing request from user 12346
+        \\[2025-01-17 10:00:04] INFO  Cache hit ratio: 95.5%
+        \\[2025-01-17 10:00:05] DEBUG Processing request from user 12347
+        \\[2025-01-17 10:00:06] WARNING Slow query detected: 250ms
+        \\[2025-01-17 10:00:07] DEBUG Processing request from user 12348
+        \\[2025-01-17 10:00:08] ERROR Connection timeout to external service
+        \\[2025-01-17 10:00:09] DEBUG Processing request from user 12349
+    ;
+
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    // Zstd should compress log data well
+    try std.testing.expect(compressed.len < data.len);
+
+    // Verify roundtrip
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "zstd compression stats" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.zstdCompression(allocator);
+    defer comp.deinit();
+
+    const data = "Zstd test data" ** 100;
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    const stats = comp.getStats();
+    try std.testing.expect(stats.bytes_before.load(.monotonic) > 0);
+    try std.testing.expect(stats.bytes_after.load(.monotonic) > 0);
+    try std.testing.expect(stats.files_compressed.load(.monotonic) > 0);
+
+    // Verify compression ratio makes sense
+    const ratio_val = stats.compressionRatio();
+    try std.testing.expect(ratio_val > 1.0); // Should achieve compression
+}
+
+test "zstd compression CRC32 checksum" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.zstdCompression(allocator);
+    comp.config.checksum = true;
+    defer comp.deinit();
+
+    const data = "Test data with checksum verification for zstd";
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    // Verify roundtrip with checksum validation
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "all algorithms compress and decompress" {
+    const allocator = std.testing.allocator;
+    const test_data = "Test data for all compression algorithms" ** 10;
+
+    // Test all algorithms (excluding .none which is passthrough mode)
+    inline for ([_]Compression.Algorithm{ .deflate, .zlib, .raw_deflate, .gzip, .zstd }) |algo| {
+        var comp = Compression.init(allocator);
+        comp.config.algorithm = algo;
+        comp.config.extension = switch (algo) {
+            .none => "",
+            .zstd => ".zst",
+            else => ".gz",
+        };
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+}
+
+test "deflate algorithm" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    comp.config.algorithm = .deflate;
+    defer comp.deinit();
+
+    const data = "DEFLATE test data" ** 10;
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    try std.testing.expect(compressed.len > 0);
+
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "zlib algorithm" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    comp.config.algorithm = .zlib;
+    defer comp.deinit();
+
+    const data = "ZLIB test data" ** 10;
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    try std.testing.expect(compressed.len > 0);
+
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "raw_deflate algorithm" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    comp.config.algorithm = .raw_deflate;
+    defer comp.deinit();
+
+    const data = "RAW_DEFLATE test data" ** 10;
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    try std.testing.expect(compressed.len > 0);
+
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "none algorithm passthrough" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    comp.config.algorithm = .none;
+    defer comp.deinit();
+
+    const data = "Passthrough data without compression";
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    // With .none, data is returned as-is (no header, exact copy)
+    try std.testing.expectEqual(data.len, compressed.len);
+
+    // With .none algorithm, compress just returns a copy, not a compressed format
+    // So we compare directly instead of decompressing
+    try std.testing.expectEqualStrings(data, compressed);
+}
+
+test "compression preset factory methods" {
+    const allocator = std.testing.allocator;
+    const test_data = "Preset test data" ** 20;
+
+    // Test all Compression factory methods
+    const factories = .{
+        Compression.enable,
+        Compression.basic,
+        Compression.implicit,
+        Compression.explicit,
+        Compression.fast,
+        Compression.balanced,
+        Compression.best,
+        Compression.forLogs,
+        Compression.archive,
+        Compression.production,
+        Compression.development,
+        Compression.background,
+        Compression.streaming,
+        Compression.zstdCompression,
+        Compression.zstdFast,
+        Compression.zstdBest,
+        Compression.zstdProduction,
+    };
+
+    inline for (factories) |factory| {
+        var comp = factory(allocator);
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+}
+
+test "CompressionPresets struct" {
+    // Test none preset
+    const none_config = CompressionPresets.none();
+    try std.testing.expectEqual(Compression.Algorithm.none, none_config.algorithm);
+    try std.testing.expectEqual(Compression.Mode.disabled, none_config.mode);
+
+    // Test fast preset
+    const fast_config = CompressionPresets.fast();
+    try std.testing.expectEqual(Compression.Level.fast, fast_config.level);
+    try std.testing.expectEqual(Compression.Mode.on_rotation, fast_config.mode);
+
+    // Test balanced preset
+    const balanced_config = CompressionPresets.balanced();
+    try std.testing.expectEqual(Compression.Level.default, balanced_config.level);
+
+    // Test maximum preset
+    const max_config = CompressionPresets.maximum();
+    try std.testing.expectEqual(Compression.Level.best, max_config.level);
+    try std.testing.expectEqual(false, max_config.keep_original);
+
+    // Test onSize preset
+    const size_config = CompressionPresets.onSize(10);
+    try std.testing.expectEqual(Compression.Mode.on_size_threshold, size_config.mode);
+    try std.testing.expectEqual(@as(u64, 10 * 1024 * 1024), size_config.size_threshold);
+}
+
+var callback_test_start_called: bool = false;
+var callback_test_complete_called: bool = false;
+var callback_test_error_called: bool = false;
+var callback_test_decompress_called: bool = false;
+
+fn testCompressionStartCallback(_: []const u8, _: u64) void {
+    callback_test_start_called = true;
+}
+
+fn testCompressionCompleteCallback(_: []const u8, _: []const u8, _: u64, _: u64, _: u64) void {
+    callback_test_complete_called = true;
+}
+
+fn testCompressionErrorCallback(_: []const u8, _: anyerror) void {
+    callback_test_error_called = true;
+}
+
+fn testDecompressionCompleteCallback(_: []const u8, _: []const u8) void {
+    callback_test_decompress_called = true;
+}
+
+test "compression callbacks" {
+    const allocator = std.testing.allocator;
+
+    // Reset callback flags
+    callback_test_start_called = false;
+    callback_test_complete_called = false;
+    callback_test_decompress_called = false;
+
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    // Set callbacks
+    comp.setCompressionStartCallback(&testCompressionStartCallback);
+    comp.setCompressionCompleteCallback(&testCompressionCompleteCallback);
+    comp.setDecompressionCompleteCallback(&testDecompressionCompleteCallback);
+
+    // Callbacks are invoked on file operations, not memory operations
+    // But we can verify the callback setters work
+    try std.testing.expect(comp.on_compression_start != null);
+    try std.testing.expect(comp.on_compression_complete != null);
+    try std.testing.expect(comp.on_decompression_complete != null);
+}
+
+test "compression aliases" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    const data = "Test data for alias methods";
+
+    // Test encode alias (same as compress)
+    const encoded = try comp.encode(data);
+    defer allocator.free(encoded);
+
+    // Test decode alias (same as decompress)
+    const decoded = try comp.decode(encoded);
+    defer allocator.free(decoded);
+
+    try std.testing.expectEqualStrings(data, decoded);
+
+    // Test deflate alias (same as compress)
+    const deflated = try comp.deflate(data);
+    defer allocator.free(deflated);
+
+    // Test inflate alias (same as decompress)
+    const inflated = try comp.inflate(deflated);
+    defer allocator.free(inflated);
+
+    try std.testing.expectEqualStrings(data, inflated);
+}
+
+test "compression create alias" {
+    const allocator = std.testing.allocator;
+
+    // Test create alias (same as init)
+    var comp = Compression.create(allocator);
+    defer comp.destroy(); // Test destroy alias (same as deinit)
+
+    const data = "Test create and destroy aliases";
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(data, decompressed);
+}
+
+test "statistics alias" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    const data = "Test data" ** 50;
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    // Test statistics alias (same as getStats)
+    const stats = comp.statistics();
+    try std.testing.expect(stats.bytes_before.load(.monotonic) > 0);
+}
+
+test "needsCompression alias" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    // Test needsCompression alias (same as shouldCompress)
+    // This should return true for non-compressed files
+    const needs = comp.needsCompression("test.log");
+    try std.testing.expect(needs);
+
+    // Should return false for already compressed files
+    const no_needs_gz = comp.needsCompression("test.log.gz");
+    try std.testing.expect(!no_needs_gz);
+
+    const no_needs_zst = comp.needsCompression("test.log.zst");
+    try std.testing.expect(!no_needs_zst);
+}
+
+test "compression level toInt mapping" {
+    try std.testing.expectEqual(@as(u4, 0), Compression.Level.none.toInt());
+    try std.testing.expectEqual(@as(u4, 1), Compression.Level.fastest.toInt());
+    try std.testing.expectEqual(@as(u4, 3), Compression.Level.fast.toInt());
+    try std.testing.expectEqual(@as(u4, 6), Compression.Level.default.toInt());
+    try std.testing.expectEqual(@as(u4, 9), Compression.Level.best.toInt());
+}
+
+test "compression level toZstdLevel mapping" {
+    try std.testing.expectEqual(@as(i32, 0), Compression.Level.none.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 1), Compression.Level.fastest.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 3), Compression.Level.fast.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 6), Compression.Level.default.toZstdLevel());
+    try std.testing.expectEqual(@as(i32, 19), Compression.Level.best.toZstdLevel());
+}
+
+test "CompressionStats getter methods" {
+    var stats = Compression.CompressionStats{};
+
+    // Initialize with some values
+    _ = stats.files_compressed.fetchAdd(10, .monotonic);
+    _ = stats.files_decompressed.fetchAdd(5, .monotonic);
+    _ = stats.bytes_before.fetchAdd(10000, .monotonic);
+    _ = stats.bytes_after.fetchAdd(2000, .monotonic);
+    _ = stats.compression_errors.fetchAdd(1, .monotonic);
+    _ = stats.decompression_errors.fetchAdd(2, .monotonic);
+    _ = stats.background_tasks_queued.fetchAdd(20, .monotonic);
+    _ = stats.background_tasks_completed.fetchAdd(15, .monotonic);
+
+    // Test getter methods
+    try std.testing.expectEqual(@as(u64, 10), stats.getFilesCompressed());
+    try std.testing.expectEqual(@as(u64, 5), stats.getFilesDecompressed());
+    try std.testing.expectEqual(@as(u64, 10000), stats.getBytesBefore());
+    try std.testing.expectEqual(@as(u64, 2000), stats.getBytesAfter());
+    try std.testing.expectEqual(@as(u64, 8000), stats.getBytesSaved());
+    try std.testing.expectEqual(@as(u64, 1), stats.getCompressionErrors());
+    try std.testing.expectEqual(@as(u64, 2), stats.getDecompressionErrors());
+    try std.testing.expectEqual(@as(u64, 15), stats.getTotalOperations());
+    try std.testing.expectEqual(@as(u64, 20), stats.getBackgroundTasksQueued());
+    try std.testing.expectEqual(@as(u64, 15), stats.getBackgroundTasksCompleted());
+
+    // Test derived metrics
+    try std.testing.expect(stats.compressionRatio() > 0);
+    try std.testing.expect(stats.spaceSavingsPercent() > 0);
+    try std.testing.expect(stats.hasErrors());
+    try std.testing.expect(stats.hasOperations());
+
+    // Test reset
+    stats.reset();
+    try std.testing.expectEqual(@as(u64, 0), stats.getFilesCompressed());
+    try std.testing.expect(!stats.hasErrors());
+    try std.testing.expect(!stats.hasOperations());
+}
+
+test "isEnabled method" {
+    const allocator = std.testing.allocator;
+
+    var enabled_comp = Compression.enable(allocator);
+    defer enabled_comp.deinit();
+    try std.testing.expect(enabled_comp.isEnabled());
+
+    var disabled_comp = Compression.init(allocator);
+    disabled_comp.config.mode = .disabled;
+    defer disabled_comp.deinit();
+    try std.testing.expect(!disabled_comp.isEnabled());
+}
+
+test "ratio method" {
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.zstdCompression(allocator);
+    defer comp.deinit();
+
+    const data = "Repetitive data " ** 100;
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+
+    const ratio_val = comp.ratio();
+    try std.testing.expect(ratio_val > 1.0); // Should achieve compression
+}
+
+test "zstd custom level compression" {
+    const allocator = std.testing.allocator;
+    const test_data = "Custom level test data " ** 50;
+
+    // Test various custom zstd levels
+    inline for ([_]i32{ 1, 3, 6, 10, 15, 19, 22 }) |custom_level| {
+        var comp = Compression.zstdWithLevel(allocator, custom_level);
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+}
+
+test "zstd custom level clamping" {
+    const allocator = std.testing.allocator;
+    const test_data = "Clamping test data " ** 20;
+
+    // Test level clamping (levels < 1 should clamp to 1, > 22 should clamp to 22)
+    {
+        var comp = Compression.zstdWithLevel(allocator, 0); // Should clamp to 1
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+
+    {
+        var comp = Compression.zstdWithLevel(allocator, 100); // Should clamp to 22
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+}
+
+test "zstd getEffectiveZstdLevel" {
+    const CompressionConfig = Compression.CompressionConfig;
+    // Test with custom level set
+    {
+        const config = CompressionConfig.zstdWithLevel(15);
+        try std.testing.expectEqual(@as(i32, 15), config.getEffectiveZstdLevel());
+    }
+
+    // Test with enum level (no custom)
+    {
+        const config = CompressionConfig.zstd();
+        try std.testing.expectEqual(@as(i32, 6), config.getEffectiveZstdLevel()); // default maps to 6
+    }
+
+    // Test fast preset
+    {
+        const config = CompressionConfig.zstdFast();
+        try std.testing.expectEqual(@as(i32, 1), config.getEffectiveZstdLevel()); // fastest maps to 1
+    }
+
+    // Test best preset
+    {
+        const config = CompressionConfig.zstdBest();
+        try std.testing.expectEqual(@as(i32, 19), config.getEffectiveZstdLevel()); // best maps to 19
+    }
+}
+
+test "zstd aliases" {
+    const allocator = std.testing.allocator;
+    const test_data = "Alias test data " ** 30;
+
+    // Test zstdDefault alias (same as zstdCompression)
+    {
+        var comp = Compression.zstdDefault(allocator);
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+
+    // Test zstdSpeed alias (same as zstdFast)
+    {
+        var comp = Compression.zstdSpeed(allocator);
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+
+    // Test zstdMax alias (same as zstdBest)
+    {
+        var comp = Compression.zstdMax(allocator);
+        defer comp.deinit();
+
+        const compressed = try comp.compress(test_data);
+        defer allocator.free(compressed);
+
+        const decompressed = try comp.decompress(compressed);
+        defer allocator.free(decompressed);
+
+        try std.testing.expectEqualStrings(test_data, decompressed);
+    }
+}
+
+test "CompressionConfig zstd aliases" {
+    const CompressionConfig = Compression.CompressionConfig;
+    // Test zstdDefault alias
+    const default_config = CompressionConfig.zstdDefault();
+    try std.testing.expectEqual(Compression.Algorithm.zstd, default_config.algorithm);
+
+    // Test zstdSpeed alias
+    const speed_config = CompressionConfig.zstdSpeed();
+    try std.testing.expectEqual(Compression.Level.fastest, speed_config.level);
+
+    // Test zstdMax alias
+    const max_config = CompressionConfig.zstdMax();
+    try std.testing.expectEqual(Compression.Level.best, max_config.level);
 }
