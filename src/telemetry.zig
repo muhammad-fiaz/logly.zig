@@ -748,11 +748,11 @@ pub const Telemetry = struct {
         try writer.writeAll("\",\"operationName\":\"");
         try utils.escapeJsonString(writer, span.name);
         try writer.writeAll("\",\"startTime\":");
-        const start_us = utils.safeToUnsigned(u64, span.start_time) / 1000;
+        const start_us = utils.safeToUnsigned(u64, span.start_time) / Constants.TimeConstants.ns_per_us;
         try utils.writeInt(writer, start_us);
         if (span.end_time > 0) {
             try writer.writeAll(",\"duration\":");
-            const duration_us = utils.safeToUnsigned(u64, span.end_time - span.start_time) / 1000;
+            const duration_us = utils.safeToUnsigned(u64, span.end_time - span.start_time) / Constants.TimeConstants.ns_per_us;
             try utils.writeInt(writer, duration_us);
         }
         try writer.writeAll(",\"processID\":\"p1\"}");
@@ -782,11 +782,11 @@ pub const Telemetry = struct {
         try writer.writeAll("\",\"name\":\"");
         try utils.escapeJsonString(writer, span.name);
         try writer.writeAll("\",\"timestamp\":");
-        const start_us = utils.safeToUnsigned(u64, span.start_time) / 1000;
+        const start_us = utils.safeToUnsigned(u64, span.start_time) / Constants.TimeConstants.ns_per_us;
         try utils.writeInt(writer, start_us);
         if (span.end_time > 0) {
             try writer.writeAll(",\"duration\":");
-            const duration_us = utils.safeToUnsigned(u64, span.end_time - span.start_time) / 1000;
+            const duration_us = utils.safeToUnsigned(u64, span.end_time - span.start_time) / Constants.TimeConstants.ns_per_us;
             try utils.writeInt(writer, duration_us);
         }
         try writer.writeAll(",\"localEndpoint\":{\"serviceName\":\"");

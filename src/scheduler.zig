@@ -259,22 +259,22 @@ pub const Scheduler = struct {
                     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(now_sec) };
                     const day_seconds = epoch.getDaySeconds();
 
-                    const target_seconds = @as(u64, daily.hour) * 3600 + @as(u64, daily.minute) * 60;
+                    const target_seconds = @as(u64, daily.hour) * @as(u64, Constants.TimeConstants.seconds_per_hour) + @as(u64, daily.minute) * @as(u64, Constants.TimeConstants.seconds_per_minute);
                     const current_seconds = day_seconds.secs;
 
                     if (current_seconds < target_seconds) {
                         // Today
-                        break :blk now_ms + @as(i64, @intCast((target_seconds - current_seconds) * 1000));
+                        break :blk now_ms + @as(i64, @intCast((target_seconds - current_seconds) * @as(u64, Constants.TimeConstants.ms_per_second)));
                     } else {
                         // Tomorrow
-                        break :blk now_ms + @as(i64, @intCast((24 * 3600 - current_seconds + target_seconds) * 1000));
+                        break :blk now_ms + @as(i64, @intCast((@as(u64, Constants.TimeConstants.seconds_per_day) - current_seconds + target_seconds) * @as(u64, Constants.TimeConstants.ms_per_second)));
                     }
                 },
                 .cron => |cron| blk: {
                     var check_time = now_ms + Constants.SchedulerDefaults.cron_fallback_interval_ms;
                     // Find closest match within the next 30 days
-                    const limit = now_ms + 30 * 24 * 3600 * 1000;
-                    while (check_time < limit) : (check_time += 60 * 1000) {
+                    const limit = now_ms + @as(i64, @intCast(30 * @as(u64, Constants.TimeConstants.seconds_per_day) * @as(u64, Constants.TimeConstants.ms_per_second)));
+                    while (check_time < limit) : (check_time += @as(i64, @intCast(@as(u64, Constants.TimeConstants.seconds_per_minute) * @as(u64, Constants.TimeConstants.ms_per_second)))) {
                         const sec = @divFloor(check_time, 1000);
                         const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(sec) };
                         const day = epoch.getEpochDay();
@@ -282,8 +282,8 @@ pub const Scheduler = struct {
                         const month_day = year_day.calculateMonthDay();
                         const day_sec = epoch.getDaySeconds();
 
-                        const minute = @divFloor(day_sec.secs % 3600, 60);
-                        const hour = @divFloor(day_sec.secs, 3600);
+                        const minute = @divFloor(day_sec.secs % @as(u64, Constants.TimeConstants.seconds_per_hour), @as(u64, Constants.TimeConstants.seconds_per_minute));
+                        const hour = @divFloor(day_sec.secs, @as(u64, Constants.TimeConstants.seconds_per_hour));
                         const month = month_day.month.numeric();
                         const mday = month_day.day_index + 1;
                         // Unix epoch (Jan 1, 1970) was a Thursday (4)

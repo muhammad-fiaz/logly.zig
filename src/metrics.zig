@@ -924,7 +924,7 @@ pub const Metrics = struct {
 
     /// Returns uptime in seconds.
     pub fn uptimeSeconds(self: *const Metrics) f64 {
-        return @as(f64, @floatFromInt(self.uptime())) / 1000.0;
+        return @as(f64, @floatFromInt(self.uptime())) / @as(f64, Constants.TimeConstants.ms_per_second);
     }
 
     /// Records a flush operation on a sink.

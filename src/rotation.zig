@@ -51,15 +51,15 @@ pub const Rotation = struct {
         /// Rotate every 365 days.
         yearly,
 
-        /// Returns the interval duration in seconds.
+        /// Returns the interval duration in seconds (reuse central TimeConstants).
         pub fn seconds(self: RotationInterval) i64 {
             return switch (self) {
-                .minutely => 60,
-                .hourly => 3600,
-                .daily => 86400,
-                .weekly => 604800,
-                .monthly => 2592000,
-                .yearly => 31536000,
+                .minutely => @as(i64, Constants.TimeConstants.seconds_per_minute),
+                .hourly => @as(i64, Constants.TimeConstants.seconds_per_hour),
+                .daily => @as(i64, Constants.TimeConstants.seconds_per_day),
+                .weekly => @as(i64, Constants.TimeConstants.seconds_per_week),
+                .monthly => @as(i64, Constants.TimeConstants.seconds_per_month),
+                .yearly => @as(i64, Constants.TimeConstants.seconds_per_year),
             };
         }
 
@@ -568,8 +568,8 @@ pub const Rotation = struct {
 
     fn generateRotatedPath(self: *Rotation) ![]u8 {
         const now_ms = Utils.currentMillis();
-        const now = @divFloor(now_ms, 1000);
-        const millis = @as(u64, @intCast(@mod(now_ms, 1000)));
+        const now = @divFloor(now_ms, Constants.TimeConstants.ms_per_second);
+        const millis = @as(u64, @intCast(@mod(now_ms, Constants.TimeConstants.ms_per_second)));
         var name_buf: []u8 = undefined;
 
         const base_name = std.fs.path.basename(self.base_path);
@@ -590,9 +590,9 @@ pub const Rotation = struct {
                 const yd = epoch.getEpochDay().calculateYearDay();
                 const md = yd.calculateMonthDay();
                 const ds = epoch.getDaySeconds();
-                const h = ds.secs / 3600;
-                const m = (ds.secs % 3600) / 60;
-                const s = ds.secs % 60;
+                const h = ds.secs / @as(u64, Constants.TimeConstants.seconds_per_hour);
+                const m = (ds.secs % @as(u64, Constants.TimeConstants.seconds_per_hour)) / @as(u64, Constants.TimeConstants.seconds_per_minute);
+                const s = ds.secs % @as(u64, Constants.TimeConstants.seconds_per_minute);
 
                 var res: std.ArrayList(u8) = .empty;
                 errdefer res.deinit(self.allocator);
@@ -624,9 +624,9 @@ pub const Rotation = struct {
                     const yd = epoch.getEpochDay().calculateYearDay();
                     const md = yd.calculateMonthDay();
                     const ds = epoch.getDaySeconds();
-                    const h = ds.secs / 3600;
-                    const m = (ds.secs % 3600) / 60;
-                    const s = ds.secs % 60;
+                    const h = ds.secs / @as(u64, Constants.TimeConstants.seconds_per_hour);
+                    const m = (ds.secs % @as(u64, Constants.TimeConstants.seconds_per_hour)) / @as(u64, Constants.TimeConstants.seconds_per_minute);
+                    const s = ds.secs % @as(u64, Constants.TimeConstants.seconds_per_minute);
 
                     // Optimization: Pre-allocate buffer to minimize reallocations
                     // Estimate size: format length + extra space for replacements (timestamp, etc.)
@@ -1106,12 +1106,12 @@ test "rotation functionality" {
 }
 
 test "rotation interval seconds" {
-    try std.testing.expectEqual(@as(i64, 60), Rotation.RotationInterval.minutely.seconds());
-    try std.testing.expectEqual(@as(i64, 3600), Rotation.RotationInterval.hourly.seconds());
-    try std.testing.expectEqual(@as(i64, 86400), Rotation.RotationInterval.daily.seconds());
-    try std.testing.expectEqual(@as(i64, 604800), Rotation.RotationInterval.weekly.seconds());
-    try std.testing.expectEqual(@as(i64, 2592000), Rotation.RotationInterval.monthly.seconds());
-    try std.testing.expectEqual(@as(i64, 31536000), Rotation.RotationInterval.yearly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_minute), Rotation.RotationInterval.minutely.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_hour), Rotation.RotationInterval.hourly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_day), Rotation.RotationInterval.daily.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_week), Rotation.RotationInterval.weekly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_month), Rotation.RotationInterval.monthly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_year), Rotation.RotationInterval.yearly.seconds());
 }
 
 test "rotation interval from string" {
@@ -1255,8 +1255,8 @@ test "rotation configuration methods" {
     rot.withDeleteAfterRetentionCompress(false);
     try std.testing.expect(!rot.delete_after_retention_compress);
 
-    rot.withMaxAge(86400 * 7);
-    try std.testing.expectEqual(@as(?i64, 604800), rot.max_age_seconds);
+    rot.withMaxAge(@as(i64, Constants.TimeConstants.seconds_per_day) * 7);
+    try std.testing.expectEqual(@as(?i64, @as(i64, Constants.TimeConstants.seconds_per_week)), rot.max_age_seconds);
 
     rot.setCleanEmptyDirs(true);
     try std.testing.expect(rot.clean_empty_dirs);

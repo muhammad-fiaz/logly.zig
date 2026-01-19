@@ -127,7 +127,7 @@ pub const Logger = struct {
         pub fn bytesPerSecond(self: *const LoggerStats, elapsed_ms: i64) f64 {
             if (elapsed_ms <= 0) return 0;
             const bytes = @as(u64, self.bytes_written.load(.monotonic));
-            const seconds = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
+            const seconds = @as(f64, @floatFromInt(elapsed_ms)) / @as(f64, Constants.TimeConstants.ms_per_second);
             return @as(f64, @floatFromInt(bytes)) / seconds;
         }
     };

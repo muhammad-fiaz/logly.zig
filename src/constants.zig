@@ -17,6 +17,11 @@
 const builtin = @import("builtin");
 const std = @import("std");
 
+// Internal buffer pool used by color formatting helpers (fg256/bg256/fgRgb/bgRgb).
+// Uses a small ring of static buffers to avoid heap allocations and return stable slices.
+var colorBufIndex: std.atomic.Value(usize) = std.atomic.Value(usize).init(0);
+var colorBufs: [8][32]u8 = undefined;
+
 /// Architecture-dependent unsigned atomic integer type.
 ///
 /// Provides the optimal atomic integer size for the target architecture.
@@ -130,7 +135,7 @@ pub const AsyncConstants = struct {
     /// Sleep duration when blocking on full queue.
     pub const block_sleep_ns: u64 = 1 * std.time.ns_per_ms;
     /// Default batch size for async processing.
-    pub const batch_size: usize = 64;
+    pub const batch_size: usize = BufferSizes.async_batch;
 };
 
 /// Default limits for queues and buffers.
@@ -282,10 +287,27 @@ pub const TimeConstants = struct {
     pub const us_per_second: u64 = 1_000_000;
     /// Nanoseconds per second.
     pub const ns_per_second: u64 = 1_000_000_000;
-    /// Default flush interval in milliseconds.
-    pub const default_flush_interval_ms: u64 = 100;
-    /// Default rotation check interval in milliseconds.
-    pub const rotation_check_interval_ms: u64 = 60_000; // 1 minute
+
+    /// Seconds-based helpers for interval reuse (avoid repeating literal values).
+    pub const seconds_per_minute: u64 = 60;
+    pub const seconds_per_hour: u64 = seconds_per_minute * 60;
+    pub const seconds_per_day: u64 = seconds_per_hour * 24;
+    pub const seconds_per_week: u64 = seconds_per_day * 7;
+    pub const seconds_per_month: u64 = seconds_per_day * 30; // 30-day month approximation
+    pub const seconds_per_year: u64 = seconds_per_day * 365;
+
+    /// Derived conversions for convenient, consistent unit conversions.
+    /// - `us_per_ms`: microseconds per millisecond (1_000)
+    /// - `ns_per_ms`: nanoseconds per millisecond (1_000_000)
+    /// - `ns_per_us`: nanoseconds per microsecond (1_000)
+    pub const us_per_ms: u64 = us_per_second / ms_per_second;
+    pub const ns_per_ms: u64 = ns_per_second / ms_per_second;
+    pub const ns_per_us: u64 = ns_per_second / us_per_second;
+
+    /// Default flush interval in milliseconds (derived from TimeDefaults).
+    pub const default_flush_interval_ms: u64 = TimeDefaults.flush_interval_ms;
+    /// Default rotation check interval in milliseconds (derived from seconds_per_minute).
+    pub const rotation_check_interval_ms: u64 = seconds_per_minute * ms_per_second; // 1 minute
 };
 
 /// Metrics-related constants.
@@ -397,48 +419,58 @@ pub const Colors = struct {
     };
 
     /// Generate 256-color foreground code (0-255).
+    ///
+    /// Returns a stable slice backed by a small ring of static buffers to avoid
+    /// heap allocations and to be safe to return from the function.
     pub fn fg256(color_index: u8) []const u8 {
-        const S = struct {
-            var buf: [16]u8 = undefined;
-        };
-        const len = std.fmt.bufPrint(&S.buf, "38;5;{d}", .{color_index}) catch return "38;5;0";
-        return S.buf[0..len.len];
+        const raw_idx = colorBufIndex.fetchAdd(1, .monotonic);
+        const idx = @as(usize, raw_idx) % colorBufs.len;
+        const out = std.fmt.bufPrint(&colorBufs[idx], "38;5;{d}", .{color_index}) catch return "38;5;0";
+        return out;
     }
 
     /// Generate 256-color background code (0-255).
+    ///
+    /// Returns a stable slice backed by the shared buffer pool.
     pub fn bg256(color_index: u8) []const u8 {
-        const S = struct {
-            var buf: [16]u8 = undefined;
-        };
-        const len = std.fmt.bufPrint(&S.buf, "48;5;{d}", .{color_index}) catch return "48;5;0";
-        return S.buf[0..len.len];
+        const raw_idx = colorBufIndex.fetchAdd(1, .monotonic);
+        const idx = @as(usize, raw_idx) % colorBufs.len;
+        const out = std.fmt.bufPrint(&colorBufs[idx], "48;5;{d}", .{color_index}) catch return "48;5;0";
+        return out;
     }
 
     /// Generate RGB foreground color code.
+    ///
+    /// Uses the shared buffer pool and returns a stable slice.
     pub fn fgRgb(r: u8, g: u8, b: u8) []const u8 {
-        const S = struct {
-            var buf: [24]u8 = undefined;
-        };
-        const len = std.fmt.bufPrint(&S.buf, "38;2;{d};{d};{d}", .{ r, g, b }) catch return "38;2;0;0;0";
-        return S.buf[0..len.len];
+        const raw_idx = colorBufIndex.fetchAdd(1, .monotonic);
+        const idx = @as(usize, raw_idx) % colorBufs.len;
+        const out = std.fmt.bufPrint(&colorBufs[idx], "38;2;{d};{d};{d}", .{ r, g, b }) catch return "38;2;0;0;0";
+        return out;
     }
 
     /// Generate RGB background color code.
+    ///
+    /// Uses the shared buffer pool and returns a stable slice.
     pub fn bgRgb(r: u8, g: u8, b: u8) []const u8 {
-        const S = struct {
-            var buf: [24]u8 = undefined;
-        };
-        const len = std.fmt.bufPrint(&S.buf, "48;2;{d};{d};{d}", .{ r, g, b }) catch return "48;2;0;0;0";
-        return S.buf[0..len.len];
+        const raw_idx = colorBufIndex.fetchAdd(1, .monotonic);
+        const idx = @as(usize, raw_idx) % colorBufs.len;
+        const out = std.fmt.bufPrint(&colorBufs[idx], "48;2;{d};{d};{d}", .{ r, g, b }) catch return "48;2;0;0;0";
+        return out;
     }
 
     /// Combine multiple codes (e.g., "1;31" for bold red).
-    pub fn combine(comptime codes: []const []const u8) []const u8 {
+    ///
+    /// Accepts a comptime iterable (anytype), allowing array literals to be
+    /// passed directly without special length annotations.
+    pub fn combine(comptime codes: anytype) []const u8 {
         comptime {
             var result: []const u8 = "";
-            for (codes, 0..) |code, i| {
-                if (i > 0) result = result ++ ";";
+            var idx: usize = 0;
+            for (codes) |code| {
+                if (idx > 0) result = result ++ ";";
                 result = result ++ code;
+                idx += 1;
             }
             return result;
         }
@@ -460,19 +492,8 @@ pub const Colors = struct {
 
     /// Predefined theme presets.
     pub const Themes = struct {
-        /// Default theme with standard colors.
-        pub const default_theme = struct {
-            pub const trace: []const u8 = "36";
-            pub const debug: []const u8 = "34";
-            pub const info: []const u8 = "37";
-            pub const notice: []const u8 = "96";
-            pub const success: []const u8 = "32";
-            pub const warning: []const u8 = "33";
-            pub const err: []const u8 = "31";
-            pub const fail: []const u8 = "35";
-            pub const critical: []const u8 = "91";
-            pub const fatal: []const u8 = "97;41";
-        };
+        /// Default theme with standard colors. Aliased to `LevelColors` to avoid duplication.
+        pub const default_theme = LevelColors;
 
         /// Bright theme with bold colors.
         pub const bright = struct {
@@ -488,32 +509,32 @@ pub const Colors = struct {
             pub const fatal: []const u8 = "97;41;1";
         };
 
-        /// Dim theme with subtle colors.
+        /// Dim theme with subtle colors (composed from base colors + dim style).
         pub const dim = struct {
-            pub const trace: []const u8 = LevelColors.trace ++ ";" ++ Style.dim;
-            pub const debug: []const u8 = LevelColors.debug ++ ";" ++ Style.dim;
-            pub const info: []const u8 = LevelColors.info ++ ";" ++ Style.dim;
-            pub const notice: []const u8 = LevelColors.notice ++ ";" ++ Style.dim;
-            pub const success: []const u8 = LevelColors.success ++ ";" ++ Style.dim;
-            pub const warning: []const u8 = LevelColors.warning ++ ";" ++ Style.dim;
-            pub const err: []const u8 = LevelColors.err ++ ";" ++ Style.dim;
-            pub const fail: []const u8 = LevelColors.fail ++ ";" ++ Style.dim;
-            pub const critical: []const u8 = LevelColors.critical ++ ";" ++ Style.dim;
-            pub const fatal: []const u8 = LevelColors.fatal ++ ";" ++ Style.dim;
+            pub const trace: []const u8 = combine(.{ LevelColors.trace, Style.dim });
+            pub const debug: []const u8 = combine(.{ LevelColors.debug, Style.dim });
+            pub const info: []const u8 = combine(.{ LevelColors.info, Style.dim });
+            pub const notice: []const u8 = combine(.{ LevelColors.notice, Style.dim });
+            pub const success: []const u8 = combine(.{ LevelColors.success, Style.dim });
+            pub const warning: []const u8 = combine(.{ LevelColors.warning, Style.dim });
+            pub const err: []const u8 = combine(.{ LevelColors.err, Style.dim });
+            pub const fail: []const u8 = combine(.{ LevelColors.fail, Style.dim });
+            pub const critical: []const u8 = combine(.{ LevelColors.critical, Style.dim });
+            pub const fatal: []const u8 = combine(.{ LevelColors.fatal, Style.dim });
         };
 
-        /// Underlined theme for highlighted levels.
+        /// Underlined theme for highlighted levels (composed from base colors + underline style).
         pub const underlined = struct {
-            pub const trace: []const u8 = LevelColors.trace ++ ";" ++ Style.underline;
-            pub const debug: []const u8 = LevelColors.debug ++ ";" ++ Style.underline;
-            pub const info: []const u8 = LevelColors.info ++ ";" ++ Style.underline;
-            pub const notice: []const u8 = LevelColors.notice ++ ";" ++ Style.underline;
-            pub const success: []const u8 = LevelColors.success ++ ";" ++ Style.underline;
-            pub const warning: []const u8 = LevelColors.warning ++ ";" ++ Style.underline;
-            pub const err: []const u8 = LevelColors.err ++ ";" ++ Style.underline;
-            pub const fail: []const u8 = LevelColors.fail ++ ";" ++ Style.underline;
-            pub const critical: []const u8 = LevelColors.critical ++ ";" ++ Style.underline;
-            pub const fatal: []const u8 = LevelColors.fatal ++ ";" ++ Style.underline;
+            pub const trace: []const u8 = combine(.{ LevelColors.trace, Style.underline });
+            pub const debug: []const u8 = combine(.{ LevelColors.debug, Style.underline });
+            pub const info: []const u8 = combine(.{ LevelColors.info, Style.underline });
+            pub const notice: []const u8 = combine(.{ LevelColors.notice, Style.underline });
+            pub const success: []const u8 = combine(.{ LevelColors.success, Style.underline });
+            pub const warning: []const u8 = combine(.{ LevelColors.warning, Style.underline });
+            pub const err: []const u8 = combine(.{ LevelColors.err, Style.underline });
+            pub const fail: []const u8 = combine(.{ LevelColors.fail, Style.underline });
+            pub const critical: []const u8 = combine(.{ LevelColors.critical, Style.underline });
+            pub const fatal: []const u8 = combine(.{ LevelColors.fatal, Style.underline });
         };
 
         /// Minimal theme with subtle colors.
@@ -785,7 +806,8 @@ pub const CompressionConstants = struct {
 
     /// File extensions for different compression algorithms.
     pub const ArchivingExtensions = struct {
-        pub const gzip = ".gz";
+        // Reuse rotation default compressed extension for gzip to keep consistency.
+        pub const gzip = RotationConstants.compressed_ext;
         pub const zstd = ".zst";
         pub const lzma = ".lzma";
         pub const lzma2 = ".lzma2";
@@ -822,9 +844,9 @@ pub const SchedulerDefaults = struct {
     /// Default retry interval in milliseconds (5s).
     pub const retry_interval_ms: u32 = 5000;
     /// Default cleanup max age in seconds (7 days).
-    pub const max_age_seconds: u64 = 7 * 24 * 60 * 60;
+    pub const max_age_seconds: u64 = 7 * TimeConstants.seconds_per_day;
     /// Cron fallback interval in milliseconds (1 min).
-    pub const cron_fallback_interval_ms: i64 = 60 * 1000;
+    pub const cron_fallback_interval_ms: i64 = @as(i64, TimeConstants.seconds_per_minute * TimeConstants.ms_per_second);
 };
 
 /// Rotation default settings.
@@ -963,6 +985,17 @@ test "time constants are correct" {
     try std.testing.expectEqual(@as(u64, 1000), TimeConstants.ms_per_second);
     try std.testing.expectEqual(@as(u64, 1_000_000), TimeConstants.us_per_second);
     try std.testing.expectEqual(@as(u64, 1_000_000_000), TimeConstants.ns_per_second);
+
+    try std.testing.expectEqual(@as(u64, 60), TimeConstants.seconds_per_minute);
+    try std.testing.expectEqual(@as(u64, 3600), TimeConstants.seconds_per_hour);
+    try std.testing.expectEqual(@as(u64, 86400), TimeConstants.seconds_per_day);
+    try std.testing.expectEqual(@as(u64, 604800), TimeConstants.seconds_per_week);
+    try std.testing.expectEqual(@as(u64, 2592000), TimeConstants.seconds_per_month);
+    try std.testing.expectEqual(@as(u64, 31536000), TimeConstants.seconds_per_year);
+
+    // Rotation check interval must be consistent with seconds_per_minute and ms_per_second
+    try std.testing.expectEqual(TimeConstants.seconds_per_minute * TimeConstants.ms_per_second, TimeConstants.rotation_check_interval_ms);
+    try std.testing.expectEqual(@as(u64, 60_000), TimeConstants.rotation_check_interval_ms);
 }
 
 test "rotation constants are reasonable" {
@@ -1106,4 +1139,26 @@ test "color themes dark and light" {
     try std.testing.expect(Colors.Themes.light.trace.len > 0);
     try std.testing.expect(Colors.Themes.dark.err.len > 0);
     try std.testing.expect(Colors.Themes.light.err.len > 0);
+}
+
+test "async batch reuses buffer sizes" {
+    try std.testing.expectEqual(BufferSizes.async_batch, AsyncConstants.batch_size);
+}
+
+test "time default flush is consistent" {
+    try std.testing.expectEqual(TimeDefaults.flush_interval_ms, TimeConstants.default_flush_interval_ms);
+}
+
+test "compression gzip extension reused" {
+    try std.testing.expectEqualStrings(CompressionConstants.ArchivingExtensions.gzip, RotationConstants.compressed_ext);
+}
+
+test "color helpers produce valid prefixes" {
+    const s = Colors.fg256(208);
+    try std.testing.expect(s.len >= 5);
+    try std.testing.expectEqualStrings(s[0..5], "38;5;");
+
+    const r = Colors.fgRgb(255, 127, 80);
+    try std.testing.expect(r.len >= 4);
+    try std.testing.expectEqualStrings(r[0..4], "38;2");
 }

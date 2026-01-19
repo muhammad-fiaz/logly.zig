@@ -823,7 +823,7 @@ pub const AsyncFileWriter = struct {
 
     pub const FileConfig = struct {
         buffer_size: usize = 64 * 1024, // 64KB
-        flush_interval_ms: u64 = 1000,
+        flush_interval_ms: u64 = Constants.SinkDefaults.flush_interval_ms,
         sync_on_flush: bool = false,
         append_mode: bool = true,
     };

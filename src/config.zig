@@ -1871,7 +1871,7 @@ pub const Config = struct {
             .rotation = .{
                 .enabled = true,
                 .retention_count = 30,
-                .max_age_seconds = 30 * 24 * 3600,
+                .max_age_seconds = 30 * Constants.TimeConstants.seconds_per_day,
             },
             .scheduler = .{
                 .enabled = true,
