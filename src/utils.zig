@@ -49,10 +49,10 @@ pub fn parseSize(s: []const u8) ?u64 {
 
     // Supports B, KB, MB, GB, TB (case insensitive)
     if (std.ascii.eqlIgnoreCase(unit, "B")) return num;
-    if (std.ascii.eqlIgnoreCase(unit, "K") or std.ascii.eqlIgnoreCase(unit, "KB")) return num * 1024;
-    if (std.ascii.eqlIgnoreCase(unit, "M") or std.ascii.eqlIgnoreCase(unit, "MB")) return num * 1024 * 1024;
-    if (std.ascii.eqlIgnoreCase(unit, "G") or std.ascii.eqlIgnoreCase(unit, "GB")) return num * 1024 * 1024 * 1024;
-    if (std.ascii.eqlIgnoreCase(unit, "T") or std.ascii.eqlIgnoreCase(unit, "TB")) return num * 1024 * 1024 * 1024 * 1024;
+    if (std.ascii.eqlIgnoreCase(unit, "K") or std.ascii.eqlIgnoreCase(unit, "KB")) return num * Constants.SizeConstants.bytes_per_kb;
+    if (std.ascii.eqlIgnoreCase(unit, "M") or std.ascii.eqlIgnoreCase(unit, "MB")) return num * Constants.SizeConstants.bytes_per_mb;
+    if (std.ascii.eqlIgnoreCase(unit, "G") or std.ascii.eqlIgnoreCase(unit, "GB")) return num * Constants.SizeConstants.bytes_per_gb;
+    if (std.ascii.eqlIgnoreCase(unit, "T") or std.ascii.eqlIgnoreCase(unit, "TB")) return num * Constants.SizeConstants.bytes_per_tb;
 
     return num;
 }
@@ -60,11 +60,12 @@ pub fn parseSize(s: []const u8) ?u64 {
 /// Writes a human-readable byte size to the writer.
 pub fn writeSize(writer: anytype, bytes: u64) !void {
     const units = [_][]const u8{ "B", "KB", "MB", "GB", "TB" };
+    const bytes_per_kb_f: f64 = @floatFromInt(Constants.SizeConstants.bytes_per_kb);
     var value: f64 = @floatFromInt(bytes);
     var unit_idx: usize = 0;
 
-    while (value >= 1024.0 and unit_idx < units.len - 1) {
-        value /= 1024.0;
+    while (value >= bytes_per_kb_f and unit_idx < units.len - 1) {
+        value /= bytes_per_kb_f;
         unit_idx += 1;
     }
 
@@ -110,26 +111,31 @@ pub fn parseDuration(s: []const u8) ?i64 {
     const unit = s[unit_start..];
 
     if (std.ascii.eqlIgnoreCase(unit, "ms")) return num;
-    if (std.ascii.eqlIgnoreCase(unit, "s")) return num * 1000;
-    if (std.ascii.eqlIgnoreCase(unit, "m")) return num * 60 * 1000;
-    if (std.ascii.eqlIgnoreCase(unit, "h")) return num * 60 * 60 * 1000;
-    if (std.ascii.eqlIgnoreCase(unit, "d")) return num * 24 * 60 * 60 * 1000;
+    if (std.ascii.eqlIgnoreCase(unit, "s")) return num * @as(i64, @intCast(Constants.TimeConstants.ms_per_second));
+    if (std.ascii.eqlIgnoreCase(unit, "m")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second));
+    if (std.ascii.eqlIgnoreCase(unit, "h")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second));
+    if (std.ascii.eqlIgnoreCase(unit, "d")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
 
     return num;
 }
 
 /// Writes a human-readable duration to the writer.
 pub fn writeDuration(writer: anytype, ms: i64) !void {
-    if (ms < 1000) {
+    const ms_per_sec = @as(i64, @intCast(Constants.TimeConstants.ms_per_second));
+    const ms_per_min = @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second));
+    const ms_per_hour = @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second));
+    const ms_per_day = @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
+
+    if (ms < ms_per_sec) {
         try writer.print("{d}ms", .{ms});
-    } else if (ms < 60 * 1000) {
-        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ms)) / 1000.0});
-    } else if (ms < 60 * 60 * 1000) {
-        try writer.print("{d:.2}m", .{@as(f64, @floatFromInt(ms)) / 60000.0});
-    } else if (ms < 24 * 60 * 60 * 1000) {
-        try writer.print("{d:.2}h", .{@as(f64, @floatFromInt(ms)) / 3600000.0});
+    } else if (ms < ms_per_min) {
+        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_sec))});
+    } else if (ms < ms_per_hour) {
+        try writer.print("{d:.2}m", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_min))});
+    } else if (ms < ms_per_day) {
+        try writer.print("{d:.2}h", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_hour))});
     } else {
-        try writer.print("{d:.2}d", .{@as(f64, @floatFromInt(ms)) / 86400000.0});
+        try writer.print("{d:.2}d", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_day))});
     }
 }
 
@@ -171,7 +177,7 @@ pub fn fromEpochSeconds(timestamp: i64) TimeComponents {
 
 /// Extracts time components from a millisecond timestamp.
 pub fn fromMilliTimestamp(timestamp: i64) TimeComponents {
-    return fromEpochSeconds(@divFloor(timestamp, 1000));
+    return fromEpochSeconds(@divFloor(timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))));
 }
 
 /// Gets current time components.
@@ -493,7 +499,8 @@ pub fn calculatePercentage(numerator: u64, denominator: u64) f64 {
 ///     Items per second as a float
 pub fn calculateThroughput(count: u64, elapsed_ns: u64) f64 {
     if (elapsed_ns == 0) return 0.0;
-    const seconds = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
+    const ns_per_sec = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
+    const seconds = @as(f64, @floatFromInt(elapsed_ns)) / ns_per_sec;
     return @as(f64, @floatFromInt(count)) / seconds;
 }
 
@@ -851,14 +858,18 @@ pub fn durationSinceNs(start_time: i128) u64 {
 ///
 /// Performance: O(1)
 pub fn writeDurationNs(writer: anytype, ns: u64) !void {
-    if (ns < 1000) {
+    const ns_per_us = Constants.TimeConstants.ns_per_us;
+    const ns_per_ms = Constants.TimeConstants.ns_per_ms;
+    const ns_per_sec = Constants.TimeConstants.ns_per_second;
+
+    if (ns < ns_per_us) {
         try writer.print("{d}ns", .{ns});
-    } else if (ns < 1_000_000) {
-        try writer.print("{d:.2}µs", .{@as(f64, @floatFromInt(ns)) / 1000.0});
-    } else if (ns < 1_000_000_000) {
-        try writer.print("{d:.2}ms", .{@as(f64, @floatFromInt(ns)) / 1_000_000.0});
+    } else if (ns < ns_per_ms) {
+        try writer.print("{d:.2}µs", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(ns_per_us))});
+    } else if (ns < ns_per_sec) {
+        try writer.print("{d:.2}ms", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(ns_per_ms))});
     } else {
-        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ns)) / 1_000_000_000.0});
+        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(ns_per_sec))});
     }
 }
 
@@ -979,6 +990,84 @@ fn matchesToken(c: u8, p_char: u8, is_escaped: bool) bool {
     }
     if (p_char == '.') return true;
     return c == p_char;
+}
+
+/// Masks a string for redaction purposes.
+/// Supports full masking, partial start/end, and middle masking.
+pub fn maskString(
+    allocator: std.mem.Allocator,
+    value: []const u8,
+    mask_char: u8,
+    start_reveal: usize,
+    end_reveal: usize,
+    mode: enum { full, partial_start, partial_end, mask_middle },
+) ![]u8 {
+    if (mode == .full) {
+        // Create a masked string of the same length as the input.
+        const result = try allocator.alloc(u8, value.len);
+        @memset(result, mask_char);
+        return result;
+    }
+
+    if (mode == .partial_start) {
+        if (value.len <= end_reveal) {
+            const result = try allocator.alloc(u8, end_reveal);
+            @memset(result, mask_char);
+            return result;
+        }
+        const result = try allocator.alloc(u8, value.len);
+        @memset(result[0 .. value.len - end_reveal], mask_char);
+        @memcpy(result[value.len - end_reveal ..], value[value.len - end_reveal ..]);
+        return result;
+    }
+
+    if (mode == .partial_end) {
+        if (value.len <= start_reveal) {
+            const result = try allocator.alloc(u8, start_reveal);
+            @memset(result, mask_char);
+            return result;
+        }
+        const result = try allocator.alloc(u8, value.len);
+        @memcpy(result[0..start_reveal], value[0..start_reveal]);
+        @memset(result[start_reveal..], mask_char);
+        return result;
+    }
+
+    if (mode == .mask_middle) {
+        const reveal = @min(start_reveal, 3);
+        if (value.len <= reveal * 2) {
+            const result = try allocator.alloc(u8, 3);
+            @memset(result, mask_char);
+            return result;
+        }
+        const result = try allocator.alloc(u8, value.len);
+        @memcpy(result[0..reveal], value[0..reveal]);
+        @memset(result[reveal .. value.len - reveal], mask_char);
+        @memcpy(result[value.len - reveal ..], value[value.len - reveal ..]);
+        return result;
+    }
+
+    return allocator.dupe(u8, value);
+}
+
+/// Computes a short SHA256 hash (first 8 bytes) formatted as hex.
+/// Format: "[HASH:<16_char_hex>]"
+pub fn computeRedactionHash(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
+    var hash: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
+    const hex_val = std.fmt.bytesToHex(hash[0..8], .lower);
+    return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hex_val});
+}
+
+/// Replaces all occurrences of a substring with a replacement string.
+/// Allocates a new string for the result.
+///
+/// Performance: O(N) where N is output length.
+pub fn replaceString(allocator: std.mem.Allocator, input: []const u8, needle: []const u8, replacement: []const u8) ![]u8 {
+    const size = std.mem.replacementSize(u8, input, needle, replacement);
+    const result = try allocator.alloc(u8, size);
+    _ = std.mem.replace(u8, input, needle, replacement, result);
+    return result;
 }
 /// Returns the file extension for a given compression algorithm.
 /// Supports both CompressionConfig.CompressionAlgorithm and other similar enums.

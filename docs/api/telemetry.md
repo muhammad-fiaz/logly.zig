@@ -152,12 +152,14 @@ Statistics for monitoring export performance.
 Initializes the telemetry system with the specified configuration.
 
 **Parameters:**
+
 - `allocator`: Memory allocator for span/metric storage
 - `config`: TelemetryConfig with provider and options
 
 **Returns:** Initialized Telemetry struct
 
 **Example:**
+
 ```zig
 var config = logly.TelemetryConfig.jaeger();
 config.service_name = "my-service";
@@ -170,12 +172,14 @@ defer telemetry.deinit();
 Creates and starts a new span.
 
 **Parameters:**
+
 - `name`: Human-readable span name
 - `options`: SpanOptions struct with kind, parent_span_id, etc.
 
 **Returns:** Active Span struct
 
 **Example:**
+
 ```zig
 var span = try telemetry.startSpan("request_processing", .{
     .kind = .server,
@@ -191,6 +195,7 @@ defer {
 Creates a child span that inherits trace context from a parent span.
 
 **Parameters:**
+
 - `name`: Human-readable span name
 - `parent`: Pointer to the parent Span (inherits trace_id)
 - `options`: SpanOptions struct with kind, etc.
@@ -198,6 +203,7 @@ Creates a child span that inherits trace context from a parent span.
 **Returns:** Active Span struct with parent context
 
 **Example:**
+
 ```zig
 var parent_span = try telemetry.startSpan("http_request", .{ .kind = .server });
 defer parent_span.deinit();
@@ -216,6 +222,7 @@ defer child_span.deinit();
 Finalizes and exports a completed span.
 
 **Parameters:**
+
 - `span`: Pointer to the Span to end
 
 **Returns:** void (error set anyerror)
@@ -225,6 +232,7 @@ Finalizes and exports a completed span.
 Records a metric value.
 
 **Parameters:**
+
 - `name`: Metric name
 - `value`: Numeric metric value
 - `options`: MetricOptions with kind, unit, description
@@ -232,6 +240,7 @@ Records a metric value.
 **Returns:** void (error set anyerror)
 
 **Example:**
+
 ```zig
 try telemetry.recordMetric("http.request.duration_ms", 123.45, .{
     .kind = .gauge,
@@ -245,10 +254,12 @@ try telemetry.recordMetric("http.request.duration_ms", 123.45, .{
 Convenience method to record a counter metric.
 
 **Parameters:**
+
 - `name`: Metric name
 - `value`: Counter value (cumulative)
 
 **Example:**
+
 ```zig
 try telemetry.recordCounter("requests.total", 1.0);
 ```
@@ -258,10 +269,12 @@ try telemetry.recordCounter("requests.total", 1.0);
 Convenience method to record a gauge metric.
 
 **Parameters:**
+
 - `name`: Metric name
 - `value`: Instantaneous measurement value
 
 **Example:**
+
 ```zig
 try telemetry.recordGauge("cpu.usage", 45.5);
 ```
@@ -271,10 +284,12 @@ try telemetry.recordGauge("cpu.usage", 45.5);
 Convenience method to record a histogram metric.
 
 **Parameters:**
+
 - `name`: Metric name
 - `value`: Value for distribution tracking
 
 **Example:**
+
 ```zig
 try telemetry.recordHistogram("response.latency_ms", 123.4);
 ```
@@ -286,6 +301,7 @@ Returns real-time exporter statistics.
 **Returns:** ExporterStats struct with atomic counters
 
 **Example:**
+
 ```zig
 const stats = telemetry.getExporterStats();
 std.debug.print("Spans exported: {}\n", .{stats.getSpansExported()});
@@ -297,11 +313,13 @@ std.debug.print("Error rate: {d:.2}%\n", .{stats.getErrorRate() * 100});
 Generates a W3C traceparent header value for distributed tracing.
 
 **Parameters:**
+
 - `span`: Pointer to the Span
 
 **Returns:** W3C traceparent header string (e.g., "00-trace_id-span_id-01")
 
 **Example:**
+
 ```zig
 const traceparent = try telemetry.getTraceparentHeader(&span);
 defer allocator.free(traceparent);
@@ -313,11 +331,13 @@ defer allocator.free(traceparent);
 Parses a W3C traceparent header to extract trace context.
 
 **Parameters:**
+
 - `header`: W3C traceparent header string
 
 **Returns:** Optional TraceContext struct, or null if invalid
 
 **Example:**
+
 ```zig
 const ctx = Telemetry.parseTraceparentHeader("00-4bf92f3577b34da6a-00f067aa0ba902b7-01");
 if (ctx) |trace_ctx| {
@@ -338,9 +358,11 @@ Flushes and exports all recorded metrics.
 Enable or disable telemetry at runtime.
 
 **Parameters:**
+
 - `enabled`: Boolean to enable/disable telemetry
 
 **Example:**
+
 ```zig
 // Disable telemetry temporarily
 telemetry.setEnabled(false);
@@ -366,9 +388,11 @@ Get the current resource configuration.
 Update resource configuration at runtime.
 
 **Parameters:**
+
 - `resource`: New Resource configuration
 
 **Example:**
+
 ```zig
 telemetry.setResource(.{
     .service_name = "updated-service",
@@ -387,6 +411,7 @@ Reset all statistics counters to zero.
 Find an active span by trace ID for distributed trace continuation.
 
 **Parameters:**
+
 - `trace_id`: Trace ID to search for
 
 **Returns:** Optional pointer to the Span, or null if not found
@@ -396,6 +421,7 @@ Find an active span by trace ID for distributed trace continuation.
 Create a span from an incoming W3C traceparent header for distributed tracing.
 
 **Parameters:**
+
 - `name`: Span name
 - `traceparent`: W3C traceparent header string
 - `opts`: SpanOptions
@@ -403,6 +429,7 @@ Create a span from an incoming W3C traceparent header for distributed tracing.
 **Returns:** New Span with inherited trace context, or root span if header is invalid
 
 **Example:**
+
 ```zig
 // Create child span from incoming HTTP request header
 var span = try telemetry.startSpanFromTraceparent(
@@ -459,10 +486,12 @@ pub const Span = struct {
 Adds or updates a span attribute.
 
 **Parameters:**
+
 - `key`: Attribute name
 - `value`: SpanAttribute union (string, integer, float, boolean, array)
 
 **Example:**
+
 ```zig
 try span.setAttribute("http.method", logly.SpanAttribute{ .string = "POST" });
 try span.setAttribute("http.status_code", logly.SpanAttribute{ .integer = 200 });
@@ -474,10 +503,12 @@ try span.setAttribute("cache.hit", logly.SpanAttribute{ .boolean = true });
 Records an event within the span lifecycle.
 
 **Parameters:**
+
 - `name`: Event name
 - `attributes`: Optional event-specific attributes
 
 **Example:**
+
 ```zig
 try span.addEvent("database_query_completed", null);
 try span.addEvent("cache_miss", null);
@@ -652,6 +683,7 @@ pub const TraceContext = struct {
 ```
 
 **Example:**
+
 ```zig
 // Parse incoming traceparent header
 const ctx = Telemetry.parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
@@ -692,6 +724,7 @@ pub const Baggage = struct {
 Sets a baggage item.
 
 **Example:**
+
 ```zig
 var baggage = logly.Baggage.init(allocator);
 defer baggage.deinit();
@@ -704,6 +737,7 @@ try baggage.set("session.id", "sess456");
 Retrieves a baggage item value.
 
 **Example:**
+
 ```zig
 if (baggage.get("user.id")) |user_id| {
     std.debug.print("User: {s}\n", .{user_id});
@@ -715,6 +749,7 @@ if (baggage.get("user.id")) |user_id| {
 Formats baggage as W3C baggage header value.
 
 **Example:**
+
 ```zig
 const header = try baggage.toHeaderValue(allocator);
 defer allocator.free(header);
@@ -726,6 +761,7 @@ defer allocator.free(header);
 Parses W3C baggage header value.
 
 **Example:**
+
 ```zig
 var baggage = try logly.Baggage.fromHeaderValue(allocator, "user.id=user123,session.id=sess456");
 defer baggage.deinit();
@@ -855,12 +891,14 @@ Logly provides factory functions for common deployment scenarios:
 Jaeger distributed tracing backend.
 
 **Default Settings:**
+
 - Endpoint: `http://localhost:6831` (Jaeger Agent UDP)
 - Batch Size: 256
 - Processor: Batch
 - Sampling: trace_id_ratio at 10%
 
 **Example:**
+
 ```zig
 var config = logly.TelemetryConfig.jaeger();
 config.service_name = "user-service";
@@ -871,6 +909,7 @@ config.service_name = "user-service";
 Zipkin distributed tracing.
 
 **Default Settings:**
+
 - Endpoint: `http://localhost:9411/api/v2/spans`
 - Format: JSON
 - Batch Size: 512
@@ -880,9 +919,11 @@ Zipkin distributed tracing.
 Datadog APM integration.
 
 **Parameters:**
+
 - `api_key`: Datadog API key (required)
 
 **Example:**
+
 ```zig
 var config = logly.TelemetryConfig.datadog("dd_api_key_here");
 config.environment = "production";
@@ -893,6 +934,7 @@ config.environment = "production";
 Google Cloud Trace integration.
 
 **Parameters:**
+
 - `project_id`: GCP project ID
 - `api_key`: GCP API key
 
@@ -901,14 +943,17 @@ Google Cloud Trace integration.
 Google Analytics 4 (GA4) Measurement Protocol integration.
 
 **Parameters:**
+
 - `measurement_id`: GA4 Measurement ID (e.g., "G-XXXXXXXXXX")
 - `api_secret`: GA4 Measurement Protocol API secret
 
 **Default Settings:**
+
 - Endpoint: `https://www.google-analytics.com/mp/collect`
 - Batch Size: 25 (GA4 limit per request)
 
 **Example:**
+
 ```zig
 var config = logly.TelemetryConfig.googleAnalytics("G-ABC123XYZ", "my_api_secret");
 config.service_name = "analytics-service";
@@ -919,10 +964,12 @@ config.service_name = "analytics-service";
 Google Tag Manager Server-Side container integration.
 
 **Parameters:**
+
 - `container_url`: Server-side GTM container URL
 - `api_key`: Optional API key for authentication (can be null)
 
 **Example:**
+
 ```zig
 // With API key
 var config = logly.TelemetryConfig.googleTagManager("https://gtm.example.com/collect", "my_api_key");
@@ -936,6 +983,7 @@ var config = logly.TelemetryConfig.googleTagManager("https://gtm.example.com/col
 AWS X-Ray integration.
 
 **Parameters:**
+
 - `region`: AWS region (e.g., "us-east-1")
 
 #### `TelemetryConfig.azure(connection_string: []const u8) -> TelemetryConfig`
@@ -943,6 +991,7 @@ AWS X-Ray integration.
 Azure Application Insights integration.
 
 **Parameters:**
+
 - `connection_string`: Application Insights connection string
 
 #### `TelemetryConfig.otelCollector(endpoint: []const u8) -> TelemetryConfig`
@@ -950,6 +999,7 @@ Azure Application Insights integration.
 Generic OpenTelemetry Collector endpoint.
 
 **Parameters:**
+
 - `endpoint`: Collector gRPC endpoint (e.g., `http://localhost:4317`)
 
 #### `TelemetryConfig.file(path: []const u8) -> TelemetryConfig`
@@ -957,9 +1007,11 @@ Generic OpenTelemetry Collector endpoint.
 File-based exporter (development/testing).
 
 **Parameters:**
+
 - `path`: Output file path (JSON Lines format)
 
 **Example:**
+
 ```zig
 var config = logly.TelemetryConfig.file("traces.jsonl");
 ```
@@ -969,9 +1021,11 @@ var config = logly.TelemetryConfig.file("traces.jsonl");
 Custom exporter implementation using a callback function.
 
 **Parameters:**
+
 - `exporter_fn`: Pointer to custom exporter callback function
 
 **Example:**
+
 ```zig
 fn myCustomExporter() anyerror!void {
     // Custom export logic here
@@ -987,6 +1041,7 @@ config.service_name = "custom-service";
 Pre-configured for high-throughput scenarios.
 
 **Settings:**
+
 - Provider: Jaeger
 - Endpoint: `http://localhost:6831`
 - Batch Size: 1024
@@ -998,6 +1053,7 @@ Pre-configured for high-throughput scenarios.
 Pre-configured for development.
 
 **Settings:**
+
 - Provider: File-based
 - Output: `telemetry_spans.jsonl`
 - Processor: Simple (immediate export)

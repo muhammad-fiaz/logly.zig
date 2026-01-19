@@ -106,6 +106,75 @@ pub const BufferSizes = struct {
     pub const path_buffer: usize = 512;
 };
 
+/// Size unit constants for consistent byte/KB/MB/GB conversions.
+///
+/// Usage:
+///   Use these constants for consistent size calculations and conversions.
+///
+/// Complexity: O(1)
+pub const SizeConstants = struct {
+    /// Bytes per kilobyte (1024).
+    pub const bytes_per_kb: u64 = 1024;
+    /// Bytes per megabyte (1024 * 1024).
+    pub const bytes_per_mb: u64 = 1024 * 1024;
+    /// Bytes per gigabyte (1024 * 1024 * 1024).
+    pub const bytes_per_gb: u64 = 1024 * 1024 * 1024;
+    /// Bytes per terabyte (1024 * 1024 * 1024 * 1024).
+    pub const bytes_per_tb: u64 = 1024 * 1024 * 1024 * 1024;
+};
+
+/// Compression file extension constants.
+///
+/// Usage:
+///   Use these constants to check if a file is already compressed,
+///   or to determine the compression format of a file.
+///
+/// Complexity: O(1)
+pub const CompressionExtensions = struct {
+    /// Gzip compressed file extension.
+    pub const gz: []const u8 = ".gz";
+    /// Logly gzip compressed file extension.
+    pub const lgz: []const u8 = ".lgz";
+    /// Zstandard compressed file extension.
+    pub const zst: []const u8 = ".zst";
+    /// Deflate compressed file extension.
+    pub const deflate: []const u8 = ".deflate";
+    /// LZMA compressed file extension.
+    pub const lzma: []const u8 = ".lzma";
+    /// LZMA2 compressed file extension.
+    pub const lzma2: []const u8 = ".lzma2";
+    /// XZ compressed file extension.
+    pub const xz: []const u8 = ".xz";
+    /// Tar Gzip compressed file extension.
+    pub const tar_gz: []const u8 = ".tar.gz";
+    /// Zip compressed file extension.
+    pub const zip: []const u8 = ".zip";
+    /// LZ4 compressed file extension.
+    pub const lz4: []const u8 = ".lz4";
+
+    /// All compression extensions for iteration.
+    pub const all: [10][]const u8 = .{ gz, lgz, zst, deflate, lzma, lzma2, xz, tar_gz, zip, lz4 };
+
+    /// Check if a filename ends with any known compression extension.
+    pub fn isCompressed(name: []const u8) bool {
+        return std.mem.endsWith(u8, name, gz) or
+            std.mem.endsWith(u8, name, lgz) or
+            std.mem.endsWith(u8, name, zst) or
+            std.mem.endsWith(u8, name, deflate) or
+            std.mem.endsWith(u8, name, lzma) or
+            std.mem.endsWith(u8, name, lzma2) or
+            std.mem.endsWith(u8, name, xz) or
+            std.mem.endsWith(u8, name, tar_gz) or
+            std.mem.endsWith(u8, name, zip) or
+            std.mem.endsWith(u8, name, lz4);
+    }
+
+    /// Check if a filename ends with a specific compression extension.
+    pub fn hasExtension(name: []const u8, ext: []const u8) bool {
+        return std.mem.endsWith(u8, name, ext);
+    }
+};
+
 /// Default time intervals and timeouts.
 ///
 /// Usage:
@@ -272,6 +341,21 @@ pub const LevelConstants = struct {
         pub const critical: u8 = 50;
         pub const fatal: u8 = 55;
     };
+
+    /// Level index mapping for metrics array.
+    /// Used by metrics and other modules to map log levels to array indices.
+    pub const LevelIndex = enum(u4) {
+        trace = 0,
+        debug = 1,
+        info = 2,
+        notice = 3,
+        success = 4,
+        warning = 5,
+        err = 6,
+        fail = 7,
+        critical = 8,
+        fatal = 9,
+    };
 };
 
 /// Time-related constants.
@@ -322,6 +406,77 @@ pub const MetricsConstants = struct {
     /// Uppercase log level names for metrics display.
     pub const level_names = [_][]const u8{
         "TRACE", "DEBUG", "INFO", "NOTICE", "SUCCESS", "WARNING", "ERROR", "FAIL", "CRITICAL", "FATAL",
+    };
+};
+
+/// Message category constants for diagnostic rules.
+///
+/// Usage:
+///   Use these constants for consistent message category display names
+///   and prefixes in the diagnostic rules system.
+///
+/// Complexity: O(1)
+pub const MessageCategoryConstants = struct {
+    /// Display names for message categories.
+    pub const DisplayNames = struct {
+        pub const error_analysis: []const u8 = "Error Analysis";
+        pub const solution_suggestion: []const u8 = "Solution";
+        pub const best_practice: []const u8 = "Best Practice";
+        pub const action_required: []const u8 = "Action Required";
+        pub const documentation_link: []const u8 = "Documentation";
+        pub const bug_report: []const u8 = "Report Issue";
+        pub const general_information: []const u8 = "Information";
+        pub const warning_explanation: []const u8 = "Warning Details";
+        pub const performance_tip: []const u8 = "Performance";
+        pub const security_notice: []const u8 = "Security";
+        pub const custom: []const u8 = "Note";
+    };
+
+    /// Unicode prefixes for message categories.
+    pub const Prefixes = struct {
+        pub const error_analysis: []const u8 = "    » 🔍 [cause]";
+        pub const solution_suggestion: []const u8 = "    » 💡 [fix]";
+        pub const best_practice: []const u8 = "    » ✨ [suggest]";
+        pub const action_required: []const u8 = "    » ⚡ [action]";
+        pub const documentation_link: []const u8 = "    » 📚 [docs]";
+        pub const bug_report: []const u8 = "    » 🐛 [report]";
+        pub const general_information: []const u8 = "    » 📝 [note]";
+        pub const warning_explanation: []const u8 = "    » ⚠️  [caution]";
+        pub const performance_tip: []const u8 = "    » 🚀 [perf]";
+        pub const security_notice: []const u8 = "    » 🔒 [security]";
+        pub const custom: []const u8 = "    » 🔹 [custom]";
+    };
+
+    /// ASCII-only prefixes for non-UTF8 terminals.
+    pub const PrefixesAscii = struct {
+        pub const error_analysis: []const u8 = "    >> [cause]";
+        pub const solution_suggestion: []const u8 = "    >> [fix]";
+        pub const best_practice: []const u8 = "    >> [suggest]";
+        pub const action_required: []const u8 = "    >> [action]";
+        pub const documentation_link: []const u8 = "    >> [docs]";
+        pub const bug_report: []const u8 = "    >> [report]";
+        pub const general_information: []const u8 = "    >> [note]";
+        pub const warning_explanation: []const u8 = "    >> [caution]";
+        pub const performance_tip: []const u8 = "    >> [perf]";
+        pub const security_notice: []const u8 = "    >> [security]";
+        pub const custom: []const u8 = "    >> [custom]";
+    };
+
+    /// Short symbols for rule configuration.
+    pub const RuleSymbols = struct {
+        pub const error_analysis: []const u8 = ">> [ERROR]";
+        pub const solution_suggestion: []const u8 = ">> [FIX]";
+        pub const performance_hint: []const u8 = ">> [PERF]";
+        pub const security_alert: []const u8 = ">> [SEC]";
+        pub const deprecation_warning: []const u8 = ">> [DEP]";
+        pub const best_practice: []const u8 = ">> [HINT]";
+        pub const accessibility: []const u8 = ">> [A11Y]";
+        pub const documentation: []const u8 = ">> [DOC]";
+        pub const action_required: []const u8 = ">> [ACTION]";
+        pub const bug_report: []const u8 = ">> [BUG]";
+        pub const general_information: []const u8 = ">> [INFO]";
+        pub const warning_explanation: []const u8 = ">> [WARN]";
+        pub const default: []const u8 = ">>";
     };
 };
 
@@ -806,15 +961,14 @@ pub const CompressionConstants = struct {
 
     /// File extensions for different compression algorithms.
     pub const ArchivingExtensions = struct {
-        // Reuse rotation default compressed extension for gzip to keep consistency.
-        pub const gzip = RotationConstants.compressed_ext;
-        pub const zstd = ".zst";
-        pub const lzma = ".lzma";
-        pub const lzma2 = ".lzma2";
-        pub const xz = ".xz";
-        pub const tar_gz = ".tar.gz";
-        pub const zip = ".zip";
-        pub const lz4 = ".lz4";
+        pub const gzip = CompressionExtensions.gz;
+        pub const zstd = CompressionExtensions.zst;
+        pub const lzma = CompressionExtensions.lzma;
+        pub const lzma2 = CompressionExtensions.lzma2;
+        pub const xz = CompressionExtensions.xz;
+        pub const tar_gz = CompressionExtensions.tar_gz;
+        pub const zip = CompressionExtensions.zip;
+        pub const lz4 = CompressionExtensions.lz4;
         pub const none = "";
     };
 };
@@ -937,6 +1091,15 @@ pub const ParallelDefaults = struct {
     pub const max_retries: u3 = 3;
     /// Default write timeout in milliseconds.
     pub const write_timeout_ms: u64 = 5000;
+
+    /// Low latency configuration presets.
+    pub const low_latency_max_concurrent: usize = 4;
+    pub const low_latency_timeout_ms: u64 = 500;
+
+    /// Reliable configuration presets.
+    pub const reliable_max_concurrent: usize = 8;
+    pub const reliable_timeout_ms: u64 = 2000;
+    pub const reliable_max_retries: u3 = 5;
 };
 
 /// Sink configuration defaults.
@@ -1152,6 +1315,30 @@ test "time default flush is consistent" {
 test "compression gzip extension reused" {
     try std.testing.expectEqualStrings(CompressionConstants.ArchivingExtensions.gzip, RotationConstants.compressed_ext);
 }
+
+/// System diagnostics constants.
+///
+/// Usage:
+///   Max buffer sizes and resource limits for system diagnostics.
+///
+/// Complexity: O(1)
+pub const DiagnosticsConstants = struct {
+    /// Maximum mount point path length (macOS/BSD/Linux).
+    pub const mac_mount_path_len: usize = 1024;
+};
+
+/// Update checker constants.
+///
+/// Usage:
+///   Repository information for version checking.
+///
+/// Complexity: O(1)
+pub const UpdateCheckerConstants = struct {
+    /// GitHub repository owner.
+    pub const repo_owner: []const u8 = "muhammad-fiaz";
+    /// GitHub repository name.
+    pub const repo_name: []const u8 = "logly.zig";
+};
 
 test "color helpers produce valid prefixes" {
     const s = Colors.fg256(208);

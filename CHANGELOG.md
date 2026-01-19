@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Color Themes Use Constants**: `Config.LevelColorConfig.getColorForLevel()` now uses `Constants.Colors.Themes` (pastel, dark, light) instead of hardcoded ANSI codes
 - **Architecture-Aware Types**: `Constants.AtomicUnsigned`, `AtomicSigned`, `NativeUint`, `NativeInt` provide optimal types for 32-bit (x86, ARM) and 64-bit (x86_64, aarch64, riscv64) architectures
 
+### Refactored
+
+- **Internal Architecture Overhaul**: Refactored core modules (`constants.zig`, `utils.zig`, `redactor.zig`, `compression.zig`, `config.zig`) for better consistency, code reuse, and maintainability.
+- **Utils Module Expansion**: Added `maskString`, `replaceString`, and `computeRedactionHash` utilities to centralize string manipulation logic.
+- **Redactor Optimization**: Migrated `Redactor` to use the new optimized `Utils` functions, significantly reducing code duplication and memory overhead.
+- **Compression Enhancements**: Optimized `compressZstdWithAllocator` to perform direct buffer compression, reducing intermediate allocations.
+- **Documentation Standardization**: Extensive updates to API documentation (`constants.md`, `utils.md`) to reflect the new architecture and fix formatting issues.
+
 ## [0.1.5]
 
 ### Added

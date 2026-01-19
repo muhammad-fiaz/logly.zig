@@ -747,7 +747,7 @@ pub const Config = struct {
         /// Number of worker threads (0 = auto-detect based on CPU cores).
         thread_count: usize = 0,
         /// Maximum queue size for pending tasks.
-        queue_size: usize = 10000,
+        queue_size: usize = Constants.ThreadDefaults.max_tasks,
         /// Stack size per thread in bytes.
         stack_size: usize = Constants.ThreadDefaults.stack_size,
         /// Enable work stealing between threads.
@@ -806,9 +806,9 @@ pub const Config = struct {
         /// Complexity: O(1)
         pub fn lowLatency() ParallelConfig {
             return .{
-                .max_concurrent = 4,
+                .max_concurrent = Constants.ParallelDefaults.low_latency_max_concurrent,
                 .buffered = false,
-                .write_timeout_ms = 500,
+                .write_timeout_ms = Constants.ParallelDefaults.low_latency_timeout_ms,
                 .retry_on_failure = false,
                 .fail_fast = true,
             };
@@ -820,10 +820,10 @@ pub const Config = struct {
         /// Complexity: O(1)
         pub fn reliable() ParallelConfig {
             return .{
-                .max_concurrent = 8,
+                .max_concurrent = Constants.ParallelDefaults.reliable_max_concurrent,
                 .retry_on_failure = true,
-                .max_retries = 5,
-                .write_timeout_ms = 2000,
+                .max_retries = Constants.ParallelDefaults.reliable_max_retries,
+                .write_timeout_ms = Constants.ParallelDefaults.reliable_timeout_ms,
                 .fail_fast = false,
             };
         }
@@ -1654,19 +1654,19 @@ pub const Config = struct {
 
     /// Customizable symbols for rule message categories.
     pub const RuleSymbols = struct {
-        error_analysis: []const u8 = ">> [ERROR]",
-        solution_suggestion: []const u8 = ">> [FIX]",
-        performance_hint: []const u8 = ">> [PERF]",
-        security_alert: []const u8 = ">> [SEC]",
-        deprecation_warning: []const u8 = ">> [DEP]",
-        best_practice: []const u8 = ">> [HINT]",
-        accessibility: []const u8 = ">> [A11Y]",
-        documentation: []const u8 = ">> [DOC]",
-        action_required: []const u8 = ">> [ACTION]",
-        bug_report: []const u8 = ">> [BUG]",
-        general_information: []const u8 = ">> [INFO]",
-        warning_explanation: []const u8 = ">> [WARN]",
-        default: []const u8 = ">>",
+        error_analysis: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.error_analysis,
+        solution_suggestion: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.solution_suggestion,
+        performance_hint: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.performance_hint,
+        security_alert: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.security_alert,
+        deprecation_warning: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.deprecation_warning,
+        best_practice: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.best_practice,
+        accessibility: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.accessibility,
+        documentation: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.documentation,
+        action_required: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.action_required,
+        bug_report: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.bug_report,
+        general_information: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.general_information,
+        warning_explanation: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.warning_explanation,
+        default: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.default,
     };
 
     /// Rules system configuration for compiler-style guided diagnostics.

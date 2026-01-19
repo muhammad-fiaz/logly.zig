@@ -861,7 +861,7 @@ pub const Formatter = struct {
 
         // Handle special time formats
         if (std.mem.eql(u8, config.time_format, "unix")) {
-            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(timestamp_ms, 1000))));
+            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(timestamp_ms, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))))));
             return;
         }
         if (std.mem.eql(u8, config.time_format, "unix_ms")) {
@@ -871,7 +871,7 @@ pub const Formatter = struct {
 
         const tc = Utils.fromMilliTimestamp(timestamp_ms);
         const abs_ts = if (timestamp_ms < 0) 0 else @as(u64, @intCast(timestamp_ms));
-        const millis = abs_ts % 1000;
+        const millis = abs_ts % Constants.TimeConstants.ms_per_second;
 
         // ISO8601 format: 2025-12-04T06:39:53.091Z
         if (std.mem.eql(u8, config.time_format, "ISO8601")) {
@@ -978,7 +978,7 @@ pub const Formatter = struct {
         try writer.writeAll("\"timestamp\"");
         try writer.writeAll(sep);
         if (std.mem.eql(u8, config.time_format, "unix")) {
-            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(record.timestamp, 1000))));
+            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(record.timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))))));
         } else {
             try writer.writeAll("\"");
             try self.writeTimestamp(writer, record.timestamp, config);

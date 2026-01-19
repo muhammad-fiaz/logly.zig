@@ -225,12 +225,12 @@ pub const ThreadPool = struct {
 
         /// Calculate average wait time in milliseconds.
         pub fn avgWaitTimeMs(self: *const ThreadPoolStats) f64 {
-            return @as(f64, @floatFromInt(self.avgWaitTimeNs())) / 1_000_000.0;
+            return @as(f64, @floatFromInt(self.avgWaitTimeNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
         }
 
         /// Calculate average execution time in milliseconds.
         pub fn avgExecTimeMs(self: *const ThreadPoolStats) f64 {
-            return @as(f64, @floatFromInt(self.avgExecTimeNs())) / 1_000_000.0;
+            return @as(f64, @floatFromInt(self.avgExecTimeNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
         }
     };
 
@@ -763,7 +763,7 @@ pub const ThreadPool = struct {
 
             if (completed + dropped >= submitted) break;
 
-            std.Thread.sleep(1 * std.time.ns_per_ms);
+            std.Thread.sleep(1 * Constants.TimeConstants.ns_per_ms);
         }
     }
 
@@ -1427,7 +1427,7 @@ test "thread pool priority ordering" {
     _ = pool.submit(.{ .callback = .{ .func = BlockTask.run, .context = &block_mutex } }, .critical);
 
     // Give it a moment to pick up the block task
-    std.Thread.sleep(10 * std.time.ns_per_ms);
+    std.Thread.sleep(10 * Constants.TimeConstants.ns_per_ms);
 
     // Queue them up - they should be ordered in the queue by priority
     _ = pool.submit(.{ .callback = .{ .func = OrderTask.run, .context = &p1 } }, .normal);

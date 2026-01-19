@@ -766,15 +766,12 @@ pub const Rotation = struct {
                 const stat = std.fs.cwd().statFile(full_path) catch continue;
 
                 // Check if already compressed
-                const is_compressed = std.mem.endsWith(u8, entry.name, ".gz") or
-                    std.mem.endsWith(u8, entry.name, ".lgz") or
-                    std.mem.endsWith(u8, entry.name, ".zst") or
-                    std.mem.endsWith(u8, entry.name, ".deflate");
+                const is_compressed = Constants.CompressionExtensions.isCompressed(entry.name);
 
                 // Age check
                 if (self.max_age_seconds) |max_age| {
                     const age = Utils.currentNanos() - stat.mtime;
-                    if (age > max_age * std.time.ns_per_s) {
+                    if (age > max_age * Constants.TimeConstants.ns_per_second) {
                         try self.handleRetentionFile(full_path, is_compressed);
                         continue; // handled, don't add to list
                     }

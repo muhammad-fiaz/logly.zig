@@ -223,6 +223,11 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 - Performance-first defaults and centralized constants for consistent behavior across the library.
 
+**Refactored:**
+
+- Core architecture optimized for modularity and reuse (Utils, Redactor, Compression configurations).
+- Standardized API documentation and expanded utility functions (`maskString`, `replaceString`).
+
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ---

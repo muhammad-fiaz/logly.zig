@@ -227,18 +227,8 @@ pub const Metrics = struct {
     };
 
     /// Level index mapping for metrics array.
-    pub const LevelIndex = enum(u4) {
-        trace = 0,
-        debug = 1,
-        info = 2,
-        notice = 3,
-        success = 4,
-        warning = 5,
-        err = 6,
-        fail = 7,
-        critical = 8,
-        fatal = 9,
-    };
+    /// Re-exported from Constants.LevelConstants.LevelIndex for consistency.
+    pub const LevelIndex = Constants.LevelConstants.LevelIndex;
 
     /// Re-export MetricsConfig from global config.
     pub const MetricsConfig = Config.MetricsConfig;
@@ -828,7 +818,7 @@ pub const Metrics = struct {
     pub fn recordCustomLog(self: *Metrics, bytes: u64) void {
         _ = self.total_records.fetchAdd(1, .monotonic);
         _ = self.total_bytes.fetchAdd(@truncate(bytes), .monotonic);
-        self.last_record_time.store(@truncate(std.time.milliTimestamp()), .monotonic);
+        self.last_record_time.store(@truncate(Utils.currentMillis()), .monotonic);
     }
 
     /// Alias for recordLog
@@ -866,7 +856,7 @@ pub const Metrics = struct {
 
     /// Returns the uptime in milliseconds.
     pub fn uptime(self: *const Metrics) i64 {
-        return std.time.milliTimestamp() - self.start_time;
+        return Utils.currentMillis() - self.start_time;
     }
 
     /// Returns records per second rate.

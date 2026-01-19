@@ -250,7 +250,7 @@ fn parseMeminfoLine(line: []const u8) !u64 {
     const value_str = iter.next() orelse return error.InvalidFormat;
     const value = try std.fmt.parseInt(u64, value_str, 10);
     // Unit is usually kB
-    return value * 1024;
+    return value * Constants.SizeConstants.bytes_per_kb;
 }
 
 fn getMacMemory() ?struct { total: u64, avail: u64 } {
@@ -340,8 +340,8 @@ fn collectMacDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveInfo
         f_flags: u32,
         f_fssubtype: u32,
         f_fstypename: [16]u8,
-        f_mntonname: [1024]u8,
-        f_mntfromname: [1024]u8,
+        f_mntonname: [Constants.DiagnosticsConstants.mac_mount_path_len]u8,
+        f_mntfromname: [Constants.DiagnosticsConstants.mac_mount_path_len]u8,
         f_reserved: [8]u32,
     };
 
