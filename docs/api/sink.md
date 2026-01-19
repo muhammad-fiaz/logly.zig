@@ -45,7 +45,19 @@ Configuration for a sink.
 | `path` | `?[]const u8` | `null` | Path to log file (null for console). Supports dynamic placeholders like `{date}`, `{time}`. Also supports network schemes `tcp://host:port` and `udp://host:port`. |
 | `name` | `?[]const u8` | `null` | Sink identifier for metrics and debugging |
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
-| `event_log` | `bool` | `false` | Enable system event log output (Windows Event Log / Syslog) |
+| `event_log` | `bool` | `false` | Enable system event log output (Windows Event Log on Windows, Syslog on POSIX). See the Windows Event Log mapping below; constants are provided by `Constants.EventLogConstants`. |
+
+### Windows Event Log (Windows only)
+
+When `event_log` is enabled on Windows, log entries are sent to the Windows Event Viewer using the `ReportEventA` API. Logly maps internal log `Level` values to Windows event types as follows:
+
+- Error / Critical / Fail / Fatal -> `EVENTLOG_ERROR_TYPE` (`Constants.EventLogConstants.error_type`)
+- Warning -> `EVENTLOG_WARNING_TYPE` (`Constants.EventLogConstants.warning_type`)
+- Notice / Info / Success -> `EVENTLOG_INFORMATION_TYPE` (`Constants.EventLogConstants.information_type`)
+
+`EVENTLOG_SUCCESS` (`Constants.EventLogConstants.success`) may be used for success/audit events.
+
+These values are centralized in `src/constants.zig` under `EventLogConstants` and are reused by the sink implementation to ensure consistency across platforms.
 
 ### Dynamic Path Formatting
 

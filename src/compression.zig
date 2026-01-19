@@ -33,7 +33,7 @@ const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
-/// Optional zstd support - imported when available
+/// zstd support feature
 const zstd = @import("zstd");
 
 /// Log compression utilities with callback support and comprehensive monitoring.
@@ -1890,7 +1890,11 @@ pub const Compression = struct {
     fn decompressDeflateNative(self: *Compression, data: []const u8, original_size: u64, stored_checksum: u32) ![]u8 {
         var result: std.ArrayList(u8) = .empty;
         errdefer result.deinit(self.allocator);
-        try result.ensureTotalCapacity(self.allocator, original_size);
+        // Ensure capacity fits platform `usize` (avoid overflow on 32-bit targets)
+        const max_capacity: u64 = @as(u64, std.math.maxInt(usize));
+        if (original_size > max_capacity) return error.OutputTooLarge;
+        const needed_capacity: usize = @intCast(original_size);
+        try result.ensureTotalCapacity(self.allocator, needed_capacity);
 
         var pos: usize = 0; // Data already sliced from header
         while (pos < data.len) {
@@ -3165,6 +3169,25 @@ test "none algorithm passthrough" {
     // With .none algorithm, compress just returns a copy, not a compressed format
     // So we compare directly instead of decompressing
     try std.testing.expectEqualStrings(data, compressed);
+}
+
+test "decompress deflate capacity overflow" {
+    // Only run this test on platforms where usize is smaller than u64 (e.g., 32-bit).
+    // On 64-bit native builds the `too_big` value can't be represented in u64
+    // because `std.math.maxInt(usize) == std.math.maxInt(u64)`, so skip the test.
+    if (@sizeOf(usize) >= @sizeOf(u64)) return;
+
+    const allocator = std.testing.allocator;
+
+    var comp = Compression.init(allocator);
+    defer comp.deinit();
+
+    // Empty/placeholder compressed data is fine; we only exercise the size guard.
+    const dummy: []const u8 = &[_]u8{};
+    const too_big: u64 = @as(u64, std.math.maxInt(usize)) + 1;
+
+    // Expect the helper to fail early with OutputTooLarge
+    try std.testing.expectError(error.OutputTooLarge, comp.decompressDeflateNative(dummy, too_big, 0));
 }
 
 test "compression preset factory methods" {

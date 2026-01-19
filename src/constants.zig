@@ -797,6 +797,21 @@ pub const CompressionConstants = struct {
     };
 };
 
+/// Windows Event Log constants (Word values for ReportEvent)
+pub const EventLogConstants = struct {
+    pub const success: u16 = 0x0000;
+    pub const error_type: u16 = 0x0001;
+    pub const warning_type: u16 = 0x0002;
+    pub const information_type: u16 = 0x0004;
+};
+
+test "event log constants exist" {
+    try std.testing.expectEqual(@as(u16, EventLogConstants.success), @as(u16, 0x0000));
+    try std.testing.expectEqual(@as(u16, EventLogConstants.error_type), @as(u16, 0x0001));
+    try std.testing.expectEqual(@as(u16, EventLogConstants.warning_type), @as(u16, 0x0002));
+    try std.testing.expectEqual(@as(u16, EventLogConstants.information_type), @as(u16, 0x0004));
+}
+
 /// Scheduler defaults.
 ///
 /// Usage:

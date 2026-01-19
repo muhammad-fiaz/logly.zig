@@ -119,12 +119,23 @@ This makes integration with aggregators (ELK, Splunk, Datadog) seamless as corre
 
 You can enable logging to the system event log (Windows Event Log or Syslog).
 
+On Windows, when `event_log` is enabled the sink will send entries to the Windows Event Viewer using the native `ReportEvent` API. Log level → event type mapping:
+
+- Error / Critical / Fail / Fatal → `EVENTLOG_ERROR_TYPE` (`Constants.EventLogConstants.error_type`)
+- Warning → `EVENTLOG_WARNING_TYPE` (`Constants.EventLogConstants.warning_type`)
+- Notice / Info / Success → `EVENTLOG_INFORMATION_TYPE` (`Constants.EventLogConstants.information_type`)
+
+These values are centralized in `Constants.EventLogConstants` and are reused by the sink implementation for consistency.
+
+Example (enable event log):
 ```zig
 _ = try logger.addSink(.{
     .event_log = true,
     .level = .err, // Typically used for critical errors
 });
 ```
+
+On POSIX systems `event_log` maps to Syslog using the standard facility and severity mappings. See the Constants API (`EventLogConstants`, `SyslogConstants`) for canonical values and mappings.
 
 ## Multiple Sinks
 

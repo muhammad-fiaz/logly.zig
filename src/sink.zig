@@ -83,10 +83,10 @@ const SystemLog = struct {
         const DWORD = u32;
         const PSID = ?*anyopaque;
 
-        const EVENTLOG_SUCCESS: WORD = 0x0000;
-        const EVENTLOG_ERROR_TYPE: WORD = 0x0001;
-        const EVENTLOG_WARNING_TYPE: WORD = 0x0002;
-        const EVENTLOG_INFORMATION_TYPE: WORD = 0x0004;
+        pub const EVENTLOG_SUCCESS: WORD = @as(WORD, Constants.EventLogConstants.success);
+        pub const EVENTLOG_ERROR_TYPE: WORD = @as(WORD, Constants.EventLogConstants.error_type);
+        pub const EVENTLOG_WARNING_TYPE: WORD = @as(WORD, Constants.EventLogConstants.warning_type);
+        pub const EVENTLOG_INFORMATION_TYPE: WORD = @as(WORD, Constants.EventLogConstants.information_type);
 
         extern "advapi32" fn RegisterEventSourceA(lpUNCServerName: ?LPCSTR, lpSourceName: LPCSTR) callconv(WINAPI) ?HANDLE;
         extern "advapi32" fn ReportEventA(hEventLog: HANDLE, wType: WORD, wCategory: WORD, dwEventID: DWORD, lpUserSid: PSID, wNumStrings: WORD, dwDataSize: DWORD, lpStrings: ?[*]const LPCSTR, lpRawData: ?*anyopaque) callconv(WINAPI) bool;

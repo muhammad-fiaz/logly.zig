@@ -201,6 +201,23 @@ pub const NetworkConstants = struct {
 };
 ```
 
+## Event Log Constants (Windows)
+
+Canonical constants for Windows Event Log types. These are used by the Sink module when writing to the Windows Event Viewer.
+
+```zig
+pub const EventLogConstants = struct {
+    /// `EVENTLOG_SUCCESS`
+    pub const success: u16 = 0x0000;
+    /// `EVENTLOG_ERROR_TYPE`
+    pub const error_type: u16 = 0x0001;
+    /// `EVENTLOG_WARNING_TYPE`
+    pub const warning_type: u16 = 0x0002;
+    /// `EVENTLOG_INFORMATION_TYPE`
+    pub const information_type: u16 = 0x0004;
+};
+```
+
 ## Compression Constants
 
 Compression algorithm parameters and magic bytes.
