@@ -43,7 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-  - [Version 0.1.5](#version-015)
+  - [Version 0.1.6](#version-016)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended)](#method-1-zig-fetch-recommended)
   - [Method 2: Project Starter Template (Quick Start)](#method-2-project-starter-template-quick-start)
