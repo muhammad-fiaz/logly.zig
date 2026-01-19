@@ -41,7 +41,7 @@ config.pretty_json = false;
 config.color = true;
 
 // ⚡ Features
-config.enable_callbacks = true;
+config.enable_callbacks = false;  // Enable only when using callbacks
 config.enable_exception_handling = true;
 
 logger.configure(config);
@@ -70,14 +70,14 @@ logger.configure(config);
 | `show_lineno`            | `bool`        | `false`                 | Show line number                                     |
 | `auto_sink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
 | `check_for_updates`      | `bool`        | `true`                  | Check for updates on startup                         |
-| `enable_callbacks`       | `bool`        | `true`                  | Enable log callbacks                                 |
+| `enable_callbacks`       | `bool`        | `false`                 | Enable log callbacks (only when using callbacks)     |
 | `log_format`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
 | `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss"` | Timestamp format                                     |
 | `timezone`               | `enum`        | `.local`                | Timezone for timestamps (`.local` or `.utc`)         |
 | `use_arena_allocator`    | `bool`        | `false`                 | Enable arena allocator for temporary allocations     |
 | `emit_system_diagnostics_on_init` | `bool` | `false`           | Emit system diagnostics on logger initialization     |
 | `include_drive_diagnostics` | `bool`     | `true`                  | Include drive information in diagnostics             |
-| `auto_flush`             | `bool`        | `true`                  | Automatically flush sinks after every log operation  |
+| `auto_flush`             | `bool`        | `false`                 | Auto-flush sinks (set true only when immediate output is critical) |
 | `logs_root_path`         | `?[]const u8` | `null`                  | Root directory for log files                        |
 | `debug_mode`             | `bool`        | `false`                 | Enable debug output for troubleshooting             |
 | `error_handling`         | `enum`        | `.log_and_continue`     | Error handling strategy (`.silent`, `.log_and_continue`, `.fail_fast`, `.callback`) |
@@ -99,6 +99,30 @@ config.distributed = .{
     .span_header = "X-Span-ID",         // Header key for Span ID
 };
 ```
+
+### Telemetry
+
+OpenTelemetry-specific configuration is available via the `telemetry` field on `Config`. Use built-in presets (`TelemetryConfig.jaeger()`, `TelemetryConfig.zipkin()`, `TelemetryConfig.file(path)`, `TelemetryConfig.highThroughput()`, `TelemetryConfig.development()`, etc.) or customize the fields directly.
+
+```zig
+var config = logly.Config.default();
+
+// Use a preset for Jaeger and tweak batching
+config.telemetry = logly.TelemetryConfig.jaeger();
+config.telemetry.span_processor_type = .batch; // Auto-export when thresholds hit
+config.telemetry.batch_size = 1024;
+config.telemetry.batch_timeout_ms = 2000;
+
+// Or use file-based development preset
+config.telemetry = logly.TelemetryConfig.development();
+```
+
+Notes:
+- `span_processor_type` semantics:
+  - `.simple` — Completed spans are kept pending until you explicitly call `telemetry.exportSpans()` or `telemetry.flush()`. Use this when you want to control export timing (e.g., at request boundaries).
+  - `.batch` — Spans are buffered and automatically exported when `batch_size` or `batch_timeout_ms` thresholds are reached.
+- Default telemetry values (batch size, timeouts, headers) are centralized in `Constants.TelemetryDefaults`.
+- v0.1.6: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) so telemetry builds cleanly across targets.
 
 ### Thread Pool Configuration
 

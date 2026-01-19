@@ -46,17 +46,27 @@ Comprehensive log file compression with multiple algorithms, streaming support, 
 
 | Method | Description |
 |--------|-------------|
-| `estimateCompressedSize(size)` | Estimate compressed size for data |
-| `getExtension()` | Get file extension for algorithm |
+| `estimateCompressedSize(data_size)` | Estimate compressed size for given data. |
+| `getExtension()` | Get the file extension for the configured algorithm |
+| `Utils.getCompressionExtension(algo)` | Returns a canonical extension for a given compression algorithm (e.g., `.gz`, `.zst`, `.lzma`, `.xz`, `.tar.gz`, `.zip`, `.lz4`) |
 | `isZstd()` | Check if using zstd algorithm |
-| `algorithmName()` | Get algorithm name as string |
-| `levelName()` | Get compression level as string |
+| `algorithmName()` | Get the algorithm name as a string |
+| `levelName()` | Get the compression level name as a string |
+
+**Helper: `Utils.getCompressionExtension`**
+
+A small utility function in `Utils` that returns the canonical file extension for a given `CompressionAlgorithm`. Use this helper to keep archive names consistent (for example when creating archive paths in rotation or scheduler tasks).
+
+```zig
+const Utils = logly.Utils;
+const ext = Utils.getCompressionExtension(CompressionAlgorithm.zstd); // ".zst"
+```
 
 ## Overview
 
 The Compression module provides high-performance log file compression with:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, ZSTD, RAW
+- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4
 - **Compression Strategies**: Text-optimized, binary, RLE, adaptive
 - **Streaming Support**: `compressStream` and `decompressStream` helpers
 - **Background Compression**: Offload compression to background threads
@@ -115,9 +125,11 @@ pub const CompressionConfig = struct {
     /// Enable compression.
     enabled: bool = false,
     /// Compression algorithm to use
-    algorithm: Algorithm = .deflate,
-    /// Compression level (0-9)
-    level: Level = .default,
+    algorithm: CompressionAlgorithm = .deflate,
+    /// Compression level
+    level: CompressionLevel = .default,
+    /// Custom zstd level (1-22). If set, overrides the level enum for zstd.
+    custom_zstd_level: ?i32 = null,
     /// Compress on rotation.
     on_rotation: bool = true,
     /// Keep original file after compression.
@@ -146,6 +158,18 @@ pub const CompressionConfig = struct {
     parallel: bool = false,
     /// Memory limit for compression (bytes, 0 = unlimited)
     memory_limit: usize = 0,
+    /// Custom prefix for compressed file names
+    file_prefix: ?[]const u8 = null,
+    /// Custom suffix before extension
+    file_suffix: ?[]const u8 = null,
+    /// Root directory for all compressed files
+    archive_root_dir: ?[]const u8 = null,
+    /// Create date-based subdirectories in archive root
+    create_date_subdirs: bool = false,
+    /// Preserve original directory structure when archiving to root dir.
+    preserve_dir_structure: bool = true,
+    /// Custom naming pattern for compressed files.
+    naming_pattern: ?[]const u8 = null,
 };
 ```
 
@@ -180,12 +204,12 @@ const streaming_config = CompressionConfig{
 };
 ```
 
-### Algorithm
+### CompressionAlgorithm
 
 Available compression algorithms with different characteristics.
 
 ```zig
-pub const Algorithm = enum {
+pub const CompressionAlgorithm = enum {
     /// No compression (passthrough)
     none,
     /// DEFLATE compression (gzip compatible)
@@ -197,9 +221,37 @@ pub const Algorithm = enum {
     /// GZIP format (standard compression)
     gzip,
     /// Zstandard compression (high performance)
-    zstd,  // v0.1.5+
+    zstd,
+    /// LZMA compression (high ratio)
+    lzma,
+    /// LZMA2 compression (multi-block)
+    lzma2,
+    /// XZ format (LZMA2 container)
+    xz,
+    /// TAR.GZ archive format
+    tar_gz,
+    /// ZIP archive format
+    zip,
+    /// LZ4 fast compression
+    lz4,
 };
 ```
+
+### Algorithm Comparison (v0.1.6+)
+
+| Algorithm | Speed | Ratio | Best For |
+|-----------|-------|-------|----------|
+| `none` | ★★★★★ | - | Pass-through |
+| `deflate` | ★★★★ | ★★★ | General logs |
+| `zlib` | ★★★★ | ★★★ | HTTP/Web logs |
+| `gzip` | ★★★★ | ★★★ | File archives |
+| `zstd` | ★★★★★ | ★★★★ | High-perf logging |
+| `lzma` | ★★ | ★★★★★ | Long-term archival |
+| `lzma2` | ★★ | ★★★★★ | Large files |
+| `xz` | ★★ | ★★★★★ | Distribution |
+| `tar_gz` | ★★★ | ★★★★ | Multi-file archives |
+| `zip` | ★★★★ | ★★★ | Cross-platform |
+| `lz4` | ★★★★★ | ★★ | Real-time logging |
 
 ## CompressionConfig Preset Methods
 
@@ -453,22 +505,25 @@ try zstd_compressor.compressFile("logs/app.log", null);
 | `zstd` | 3-6x | ~400 MB/s | ~1400 MB/s | High-performance, streaming (v0.1.5+) |
 
 
-### Level
+### CompressionLevel
 
 Compression level controlling speed vs size tradeoff.
 
 ```zig
-pub const Level = enum(u4) {
+pub const CompressionLevel = enum {
     /// No compression
-    none = 0,
+    none,
     /// Fastest compression (level 1)
-    fast = 1,
+    fastest,
+    /// Fast compression (level 3)
+    fast,
     /// Balanced speed and size (level 6)
-    default = 6,
+    default,
     /// Maximum compression (level 9)
-    best = 9,
+    best,
     
-    pub fn toInt(self: Level) u8;
+    pub fn toInt(self: CompressionLevel) u4;
+    pub fn toZstdLevel(self: CompressionLevel) i32;
 };
 ```
 

@@ -17,7 +17,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| Current Version | 0.1.5 | 0.7.2 | 0.0.0 | Built-in |
+| Current Version | 0.1.6 | 0.7.2 | 0.0.0 | Built-in |
 | Min Zig Version | 0.15.0+ | 0.14, 0.15-dev | 0.11+ | Any |
 | API Style | User-friendly | Builder/Fluent | Pool/Fluent | Basic/Manual |
 | Structured Logging | ✅ Automatic | ✅ JSON/logfmt | ✅ JSON/logfmt | ❌ Manual |
@@ -29,9 +29,10 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | File Logging | ✅ Automatic | ✅ | ✅ | ❌ Manual |
 | File Rotation | ✅ Automatic (Time + Size) | ✅ Size | ❌ | ❌ |
 | Retention Policy | ✅ Automatic | ❌ | ❌ | ❌ |
-| Compression | ✅ Automatic (gzip/zlib/deflate/zstd) | ❌ | ❌ | ❌ |
+| Compression | ✅ Automatic (gzip/zlib/deflate/zstd, lzma, lzma2, xz, tar.gz, zip, lz4) | ❌ | ❌ | ❌ |
 | Zstd Compression (v0.1.5+) | ✅ Levels 1-22, presets, batch ops | ❌ | ❌ | ❌ |
 | Rotation Presets (v0.1.5+) | ✅ 25+ presets (time/size/hybrid/production) | ❌ | ❌ | ❌ |
+| Performance Defaults (v0.1.6+) | ✅ Optimized auto_flush/callbacks defaults | ❌ | ❌ | ❌ |
 | Network Logging | ✅ Automatic (TCP/UDP) | ❌ | ❌ | ❌ |
 | Stack Traces | ✅ Automatic | ❌ | ❌ | ❌ Manual |
 | Redaction (PII) | ✅ Automatic | ❌ | ❌ | ❌ |
@@ -157,11 +158,12 @@ This feature is **not available** in std.log, nexlog, or log.zig.
 6. **Developer Friendly**: Intuitive API with extensive documentation
 7. **Production Tested**: Compression, rotation, and retention policies
 8. **Cross-Platform**: Works on Linux, macOS, Windows, and bare-metal
-9. **Multiple Compression Algorithms**: DEFLATE, GZIP, ZLIB, and Zstd (v0.1.5+) with automatic detection
+9. **Multiple Compression Algorithms**: DEFLATE, GZIP, ZLIB, Zstd, LZMA, LZMA2, XZ, ZIP, TAR.GZ, LZ4 with automatic detection, factory methods, and presets
+10. **Performance Optimized** (v0.1.6+): ~7.5x faster than v0.1.5 with performance-first defaults
 
-## Compression Algorithm Comparison (v0.1.5+)
+## Compression Algorithm Comparison (v0.1.6+)
 
-Logly.zig supports multiple compression algorithms for log archival:
+Logly.zig supports multiple compression and archive algorithms for log archival and archiving:
 
 | Algorithm | Ratio | Compress Speed | Decompress Speed | Extension | Best For |
 |:----------|:------|:---------------|:-----------------|:----------|:---------|
@@ -169,9 +171,15 @@ Logly.zig supports multiple compression algorithms for log archival:
 | **gzip** | 3-5x | ~190 MB/s | ~290 MB/s | `.gz` | Compatibility, standard tooling |
 | **deflate** | 3-5x | ~200 MB/s | ~300 MB/s | `.gz` | General purpose |
 | **zlib** | 3-5x | ~180 MB/s | ~280 MB/s | `.gz` | Network transport |
+| **lzma** | 5-8x | ~40 MB/s | ~120 MB/s | `.lzma` | Long-term archival (highest ratio) |
+| **lzma2** | 5-8x | ~50 MB/s | ~120 MB/s | `.lzma` | Large file archival (multi-block LZMA) |
+| **xz** | 5-8x | ~60 MB/s | ~120 MB/s | `.xz` | Distribution packages and high-ratio archives |
+| **tar_gz** | 3-5x | ~180 MB/s | ~290 MB/s | `.tar.gz` | Multi-file Unix archives |
+| **zip** | 3-5x | ~190 MB/s | ~290 MB/s | `.zip` | Cross-platform archives |
+| **lz4** | 1-2x | ~600 MB/s | ~1000 MB/s | `.lz4` | Real-time, ultra-fast compression |
 
 ::: tip Recommendation
-Use **zstd** (v0.1.5+) for best performance. It offers excellent compression ratios with very fast decompression, making it ideal for log files that need to be queried frequently.
+Use **zstd** (v0.1.5+) for best performance and a great general-purpose tradeoff. For long-term archival prefer **LZMA / XZ** (higher ratio); for ultra-low-latency real-time logging prefer **LZ4** (fastest). Choose based on the speed vs ratio trade-off for your workload.
 :::
 
 ## OpenTelemetry Comparison (v0.1.4+)
@@ -196,7 +204,9 @@ Logly.zig provides comprehensive OpenTelemetry integration:
 | File Exporter | ✅ JSONL | ❌ | ❌ | ❌ |
 | Custom Exporters | ✅ Plugin API | ❌ | ❌ | ❌ |
 
-## Rotation Presets Comparison (v0.1.5+)
+**Note (v0.1.6):** Resolved a compile-time issue in the OTLP exporter (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will auto-export when configured batch size or timeout thresholds are reached.
+
+## Rotation Presets Comparison
 
 Logly.zig offers 25+ rotation presets for common scenarios:
 

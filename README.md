@@ -206,31 +206,22 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.5
+### Version 0.1.6
 
-**New Features:**
+**Added:**
 
-- **Zstd Compression**: High-performance Zstandard compression algorithm (1400 MB/s decompression).
-  - Presets: `zstd()`, `zstdFast()`, `zstdBest()`, `zstdProduction()`
-  - Custom levels 1-22: `zstdWithLevel(15)`
-- **Batch Compression Operations**: Compress multiple files efficiently.
-  - `compressBatch(files)`, `compressPattern(dir, pattern)`, `compressOldest(dir, count)`, `compressLargerThan(dir, size)`
-- **OpenTelemetry Protocol (OTLP) Export**: Full OTLP JSON format for span export.
-  - Provider-specific exporters: Jaeger, Zipkin, Datadog, Google Cloud, GA4, AWS X-Ray, Azure
-- **Scheduler Compression Presets**: Pre-configured task configurations.
-  - `hourlyArchive()`, `compressOnRotation()`, `sizeBasedCompression()`, `diskUsageTriggered()`, `recursiveCompression()`
-- **Improved Regex Engine**: Production-ready backtracking regex-like engine for precise log filtering and redaction.
-  - Supports standard quantifiers (`*`, `+`, `?`) and character classes (`\d`, `\w`, `\s`).
-  - Centralized in `Utils` for consistent behavior across all modules.
-- **Enhanced Color System**: Comprehensive color support with theme presets, 256-color palette, and RGB colors.
-- **Theme Presets**: Built-in themes (default, bright, dim, minimal, neon, pastel, dark, light).
-- **Per-Level Color Override**: Set individual colors for each log level while using a theme.
-- **Level Color Variants**: New methods `brightColor()`, `dimColor()`, `underlineColor()`, `color256()` on Level enum.
-- **Advanced CustomLevel**: Full color control with `initFull()`, `initRgb()`, `initStyled()`, `initWithBackground()`.
-- **Color Constants**: New `Constants.Colors` with Fg, BrightFg, Bg, BrightBg, Style structs.
-- **RGB/256-Color Functions**: `Colors.fgRgb()`, `Colors.bgRgb()`, `Colors.fg256()`, `Colors.bg256()`.
-- **Config Theme Integration**: `level_colors.theme_preset` for global theme selection.
-- **ColorStyle Enum**: Formatter color style selection for output formatting.
+- Full compression algorithm support: LZMA, LZMA2, XZ, ZIP, TAR.GZ, LZ4.
+  - New archiving formats, factory methods, and helper `Utils.getCompressionExtension()`; centralized extensions via `Constants.CompressionConstants.ArchivingExtensions`.
+- Comprehensive compression tests for new algorithms and edge cases.
+
+**Fixed:**
+
+- Critical performance regression: changed `auto_flush` and `enable_callbacks` defaults to `false` and optimized context-copy hot paths to restore performance.
+- Telemetry: resolved a compile-time issue in the OTLP exporter (`writeOtlpSpan`) by removing an unnecessary discard of the `self` parameter so the telemetry exporter builds reliably across targets.
+
+**Changed:**
+
+- Performance-first defaults and centralized constants for consistent behavior across the library.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -244,7 +235,7 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.5.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.6.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -293,7 +284,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.5.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.6.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

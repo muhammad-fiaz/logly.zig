@@ -26,6 +26,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const SinkConfig = @import("sink.zig").SinkConfig;
+const Constants = @import("constants.zig");
 
 /// Windows kernel32 API bindings for system diagnostics.
 /// Provides access to memory status and drive enumeration functions.
@@ -223,7 +224,7 @@ fn getLinuxMemory() ?struct { total: u64, avail: u64 } {
     const file = std.fs.openFileAbsolute("/proc/meminfo", .{}) catch return null;
     defer file.close();
 
-    var buf: [4096]u8 = undefined;
+    var buf: [Constants.BufferSizes.file_read]u8 = undefined;
     const len = file.readAll(&buf) catch return null;
     const content = buf[0..len];
 
@@ -268,7 +269,7 @@ fn collectLinuxDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveIn
     const file = std.fs.openFileAbsolute("/proc/mounts", .{}) catch return;
     defer file.close();
 
-    var buf: [8192]u8 = undefined;
+    var buf: [Constants.BufferSizes.file_read_large]u8 = undefined;
     const len = file.readAll(&buf) catch return;
     const content = buf[0..len];
 
@@ -381,7 +382,7 @@ fn collectMacDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveInfo
 /// Errors:
 ///     error.OutOfMemory: If memory allocation fails
 fn collectWindowsDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveInfo)) !void {
-    var buffer: [512]u16 = undefined;
+    var buffer: [Constants.BufferSizes.path_buffer]u16 = undefined;
     const len = k32.GetLogicalDriveStringsW(buffer.len, &buffer);
     if (len == 0 or len > buffer.len) return;
 

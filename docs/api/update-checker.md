@@ -167,6 +167,12 @@ pub fn main() !void {
 | `update_check_interval_hours` | `u64` | `24` | Hours between checks |
 | `show_update_notification` | `bool` | `true` | Show notification when update available |
 
+## Recent Changes
+
+### v0.1.6
+
+- Fixed a telemetry compilation issue: Resolved a compile-time error in the telemetry module (OTLP exporter) by removing an unnecessary discard of the `self` parameter in `writeOtlpSpan`. This ensures the telemetry feature compiles cleanly across targets and prevents build failures when telemetry is enabled.
+
 ## See Also
 
 - [Update Checker Guide](../guide/update-checker.md) - Usage patterns

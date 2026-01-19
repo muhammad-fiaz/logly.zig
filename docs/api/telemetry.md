@@ -12,6 +12,8 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 - **Metrics Collection**: Counter, gauge, histogram, and summary metrics with configurable export formats
 - **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span and metric export
 - **Export Modes**: Synchronous, async buffered, batch, and network export modes
+- **Span Processor Semantics**: `span_processor_type` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
+- **Note (v0.1.6)**: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor semantics; telemetry now builds cleanly across targets.
 - **Exporter Statistics**: Real-time monitoring of export performance with atomic counters
 - **Resource Detection**: Automatic detection of service metadata and resource attributes
 - **Sampling Strategies**: Four sampling algorithms (always_on, always_off, trace_id_ratio, parent_based)

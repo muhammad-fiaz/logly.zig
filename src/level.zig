@@ -26,25 +26,25 @@ const Constants = @import("constants.zig");
 /// Each level has a numeric priority, string representation, and default color.
 pub const Level = enum(u8) {
     /// Detailed tracing information (priority: 5).
-    trace = 5,
+    trace = Constants.LevelConstants.Priorities.trace,
     /// Debugging information (priority: 10).
-    debug = 10,
+    debug = Constants.LevelConstants.Priorities.debug,
     /// General informational messages (priority: 20).
-    info = 20,
+    info = Constants.LevelConstants.Priorities.info,
     /// Notice messages (priority: 22).
-    notice = 22,
+    notice = Constants.LevelConstants.Priorities.notice,
     /// Success messages (priority: 25).
-    success = 25,
+    success = Constants.LevelConstants.Priorities.success,
     /// Warning conditions (priority: 30).
-    warning = 30,
+    warning = Constants.LevelConstants.Priorities.warning,
     /// Error conditions (priority: 40).
-    err = 40,
+    err = Constants.LevelConstants.Priorities.err,
     /// Failure conditions (priority: 45).
-    fail = 45,
+    fail = Constants.LevelConstants.Priorities.fail,
     /// Critical failures (priority: 50).
-    critical = 50,
+    critical = Constants.LevelConstants.Priorities.critical,
     /// Fatal system errors - highest severity (priority: 55).
-    fatal = 55,
+    fatal = Constants.LevelConstants.Priorities.fatal,
 
     /// Returns the numeric priority value of this level.
     pub fn priority(self: Level) u8 {
@@ -53,34 +53,36 @@ pub const Level = enum(u8) {
 
     /// Returns the Level enum from a numeric priority, or null if invalid.
     pub fn fromPriority(p: u8) ?Level {
+        const P = Constants.LevelConstants.Priorities;
         return switch (p) {
-            5 => .trace,
-            10 => .debug,
-            20 => .info,
-            22 => .notice,
-            25 => .success,
-            30 => .warning,
-            40 => .err,
-            45 => .fail,
-            50 => .critical,
-            55 => .fatal,
+            P.trace => .trace,
+            P.debug => .debug,
+            P.info => .info,
+            P.notice => .notice,
+            P.success => .success,
+            P.warning => .warning,
+            P.err => .err,
+            P.fail => .fail,
+            P.critical => .critical,
+            P.fatal => .fatal,
             else => null,
         };
     }
 
     /// Returns the uppercase string representation of this level.
     pub fn asString(self: Level) []const u8 {
+        const N = Constants.MetricsConstants.level_names;
         return switch (self) {
-            .trace => "TRACE",
-            .debug => "DEBUG",
-            .info => "INFO",
-            .notice => "NOTICE",
-            .success => "SUCCESS",
-            .warning => "WARNING",
-            .err => "ERROR",
-            .fail => "FAIL",
-            .critical => "CRITICAL",
-            .fatal => "FATAL",
+            .trace => N[0],
+            .debug => N[1],
+            .info => N[2],
+            .notice => N[3],
+            .success => N[4],
+            .warning => N[5],
+            .err => N[6],
+            .fail => N[7],
+            .critical => N[8],
+            .fatal => N[9],
         };
     }
 
@@ -170,16 +172,17 @@ pub const Level = enum(u8) {
     }
 
     pub fn fromString(s: []const u8) ?Level {
-        if (std.mem.eql(u8, s, "TRACE")) return .trace;
-        if (std.mem.eql(u8, s, "DEBUG")) return .debug;
-        if (std.mem.eql(u8, s, "INFO")) return .info;
-        if (std.mem.eql(u8, s, "NOTICE")) return .notice;
-        if (std.mem.eql(u8, s, "SUCCESS")) return .success;
-        if (std.mem.eql(u8, s, "WARNING")) return .warning;
-        if (std.mem.eql(u8, s, "ERROR")) return .err;
-        if (std.mem.eql(u8, s, "FAIL")) return .fail;
-        if (std.mem.eql(u8, s, "CRITICAL")) return .critical;
-        if (std.mem.eql(u8, s, "FATAL")) return .fatal;
+        const N = Constants.MetricsConstants.level_names;
+        if (std.mem.eql(u8, s, N[0])) return .trace;
+        if (std.mem.eql(u8, s, N[1])) return .debug;
+        if (std.mem.eql(u8, s, N[2])) return .info;
+        if (std.mem.eql(u8, s, N[3])) return .notice;
+        if (std.mem.eql(u8, s, N[4])) return .success;
+        if (std.mem.eql(u8, s, N[5])) return .warning;
+        if (std.mem.eql(u8, s, N[6])) return .err;
+        if (std.mem.eql(u8, s, N[7])) return .fail;
+        if (std.mem.eql(u8, s, N[8])) return .critical;
+        if (std.mem.eql(u8, s, N[9])) return .fatal;
         return null;
     }
 
@@ -316,7 +319,7 @@ pub const CustomLevel = struct {
         return .{
             .name = level_name,
             .priority = level_priority,
-            .color = "37",
+            .color = Constants.Colors.LevelColors.info,
             .rgb_color = .{ .r = r, .g = g, .b = b },
         };
     }
@@ -327,7 +330,7 @@ pub const CustomLevel = struct {
         return .{
             .name = level_name,
             .priority = level_priority,
-            .color = "37",
+            .color = Constants.Colors.LevelColors.info,
             .color_256 = null,
         };
     }
@@ -485,56 +488,60 @@ pub const CustomLevel = struct {
 };
 
 test "level priority" {
-    try std.testing.expectEqual(@as(u8, 5), Level.trace.priority());
-    try std.testing.expectEqual(@as(u8, 10), Level.debug.priority());
-    try std.testing.expectEqual(@as(u8, 20), Level.info.priority());
-    try std.testing.expectEqual(@as(u8, 22), Level.notice.priority());
-    try std.testing.expectEqual(@as(u8, 25), Level.success.priority());
-    try std.testing.expectEqual(@as(u8, 30), Level.warning.priority());
-    try std.testing.expectEqual(@as(u8, 40), Level.err.priority());
-    try std.testing.expectEqual(@as(u8, 45), Level.fail.priority());
-    try std.testing.expectEqual(@as(u8, 50), Level.critical.priority());
-    try std.testing.expectEqual(@as(u8, 55), Level.fatal.priority());
+    const P = Constants.LevelConstants.Priorities;
+    try std.testing.expectEqual(P.trace, Level.trace.priority());
+    try std.testing.expectEqual(P.debug, Level.debug.priority());
+    try std.testing.expectEqual(P.info, Level.info.priority());
+    try std.testing.expectEqual(P.notice, Level.notice.priority());
+    try std.testing.expectEqual(P.success, Level.success.priority());
+    try std.testing.expectEqual(P.warning, Level.warning.priority());
+    try std.testing.expectEqual(P.err, Level.err.priority());
+    try std.testing.expectEqual(P.fail, Level.fail.priority());
+    try std.testing.expectEqual(P.critical, Level.critical.priority());
+    try std.testing.expectEqual(P.fatal, Level.fatal.priority());
 }
 
 test "level from priority" {
-    try std.testing.expectEqual(Level.trace, Level.fromPriority(5).?);
-    try std.testing.expectEqual(Level.debug, Level.fromPriority(10).?);
-    try std.testing.expectEqual(Level.info, Level.fromPriority(20).?);
-    try std.testing.expectEqual(Level.notice, Level.fromPriority(22).?);
-    try std.testing.expectEqual(Level.success, Level.fromPriority(25).?);
-    try std.testing.expectEqual(Level.warning, Level.fromPriority(30).?);
-    try std.testing.expectEqual(Level.err, Level.fromPriority(40).?);
-    try std.testing.expectEqual(Level.fail, Level.fromPriority(45).?);
-    try std.testing.expectEqual(Level.critical, Level.fromPriority(50).?);
-    try std.testing.expectEqual(Level.fatal, Level.fromPriority(55).?);
+    const P = Constants.LevelConstants.Priorities;
+    try std.testing.expectEqual(Level.trace, Level.fromPriority(P.trace).?);
+    try std.testing.expectEqual(Level.debug, Level.fromPriority(P.debug).?);
+    try std.testing.expectEqual(Level.info, Level.fromPriority(P.info).?);
+    try std.testing.expectEqual(Level.notice, Level.fromPriority(P.notice).?);
+    try std.testing.expectEqual(Level.success, Level.fromPriority(P.success).?);
+    try std.testing.expectEqual(Level.warning, Level.fromPriority(P.warning).?);
+    try std.testing.expectEqual(Level.err, Level.fromPriority(P.err).?);
+    try std.testing.expectEqual(Level.fail, Level.fromPriority(P.fail).?);
+    try std.testing.expectEqual(Level.critical, Level.fromPriority(P.critical).?);
+    try std.testing.expectEqual(Level.fatal, Level.fromPriority(P.fatal).?);
     try std.testing.expectEqual(@as(?Level, null), Level.fromPriority(99));
 }
 
 test "level string conversion" {
-    try std.testing.expectEqualStrings("TRACE", Level.trace.asString());
-    try std.testing.expectEqualStrings("DEBUG", Level.debug.asString());
-    try std.testing.expectEqualStrings("INFO", Level.info.asString());
-    try std.testing.expectEqualStrings("NOTICE", Level.notice.asString());
-    try std.testing.expectEqualStrings("SUCCESS", Level.success.asString());
-    try std.testing.expectEqualStrings("WARNING", Level.warning.asString());
-    try std.testing.expectEqualStrings("ERROR", Level.err.asString());
-    try std.testing.expectEqualStrings("FAIL", Level.fail.asString());
-    try std.testing.expectEqualStrings("CRITICAL", Level.critical.asString());
-    try std.testing.expectEqualStrings("FATAL", Level.fatal.asString());
+    const N = Constants.MetricsConstants.level_names;
+    try std.testing.expectEqualStrings(N[0], Level.trace.asString());
+    try std.testing.expectEqualStrings(N[1], Level.debug.asString());
+    try std.testing.expectEqualStrings(N[2], Level.info.asString());
+    try std.testing.expectEqualStrings(N[3], Level.notice.asString());
+    try std.testing.expectEqualStrings(N[4], Level.success.asString());
+    try std.testing.expectEqualStrings(N[5], Level.warning.asString());
+    try std.testing.expectEqualStrings(N[6], Level.err.asString());
+    try std.testing.expectEqualStrings(N[7], Level.fail.asString());
+    try std.testing.expectEqualStrings(N[8], Level.critical.asString());
+    try std.testing.expectEqualStrings(N[9], Level.fatal.asString());
 }
 
 test "level from string" {
-    try std.testing.expectEqual(Level.trace, Level.fromString("TRACE").?);
-    try std.testing.expectEqual(Level.debug, Level.fromString("DEBUG").?);
-    try std.testing.expectEqual(Level.info, Level.fromString("INFO").?);
-    try std.testing.expectEqual(Level.notice, Level.fromString("NOTICE").?);
-    try std.testing.expectEqual(Level.success, Level.fromString("SUCCESS").?);
-    try std.testing.expectEqual(Level.warning, Level.fromString("WARNING").?);
-    try std.testing.expectEqual(Level.err, Level.fromString("ERROR").?);
-    try std.testing.expectEqual(Level.fail, Level.fromString("FAIL").?);
-    try std.testing.expectEqual(Level.critical, Level.fromString("CRITICAL").?);
-    try std.testing.expectEqual(Level.fatal, Level.fromString("FATAL").?);
+    const N = Constants.MetricsConstants.level_names;
+    try std.testing.expectEqual(Level.trace, Level.fromString(N[0]).?);
+    try std.testing.expectEqual(Level.debug, Level.fromString(N[1]).?);
+    try std.testing.expectEqual(Level.info, Level.fromString(N[2]).?);
+    try std.testing.expectEqual(Level.notice, Level.fromString(N[3]).?);
+    try std.testing.expectEqual(Level.success, Level.fromString(N[4]).?);
+    try std.testing.expectEqual(Level.warning, Level.fromString(N[5]).?);
+    try std.testing.expectEqual(Level.err, Level.fromString(N[6]).?);
+    try std.testing.expectEqual(Level.fail, Level.fromString(N[7]).?);
+    try std.testing.expectEqual(Level.critical, Level.fromString(N[8]).?);
+    try std.testing.expectEqual(Level.fatal, Level.fromString(N[9]).?);
     try std.testing.expectEqual(@as(?Level, null), Level.fromString("INVALID"));
 }
 

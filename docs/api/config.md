@@ -80,7 +80,8 @@ If set, system diagnostics will be stored at this path. Default: `null`.
 
 #### `auto_flush: bool`
 
-Automatically flush sinks after every log operation. Creates immediate output but may impact performance in high-throughput applications. Default: `true`.
+Automatically flush sinks after every log operation. Creates immediate output but **significantly impacts performance** in high-throughput applications. Default: `false` (for performance). Set to `true` only when immediate output visibility is critical.
+
 
 ### Distributed Logging
 
@@ -99,6 +100,47 @@ Configuration for distributed tracing and service identification. Contains:
 *   `parent_header: []const u8`: HTTP header for Parent Span ID (default: "X-Parent-ID").
 *   `baggage_header: []const u8`: HTTP header for Baggage/Correlation Context (default: "Correlation-Context").
 *   `trace_sampling_rate: f64`: Sampling rate for distributed tracing 0.0 to 1.0 (default: 1.0).
+
+### Telemetry
+
+#### `telemetry: TelemetryConfig`
+
+OpenTelemetry integration configuration for trace and metric export. This section controls OTLP/Jaeger/Zipkin/Datadog/Azure/Google providers and local file exporters.
+
+Key fields:
+*   `enabled: bool` — Enable OpenTelemetry integration (default: `false`).
+*   `provider: Provider` — Provider enum (`.none`, `.jaeger`, `.zipkin`, `.datadog`, `.google_cloud`, `.google_analytics`, `.google_tag_manager`, `.aws_xray`, `.azure`, `.generic`, `.file`, `.custom`).
+*   `exporter_endpoint: ?[]const u8` — Exporter endpoint URL for HTTP/gRPC exporters (e.g., `"http://localhost:4317"`).
+*   `api_key: ?[]const u8` — API key for providers that require authentication.
+*   `connection_string: ?[]const u8` — Connection string for Azure Application Insights.
+*   `exporter_file_path: ?[]const u8` — File path for JSONL file exporter.
+*   `batch_size: usize = Constants.TelemetryDefaults.batch_size` — Batch span export size (default: 256).
+*   `batch_timeout_ms: u64 = Constants.TelemetryDefaults.batch_timeout_ms` — Batch export timeout in ms (default: 5000).
+*   `sampling_strategy: SamplingStrategy` — Sampling strategy (`.always_on`, `.always_off`, `.trace_id_ratio`, `.parent_based`).
+*   `sampling_rate: f64 = Constants.TelemetryDefaults.sampling_rate` — Sampling rate used when `trace_id_ratio` is selected.
+*   `service_name`, `service_version`, `environment`, `datacenter` — Resource identification fields.
+*   `span_processor_type: SpanProcessorType = .simple` — Span processor: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call; `.batch` will automatically export spans when the configured batch size or timeout is reached.
+*   `metric_format: MetricFormat` — Format for metrics export (e.g., `.otlp`, `.prometheus`, `.json`).
+*   `compress_exports: bool` — Whether to compress span export payloads.
+*   `custom_exporter_fn: ?*const fn () anyerror!void` — Optional custom exporter callback for user-defined exporters.
+*   `on_span_start`, `on_span_end`, `on_metric_recorded`, `on_error` — Lifecycle callbacks for telemetry events.
+*   `auto_context_propagation: bool` — Automatically propagate trace/context headers (default: `true`).
+*   `trace_header: []const u8 = Constants.TelemetryDefaults.trace_header` — Trace header name (default: `"traceparent"`).
+*   `baggage_header: []const u8 = Constants.TelemetryDefaults.baggage_header` — Baggage header name (default: `"baggage"`).
+
+Presets and factory helpers:
+* `TelemetryConfig.jaeger()`, `TelemetryConfig.zipkin()`, `TelemetryConfig.datadog(api_key)`,
+  `TelemetryConfig.googleCloud(project_id, api_key)`, `TelemetryConfig.googleAnalytics(id, secret)`,
+  `TelemetryConfig.googleTagManager(url, key)`, `TelemetryConfig.awsXray(region)`,
+  `TelemetryConfig.azure(connection_string)`, `TelemetryConfig.otelCollector(endpoint)`,
+  `TelemetryConfig.file(path)`, `TelemetryConfig.custom(exporter_fn)`,
+  `TelemetryConfig.highThroughput()`, `TelemetryConfig.development()`.
+
+Notes:
+* Use `.simple` when you prefer explicit export control (call `exportSpans()` at safe points in your application). Use `.batch` for automatic behavior when you want the library to flush spans based on batch size or timeout.
+* Defaults are centralized in `Constants.TelemetryDefaults` (batch size, timeout, header defaults, etc.).
+* v0.1.6 includes a small OTLP exporter fix: a compile-time issue in the OTLP span writer (`writeOtlpSpan`) was resolved so the telemetry feature builds cleanly across targets.
+
 
 ### Display Options
 
@@ -222,7 +264,7 @@ Automatically add a console sink on init. Default: `true`.
 
 #### `enable_callbacks: bool`
 
-Enable callback invocation for log events. Default: `true`.
+Enable callback invocation for log events. Default: `false` (for performance). Enable only when using log callbacks.
 
 #### `enable_exception_handling: bool`
 
@@ -407,7 +449,7 @@ Scheduler configuration.
 
 Compression configuration.
 - `enabled`: Enable compression.
-- `algorithm`: Compression algorithm (`.none`, `.deflate`, `.zlib`, `.raw_deflate`).
+- `algorithm`: Compression algorithm (`.none`, `.deflate`, `.zlib`, `.raw_deflate`, `.gzip`, `.zstd`, `.lzma`, `.lzma2`, `.xz`, `.zip`, `.tar_gz`, `.lz4`).
 - `level`: Compression level (`.none`, `.fastest`, `.fast`, `.default`, `.best`).
 - `on_rotation`: Compress on rotation.
 - `keep_original`: Keep original file after compression.
@@ -554,7 +596,7 @@ Merges another configuration into the current one. Non-default values from `othe
 
 #### `enable_callbacks: bool`
 
-Enable log callbacks. Default: `true`.
+Enable log callbacks. Default: `false`. Set to `true` only when using log callbacks.
 
 #### `enable_exception_handling: bool`
 
@@ -690,6 +732,8 @@ pub const CompressionConfig = struct {
     algorithm: CompressionAlgorithm = .deflate,
     /// Compression level.
     level: CompressionLevel = .default,
+    /// Custom zstd level (1-22). If set, overrides the level enum for zstd.
+    custom_zstd_level: ?i32 = null,
     /// Compress on rotation.
     on_rotation: bool = true,
     /// Keep original file after compression.
@@ -718,6 +762,18 @@ pub const CompressionConfig = struct {
     parallel: bool = false,
     /// Memory limit for compression (bytes, 0 = unlimited).
     memory_limit: usize = 0,
+    /// Custom prefix for compressed file names
+    file_prefix: ?[]const u8 = null,
+    /// Custom suffix before extension
+    file_suffix: ?[]const u8 = null,
+    /// Root directory for all compressed files
+    archive_root_dir: ?[]const u8 = null,
+    /// Create date-based subdirectories in archive root
+    create_date_subdirs: bool = false,
+    /// Preserve original directory structure when archiving to root dir.
+    preserve_dir_structure: bool = true,
+    /// Custom naming pattern for compressed files.
+    naming_pattern: ?[]const u8 = null,
 
     pub const CompressionAlgorithm = enum {
         none,
@@ -725,7 +781,13 @@ pub const CompressionConfig = struct {
         zlib,
         raw_deflate,
         gzip,
-        zstd,  // v0.1.5+ - Zstandard compression
+        zstd,
+        lzma,
+        lzma2,
+        xz,
+        tar_gz,
+        zip,
+        lz4,
     };
 
     pub const CompressionLevel = enum {
@@ -736,8 +798,7 @@ pub const CompressionConfig = struct {
         best,
 
         /// Convert to zstd compression level (1-22).
-        /// v0.1.5+
-        pub fn toZstdLevel(self: CompressionLevel) c_int;
+        pub fn toZstdLevel(self: CompressionLevel) i32;
     };
 
     pub const Mode = enum {
@@ -770,13 +831,23 @@ pub const CompressionConfig = struct {
     pub fn backgroundMode() CompressionConfig;
     pub fn streamingMode() CompressionConfig;
     
-    // Zstd presets (v0.1.5+)
-    pub fn zstd() CompressionConfig;           // Default zstd (level 6)
-    pub fn zstdFast() CompressionConfig;       // Fast zstd (level 1)
-    pub fn zstdBest() CompressionConfig;       // Best zstd (level 19)
-    pub fn zstdProduction() CompressionConfig; // Production zstd with background
+    // Zstd presets
+    pub fn zstd() CompressionConfig;
+    pub fn zstdFast() CompressionConfig;
+    pub fn zstdBest() CompressionConfig;
+    pub fn zstdProduction() CompressionConfig;
+    pub fn zstdWithLevel(level: i32) CompressionConfig;
+
+    // New algorithms presets
+    pub fn lzma() CompressionConfig;
+    pub fn lzma2() CompressionConfig;
+    pub fn xz() CompressionConfig;
+    pub fn tarGz() CompressionConfig;
+    pub fn zip() CompressionConfig;
+    pub fn lz4() CompressionConfig;
 };
 ```
+
 
 ### Rotation Configuration
 

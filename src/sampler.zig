@@ -39,51 +39,51 @@ pub const Sampler = struct {
 
         /// Calculate current accept rate (0.0 - 1.0)
         pub fn getAcceptRate(self: *const SamplerStats) f64 {
-            const total = @as(u64, self.total_records_sampled.load(.monotonic));
-            if (total == 0) return 0;
-            const accepted = @as(u64, self.records_accepted.load(.monotonic));
-            return @as(f64, @floatFromInt(accepted)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateRate(
+                Utils.atomicLoadU64(&self.records_accepted),
+                Utils.atomicLoadU64(&self.total_records_sampled),
+            );
         }
 
         /// Calculate current reject rate (0.0 - 1.0)
         pub fn getRejectRate(self: *const SamplerStats) f64 {
-            const total = @as(u64, self.total_records_sampled.load(.monotonic));
-            if (total == 0) return 0;
-            const rejected = @as(u64, self.records_rejected.load(.monotonic));
-            return @as(f64, @floatFromInt(rejected)) / @as(f64, @floatFromInt(total));
+            return Utils.calculateRate(
+                Utils.atomicLoadU64(&self.records_rejected),
+                Utils.atomicLoadU64(&self.total_records_sampled),
+            );
         }
 
         /// Returns true if any records have been rejected.
         pub fn hasRejections(self: *const SamplerStats) bool {
-            return self.records_rejected.load(.monotonic) > 0;
+            return Utils.atomicLoadU64(&self.records_rejected) > 0;
         }
 
         /// Returns true if rate limit has been exceeded at least once.
         pub fn hasRateLimitExceeded(self: *const SamplerStats) bool {
-            return self.rate_limit_exceeded.load(.monotonic) > 0;
+            return Utils.atomicLoadU64(&self.rate_limit_exceeded) > 0;
         }
 
         /// Returns the rate limit exceeded percentage (0.0 - 1.0).
         pub fn getRateLimitExceededRate(self: *const SamplerStats) f64 {
-            const rejected = @as(u64, self.records_rejected.load(.monotonic));
-            if (rejected == 0) return 0;
-            const exceeded = @as(u64, self.rate_limit_exceeded.load(.monotonic));
-            return @as(f64, @floatFromInt(exceeded)) / @as(f64, @floatFromInt(rejected));
+            return Utils.calculateRate(
+                Utils.atomicLoadU64(&self.rate_limit_exceeded),
+                Utils.atomicLoadU64(&self.records_rejected),
+            );
         }
 
         /// Returns total records sampled as u64.
         pub fn getTotal(self: *const SamplerStats) u64 {
-            return @as(u64, self.total_records_sampled.load(.monotonic));
+            return Utils.atomicLoadU64(&self.total_records_sampled);
         }
 
         /// Returns accepted records count as u64.
         pub fn getAccepted(self: *const SamplerStats) u64 {
-            return @as(u64, self.records_accepted.load(.monotonic));
+            return Utils.atomicLoadU64(&self.records_accepted);
         }
 
         /// Returns rejected records count as u64.
         pub fn getRejected(self: *const SamplerStats) u64 {
-            return @as(u64, self.records_rejected.load(.monotonic));
+            return Utils.atomicLoadU64(&self.records_rejected);
         }
     };
 
@@ -295,13 +295,10 @@ pub const Sampler = struct {
                     }
                 },
                 .adaptive => |config| {
-                    const now = Utils.currentMillis();
-                    const interval: i64 = @intCast(config.adjustment_interval_ms);
+                    if (Utils.elapsedMs(self.state.last_adjustment) >= config.adjustment_interval_ms) {
+                        const actual_rate = Utils.calculateThroughputMs(self.state.window_count, @intCast(config.adjustment_interval_ms));
 
-                    if (now - self.state.last_adjustment >= interval) {
-                        const actual_rate: f64 = @as(f64, @floatFromInt(self.state.window_count)) /
-                            (@as(f64, @floatFromInt(config.adjustment_interval_ms)) / 1000.0);
-
+                        const now = Utils.currentMillis();
                         const old_rate = self.state.current_rate;
                         const target: f64 = @floatFromInt(config.target_rate);
 

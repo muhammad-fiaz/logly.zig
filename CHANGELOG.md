@@ -7,12 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Documentation for versions below 0.1.2 is not available. Please refer to commit history or pull requests for those versions.
 
+## [0.1.6]
+
+### Added
+
+- **Full Compression Algorithm Support**: Complete compression and decompression for all algorithms:
+  - **LZMA** (`Compression.lzmaCompression()`, `CompressionConfig.lzma()`) - High-ratio compression
+  - **LZMA2** (`Compression.lzma2Compression()`, `CompressionConfig.lzma2()`) - Multi-block LZMA
+  - **XZ** (`Compression.xzCompression()`, `CompressionConfig.xz()`) - XZ container format
+  - **ZIP** (`Compression.zipCompression()`, `CompressionConfig.zip()`) - ZIP archive with deflate
+  - **TAR.GZ** (`Compression.tarGzCompression()`, `CompressionConfig.tarGz()`) - Tar archive + gzip
+  - **LZ4** (`Compression.lz4Compression()`, `CompressionConfig.lz4()`) - Fast compression
+
+- **Expanded Compression Archiving**: Support for multiple log archiving formats:
+  - Added `zip`, `tar.gz`, `xz`, `lzma`, `lzma2`, and `lz4` to `CompressionAlgorithm`
+  - Centralized extension mapping in `Constants.CompressionConstants.ArchivingExtensions`
+  - Added `Utils.getCompressionExtension()` helper function for consistent extension use
+  - Added new factory methods in `Config` and `Compression` for all supported formats
+  - Refactored `uniqueCompressedPath` and `CompressionConfig` to use centralized constants
+
+- **Comprehensive Compression Tests**: 12 new test cases for v0.1.6 algorithms:
+  - Individual roundtrip tests for lzma, lzma2, xz, zip, tar.gz, lz4
+  - Empty data handling, large data compression, checksum verification
+  - Factory method tests, config preset tests, stats tracking tests
+
+### Fixed
+
+- **Critical Performance Regression Fix**: Restored performance to v0.1.4 levels (~13x improvement)
+  - Changed `auto_flush` default from `true` to `false`. Flushing after every log operation was the primary cause of the massive performance degradation in v0.1.5
+  - Changed `enable_callbacks` default from `true` to `false`. Callback checks on every log are unnecessary overhead when callbacks aren't used
+  - Optimized context copying in hot path: Skip HashMap iteration when context is empty (fast path optimization)
+- **Telemetry Fix**: Fixed a compile-time issue in the Telemetry module (OTLP exporter) by removing an unnecessary discard of the `self` parameter in `writeOtlpSpan`, ensuring the telemetry feature compiles and functions correctly.
+- ⚠️ **Note:** The `true` default caused a significant performance regression (~13x slower in v0.1.5). Fixed in v0.1.6 by changing default to `false`
+
+### Changed
+
+- **Performance-First Defaults**: Default configuration now prioritizes performance:
+  - `auto_flush: bool = false` - Set to `true` only when immediate output visibility is critical
+  - `enable_callbacks: bool = false` - Enable only when using log callbacks
+
+### Performance & Core Improvements
+
+- **Centralized Constants**: Added new `Constants.TimeDefaults` and `Constants.Limits` structs:
+  - `TimeDefaults.flush_interval_ms`, `write_timeout_ms`, `connection_timeout_ms`, `retry_delay_ms`, `max_retries`
+  - `Limits.max_async_queue_size`, `max_pending_records`, `max_sinks`, `max_custom_levels`
+- **Config Reuses Constants**: `Config.BufferConfig` now uses `Constants.BufferSizes.format`, `Constants.TimeDefaults.flush_interval_ms`, and `Constants.Limits.max_async_queue_size` for consistent defaults
+- **Color Themes Use Constants**: `Config.LevelColorConfig.getColorForLevel()` now uses `Constants.Colors.Themes` (pastel, dark, light) instead of hardcoded ANSI codes
+- **Architecture-Aware Types**: `Constants.AtomicUnsigned`, `AtomicSigned`, `NativeUint`, `NativeInt` provide optimal types for 32-bit (x86, ARM) and 64-bit (x86_64, aarch64, riscv64) architectures
+
 ## [0.1.5]
 
 ### Added
 
 - **ThreadPool Presets**: New preset configurations for optimized workloads.
-  - `ThreadPoolPresets.ioBound()` - Optimized for disk/network I/O workloads with 2x CPU cores.
+  
+- `ThreadPoolPresets.ioBound()` - Optimized for disk/network I/O workloads with 2x CPU cores.
   - `ThreadPoolPresets.cpuBound()` - Optimized for compute-heavy tasks using exact CPU core count.
   - All presets now use `Constants.ThreadDefaults` for consistent configuration values.
 - **ThreadPool Constants Integration**: Centralized configuration reuse from `Constants.ThreadDefaults`.
@@ -40,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic Flush Control**: Runtime control of auto-flush behavior.
   - `Logger.enableAutoFlush()`, `Logger.disableAutoFlush()`, `Logger.isAutoFlushEnabled()` for global auto-flush control.
   - Consistent auto-flush behavior across all dispatch paths (async logger, thread pool, direct sinks).
--  **Zstandard (Zstd) Compression Support**: Added Zstd compression algorithm for log file archiving.
+- **Zstandard (Zstd) Compression Support**: Added Zstd compression algorithm for log file archiving.
   - New algorithm: `CompressionAlgorithm.zstd` with excellent compression ratios and very fast decompression.
   - Compression presets: `zstd()`, `zstdFast()`, `zstdBest()`, `zstdProduction()`.
   - Config builder methods: `withZstdCompression()`, `withZstdFastCompression()`, `withZstdBestCompression()`, `withZstdProductionCompression()`.
@@ -146,7 +195,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CustomLevel Helper Methods**: `effectiveColor()`, `getBrightColor()`, `getDimColor()`, `get256Color()`, `hasRgbColor()`, `has256Color()`, `hasBackground()`, `hasStyle()`.
 - **Comprehensive Compression Tests**: Test coverage for all algorithms (deflate, zlib, raw_deflate, gzip, zstd), levels, presets, aliases, callbacks, and statistics.
 
-### Enhanced
+### ThreadPool & System Enhancements
 
 - **ThreadPool Optimization**: Improved thread pool efficiency with centralized constant reuse from `config.zig`, `constants.zig`, and `utils.zig`.
   - Worker loop now uses `Constants.ThreadDefaults.wait_timeout_ns` for consistent wait operations.
@@ -254,7 +303,7 @@ This section documents breaking changes and renamed APIs for migration:
 
 - Improved thread safety for span and metric operations with mutex protection.
 
-### Enhanced
+### Enhancements v0.1.3
 
 **Stats Helper Methods Enhancement** - Comprehensive enhancement of all Stats structs with consistent getter methods, boolean checks, rate calculations, and reset functionality using Utils module for efficient code reuse.
 

@@ -60,6 +60,7 @@ const utils = @import("utils.zig");
 const config_module = @import("config.zig");
 const Network = @import("network.zig");
 const Constants = @import("constants.zig");
+const Version = @import("version.zig");
 
 /// Re-export TelemetryConfig from config module for convenience
 pub const TelemetryConfig = config_module.TelemetryConfig;
@@ -313,7 +314,7 @@ pub const Telemetry = struct {
         telemetry.spans = std.ArrayList(Span).initCapacity(allocator, 32) catch .empty;
         telemetry.completed_spans = std.ArrayList(Span).initCapacity(allocator, 32) catch .empty;
         telemetry.metrics = std.ArrayList(Metric).initCapacity(allocator, 32) catch .empty;
-        telemetry.batch_buffer = std.ArrayList(u8).initCapacity(allocator, 4096) catch .empty;
+        telemetry.batch_buffer = std.ArrayList(u8).initCapacity(allocator, Constants.BufferSizes.telemetry) catch .empty;
 
         // Initialize network connection if using network export
         if (config.enabled and config.exporter_endpoint != null) {
@@ -421,9 +422,11 @@ pub const Telemetry = struct {
         return span;
     }
 
-    /// Ends a span and marks it for export
+    /// Ends a span and marks it for export.
+    /// Takes ownership of the span's allocated resources to safely batch them.
+    /// The input span becomes empty after this call.
     pub fn endSpan(self: *Telemetry, span: *Span) !void {
-        if (!self.enabled) return;
+        if (!self.enabled or span.isEmpty()) return;
 
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -433,6 +436,17 @@ pub const Telemetry = struct {
         // Calculate duration using utils helper
         const duration_ns = utils.durationSinceNs(span.start_time);
 
+        // Add to completed spans list for export
+        try self.completed_spans.append(self.allocator, span.*);
+
+        // Use the span in the list for callback to ensure it's still valid
+        const stored_span_id = self.completed_spans.items[self.completed_spans.items.len - 1].span_id;
+
+        // Nullify original span so caller's deinit() is safe (no double-free)
+        // We moved ownership of the strings and lists to Telemetry
+        const original_allocator = span.allocator;
+        span.* = Span.empty(original_allocator);
+
         if (self.active_span_count > 0) {
             self.active_span_count -= 1;
         }
@@ -440,11 +454,12 @@ pub const Telemetry = struct {
 
         // Invoke callback
         if (self.on_span_end) |callback| {
-            callback(span.span_id, duration_ns);
+            callback(stored_span_id, duration_ns);
         }
 
-        // Check if batch export threshold reached
-        if (self.completed_span_count >= self.config.batch_size) {
+        // Handle export strategy: only trigger batch export automatically when using the batch processor.
+        // In 'simple' mode spans are kept pending until an explicit export/flush is requested by the user.
+        if (self.config.span_processor_type == .batch and self.completed_span_count >= self.config.batch_size) {
             self.triggerBatchExport() catch {};
         }
     }
@@ -520,27 +535,35 @@ pub const Telemetry = struct {
         if (self.completed_span_count == 0) return;
 
         // Export based on provider
-        switch (self.config.provider) {
-            .file => try self.exportToFile(),
-            .generic => try self.exportToOtlp(),
-            .jaeger => try self.exportToJaeger(),
-            .zipkin => try self.exportToZipkin(),
-            .datadog => try self.exportToDatadog(),
-            .google_cloud => try self.exportToGoogleCloud(),
-            .google_analytics => try self.exportToGoogleAnalytics(),
-            .google_tag_manager => try self.exportToGoogleTagManager(),
-            .aws_xray => try self.exportToAwsXray(),
-            .azure => try self.exportToAzure(),
-            .custom => {
-                if (self.config.custom_exporter_fn) |export_fn| {
-                    try export_fn();
-                }
-            },
+        const result = switch (self.config.provider) {
+            .file => self.exportToFile(),
+            .generic => self.exportToOtlp(),
+            .jaeger => self.exportToJaeger(),
+            .zipkin => self.exportToZipkin(),
+            .datadog => self.exportToDatadog(),
+            .google_cloud => self.exportToGoogleCloud(),
+            .google_analytics => self.exportToGoogleAnalytics(),
+            .google_tag_manager => self.exportToGoogleTagManager(),
+            .aws_xray => self.exportToAwsXray(),
+            .azure => self.exportToAzure(),
+            .custom => if (self.config.custom_exporter_fn) |export_fn| export_fn() else {},
             .none => {},
+        };
+
+        if (result) |_| {} else |err| {
+            if (self.config.on_error) |callback| {
+                callback(@errorName(err));
+            }
+            self.exporter_stats.recordError();
         }
 
         self.total_spans_exported += self.completed_span_count;
-        self.exporter_stats.recordExport(self.completed_span_count, 0);
+
+        // Deep cleanup of all exported spans
+        for (self.completed_spans.items) |*span| {
+            span.deinit();
+        }
+        self.completed_spans.clearRetainingCapacity();
         self.completed_span_count = 0;
     }
 
@@ -589,7 +612,9 @@ pub const Telemetry = struct {
         try writer.writeAll("]},");
 
         // Scope spans section
-        try writer.writeAll("\"scopeSpans\":[{\"scope\":{\"name\":\"logly.telemetry\",\"version\":\"0.1.5\"},\"spans\":[");
+        try writer.writeAll("\"scopeSpans\":[{\"scope\":{\"name\":\"logly.telemetry\",\"version\":\"");
+        try writer.writeAll(Version.version);
+        try writer.writeAll("\"},\"spans\":[");
 
         for (self.completed_spans.items, 0..) |span, i| {
             if (i > 0) try writer.writeByte(',');
@@ -601,7 +626,6 @@ pub const Telemetry = struct {
 
     /// Write a single span in OTLP format
     fn writeOtlpSpan(self: *Telemetry, writer: anytype, span: Span) !void {
-        _ = self;
         try writer.writeAll("{\"traceId\":\"");
         try writer.writeAll(span.trace_id);
         try writer.writeAll("\",\"spanId\":\"");
@@ -628,6 +652,18 @@ pub const Telemetry = struct {
             try writer.writeAll(pid);
             try writer.writeByte('"');
         }
+
+        // Attributes
+        if (span.has_attributes) {
+            try writer.writeAll(",\"attributes\":[");
+            var it = span.attributes.iterator();
+            var first_attr = true;
+            while (it.next()) |entry| {
+                try self.writeOtlpAttribute(writer, entry.key_ptr.*, entry.value_ptr.*, &first_attr);
+            }
+            try writer.writeByte(']');
+        }
+
         // Status
         try writer.writeAll(",\"status\":{\"code\":");
         const status_code: u8 = switch (span.status) {
@@ -636,9 +672,7 @@ pub const Telemetry = struct {
             .err => 2,
         };
         try utils.writeInt(writer, status_code);
-        try writer.writeAll("}");
-
-        try writer.writeByte('}');
+        try writer.writeAll("}}");
     }
 
     /// Write OTLP attribute
@@ -943,12 +977,12 @@ pub const Telemetry = struct {
         try file.seekFromEnd(0);
 
         // Write each span as a JSON line
-        var buf: [4096]u8 = undefined;
         for (self.completed_spans.items) |span| {
-            var fbs = std.io.fixedBufferStream(&buf);
-            self.writeSpanJson(fbs.writer(), span) catch continue;
-            _ = fbs.write("\n") catch continue;
-            file.writeAll(fbs.getWritten()) catch continue;
+            self.batch_buffer.clearRetainingCapacity();
+            const writer = self.batch_buffer.writer(self.allocator);
+            try self.writeSpanJson(writer, span);
+            try writer.writeByte('\n');
+            try file.writeAll(self.batch_buffer.items);
         }
     }
 
@@ -1000,6 +1034,41 @@ pub const Telemetry = struct {
             try writer.writeAll(pid);
             try writer.writeByte('"');
         }
+
+        if (span.has_attributes) {
+            try writer.writeAll(",\"attributes\":{");
+            var it = span.attributes.iterator();
+            var first = true;
+            while (it.next()) |entry| {
+                if (!first) try writer.writeByte(',');
+                try writer.writeByte('"');
+                try writer.writeAll(entry.key_ptr.*);
+                try writer.writeAll("\":");
+                switch (entry.value_ptr.*) {
+                    .string => |s| {
+                        try writer.writeByte('"');
+                        try utils.escapeJsonString(writer, s);
+                        try writer.writeByte('"');
+                    },
+                    .integer => |i| try utils.writeInt(writer, i),
+                    .float => |f| try std.fmt.format(writer, "{d:.6}", .{f}),
+                    .boolean => |b| try writer.writeAll(if (b) "true" else "false"),
+                    .string_array => |arr| {
+                        try writer.writeByte('[');
+                        for (arr, 0..) |s, j| {
+                            if (j > 0) try writer.writeByte(',');
+                            try writer.writeByte('"');
+                            try utils.escapeJsonString(writer, s);
+                            try writer.writeByte('"');
+                        }
+                        try writer.writeByte(']');
+                    },
+                }
+                first = false;
+            }
+            try writer.writeByte('}');
+        }
+
         try writer.writeByte('}');
     }
 
@@ -1500,7 +1569,7 @@ pub const Baggage = struct {
 
     /// Format as W3C baggage header value
     pub fn toHeaderValue(self: *Baggage, allocator: std.mem.Allocator) ![]const u8 {
-        var result = std.ArrayList(u8).initCapacity(allocator, 256) catch return "";
+        var result = std.ArrayList(u8).initCapacity(allocator, Constants.TelemetryDefaults.header_initial_capacity) catch return "";
         const writer = result.writer(allocator);
 
         var it = self.items.iterator();

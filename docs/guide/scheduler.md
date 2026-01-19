@@ -70,7 +70,7 @@ config.scheduler = .{
 ### Scheduler Configuration Options
 
 | Option | Type | Default | Description |
-|--------|------|---------|-------------|
+|---|---|---|---|
 | `enabled` | `bool` | `false` | Enable the scheduler |
 | `cleanup_max_age_days` | `u64` | `7` | Max age for cleanup tasks |
 | `max_files` | `?usize` | `null` | Max files to retain |
@@ -78,7 +78,7 @@ config.scheduler = .{
 | `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
 | `archive_root_dir` | `?[]const u8` | `null` | Root directory for archives |
 | `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD structure |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Compression algorithm (gzip, zlib, deflate, zstd v0.1.5+) |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Compression algorithm (gzip, zlib, deflate, zstd, lzma, lzma2, xz, zip, tar.gz, lz4) |
 | `compression_level` | `CompressionLevel` | `.default` | Compression level |
 | `keep_originals` | `bool` | `false` | Keep original files |
 | `archive_file_prefix` | `?[]const u8` | `null` | Prefix for file names |
@@ -437,7 +437,7 @@ const aggressive_config = Presets.aggressiveCleanup("logs", 30, 100);
 ### Preset Summary
 
 | Preset | Compress | Delete | Keep Both | Use Case |
-|--------|----------|--------|-----------|----------|
+|---|---|---|---|---|
 | `compressThenDelete` | ✓ | ✓ | ✗ | Standard archival |
 | `compressAndKeep` | ✓ | ✗ | ✓ | Redundant backup |
 | `compressOnly` | ✓ | ✗ | ✗ | Pure archival |
@@ -476,7 +476,7 @@ if (stats.hasFailures()) {
 ### SchedulerStats Methods
 
 | Method | Returns | Description |
-|--------|---------|-------------|
+|---|---|---|
 | `getExecuted()` | `u64` | Total successful executions |
 | `getFailed()` | `u64` | Total failed executions |
 | `getFilesCleaned()` | `u64` | Total files cleaned |

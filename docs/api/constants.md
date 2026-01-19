@@ -112,6 +112,63 @@ pub const TimeConstants = struct {
 };
 ```
 
+## Time Defaults
+
+Default time intervals and timeouts (added in v0.1.6).
+
+```zig
+pub const TimeDefaults = struct {
+    /// Default flush interval in milliseconds (1000ms)
+    pub const flush_interval_ms: u64 = 1000;
+    /// Default async write timeout in milliseconds (5000ms)
+    pub const write_timeout_ms: u64 = 5000;
+    /// Default connection timeout in milliseconds (10000ms)
+    pub const connection_timeout_ms: u64 = 10000;
+    /// Default retry delay in milliseconds (100ms)
+    pub const retry_delay_ms: u64 = 100;
+    /// Maximum retry attempts for network operations (3)
+    pub const max_retries: u32 = 3;
+};
+```
+
+## Telemetry Defaults
+
+OpenTelemetry configuration defaults (used by `TelemetryConfig`).
+
+```zig
+pub const TelemetryDefaults = struct {
+    /// Default batch span export size.
+    pub const batch_size: usize = 256;
+    /// Default batch export timeout in milliseconds.
+    pub const batch_timeout_ms: u64 = 5000;
+    /// Default initial capacity for formatting baggage header values.
+    pub const header_initial_capacity: usize = 256;
+    /// Default sampling rate (1.0 = 100%).
+    pub const sampling_rate: f64 = 1.0;
+    /// Default W3C traceparent header name.
+    pub const trace_header: []const u8 = "traceparent";
+    /// Default baggage/correlation context header name.
+    pub const baggage_header: []const u8 = "baggage";
+};
+```
+
+## Limits
+
+Default limits for queues and buffers (added in v0.1.6).
+
+```zig
+pub const Limits = struct {
+    /// Maximum async queue size (10000)
+    pub const max_async_queue_size: usize = 10000;
+    /// Maximum pending log records (50000)
+    pub const max_pending_records: usize = 50000;
+    /// Maximum sinks per logger (64)
+    pub const max_sinks: usize = 64;
+    /// Maximum custom levels per logger (32)
+    pub const max_custom_levels: usize = 32;
+};
+```
+
 ## Rotation Constants
 
 Default file rotation settings.
@@ -143,6 +200,47 @@ pub const NetworkConstants = struct {
     pub const send_timeout_ms: u64 = 1000;
 };
 ```
+
+## Compression Constants
+
+Compression algorithm parameters and magic bytes.
+
+```zig
+pub const CompressionConstants = struct {
+    pub const window_fast: usize = 256;
+    pub const window_default: usize = 1024;
+    pub const window_best: usize = 4096;
+    pub const min_match: usize = 3;
+    pub const max_match: usize = 255;
+    pub const max_run_length: usize = 127;
+    
+    // LZMA specifics
+    pub const lzma_dict_size: u32 = 65536;
+    pub const lzma_max_offset: usize = 65535;
+    pub const lzma_hash_bits: u5 = 14;
+    pub const lzma_max_match: usize = 272;
+    pub const lzma2_chunk_size: usize = 32768;
+    
+    pub const Magic = struct {
+        pub const lzma = "\x5D\x00\x00\x80\x00";
+        pub const xz = "\xFD\x37\x7A\x58\x5A\x00";
+        pub const gzip = "\x1F\x8B";
+        pub const zlib = "\x78\x9C";
+        pub const logly = "LGZ";
+    };
+
+    pub const ArchivingExtensions = struct {
+        pub const gzip = ".gz";
+        pub const zstd = ".zst";
+        pub const lzma = ".lzma";
+        pub const xz = ".xz";
+        pub const tar_gz = ".tar.gz";
+        pub const zip = ".zip";
+        pub const lz4 = ".lz4";
+    };
+};
+```
+
 
 ## Rules Constants
 

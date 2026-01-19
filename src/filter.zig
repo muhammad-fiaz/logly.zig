@@ -467,14 +467,14 @@ pub const Filter = struct {
             .span_id_match => if (rule.pattern) |p| if (record.span_id) |sid| std.mem.eql(u8, sid, p) else false else true,
 
             .thread_id_match => if (rule.pattern) |p| if (record.thread_id) |tid| blk: {
-                var buf: [32]u8 = undefined;
+                var buf: [Constants.BufferSizes.tiny]u8 = undefined;
                 const tid_str = std.fmt.bufPrint(&buf, "{d}", .{tid}) catch "";
                 break :blk std.mem.eql(u8, tid_str, p);
             } else false else true,
 
             .context_has_key => if (rule.context_key) |k| record.context.contains(k) else false,
             .context_value_match => if (rule.context_key) |k| if (rule.pattern) |p| if (record.context.get(k)) |v| blk: {
-                var buf: [256]u8 = undefined;
+                var buf: [Constants.BufferSizes.small]u8 = undefined;
                 const v_str = switch (v) {
                     .string => |s| s,
                     .integer => |i| std.fmt.bufPrint(&buf, "{d}", .{i}) catch "",

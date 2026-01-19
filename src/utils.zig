@@ -19,6 +19,7 @@
 //! - Thread-safe (no global state)
 
 const std = @import("std");
+const Constants = @import("constants.zig");
 
 /// Parses a size string (e.g., "10MB", "5GB") into bytes.
 /// Supports B, KB, MB, GB, TB (case insensitive).
@@ -798,6 +799,15 @@ pub fn atomicLoadU64(atomic: anytype) u64 {
 ///     Bytes per second as a float
 ///
 /// Performance: O(1)
+pub fn calculateThroughputBytes(bytes: u64, elapsed_ms: i64) f64 {
+    return calculateBytesPerSecond(bytes, elapsed_ms);
+}
+
+/// Calculates CRC32 checksum of data.
+/// Uses standard IEEE polynomial.
+pub fn calculateCRC32(data: []const u8) u32 {
+    return std.hash.Crc32.hash(data);
+}
 pub fn calculateBytesPerSecond(bytes: u64, elapsed_ms: i64) f64 {
     if (elapsed_ms <= 0) return 0.0;
     const seconds = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
@@ -970,6 +980,35 @@ fn matchesToken(c: u8, p_char: u8, is_escaped: bool) bool {
     if (p_char == '.') return true;
     return c == p_char;
 }
+/// Returns the file extension for a given compression algorithm.
+/// Supports both CompressionConfig.CompressionAlgorithm and other similar enums.
+///
+/// Performance: O(1)
+pub fn getCompressionExtension(algo: anytype) []const u8 {
+    return switch (algo) {
+        .deflate, .zlib, .raw_deflate, .gzip => Constants.CompressionConstants.ArchivingExtensions.gzip,
+        .zstd => Constants.CompressionConstants.ArchivingExtensions.zstd,
+        .lzma => Constants.CompressionConstants.ArchivingExtensions.lzma,
+        .lzma2 => Constants.CompressionConstants.ArchivingExtensions.lzma2,
+        .xz => Constants.CompressionConstants.ArchivingExtensions.xz,
+        .tar_gz => Constants.CompressionConstants.ArchivingExtensions.tar_gz,
+        .zip => Constants.CompressionConstants.ArchivingExtensions.zip,
+        .lz4 => Constants.CompressionConstants.ArchivingExtensions.lz4,
+        .none => Constants.CompressionConstants.ArchivingExtensions.none,
+    };
+}
+
+test "getCompressionExtension" {
+    const Algo = enum { none, deflate, zlib, raw_deflate, gzip, zstd, lzma, lzma2, xz, tar_gz, zip, lz4 };
+    try std.testing.expectEqualStrings(".gz", getCompressionExtension(Algo.gzip));
+    try std.testing.expectEqualStrings(".gz", getCompressionExtension(Algo.deflate));
+    try std.testing.expectEqualStrings(".zst", getCompressionExtension(Algo.zstd));
+    try std.testing.expectEqualStrings(".lzma", getCompressionExtension(Algo.lzma));
+    try std.testing.expectEqualStrings(".xz", getCompressionExtension(Algo.xz));
+    try std.testing.expectEqualStrings(".tar.gz", getCompressionExtension(Algo.tar_gz));
+    try std.testing.expectEqualStrings(".zip", getCompressionExtension(Algo.zip));
+    try std.testing.expectEqualStrings("", getCompressionExtension(Algo.none));
+}
 
 test "calculateErrorRate" {
     try std.testing.expectEqual(@as(f64, 0.0), calculateErrorRate(0, 0));
@@ -992,6 +1031,16 @@ test "safeFloatDiv" {
 test "calculateBytesPerSecond" {
     try std.testing.expectEqual(@as(f64, 0.0), calculateBytesPerSecond(100, 0));
     try std.testing.expectEqual(@as(f64, 100.0), calculateBytesPerSecond(100, 1000));
+}
+
+/// LZMA hash function
+pub fn lzmaHash(data: []const u8, len: usize) u14 {
+    if (len < 2) return 0;
+    var hash: u32 = 0;
+    for (0..len) |i| {
+        hash = (hash *% 31) +% data[i];
+    }
+    return @truncate(hash);
 }
 
 test "durationSinceNs" {

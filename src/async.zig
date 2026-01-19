@@ -462,7 +462,7 @@ pub const AsyncLogger = struct {
                     .block => {
                         // Wait for space (with timeout to prevent deadlock)
                         self.mutex.unlock();
-                        std.Thread.sleep(1 * std.time.ns_per_ms);
+                        std.Thread.sleep(Constants.AsyncConstants.block_sleep_ns);
                         self.mutex.lock();
                         if (self.buffer.isFull()) {
                             _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
@@ -541,7 +541,7 @@ pub const AsyncLogger = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var batch: [64]BufferEntry = undefined;
+        var batch: [Constants.AsyncConstants.batch_size]BufferEntry = undefined;
         const start_time = Utils.currentMillis();
         var total_flushed: u64 = 0;
         var total_bytes: u64 = 0;
@@ -587,7 +587,7 @@ pub const AsyncLogger = struct {
             }
         }
 
-        var batch: [64]BufferEntry = undefined;
+        var batch: [Constants.AsyncConstants.batch_size]BufferEntry = undefined;
         var last_flush = Utils.currentMillis();
 
         while (self.running.load(.acquire) or !self.buffer.isEmpty()) {
@@ -979,7 +979,7 @@ pub const AsyncPresets = struct {
     /// Balanced configuration for general use.
     pub fn balanced() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = 8192,
+            .buffer_size = Constants.BufferSizes.async_queue,
             .flush_interval_ms = 100,
             .min_flush_interval_ms = 10,
             .max_latency_ms = 500,
@@ -992,7 +992,7 @@ pub const AsyncPresets = struct {
     /// No-drop configuration (blocks when full).
     pub fn noDrop() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = 16384,
+            .buffer_size = Constants.BufferSizes.async_queue * 2,
             .flush_interval_ms = 100,
             .min_flush_interval_ms = 10,
             .max_latency_ms = 500,

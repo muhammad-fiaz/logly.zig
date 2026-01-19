@@ -70,37 +70,37 @@ pub const Redactor = struct {
 
         /// Check if any values have been processed.
         pub fn hasProcessed(self: *const RedactorStats) bool {
-            return self.getTotalProcessed() > 0;
+            return Utils.atomicLoadU64(&self.total_values_processed) > 0;
         }
 
         /// Check if any values have been redacted.
         pub fn hasRedacted(self: *const RedactorStats) bool {
-            return self.getValuesRedacted() > 0;
+            return Utils.atomicLoadU64(&self.values_redacted) > 0;
         }
 
         /// Check if any patterns have matched.
         pub fn hasMatchedPatterns(self: *const RedactorStats) bool {
-            return self.getPatternsMatched() > 0;
+            return Utils.atomicLoadU64(&self.patterns_matched) > 0;
         }
 
         /// Check if any errors have occurred.
         pub fn hasErrors(self: *const RedactorStats) bool {
-            return self.getRedactionErrors() > 0;
+            return Utils.atomicLoadU64(&self.redaction_errors) > 0;
         }
 
         /// Calculate redaction rate (0.0 - 1.0)
         pub fn redactionRate(self: *const RedactorStats) f64 {
             return Utils.calculateRate(
-                self.getValuesRedacted(),
-                self.getTotalProcessed(),
+                Utils.atomicLoadU64(&self.values_redacted),
+                Utils.atomicLoadU64(&self.total_values_processed),
             );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const RedactorStats) f64 {
             return Utils.calculateErrorRate(
-                self.getRedactionErrors(),
-                self.getTotalProcessed(),
+                Utils.atomicLoadU64(&self.redaction_errors),
+                Utils.atomicLoadU64(&self.total_values_processed),
             );
         }
 
@@ -112,16 +112,16 @@ pub const Redactor = struct {
         /// Calculate pattern match rate (patterns matched / values redacted).
         pub fn patternMatchRate(self: *const RedactorStats) f64 {
             return Utils.calculateRate(
-                self.getPatternsMatched(),
-                self.getValuesRedacted(),
+                Utils.atomicLoadU64(&self.patterns_matched),
+                Utils.atomicLoadU64(&self.values_redacted),
             );
         }
 
         /// Calculate average redactions per processed value.
         pub fn avgRedactionsPerValue(self: *const RedactorStats) f64 {
             return Utils.calculateAverage(
-                self.getValuesRedacted(),
-                self.getTotalProcessed(),
+                Utils.atomicLoadU64(&self.values_redacted),
+                Utils.atomicLoadU64(&self.total_values_processed),
             );
         }
 

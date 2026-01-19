@@ -140,7 +140,7 @@ pub const Scheduler = struct {
 
         pub const RetryPolicy = struct {
             max_retries: u32 = 3,
-            interval_ms: u32 = 5000,
+            interval_ms: u32 = Constants.SchedulerDefaults.retry_interval_ms,
             backoff_multiplier: f32 = 1.5,
         };
 
@@ -149,7 +149,7 @@ pub const Scheduler = struct {
             /// Path for file-based tasks
             path: ?[]const u8 = null,
             /// Maximum age in seconds for cleanup
-            max_age_seconds: u64 = 7 * 24 * 60 * 60, // 7 days
+            max_age_seconds: u64 = Constants.SchedulerDefaults.max_age_seconds,
             /// Maximum files to keep
             max_files: ?usize = null,
             /// Maximum total size in bytes
@@ -271,7 +271,7 @@ pub const Scheduler = struct {
                     }
                 },
                 .cron => |cron| blk: {
-                    var check_time = now_ms + 60 * 1000;
+                    var check_time = now_ms + Constants.SchedulerDefaults.cron_fallback_interval_ms;
                     // Find closest match within the next 30 days
                     const limit = now_ms + 30 * 24 * 3600 * 1000;
                     while (check_time < limit) : (check_time += 60 * 1000) {
@@ -297,7 +297,7 @@ pub const Scheduler = struct {
 
                         break :blk check_time;
                     }
-                    break :blk now_ms + 60 * 1000; // Fallback
+                    break :blk now_ms + Constants.SchedulerDefaults.cron_fallback_interval_ms; // Fallback
                 },
             };
         }
@@ -339,7 +339,7 @@ pub const Scheduler = struct {
 
         /// Returns true if any tasks have failed.
         pub fn hasFailures(self: *const SchedulerStats) bool {
-            return self.tasks_failed.load(.monotonic) > 0;
+            return Utils.atomicLoadU64(&self.tasks_failed) > 0;
         }
 
         /// Returns total tasks executed as u64.
@@ -374,9 +374,9 @@ pub const Scheduler = struct {
 
         /// Returns uptime in seconds since scheduler started.
         pub fn uptimeSeconds(self: *const SchedulerStats) i64 {
-            const start_ts: i64 = self.start_time.load(.monotonic);
+            const start_ts = self.start_time.load(.monotonic);
             if (start_ts == 0) return 0;
-            return @divFloor(Utils.currentMillis() - start_ts, 1000);
+            return @intCast(Utils.elapsedSeconds(start_ts));
         }
 
         /// Returns average tasks per hour.
@@ -385,7 +385,7 @@ pub const Scheduler = struct {
             if (uptime <= 0) return 0;
             const executed = Utils.atomicLoadU64(&self.tasks_executed);
             const hours = @as(f64, @floatFromInt(uptime)) / 3600.0;
-            return @as(f64, @floatFromInt(executed)) / hours;
+            return Utils.safeFloatDiv(@as(f64, @floatFromInt(executed)), hours);
         }
 
         /// Calculate compression ratio (bytes saved / total bytes).

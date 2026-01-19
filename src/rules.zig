@@ -244,17 +244,17 @@ pub const Rules = struct {
         /// Returns the default ANSI color code for this category.
         pub fn defaultColor(self: MessageCategory) []const u8 {
             return switch (self) {
-                .error_analysis => "91",
-                .solution_suggestion => "96",
-                .best_practice => "93",
-                .action_required => "91;1",
-                .documentation_link => "35",
-                .bug_report => "33",
-                .general_information => "37",
-                .warning_explanation => "33",
-                .performance_tip => "36",
-                .security_notice => "95",
-                .custom => "37",
+                .error_analysis => Constants.Colors.BrightFg.red,
+                .solution_suggestion => Constants.Colors.BrightFg.cyan,
+                .best_practice => Constants.Colors.BrightFg.yellow,
+                .action_required => Constants.Colors.BrightFg.red ++ ";1",
+                .documentation_link => Constants.Colors.Fg.magenta,
+                .bug_report => Constants.Colors.Fg.yellow,
+                .general_information => Constants.Colors.Fg.white,
+                .warning_explanation => Constants.Colors.Fg.yellow,
+                .performance_tip => Constants.Colors.Fg.cyan,
+                .security_notice => Constants.Colors.BrightFg.magenta,
+                .custom => Constants.Colors.Fg.white,
             };
         }
 
