@@ -706,7 +706,7 @@ pub const Sink = struct {
 
         const now_ms = Utils.currentMillis();
         const tc = Utils.fromMilliTimestamp(now_ms);
-        const millis = @mod(if (now_ms < 0) 0 else @as(u64, @intCast(now_ms)), 1000);
+        const millis = @mod(if (now_ms < 0) 0 else @as(u64, @intCast(now_ms)), Constants.TimeConstants.ms_per_second);
 
         var i: usize = 0;
         while (i < path_pattern.len) {
@@ -1125,11 +1125,11 @@ pub const Sink = struct {
         var compressed_data: ?[]u8 = null;
 
         if (self.config.compression.enabled and (self.stream != null or self.udp_socket != null)) {
-            var list = try std.ArrayList(u8).initCapacity(self.allocator, 4096);
+            var list = try std.ArrayList(u8).initCapacity(self.allocator, Constants.BufferSizes.message);
             errdefer list.deinit(self.allocator);
 
-            var compress_buffer: [4096]u8 = undefined;
-            var sink_writer_buffer: [4096]u8 = undefined;
+            var compress_buffer: [Constants.BufferSizes.message]u8 = undefined;
+            var sink_writer_buffer: [Constants.BufferSizes.message]u8 = undefined;
             var sink_writer = SinkWriter.init(&list, self.allocator, &sink_writer_buffer);
 
             var compressor = std.compress.flate.Compress.init(&sink_writer.writer, &compress_buffer, .{});

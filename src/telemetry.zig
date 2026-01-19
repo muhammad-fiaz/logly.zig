@@ -151,7 +151,7 @@ pub const ExporterStats = struct {
     pub fn getLastExportTimeNs(self: *const ExporterStats) i64 {
         const val = self.last_export_time_ns.load(.monotonic);
         if (Constants.AtomicSigned == i32) {
-            return @as(i64, val) * std.time.ns_per_s;
+            return @as(i64, val) * @as(i64, @intCast(Constants.TimeConstants.ns_per_second));
         }
         return val;
     }
@@ -900,11 +900,13 @@ pub const Telemetry = struct {
         try writer.writeAll("-");
         try writer.writeAll(span.trace_id[8..@min(32, span.trace_id.len)]);
         try writer.writeAll("\",\"start_time\":");
-        const start_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.start_time))) / 1_000_000_000.0;
+        const ns_per_sec_f = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
+        const start_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.start_time))) / ns_per_sec_f;
         try std.fmt.format(writer, "{d:.6}", .{start_s});
         if (span.end_time > 0) {
             try writer.writeAll(",\"end_time\":");
-            const end_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.end_time))) / 1_000_000_000.0;
+            const ns_per_sec_end_f = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
+            const end_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.end_time))) / ns_per_sec_end_f;
             try std.fmt.format(writer, "{d:.6}", .{end_s});
         }
         try writer.writeAll(",\"origin\":\"");
@@ -933,7 +935,7 @@ pub const Telemetry = struct {
         try writer.writeAll("\"time\":\"");
         // Write ISO 8601 timestamp
         const timestamp_ns = utils.safeToUnsigned(u64, span.start_time);
-        const timestamp_s = timestamp_ns / 1_000_000_000;
+        const timestamp_s = timestamp_ns / Constants.TimeConstants.ns_per_second;
         try std.fmt.format(writer, "{d}", .{timestamp_s});
         try writer.writeAll("\",\"data\":{\"baseType\":\"RequestData\",\"baseData\":{");
         try writer.writeAll("\"id\":\"");

@@ -510,53 +510,10 @@ pub const Redactor = struct {
 
         return switch (rtype) {
             .full => try self.allocator.dupe(u8, self.config.replacement),
-            .partial_start => blk: {
-                if (value.len <= end_chars) {
-                    const result = try self.allocator.alloc(u8, end_chars);
-                    @memset(result, mask_char);
-                    break :blk result;
-                }
-                const result = try self.allocator.alloc(u8, value.len);
-                @memset(result[0 .. value.len - end_chars], mask_char);
-                @memcpy(result[value.len - end_chars ..], value[value.len - end_chars ..]);
-                break :blk result;
-            },
-            .partial_end => blk: {
-                if (value.len <= start_chars) {
-                    const result = try self.allocator.alloc(u8, start_chars);
-                    @memset(result, mask_char);
-                    break :blk result;
-                }
-                const result = try self.allocator.alloc(u8, value.len);
-                @memcpy(result[0..start_chars], value[0..start_chars]);
-                @memset(result[start_chars..], mask_char);
-                break :blk result;
-            },
-            .hash => blk: {
-                var hash: [32]u8 = undefined;
-                std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
-                const hex_val = std.fmt.bytesToHex(hash[0..8], .lower);
-                const prefix = "[HASH:";
-                const suffix = "]";
-                const res = try self.allocator.alloc(u8, prefix.len + hex_val.len + suffix.len);
-                @memcpy(res[0..prefix.len], prefix);
-                @memcpy(res[prefix.len..][0..hex_val.len], &hex_val);
-                @memcpy(res[prefix.len + hex_val.len ..], suffix);
-                break :blk res;
-            },
-            .mask_middle => blk: {
-                const reveal = @min(start_chars, 3);
-                if (value.len <= reveal * 2) {
-                    const result = try self.allocator.alloc(u8, 3);
-                    @memset(result, mask_char);
-                    break :blk result;
-                }
-                const result = try self.allocator.alloc(u8, value.len);
-                @memcpy(result[0..reveal], value[0..reveal]);
-                @memset(result[reveal .. value.len - reveal], mask_char);
-                @memcpy(result[value.len - reveal ..], value[value.len - reveal ..]);
-                break :blk result;
-            },
+            .partial_start => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .partial_start),
+            .partial_end => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .partial_end),
+            .hash => Utils.computeRedactionHash(self.allocator, value),
+            .mask_middle => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .mask_middle),
         };
     }
 
@@ -568,23 +525,9 @@ pub const Redactor = struct {
         _ = self; // self only needed for stats/callbacks in caller
         switch (pattern.pattern_type) {
             .contains => {
-                var result: std.ArrayList(u8) = .empty;
-                defer result.deinit(alloc);
-
-                var i: usize = 0;
-                while (i < input.len) {
-                    if (std.mem.indexOf(u8, input[i..], pattern.pattern)) |pos| {
-                        try result.appendSlice(alloc, input[i .. i + pos]);
-                        try result.appendSlice(alloc, pattern.replacement);
-                        i = i + pos + pattern.pattern.len;
-                    } else {
-                        try result.appendSlice(alloc, input[i..]);
-                        break;
-                    }
-                }
-
+                const result = try Utils.replaceString(alloc, input, pattern.pattern, pattern.replacement);
                 alloc.free(input);
-                return try result.toOwnedSlice(alloc);
+                return result;
             },
             .prefix => {
                 if (std.mem.startsWith(u8, input, pattern.pattern)) {

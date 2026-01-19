@@ -23,10 +23,11 @@ const Network = @import("network.zig");
 const Constants = @import("constants.zig");
 
 /// GitHub repository owner for update checks.
-const REPO_OWNER = "muhammad-fiaz";
+/// GitHub repository owner for update checks.
+const REPO_OWNER = Constants.UpdateCheckerConstants.repo_owner;
 
 /// GitHub repository name for update checks.
-const REPO_NAME = "logly.zig";
+const REPO_NAME = Constants.UpdateCheckerConstants.repo_name;
 
 /// Current version string from version.zig.
 const CURRENT_VERSION: []const u8 = version_info.version;

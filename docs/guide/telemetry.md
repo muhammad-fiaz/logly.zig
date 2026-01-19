@@ -22,6 +22,7 @@ Logly.zig provides comprehensive OpenTelemetry (OTEL) support for distributed tr
 OpenTelemetry is a collection of tools, APIs, and SDKs used to instrument, generate, collect, and export telemetry data (metrics, logs, and traces) to help you analyze your software's performance and behavior.
 
 Logly's telemetry module integrates with:
+
 - **utils.zig**: ID generation, time utilities, sampling, JSON escaping
 - **async.zig**: Non-blocking span export with ring buffer
 - **network.zig**: TCP/UDP/Syslog transport for remote exporters

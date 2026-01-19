@@ -192,52 +192,55 @@ pub const Rules = struct {
         custom,
 
         pub fn displayName(self: MessageCategory) []const u8 {
+            const DN = Constants.MessageCategoryConstants.DisplayNames;
             return switch (self) {
-                .error_analysis => "Error Analysis",
-                .solution_suggestion => "Solution",
-                .best_practice => "Best Practice",
-                .action_required => "Action Required",
-                .documentation_link => "Documentation",
-                .bug_report => "Report Issue",
-                .general_information => "Information",
-                .warning_explanation => "Warning Details",
-                .performance_tip => "Performance",
-                .security_notice => "Security",
-                .custom => "Note",
+                .error_analysis => DN.error_analysis,
+                .solution_suggestion => DN.solution_suggestion,
+                .best_practice => DN.best_practice,
+                .action_required => DN.action_required,
+                .documentation_link => DN.documentation_link,
+                .bug_report => DN.bug_report,
+                .general_information => DN.general_information,
+                .warning_explanation => DN.warning_explanation,
+                .performance_tip => DN.performance_tip,
+                .security_notice => DN.security_notice,
+                .custom => DN.custom,
             };
         }
 
         /// Returns the default prefix with symbol for this category (Unicode).
         pub fn prefix(self: MessageCategory) []const u8 {
+            const P = Constants.MessageCategoryConstants.Prefixes;
             return switch (self) {
-                .error_analysis => "    » 🔍 [cause]",
-                .solution_suggestion => "    » 💡 [fix]",
-                .best_practice => "    » ✨ [suggest]",
-                .action_required => "    » ⚡ [action]",
-                .documentation_link => "    » 📚 [docs]",
-                .bug_report => "    » 🐛 [report]",
-                .general_information => "    » 📝 [note]",
-                .warning_explanation => "    » ⚠️  [caution]",
-                .performance_tip => "    » 🚀 [perf]",
-                .security_notice => "    » 🔒 [security]",
-                .custom => "    » 🔹 [custom]",
+                .error_analysis => P.error_analysis,
+                .solution_suggestion => P.solution_suggestion,
+                .best_practice => P.best_practice,
+                .action_required => P.action_required,
+                .documentation_link => P.documentation_link,
+                .bug_report => P.bug_report,
+                .general_information => P.general_information,
+                .warning_explanation => P.warning_explanation,
+                .performance_tip => P.performance_tip,
+                .security_notice => P.security_notice,
+                .custom => P.custom,
             };
         }
 
         /// Returns the ASCII-only prefix (for non-UTF8 terminals).
         pub fn prefixAscii(self: MessageCategory) []const u8 {
+            const PA = Constants.MessageCategoryConstants.PrefixesAscii;
             return switch (self) {
-                .error_analysis => "    >> [cause]",
-                .solution_suggestion => "    >> [fix]",
-                .best_practice => "    >> [suggest]",
-                .action_required => "    >> [action]",
-                .documentation_link => "    >> [docs]",
-                .bug_report => "    >> [report]",
-                .general_information => "    >> [note]",
-                .warning_explanation => "    >> [caution]",
-                .performance_tip => "    >> [perf]",
-                .security_notice => "    >> [security]",
-                .custom => "    >> [custom]",
+                .error_analysis => PA.error_analysis,
+                .solution_suggestion => PA.solution_suggestion,
+                .best_practice => PA.best_practice,
+                .action_required => PA.action_required,
+                .documentation_link => PA.documentation_link,
+                .bug_report => PA.bug_report,
+                .general_information => PA.general_information,
+                .warning_explanation => PA.warning_explanation,
+                .performance_tip => PA.performance_tip,
+                .security_notice => PA.security_notice,
+                .custom => PA.custom,
             };
         }
 

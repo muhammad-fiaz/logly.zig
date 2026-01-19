@@ -189,7 +189,7 @@ pub const AsyncLogger = struct {
 
         /// Calculate average latency in milliseconds.
         pub fn averageLatencyMs(self: *const AsyncStats) f64 {
-            return @as(f64, @floatFromInt(self.averageLatencyNs())) / 1_000_000.0;
+            return @as(f64, @floatFromInt(self.averageLatencyNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
         }
     };
 
@@ -600,11 +600,11 @@ pub const AsyncLogger = struct {
             if (self.buffer.isEmpty()) {
                 if (self.on_empty) |cb| cb();
                 // Wait with timeout
-                self.condition.timedWait(&self.mutex, self.config.flush_interval_ms * std.time.ns_per_ms) catch {};
+                self.condition.timedWait(&self.mutex, self.config.flush_interval_ms * Constants.TimeConstants.ns_per_ms) catch {};
             } else if (self.config.min_flush_interval_ms > 0 and elapsed < @as(i64, @intCast(self.config.min_flush_interval_ms))) {
                 // Enforce minimum flush interval
                 const wait_time = self.config.min_flush_interval_ms - @as(u64, @intCast(elapsed));
-                self.condition.timedWait(&self.mutex, wait_time * std.time.ns_per_ms) catch {};
+                self.condition.timedWait(&self.mutex, wait_time * Constants.TimeConstants.ns_per_ms) catch {};
             }
 
             // Process batch
@@ -619,10 +619,10 @@ pub const AsyncLogger = struct {
                     const now_ns = Utils.currentNanos();
                     const latency = now_ns - entry.queued_at;
                     if (self.config.max_latency_ms > 0) {
-                        const threshold_ns = @as(i128, @intCast(self.config.max_latency_ms)) * std.time.ns_per_ms;
+                        const threshold_ns = @as(i128, @intCast(self.config.max_latency_ms)) * Constants.TimeConstants.ns_per_ms;
                         if (latency > threshold_ns) {
                             if (self.on_latency_threshold_exceeded) |cb| {
-                                cb(@truncate(@as(u64, @intCast(@max(0, @divTrunc(latency, std.time.ns_per_us))))), @truncate(@as(u64, @intCast(self.config.max_latency_ms * 1000))));
+                                cb(@truncate(@as(u64, @intCast(@max(0, @divTrunc(latency, Constants.TimeConstants.ns_per_us))))), @truncate(@as(u64, @intCast(self.config.max_latency_ms * Constants.TimeConstants.us_per_ms))));
                             }
                         }
                     }
@@ -643,11 +643,11 @@ pub const AsyncLogger = struct {
                 last_flush = now_ms;
 
                 if (self.flush_callback) |cb| {
-                    cb(count, bytes_written, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, std.time.ns_per_ms))))));
+                    cb(count, bytes_written, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, Constants.TimeConstants.ns_per_ms))))));
                 }
 
                 if (self.on_batch_processed) |cb| {
-                    cb(count, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, std.time.ns_per_us))))));
+                    cb(count, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, Constants.TimeConstants.ns_per_us))))));
                 }
 
                 // Reset arena after each batch to free temporary memory
@@ -936,7 +936,7 @@ pub const AsyncFileWriter = struct {
 
     fn autoFlushLoop(self: *AsyncFileWriter) void {
         while (self.running.load(.acquire)) {
-            std.Thread.sleep(self.config.flush_interval_ms * std.time.ns_per_ms);
+            std.Thread.sleep(self.config.flush_interval_ms * Constants.TimeConstants.ns_per_ms);
             self.flushSync();
         }
     }

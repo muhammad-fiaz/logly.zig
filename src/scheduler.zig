@@ -176,7 +176,7 @@ pub const Scheduler = struct {
             /// Create from centralized Config.SchedulerConfig.
             pub fn fromCentralized(cfg: SchedulerConfig) TaskConfig {
                 return .{
-                    .max_age_seconds = cfg.cleanup_max_age_days * 24 * 60 * 60,
+                    .max_age_seconds = cfg.cleanup_max_age_days * Constants.TimeConstants.seconds_per_day,
                     .max_files = cfg.max_files,
                     .file_pattern = cfg.file_pattern,
                     .compress_before_delete = cfg.compress_before_cleanup,
@@ -193,7 +193,7 @@ pub const Scheduler = struct {
             /// Returns a copy with the specified max age in days.
             pub fn withMaxAgeDays(self: TaskConfig, days: u64) TaskConfig {
                 var result = self;
-                result.max_age_seconds = days * 24 * 60 * 60;
+                result.max_age_seconds = days * Constants.TimeConstants.seconds_per_day;
                 return result;
             }
 
@@ -652,7 +652,7 @@ pub const Scheduler = struct {
     ) !usize {
         return self.addTask(name, .cleanup, schedule, .{
             .path = path,
-            .max_age_seconds = max_age_days * 24 * 60 * 60,
+            .max_age_seconds = max_age_days * Constants.TimeConstants.seconds_per_day,
             .file_pattern = "*.log",
         });
     }
@@ -821,7 +821,7 @@ pub const Scheduler = struct {
             self.mutex.unlock();
 
             if (!any_running) break;
-            std.Thread.sleep(100 * std.time.ns_per_ms);
+            std.Thread.sleep(100 * Constants.TimeConstants.ns_per_ms);
         }
     }
 
@@ -966,7 +966,7 @@ pub const Scheduler = struct {
             // Check every 500ms for more responsive scheduling
             var i: usize = 0;
             while (i < 5 and self.running.load(.acquire)) : (i += 1) {
-                std.Thread.sleep(100 * std.time.ns_per_ms);
+                std.Thread.sleep(100 * Constants.TimeConstants.ns_per_ms);
             }
         }
     }
@@ -992,7 +992,7 @@ pub const Scheduler = struct {
 
         // Calculate duration
         const duration_ns = Utils.durationSinceNs(start_ns);
-        const duration_ms: i64 = @intCast(@divFloor(duration_ns, std.time.ns_per_ms));
+        const duration_ms: i64 = @intCast(@divFloor(duration_ns, Constants.TimeConstants.ns_per_ms));
 
         // End telemetry span
         if (maybe_span) |*span| {
@@ -1122,7 +1122,7 @@ pub const Scheduler = struct {
             };
             file.close();
 
-            const mtime: i64 = @intCast(@divFloor(stat.mtime, std.time.ns_per_s));
+            const mtime: i64 = @intCast(@divFloor(stat.mtime, Constants.TimeConstants.ns_per_second));
             const age = now - mtime;
 
             const name_copy = self.allocator.dupe(u8, entry.name) catch continue;
@@ -1149,20 +1149,10 @@ pub const Scheduler = struct {
         var deleted_indices = std.DynamicBitSet.initEmpty(self.allocator, files.items.len) catch return result;
         defer deleted_indices.deinit();
 
-        // Helper to check if file is already compressed
-        const isCompressed = struct {
-            fn check(name: []const u8) bool {
-                return std.mem.endsWith(u8, name, ".gz") or
-                    std.mem.endsWith(u8, name, ".lgz") or
-                    std.mem.endsWith(u8, name, ".zst") or
-                    std.mem.endsWith(u8, name, ".deflate");
-            }
-        }.check;
-
         // 1. Delete files based on age (or compress based on mode)
         for (files.items, 0..) |fi, i| {
             if (fi.age > max_age) {
-                const already_compressed = isCompressed(fi.name);
+                const already_compressed = Constants.CompressionExtensions.isCompressed(fi.name);
                 const should_skip_compressed = config.skip_already_compressed and already_compressed;
 
                 // Mode: Compress only (no deletion)
@@ -1282,9 +1272,7 @@ pub const Scheduler = struct {
             if (entry.kind != .file) continue;
 
             // Skip already compressed files
-            if (std.mem.endsWith(u8, entry.name, ".gz")) continue;
-            if (std.mem.endsWith(u8, entry.name, ".lgz")) continue;
-            if (std.mem.endsWith(u8, entry.name, ".zst")) continue;
+            if (Constants.CompressionExtensions.isCompressed(entry.name)) continue;
 
             // Check pattern
             if (config.file_pattern) |pattern| {
@@ -1299,7 +1287,7 @@ pub const Scheduler = struct {
                     continue;
                 };
                 file.close();
-                const mtime: i64 = @intCast(@divFloor(stat.mtime, std.time.ns_per_s));
+                const mtime: i64 = @intCast(@divFloor(stat.mtime, Constants.TimeConstants.ns_per_second));
                 if (now - mtime < @as(i64, @intCast(config.min_age_seconds))) continue;
             }
 
@@ -1479,7 +1467,7 @@ pub const SchedulerPresets = struct {
     pub fn dailyCleanup(path: []const u8, max_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .max_age_seconds = max_age_days * 24 * 60 * 60,
+            .max_age_seconds = max_age_days * Constants.TimeConstants.seconds_per_day,
             .file_pattern = "*.log",
         };
     }
@@ -1495,12 +1483,12 @@ pub const SchedulerPresets = struct {
 
     /// Hourly compression.
     pub fn hourlyCompression() Scheduler.Schedule {
-        return .{ .interval = 60 * 60 * 1000 };
+        return .{ .interval = Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second };
     }
 
     /// Every N minutes.
     pub fn everyMinutes(n: u64) Scheduler.Schedule {
-        return .{ .interval = n * 60 * 1000 };
+        return .{ .interval = n * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
     }
 
     /// Daily at specific time.
@@ -1520,17 +1508,17 @@ pub const SchedulerPresets = struct {
 
     /// Every 30 minutes.
     pub fn every30Minutes() Scheduler.Schedule {
-        return .{ .interval = 30 * 60 * 1000 };
+        return .{ .interval = 30 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
     }
 
     /// Every 6 hours.
     pub fn every6Hours() Scheduler.Schedule {
-        return .{ .interval = 6 * 60 * 60 * 1000 };
+        return .{ .interval = 6 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second };
     }
 
     /// Every 12 hours.
     pub fn every12Hours() Scheduler.Schedule {
-        return .{ .interval = 12 * 60 * 60 * 1000 };
+        return .{ .interval = 12 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second };
     }
 
     /// Daily at midnight.
@@ -1553,7 +1541,7 @@ pub const SchedulerPresets = struct {
     pub fn compressThenDelete(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
             .file_pattern = "*.log",
             .compress_before_delete = true,
             .skip_already_compressed = true,
@@ -1565,7 +1553,7 @@ pub const SchedulerPresets = struct {
     pub fn compressAndKeep(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
             .file_pattern = "*.log",
             .compress_and_keep = true,
             .skip_already_compressed = true,
@@ -1577,7 +1565,7 @@ pub const SchedulerPresets = struct {
     pub fn compressOnly(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
             .file_pattern = "*.log",
             .compress_only = true,
             .skip_already_compressed = true,
@@ -1589,8 +1577,8 @@ pub const SchedulerPresets = struct {
     pub fn archiveOldLogs(path: []const u8, compress_after_days: u64, delete_after_days: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = compress_after_days * 24 * 60 * 60,
-            .max_age_seconds = delete_after_days * 24 * 60 * 60,
+            .min_age_seconds = compress_after_days * Constants.TimeConstants.seconds_per_day,
+            .max_age_seconds = delete_after_days * Constants.TimeConstants.seconds_per_day,
             .file_pattern = "*.log",
             .compress_before_delete = true,
             .skip_already_compressed = true,
@@ -1601,7 +1589,7 @@ pub const SchedulerPresets = struct {
     pub fn aggressiveCleanup(path: []const u8, max_age_days: u64, max_files: usize) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .max_age_seconds = max_age_days * 24 * 60 * 60,
+            .max_age_seconds = max_age_days * Constants.TimeConstants.seconds_per_day,
             .max_files = max_files,
             .file_pattern = "*.log",
             .compress_before_delete = true,
@@ -1613,7 +1601,7 @@ pub const SchedulerPresets = struct {
     pub fn hourlyArchive(path: []const u8) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = 24 * 60 * 60, // 1 day
+            .min_age_seconds = Constants.TimeConstants.seconds_per_day, // 1 day
             .file_pattern = "*.log",
             .compress_only = true,
             .skip_already_compressed = true,
@@ -1624,7 +1612,7 @@ pub const SchedulerPresets = struct {
     pub fn compressOnRotation(path: []const u8) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = 60, // At least 1 minute old (just rotated)
+            .min_age_seconds = Constants.TimeConstants.seconds_per_minute, // At least 1 minute old (just rotated)
             .file_pattern = "*.log.*",
             .compress_only = true,
             .skip_already_compressed = true,
@@ -1668,7 +1656,7 @@ pub const SchedulerPresets = struct {
     pub fn recursiveCompression(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * 24 * 60 * 60,
+            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
             .file_pattern = "*.log",
             .compress_only = true,
             .skip_already_compressed = true,
@@ -1678,22 +1666,22 @@ pub const SchedulerPresets = struct {
 
     /// Every 15 minutes.
     pub fn every15Minutes() Scheduler.Schedule {
-        return .{ .interval = 15 * 60 * 1000 };
+        return .{ .interval = 15 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
     }
 
     /// Once after delay in seconds.
     pub fn onceAfter(seconds: u64) Scheduler.Schedule {
-        return .{ .once = seconds * 1000 };
+        return .{ .once = seconds * Constants.TimeConstants.ms_per_second };
     }
 
     /// Creates a health check schedule (every 5 minutes).
     pub fn healthCheckSchedule() Scheduler.Schedule {
-        return .{ .interval = 5 * 60 * 1000 };
+        return .{ .interval = 5 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
     }
 
     /// Creates a metrics collection schedule (every minute).
     pub fn metricsSchedule() Scheduler.Schedule {
-        return .{ .interval = 60 * 1000 };
+        return .{ .interval = Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
     }
 };
 

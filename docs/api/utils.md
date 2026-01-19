@@ -37,10 +37,10 @@ const date = try Utils.formatIsoDate(&buf, tc);
 
 ## Quick Reference: Method Aliases
 
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `formatDatePattern()` | `format()` | Format date with pattern |
-| `formatDateToBuf()` | `formatToBuf()` | Format date to buffer |
+| Full Method           | Alias(es)       | Description              |
+|-----------------------|-----------------|--------------------------|
+| `formatDatePattern()` | `format()`      | Format date with pattern |
+| `formatDateToBuf()`   | `formatToBuf()` | Format date to buffer    |
 
 ## Size Parsing
 
@@ -53,6 +53,7 @@ pub fn parseSize(s: []const u8) ?u64
 ```
 
 **Supported units (case insensitive):**
+
 - `B` - Bytes
 - `K`, `KB` - Kilobytes (×1024)
 - `M`, `MB` - Megabytes (×1024²)
@@ -60,6 +61,7 @@ pub fn parseSize(s: []const u8) ?u64
 - `T`, `TB` - Terabytes (×1024⁴)
 
 **Examples:**
+
 ```zig
 Utils.parseSize("1024")     // 1024
 Utils.parseSize("10KB")     // 10240
@@ -76,6 +78,7 @@ pub fn formatSize(allocator: std.mem.Allocator, bytes: u64) ![]u8
 ```
 
 **Example:**
+
 ```zig
 const str = try Utils.formatSize(allocator, 5242880);
 defer allocator.free(str);
@@ -93,6 +96,7 @@ pub fn parseDuration(s: []const u8) ?i64
 ```
 
 **Supported units (case insensitive):**
+
 - `ms` - Milliseconds
 - `s` - Seconds (×1000)
 - `m` - Minutes (×60000)
@@ -100,6 +104,7 @@ pub fn parseDuration(s: []const u8) ?i64
 - `d` - Days (×86400000)
 
 **Examples:**
+
 ```zig
 Utils.parseDuration("1000ms") // 1000
 Utils.parseDuration("30s")    // 30000
@@ -331,18 +336,19 @@ pub fn formatDatePattern(
 ```
 
 **Supported tokens:**
-| Token | Description |
-|-------|-------------|
-| `YYYY` | 4-digit year |
-| `YY` | 2-digit year |
-| `MM` | 2-digit month (01-12) |
-| `DD` | 2-digit day (01-31) |
-| `HH` | 2-digit hour (00-23) |
-| `mm` | 2-digit minute (00-59) |
-| `ss` | 2-digit second (00-59) |
-| `M` | 1-2 digit month |
-| `D` | 1-2 digit day |
-| `H` | 1-2 digit hour |
+
+| Token | Description            |
+|-------|------------------------|
+| `YYYY`| 4-digit year           |
+| `YY`  | 2-digit year           |
+| `MM`  | 2-digit month (01-12)  |
+| `DD`  | 2-digit day (01-31)    |
+| `HH`  | 2-digit hour (00-23)   |
+| `mm`  | 2-digit minute (00-59) |
+| `ss`  | 2-digit second (00-59) |
+| `M`   | 1-2 digit month        |
+| `D`   | 1-2 digit day          |
+| `H`   | 1-2 digit hour         |
 
 ### formatDateToBuf
 
@@ -395,6 +401,7 @@ pub fn matchRegexPattern(input: []const u8, pattern: []const u8) ?usize
 ```
 
 **Supported Syntax:**
+
 - `.` - Any character
 - `*` - Zero or more of previous token
 - `+` - One or more of previous token
@@ -412,11 +419,54 @@ pub fn findRegexPattern(input: []const u8, pattern: []const u8) ?[]const u8
 ```
 
 **Example:**
+
 ```zig
 if (Utils.findRegexPattern("error at line 42", "\\d+")) |match| {
     // match = "42"
 }
 ```
+
+## String & Redaction Utilities
+
+### replaceString
+
+Replaces all occurrences of a substring with a replacement string. Allocates a new string for the result.
+
+```zig
+pub fn replaceString(allocator: std.mem.Allocator, input: []const u8, needle: []const u8, replacement: []const u8) ![]u8
+```
+
+### maskString
+
+Masks a string for redaction purposes. Supports full masking, partial start/end, and middle masking.
+
+```zig
+pub fn maskString(
+    allocator: std.mem.Allocator,
+    value: []const u8,
+    mask_char: u8,
+    start_reveal: usize,
+    end_reveal: usize,
+    mode: enum { full, partial_start, partial_end, mask_middle }
+) ![]u8
+```
+
+**Modes:**
+
+- `full`: Masks the entire string (result length = input length).
+- `partial_start`: Shows the beginning of the string, masks the rest.
+- `partial_end`: Shows the end of the string, masks the beginning.
+- `mask_middle`: Shows start and end, masks the middle (e.g., credit cards).
+
+### computeRedactionHash
+
+Computes a short SHA256 hash (first 8 bytes) formatted as hex for consistent redaction replacement.
+
+```zig
+pub fn computeRedactionHash(allocator: std.mem.Allocator, value: []const u8) ![]u8
+```
+
+**Format:** `[HASH:<16_char_hex>]`
 
 ## General Utilities
 

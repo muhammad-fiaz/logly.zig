@@ -624,7 +624,7 @@ test "sampler adaptive" {
     }
 
     // Wait for adjustment interval
-    std.Thread.sleep(60 * std.time.ns_per_ms);
+    std.Thread.sleep(60 * Constants.TimeConstants.ns_per_ms);
 
     // One more sample to trigger adjustment
     _ = sampler.shouldSample();

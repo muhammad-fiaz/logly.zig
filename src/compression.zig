@@ -138,8 +138,9 @@ pub const Compression = struct {
             const time_ns = @as(u64, self.total_compression_time_ns.load(.monotonic));
             if (time_ns == 0) return 0;
             const bytes = @as(u64, self.bytes_before.load(.monotonic));
-            const time_s = @as(f64, @floatFromInt(time_ns)) / 1_000_000_000.0;
-            const mb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0);
+            const ns_per_sec = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
+            const time_s = @as(f64, @floatFromInt(time_ns)) / ns_per_sec;
+            const mb = @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(Constants.SizeConstants.bytes_per_mb));
             return mb / time_s;
         }
 
@@ -149,8 +150,9 @@ pub const Compression = struct {
             const time_ns = @as(u64, self.total_decompression_time_ns.load(.monotonic));
             if (time_ns == 0) return 0;
             const bytes = @as(u64, self.bytes_after.load(.monotonic));
-            const time_s = @as(f64, @floatFromInt(time_ns)) / 1_000_000_000.0;
-            const mb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0);
+            const ns_per_sec = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
+            const time_s = @as(f64, @floatFromInt(time_ns)) / ns_per_sec;
+            const mb = @as(f64, @floatFromInt(bytes)) / @as(f64, @floatFromInt(Constants.SizeConstants.bytes_per_mb));
             return mb / time_s;
         }
 
@@ -952,16 +954,18 @@ pub const Compression = struct {
         const max_dst_size = zstd.c.ZSTD_compressBound(data.len);
         if (max_dst_size == 0) return error.ZstdError;
 
-        // Allocate destination buffer
-        const dest_buffer = try alloc.alloc(u8, max_dst_size);
-        defer alloc.free(dest_buffer);
+        // Reserve space in result buffer to write directly
+        try result.ensureUnusedCapacity(alloc, max_dst_size);
+
+        // Get pointer to unused space
+        const dest_ptr = result.items.ptr + result.items.len;
 
         // Get compression level from config (supports custom zstd levels 1-22)
         const compression_level = self.config.getEffectiveZstdLevel();
 
-        // Compress the data
+        // Compress directly into result buffer
         const compressed_size = zstd.c.ZSTD_compress(
-            dest_buffer.ptr,
+            dest_ptr,
             max_dst_size,
             data.ptr,
             data.len,
@@ -973,8 +977,8 @@ pub const Compression = struct {
             return error.ZstdCompressionFailed;
         }
 
-        // Append compressed data to result
-        try result.appendSlice(alloc, dest_buffer[0..compressed_size]);
+        // Update result length
+        result.items.len += compressed_size;
     }
 
     /// Decompresses zstd-compressed data.
@@ -1421,7 +1425,6 @@ pub const Compression = struct {
         }
 
         // Check (CRC32 of uncompressed data)
-        // Check (CRC32 of uncompressed data)
         const data_crc = Utils.calculateCRC32(data);
         try result.appendSlice(alloc, &std.mem.toBytes(data_crc));
 
@@ -1436,7 +1439,6 @@ pub const Compression = struct {
         while ((result.items.len - index_start) % 4 != 0) {
             try result.append(alloc, 0x00);
         }
-        // Index CRC32
         // Index CRC32
         const index_crc = Utils.calculateCRC32(result.items[index_start..]);
         try result.appendSlice(alloc, &std.mem.toBytes(index_crc));

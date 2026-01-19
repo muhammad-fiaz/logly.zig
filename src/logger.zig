@@ -1404,14 +1404,14 @@ pub const Logger = struct {
 
         if (diag.total_mem) |t| {
             const avail = diag.avail_mem orelse 0;
-            try w.print(" ram_total={d}MB ram_available={d}MB", .{ t / (1024 * 1024), avail / (1024 * 1024) });
+            try w.print(" ram_total={d}MB ram_available={d}MB", .{ t / Constants.SizeConstants.bytes_per_mb, avail / Constants.SizeConstants.bytes_per_mb });
         }
 
         if (self.config.include_drive_diagnostics and diag.drives.len > 0) {
             try w.writeAll(" drives=[");
             for (diag.drives, 0..) |d, i| {
-                const total_gb = d.total_bytes / (1024 * 1024 * 1024);
-                const free_gb = d.free_bytes / (1024 * 1024 * 1024);
+                const total_gb = d.total_bytes / Constants.SizeConstants.bytes_per_gb;
+                const free_gb = d.free_bytes / Constants.SizeConstants.bytes_per_gb;
                 try w.print("{s} total={d}GB free={d}GB", .{ d.name, total_gb, free_gb });
                 if (i + 1 < diag.drives.len) try w.writeAll("; ");
             }
@@ -1440,10 +1440,10 @@ pub const Logger = struct {
         try record.context.put("diag.cpu", .{ .string = diag.cpu_model });
         try record.context.put("diag.cores", .{ .integer = @intCast(diag.logical_cores) });
         if (diag.total_mem) |t| {
-            try record.context.put("diag.ram_total_mb", .{ .integer = @intCast(t / (1024 * 1024)) });
+            try record.context.put("diag.ram_total_mb", .{ .integer = @intCast(t / Constants.SizeConstants.bytes_per_mb) });
         }
         if (diag.avail_mem) |a| {
-            try record.context.put("diag.ram_avail_mb", .{ .integer = @intCast(a / (1024 * 1024)) });
+            try record.context.put("diag.ram_avail_mb", .{ .integer = @intCast(a / Constants.SizeConstants.bytes_per_mb) });
         }
 
         // Note: diagnostics_output_path can be used by adding a separate sink for diagnostics
