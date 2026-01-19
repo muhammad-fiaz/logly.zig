@@ -326,9 +326,7 @@ pub const Record = struct {
     /// Returns:
     ///     A unique trace ID string (caller must free).
     pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
-        var bytes: [16]u8 = undefined;
-        std.crypto.random.bytes(&bytes);
-        return try std.fmt.allocPrint(allocator, "{x}", .{std.fmt.fmtSliceHexLower(&bytes)});
+        return Utils.generateTraceId(allocator);
     }
 
     /// Generates a unique span ID.
@@ -339,12 +337,7 @@ pub const Record = struct {
     /// Returns:
     ///     A unique span ID string (caller must free).
     pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
-        var bytes: [8]u8 = undefined;
-        std.crypto.random.bytes(&bytes);
-        // Format as lowercase hex string
-        var hex: [16]u8 = undefined;
-        _ = std.fmt.bufPrint(&hex, "{x:0>16}", .{std.mem.readInt(u64, &bytes, .big)}) catch unreachable;
-        return try allocator.dupe(u8, &hex);
+        return Utils.generateSpanId(allocator);
     }
 
     /// Clones the record.

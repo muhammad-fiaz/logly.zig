@@ -23,6 +23,7 @@
 
 const std = @import("std");
 const Level = @import("level.zig").Level;
+const Constants = @import("constants.zig");
 
 /// Configuration options for the Logger.
 pub const Config = struct {
@@ -118,16 +119,17 @@ pub const Config = struct {
     symbolize_stack_trace: bool = false,
 
     /// Automatically flush sinks after every log operation.
-    /// Creates immediate output but may impact performance in high-throughput applications.
-    /// Default: true
-    auto_flush: bool = true,
+    /// Creates immediate output but significantly impacts performance in high-throughput applications.
+    /// Default: false (for performance). Set to true only when immediate output visibility is critical.
+    auto_flush: bool = false,
 
     /// Automatically add a console sink on logger initialization.
     /// Only creates sink when both auto_sink=true and global_console_display=true.
     auto_sink: bool = true,
 
     /// Enable callback invocation for log events.
-    enable_callbacks: bool = true,
+    /// Default: false (for performance). Enable only when using log callbacks.
+    enable_callbacks: bool = false,
 
     /// Enable exception/error handling within the logger.
     enable_exception_handling: bool = true,
@@ -172,7 +174,7 @@ pub const Config = struct {
     environment: ?[]const u8 = null,
 
     /// Stack size for capturing stack traces (default 1MB).
-    stack_size: usize = 1024 * 1024,
+    stack_size: usize = Constants.ConfigDefaults.stack_size,
 
     /// Enable distributed tracing support.
     enable_tracing: bool = false,
@@ -215,7 +217,7 @@ pub const Config = struct {
     use_arena_allocator: bool = false,
 
     /// Arena reset threshold in bytes. When arena reaches this size, it resets.
-    arena_reset_threshold: usize = 64 * 1024,
+    arena_reset_threshold: usize = Constants.ConfigDefaults.arena_reset_threshold,
 
     /// Optional global root path for all log files.
     /// If set, file sinks will be stored relative to this path.
@@ -385,7 +387,6 @@ pub const Config = struct {
 
         /// Get the effective color for a level, considering theme and overrides.
         pub fn getColorForLevel(self: LevelColorConfig, level: Level) []const u8 {
-            const Constants = @import("constants.zig");
             // Check individual overrides first
             const override = switch (level) {
                 .trace => self.trace_color,
@@ -415,40 +416,40 @@ pub const Config = struct {
                 },
                 .neon => level.color256(),
                 .pastel => switch (level) {
-                    .trace => "38;5;159",
-                    .debug => "38;5;117",
-                    .info => "38;5;188",
-                    .notice => "38;5;153",
-                    .success => "38;5;157",
-                    .warning => "38;5;222",
-                    .err => "38;5;210",
-                    .fail => "38;5;218",
-                    .critical => "38;5;203",
-                    .fatal => "38;5;231;48;5;203",
+                    .trace => Constants.Colors.Themes.pastel.trace,
+                    .debug => Constants.Colors.Themes.pastel.debug,
+                    .info => Constants.Colors.Themes.pastel.info,
+                    .notice => Constants.Colors.Themes.pastel.notice,
+                    .success => Constants.Colors.Themes.pastel.success,
+                    .warning => Constants.Colors.Themes.pastel.warning,
+                    .err => Constants.Colors.Themes.pastel.err,
+                    .fail => Constants.Colors.Themes.pastel.fail,
+                    .critical => Constants.Colors.Themes.pastel.critical,
+                    .fatal => Constants.Colors.Themes.pastel.fatal,
                 },
                 .dark => switch (level) {
-                    .trace => "38;5;244",
-                    .debug => "38;5;75",
-                    .info => "38;5;252",
-                    .notice => "38;5;81",
-                    .success => "38;5;114",
-                    .warning => "38;5;220",
-                    .err => "38;5;203",
-                    .fail => "38;5;168",
-                    .critical => "38;5;196;1",
-                    .fatal => "38;5;231;48;5;124;1",
+                    .trace => Constants.Colors.Themes.dark.trace,
+                    .debug => Constants.Colors.Themes.dark.debug,
+                    .info => Constants.Colors.Themes.dark.info,
+                    .notice => Constants.Colors.Themes.dark.notice,
+                    .success => Constants.Colors.Themes.dark.success,
+                    .warning => Constants.Colors.Themes.dark.warning,
+                    .err => Constants.Colors.Themes.dark.err,
+                    .fail => Constants.Colors.Themes.dark.fail,
+                    .critical => Constants.Colors.Themes.dark.critical,
+                    .fatal => Constants.Colors.Themes.dark.fatal,
                 },
                 .light => switch (level) {
-                    .trace => "38;5;242",
-                    .debug => "38;5;24",
-                    .info => "38;5;235",
-                    .notice => "38;5;30",
-                    .success => "38;5;28",
-                    .warning => "38;5;130",
-                    .err => "38;5;124",
-                    .fail => "38;5;127",
-                    .critical => "38;5;160;1",
-                    .fatal => "38;5;231;48;5;160;1",
+                    .trace => Constants.Colors.Themes.light.trace,
+                    .debug => Constants.Colors.Themes.light.debug,
+                    .info => Constants.Colors.Themes.light.info,
+                    .notice => Constants.Colors.Themes.light.notice,
+                    .success => Constants.Colors.Themes.light.success,
+                    .warning => Constants.Colors.Themes.light.warning,
+                    .err => Constants.Colors.Themes.light.err,
+                    .fail => Constants.Colors.Themes.light.fail,
+                    .critical => Constants.Colors.Themes.light.critical,
+                    .fatal => Constants.Colors.Themes.light.fatal,
                 },
                 .none => "",
             };
@@ -561,11 +562,11 @@ pub const Config = struct {
             /// Target records per second.
             target_rate: u32,
             /// Minimum sample rate (don't drop below this).
-            min_sample_rate: f64 = 0.01,
+            min_sample_rate: f64 = Constants.SamplingDefaults.adaptive_min_rate,
             /// Maximum sample rate (don't go above this).
-            max_sample_rate: f64 = 1.0,
+            max_sample_rate: f64 = Constants.SamplingDefaults.adaptive_max_rate,
             /// How often to adjust rate (milliseconds).
-            adjustment_interval_ms: u64 = 1000,
+            adjustment_interval_ms: u64 = Constants.SamplingDefaults.adaptive_adjustment_interval_ms,
         };
     };
 
@@ -575,9 +576,9 @@ pub const Config = struct {
         /// Enable rate limiting.
         enabled: bool = false,
         /// Maximum requests per second.
-        max_per_second: u32 = 1000,
+        max_per_second: u32 = Constants.RateLimitDefaults.max_per_second,
         /// Burst size (token bucket capacity).
-        burst_size: u32 = 100,
+        burst_size: u32 = Constants.RateLimitDefaults.burst_size,
         /// Whether to apply limits per log level independently.
         per_level: bool = false,
     };
@@ -599,11 +600,11 @@ pub const Config = struct {
         /// Hash algorithm for hash redaction type.
         hash_algorithm: HashAlgorithm = .sha256,
         /// Characters to reveal at start for partial redaction.
-        partial_start_chars: u8 = 4,
+        partial_start_chars: u8 = Constants.RedactionDefaults.partial_start_chars,
         /// Characters to reveal at end for partial redaction.
-        partial_end_chars: u8 = 4,
+        partial_end_chars: u8 = Constants.RedactionDefaults.partial_end_chars,
         /// Mask character for redacted content.
-        mask_char: u8 = '*',
+        mask_char: u8 = Constants.RedactionDefaults.mask_char,
         /// Enable case-insensitive field matching.
         case_insensitive: bool = true,
         /// Log when redaction is applied (for audit).
@@ -727,9 +728,9 @@ pub const Config = struct {
 
     /// Buffer configuration for async operations.
     pub const BufferConfig = struct {
-        size: usize = 8192,
-        flush_interval_ms: u64 = 1000,
-        max_pending: usize = 10000,
+        size: usize = Constants.BufferSizes.format,
+        flush_interval_ms: u64 = Constants.TimeDefaults.flush_interval_ms,
+        max_pending: usize = Constants.Limits.max_async_queue_size,
         overflow_strategy: OverflowStrategy = .drop_oldest,
 
         pub const OverflowStrategy = enum {
@@ -748,7 +749,7 @@ pub const Config = struct {
         /// Maximum queue size for pending tasks.
         queue_size: usize = 10000,
         /// Stack size per thread in bytes.
-        stack_size: usize = 1024 * 1024,
+        stack_size: usize = Constants.ThreadDefaults.stack_size,
         /// Enable work stealing between threads.
         work_stealing: bool = true,
         /// Enable per-worker arena allocator for temporary allocations.
@@ -764,19 +765,19 @@ pub const Config = struct {
     /// Parallel sink writing configuration.
     pub const ParallelConfig = struct {
         /// Maximum concurrent writes allowed at once.
-        max_concurrent: usize = 8,
+        max_concurrent: usize = Constants.ParallelDefaults.max_concurrent,
         /// Timeout for each write operation (ms).
-        write_timeout_ms: u64 = 1000,
+        write_timeout_ms: u64 = Constants.ParallelDefaults.write_timeout_ms,
         /// Retry failed writes automatically.
         retry_on_failure: bool = true,
         /// Maximum number of retry attempts.
-        max_retries: u3 = 3,
+        max_retries: u3 = Constants.ParallelDefaults.max_retries,
         /// Fail-fast mode: abort on any sink error.
         fail_fast: bool = false,
         /// Buffer writes before parallel dispatch.
         buffered: bool = true,
         /// Buffer size for buffered writes.
-        buffer_size: usize = 64,
+        buffer_size: usize = Constants.ParallelDefaults.buffer_size,
 
         /// Returns default parallel configuration.
         ///
@@ -791,9 +792,9 @@ pub const Config = struct {
         /// Complexity: O(1)
         pub fn highThroughput() ParallelConfig {
             return .{
-                .max_concurrent = 16,
+                .max_concurrent = Constants.ParallelDefaults.high_throughput_max_concurrent,
                 .buffered = true,
-                .buffer_size = 128,
+                .buffer_size = Constants.ParallelDefaults.high_throughput_buffer_size,
                 .retry_on_failure = false,
                 .fail_fast = false,
             };
@@ -972,13 +973,13 @@ pub const Config = struct {
         /// Compression mode.
         mode: Mode = .on_rotation,
         /// Size threshold in bytes for on_size_threshold mode.
-        size_threshold: u64 = 10 * 1024 * 1024,
+        size_threshold: u64 = Constants.RotationConstants.default_max_size,
         /// Buffer size for streaming compression.
-        buffer_size: usize = 32 * 1024,
+        buffer_size: usize = Constants.BufferSizes.compression,
         /// Compression strategy.
         strategy: Strategy = .default,
         /// File extension for compressed files.
-        extension: []const u8 = ".gz",
+        extension: []const u8 = Constants.RotationConstants.compressed_ext,
         /// Delete files older than this after compression (in seconds, 0 = never).
         delete_after: u64 = 0,
         /// Enable checksum validation.
@@ -1019,6 +1020,18 @@ pub const Config = struct {
             /// Supports compression levels 1-22 (negative levels for faster compression).
             /// v0.1.5+
             zstd,
+            /// LZMA - Lempel-Ziv-Markov chain algorithm
+            lzma,
+            /// LZMA2 - Improved LZMA with better multi-threading support
+            lzma2,
+            /// XZ - Container format using LZMA2 compression
+            xz,
+            /// TAR.GZ - Tar archive compressed with gzip
+            tar_gz,
+            /// ZIP - Popular archive format
+            zip,
+            /// LZ4 - Extremely fast compression/decompression
+            lz4,
         };
 
         pub const CompressionLevel = enum {
@@ -1339,7 +1352,7 @@ pub const Config = struct {
                 .algorithm = .zstd,
                 .on_rotation = true,
                 .checksum = true,
-                .extension = ".zst",
+                .extension = Constants.CompressionConstants.ArchivingExtensions.zstd,
             };
         }
 
@@ -1359,7 +1372,7 @@ pub const Config = struct {
                 .level = .fastest,
                 .algorithm = .zstd,
                 .on_rotation = true,
-                .extension = ".zst",
+                .extension = Constants.CompressionConstants.ArchivingExtensions.zstd,
             };
         }
 
@@ -1381,7 +1394,7 @@ pub const Config = struct {
                 .on_rotation = true,
                 .checksum = true,
                 .keep_original = false,
-                .extension = ".zst",
+                .extension = Constants.CompressionConstants.ArchivingExtensions.zstd,
             };
         }
 
@@ -1404,7 +1417,7 @@ pub const Config = struct {
                 .checksum = true,
                 .on_rotation = true,
                 .keep_original = false,
-                .extension = ".zst",
+                .extension = Constants.CompressionConstants.ArchivingExtensions.zstd,
             };
         }
 
@@ -1432,7 +1445,7 @@ pub const Config = struct {
                 .algorithm = .zstd,
                 .on_rotation = true,
                 .checksum = true,
-                .extension = ".zst",
+                .extension = Constants.CompressionConstants.ArchivingExtensions.zstd,
             };
         }
 
@@ -1447,6 +1460,66 @@ pub const Config = struct {
         /// Alias for zstdBest(). Returns a high-ratio zstd compression config.
         /// v0.1.5+
         pub const zstdMax = zstdBest;
+
+        /// Returns an lzma compression config.
+        /// v0.1.6+
+        pub fn lzma() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .lzma,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.lzma,
+            };
+        }
+
+        /// Returns an lzma2 compression config.
+        /// v0.1.6+
+        pub fn lzma2() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .lzma2,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.lzma2,
+            };
+        }
+
+        /// Returns an xz compression config.
+        /// v0.1.6+
+        pub fn xz() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .xz,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.xz,
+            };
+        }
+
+        /// Returns a tar.gz compression config.
+        /// v0.1.6+
+        pub fn tarGz() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .tar_gz,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.tar_gz,
+            };
+        }
+
+        /// Returns a zip compression config.
+        /// v0.1.6+
+        pub fn zip() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .zip,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.zip,
+            };
+        }
+
+        /// Returns an lz4 compression config.
+        /// v0.1.6+
+        pub fn lz4() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .lz4,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.lz4,
+            };
+        }
 
         /// Returns the effective zstd compression level.
         /// If custom_zstd_level is set, uses that; otherwise maps from level enum.
@@ -1733,9 +1806,9 @@ pub const Config = struct {
         /// Enable async logging.
         enabled: bool = false,
         /// Buffer size for async queue.
-        buffer_size: usize = 8192,
+        buffer_size: usize = Constants.BufferSizes.async_queue,
         /// Batch size for flushing.
-        batch_size: usize = 100,
+        batch_size: usize = Constants.AsyncConstants.batch_size,
         /// Flush interval in milliseconds.
         flush_interval_ms: u64 = 100,
         /// Minimum time between flushes to avoid thrashing.
@@ -2111,6 +2184,42 @@ pub const Config = struct {
     /// v0.1.5+
     pub fn withZstdProductionCompression(self: Config) Config {
         return self.withCompression(CompressionConfig.zstdProduction());
+    }
+
+    /// Returns a configuration with lzma compression enabled.
+    /// v0.1.6+
+    pub fn withLzmaCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.lzma());
+    }
+
+    /// Returns a configuration with lzma2 compression enabled.
+    /// v0.1.6+
+    pub fn withLzma2Compression(self: Config) Config {
+        return self.withCompression(CompressionConfig.lzma2());
+    }
+
+    /// Returns a configuration with xz compression enabled.
+    /// v0.1.6+
+    pub fn withXzCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.xz());
+    }
+
+    /// Returns a configuration with tar.gz compression enabled.
+    /// v0.1.6+
+    pub fn withTarGzCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.tarGz());
+    }
+
+    /// Returns a configuration with zip compression enabled.
+    /// v0.1.6+
+    pub fn withZipCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.zip());
+    }
+
+    /// Returns a configuration with lz4 compression enabled.
+    /// v0.1.6+
+    pub fn withLz4Compression(self: Config) Config {
+        return self.withCompression(CompressionConfig.lz4());
     }
 
     /// Returns a configuration with thread pool enabled.
@@ -2712,16 +2821,16 @@ pub const TelemetryConfig = struct {
     exporter_file_path: ?[]const u8 = null,
 
     /// Batch span export size.
-    batch_size: usize = 256,
+    batch_size: usize = Constants.TelemetryDefaults.batch_size,
 
     /// Batch export timeout in milliseconds.
-    batch_timeout_ms: u64 = 5000,
+    batch_timeout_ms: u64 = Constants.TelemetryDefaults.batch_timeout_ms,
 
     /// Sampling strategy configuration.
     sampling_strategy: SamplingStrategy = .always_on,
 
     /// Sampling rate (0.0 to 1.0) when using trace_id_ratio strategy.
-    sampling_rate: f64 = 1.0,
+    sampling_rate: f64 = Constants.TelemetryDefaults.sampling_rate,
 
     /// Service name for resource identification.
     service_name: ?[]const u8 = null,
@@ -2763,10 +2872,10 @@ pub const TelemetryConfig = struct {
     auto_context_propagation: bool = true,
 
     /// W3C Trace Context header name for trace IDs.
-    trace_header: []const u8 = "traceparent",
+    trace_header: []const u8 = Constants.TelemetryDefaults.trace_header,
 
     /// Baggage/Correlation context header name.
-    baggage_header: []const u8 = "baggage",
+    baggage_header: []const u8 = Constants.TelemetryDefaults.baggage_header,
 
     /// OpenTelemetry providers.
     pub const Provider = enum {
@@ -2810,9 +2919,9 @@ pub const TelemetryConfig = struct {
 
     /// Span processor types.
     pub const SpanProcessorType = enum {
-        /// Simple processor (exports immediately).
+        /// Simple processor (keeps completed spans pending until an explicit `exportSpans()` or `flush()` call).
         simple,
-        /// Batch processor (batches spans before export).
+        /// Batch processor (batches spans before export and may automatically export when the batch size or timeout is reached).
         batch,
     };
 
@@ -2838,7 +2947,7 @@ pub const TelemetryConfig = struct {
             .provider = .jaeger,
             .exporter_endpoint = "http://localhost:6831",
             .span_processor_type = .batch,
-            .batch_size = 256,
+            .batch_size = Constants.TelemetryDefaults.batch_size,
             .sampling_strategy = .trace_id_ratio,
             .sampling_rate = 0.1,
         };

@@ -111,8 +111,8 @@ pub const Metrics = struct {
         /// Get write error rate for this sink.
         pub fn getErrorRate(self: *const SinkMetrics) f64 {
             return Utils.calculateErrorRate(
-                self.getWriteErrors(),
-                self.getRecordsWritten(),
+                Utils.atomicLoadU64(&self.write_errors),
+                Utils.atomicLoadU64(&self.records_written),
             );
         }
 
@@ -124,23 +124,23 @@ pub const Metrics = struct {
         /// Get average bytes per record.
         pub fn avgBytesPerRecord(self: *const SinkMetrics) f64 {
             return Utils.calculateAverage(
-                self.getBytesWritten(),
-                self.getRecordsWritten(),
+                Utils.atomicLoadU64(&self.bytes_written),
+                Utils.atomicLoadU64(&self.records_written),
             );
         }
 
         /// Get average records per flush.
         pub fn avgRecordsPerFlush(self: *const SinkMetrics) f64 {
             return Utils.calculateAverage(
-                self.getRecordsWritten(),
-                self.getFlushCount(),
+                Utils.atomicLoadU64(&self.records_written),
+                Utils.atomicLoadU64(&self.flush_count),
             );
         }
 
         /// Calculate throughput (bytes per second).
         pub fn throughputBytesPerSecond(self: *const SinkMetrics, elapsed_seconds: f64) f64 {
             return Utils.safeFloatDiv(
-                @as(f64, @floatFromInt(self.getBytesWritten())),
+                @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.bytes_written))),
                 elapsed_seconds,
             );
         }
@@ -214,12 +214,11 @@ pub const Metrics = struct {
         /// Current bytes per second.
         bytes_per_second: f64,
         /// Record counts per level (indexed by LevelIndex).
-        level_counts: [10]u64,
+        level_counts: [Constants.LevelConstants.count]u64,
 
         /// Get drop rate (0.0 - 1.0).
         pub fn getDropRate(self: *const Snapshot) f64 {
-            if (self.total_records == 0) return 0;
-            return @as(f64, @floatFromInt(self.dropped_records)) / @as(f64, @floatFromInt(self.total_records));
+            return Utils.calculateRate(self.dropped_records, self.total_records);
         }
 
         /// Alias for getDropRate
@@ -244,7 +243,7 @@ pub const Metrics = struct {
     /// Re-export MetricsConfig from global config.
     pub const MetricsConfig = Config.MetricsConfig;
 
-    /// Mutex for thread-safe operations.
+    /// Mutual exclusion for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
     /// Metrics configuration.
     config: MetricsConfig = .{},
@@ -259,7 +258,7 @@ pub const Metrics = struct {
     error_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     /// Per-level record counts.
-    level_counts: [10]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 10,
+    level_counts: [Constants.LevelConstants.count]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.LevelConstants.count,
 
     /// Metrics collection start time.
     start_time: i64,
@@ -274,7 +273,7 @@ pub const Metrics = struct {
     max_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     /// Histogram buckets for latency distribution.
-    histogram: [20]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** 20,
+    histogram: [Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.MetricsConstants.histogram_boundaries.len,
 
     /// Snapshot history for trend analysis.
     history: std.ArrayList(Snapshot),
@@ -303,46 +302,29 @@ pub const Metrics = struct {
     /// Maps a Level enum value to a LevelIndex for the metrics array.
     /// Performance: O(1) - direct switch without allocations
     fn levelToIndex(level: Level) u4 {
+        const LI = LevelIndex;
         return switch (level) {
-            .trace => 0,
-            .debug => 1,
-            .info => 2,
-            .notice => 3,
-            .success => 4,
-            .warning => 5,
-            .err => 6,
-            .fail => 7,
-            .critical => 8,
-            .fatal => 9,
+            .trace => @intFromEnum(LI.trace),
+            .debug => @intFromEnum(LI.debug),
+            .info => @intFromEnum(LI.info),
+            .notice => @intFromEnum(LI.notice),
+            .success => @intFromEnum(LI.success),
+            .warning => @intFromEnum(LI.warning),
+            .err => @intFromEnum(LI.err),
+            .fail => @intFromEnum(LI.fail),
+            .critical => @intFromEnum(LI.critical),
+            .fatal => @intFromEnum(LI.fatal),
         };
     }
 
     /// Maps an index back to a histogram bucket boundary (in nanoseconds).
     fn histogramBucketBoundary(bucket: usize) u64 {
-        // Exponential buckets: 1us, 10us, 100us, 1ms, 10ms, 100ms, 1s, etc.
-        const boundaries = [_]u64{
-            1_000,         2_000,                5_000,     10_000,     20_000,     50_000,     100_000,     200_000,     500_000,
-            1_000_000,     2_000_000,            5_000_000, 10_000_000, 20_000_000, 50_000_000, 100_000_000, 200_000_000, 500_000_000,
-            1_000_000_000, std.math.maxInt(u64),
-        };
-        return if (bucket < boundaries.len) boundaries[bucket] else std.math.maxInt(u64);
+        return if (bucket < Constants.MetricsConstants.histogram_boundaries.len) Constants.MetricsConstants.histogram_boundaries[bucket] else std.math.maxInt(u64);
     }
 
     /// Maps a LevelIndex back to a Level name string.
     pub fn indexToLevelName(index: usize) []const u8 {
-        return switch (index) {
-            0 => "TRACE",
-            1 => "DEBUG",
-            2 => "INFO",
-            3 => "NOTICE",
-            4 => "SUCCESS",
-            5 => "WARNING",
-            6 => "ERROR",
-            7 => "FAIL",
-            8 => "CRITICAL",
-            9 => "FATAL",
-            else => "UNKNOWN",
-        };
+        return if (index < Constants.MetricsConstants.level_names.len) Constants.MetricsConstants.level_names[index] else "UNKNOWN";
     }
 
     /// Initializes a new Metrics instance with default configuration.
@@ -482,12 +464,12 @@ pub const Metrics = struct {
     fn getHistogramBucket(self: *const Metrics, latency_ns: u64) usize {
         _ = self;
         var bucket: usize = 0;
-        while (bucket < 20) : (bucket += 1) {
-            if (latency_ns <= histogramBucketBoundary(bucket)) {
+        while (bucket < Constants.MetricsConstants.histogram_boundaries.len) : (bucket += 1) {
+            if (latency_ns <= Constants.MetricsConstants.histogram_boundaries[bucket]) {
                 return bucket;
             }
         }
-        return 19;
+        return Constants.MetricsConstants.histogram_boundaries.len - 1;
     }
 
     /// Check thresholds and invoke callback if exceeded.
@@ -580,26 +562,24 @@ pub const Metrics = struct {
     /// Returns:
     ///     A snapshot of the current metrics state.
     pub fn getSnapshot(self: *Metrics) Snapshot {
-        const now = Utils.currentMillis();
-        const uptime_ms = now - self.start_time;
-        const uptime_sec = @as(f64, @floatFromInt(uptime_ms)) / 1000.0;
+        const uptime_ms = Utils.elapsedMs(self.start_time);
 
-        const total_records = @as(u64, self.total_records.load(.monotonic));
-        const total_bytes = @as(u64, self.total_bytes.load(.monotonic));
+        const total_records = Utils.atomicLoadU64(&self.total_records);
+        const total_bytes = Utils.atomicLoadU64(&self.total_bytes);
 
         var level_counts: [10]u64 = undefined;
         for (0..10) |i| {
-            level_counts[i] = @as(u64, self.level_counts[i].load(.monotonic));
+            level_counts[i] = Utils.atomicLoadU64(&self.level_counts[i]);
         }
 
         return .{
             .total_records = total_records,
             .total_bytes = total_bytes,
-            .dropped_records = @as(u64, self.dropped_records.load(.monotonic)),
-            .error_count = @as(u64, self.error_count.load(.monotonic)),
-            .uptime_ms = uptime_ms,
-            .records_per_second = if (uptime_sec > 0) @as(f64, @floatFromInt(total_records)) / uptime_sec else 0,
-            .bytes_per_second = if (uptime_sec > 0) @as(f64, @floatFromInt(total_bytes)) / uptime_sec else 0,
+            .dropped_records = Utils.atomicLoadU64(&self.dropped_records),
+            .error_count = Utils.atomicLoadU64(&self.error_count),
+            .uptime_ms = @as(i64, @intCast(uptime_ms)),
+            .records_per_second = Utils.calculateThroughputMs(total_records, @as(i64, @intCast(uptime_ms))),
+            .bytes_per_second = Utils.calculateThroughputMs(total_bytes, @as(i64, @intCast(uptime_ms))),
             .level_counts = level_counts,
         };
     }
@@ -648,11 +628,11 @@ pub const Metrics = struct {
         self.max_latency_ns.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
 
         // Reset histogram
-        for (0..20) |i| {
+        for (0..Constants.MetricsConstants.histogram_boundaries.len) |i| {
             self.histogram[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
 
-        for (0..10) |i| {
+        for (0..Constants.LevelConstants.count) |i| {
             self.level_counts[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
 
@@ -753,10 +733,9 @@ pub const Metrics = struct {
 
     /// Get average latency in nanoseconds.
     pub fn avgLatencyNs(self: *const Metrics) u64 {
-        const total = @as(u64, self.total_records.load(.monotonic));
-        if (total == 0) return 0;
-        const latency = @as(u64, self.total_latency_ns.load(.monotonic));
-        return latency / total;
+        const total = Utils.atomicLoadU64(&self.total_records);
+        const latency = Utils.atomicLoadU64(&self.total_latency_ns);
+        return if (total == 0) 0 else latency / total;
     }
 
     /// Get min latency in nanoseconds.
@@ -824,7 +803,7 @@ pub const Metrics = struct {
 
         try writer.writeAll("Level Breakdown:");
         var has_levels = false;
-        for (0..10) |i| {
+        for (0..Constants.LevelConstants.count) |i| {
             const count = snapshot.level_counts[i];
             if (count > 0) {
                 if (has_levels) {

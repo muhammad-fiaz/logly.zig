@@ -441,9 +441,8 @@ pub fn createUdpSink(host: []const u8, port: u16) !SinkConfig {
     };
 }
 
-/// Creates a Syslog sink configuration (UDP port 514).
 pub fn createSyslogSink(host: []const u8) !SinkConfig {
-    return createUdpSink(host, 514);
+    return createUdpSink(host, Constants.SyslogConstants.default_port);
 }
 
 /// Aliases for sink creation

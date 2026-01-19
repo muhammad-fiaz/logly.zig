@@ -83,8 +83,71 @@ pub const BufferSizes = struct {
     pub const async_queue: usize = 8192;
     /// Default compression buffer size.
     pub const compression: usize = 32768;
+    /// Default telemetry buffer size.
+    pub const telemetry: usize = 4096;
     /// Maximum log message size.
     pub const max_message: usize = 1024 * 1024; // 1MB
+    /// Async batch size.
+    pub const async_batch: usize = 64;
+    /// Small buffer for thread IDs etc.
+    pub const tiny: usize = 32;
+    /// Small buffer for context values etc.
+    pub const small: usize = 256;
+    /// Standard file read buffer.
+    pub const file_read: usize = 4096;
+    /// Large file read buffer.
+    pub const file_read_large: usize = 8192;
+    /// Path buffer size.
+    pub const path_buffer: usize = 512;
+};
+
+/// Default time intervals and timeouts.
+///
+/// Usage:
+///   Use these constants for consistent timing across async operations.
+///
+/// Complexity: O(1)
+pub const TimeDefaults = struct {
+    /// Default flush interval in milliseconds.
+    pub const flush_interval_ms: u64 = 1000;
+    /// Default async write timeout in milliseconds.
+    pub const write_timeout_ms: u64 = 5000;
+    /// Default connection timeout in milliseconds.
+    pub const connection_timeout_ms: u64 = 10000;
+    /// Default retry delay in milliseconds.
+    pub const retry_delay_ms: u64 = 100;
+    /// Maximum retry attempts for network operations.
+    pub const max_retries: u32 = 3;
+};
+
+/// Async configuration constants.
+///
+/// Usage:
+///   Constants specific to async logging behavior.
+///
+/// Complexity: O(1)
+pub const AsyncConstants = struct {
+    /// Sleep duration when blocking on full queue.
+    pub const block_sleep_ns: u64 = 1 * std.time.ns_per_ms;
+    /// Default batch size for async processing.
+    pub const batch_size: usize = 64;
+};
+
+/// Default limits for queues and buffers.
+///
+/// Usage:
+///   Use these constants for queue sizing and overflow handling.
+///
+/// Complexity: O(1)
+pub const Limits = struct {
+    /// Maximum async queue size.
+    pub const max_async_queue_size: usize = 10000;
+    /// Maximum pending log records.
+    pub const max_pending_records: usize = 50000;
+    /// Maximum sinks per logger.
+    pub const max_sinks: usize = 64;
+    /// Maximum custom levels per logger.
+    pub const max_custom_levels: usize = 32;
 };
 
 /// Default thread pool settings.
@@ -104,6 +167,8 @@ pub const ThreadDefaults = struct {
     pub const wait_timeout_ns: u64 = 100 * std.time.ns_per_ms;
     /// Maximum concurrent tasks.
     pub const max_tasks: usize = 10000;
+    /// Queue size for low resource environments.
+    pub const queue_size_low: usize = 128;
 
     /// Returns recommended thread count for current CPU.
     ///
@@ -148,6 +213,31 @@ pub const ThreadDefaults = struct {
     }
 };
 
+/// OpenTelemetry configuration defaults.
+pub const TelemetryDefaults = struct {
+    /// Default batch span export size.
+    pub const batch_size: usize = 256;
+    /// Default batch export timeout in milliseconds.
+    pub const batch_timeout_ms: u64 = 5000;
+    /// Default initial capacity for formatting baggage header values.
+    pub const header_initial_capacity: usize = 256;
+    /// Default sampling rate (1.0 = 100%).
+    pub const sampling_rate: f64 = 1.0;
+    /// Default W3C traceparent header name.
+    pub const trace_header: []const u8 = "traceparent";
+    /// Default baggage/correlation context header name.
+    pub const baggage_header: []const u8 = "baggage";
+};
+
+test "telemetry defaults exist" {
+    // Ensure central telemetry defaults are present and correct
+    try std.testing.expectEqual(@as(usize, TelemetryDefaults.batch_size), @as(usize, 256));
+    try std.testing.expectEqual(@as(u64, TelemetryDefaults.batch_timeout_ms), @as(u64, 5000));
+    try std.testing.expectEqual(@as(usize, TelemetryDefaults.header_initial_capacity), @as(usize, 256));
+    try std.testing.expectEqualStrings(TelemetryDefaults.trace_header, "traceparent");
+    try std.testing.expectEqualStrings(TelemetryDefaults.baggage_header, "baggage");
+}
+
 /// Log level count and priorities.
 ///
 /// Usage:
@@ -157,12 +247,26 @@ pub const ThreadDefaults = struct {
 pub const LevelConstants = struct {
     /// Total number of built-in log levels.
     pub const count: usize = 10;
-    /// Minimum priority value.
-    pub const min_priority: u8 = 5; // TRACE
-    /// Maximum priority value.
-    pub const max_priority: u8 = 55; // FATAL
-    /// Default level priority.
-    pub const default_priority: u8 = 20; // INFO
+    /// Minimum priority value (TRACE).
+    pub const min_priority: u8 = 5;
+    /// Maximum priority value (FATAL).
+    pub const max_priority: u8 = 55;
+    /// Default level priority (INFO).
+    pub const default_priority: u8 = 20;
+
+    /// Specific level priorities.
+    pub const Priorities = struct {
+        pub const trace: u8 = 5;
+        pub const debug: u8 = 10;
+        pub const info: u8 = 20;
+        pub const notice: u8 = 22;
+        pub const success: u8 = 25;
+        pub const warning: u8 = 30;
+        pub const err: u8 = 40;
+        pub const fail: u8 = 45;
+        pub const critical: u8 = 50;
+        pub const fatal: u8 = 55;
+    };
 };
 
 /// Time-related constants.
@@ -182,6 +286,21 @@ pub const TimeConstants = struct {
     pub const default_flush_interval_ms: u64 = 100;
     /// Default rotation check interval in milliseconds.
     pub const rotation_check_interval_ms: u64 = 60_000; // 1 minute
+};
+
+/// Metrics-related constants.
+pub const MetricsConstants = struct {
+    /// Default histogram bucket boundaries in nanoseconds.
+    pub const histogram_boundaries = [_]u64{
+        1_000,         2_000,                5_000,     10_000,     20_000,     50_000,     100_000,     200_000,     500_000,
+        1_000_000,     2_000_000,            5_000_000, 10_000_000, 20_000_000, 50_000_000, 100_000_000, 200_000_000, 500_000_000,
+        1_000_000_000, std.math.maxInt(u64),
+    };
+
+    /// Uppercase log level names for metrics display.
+    pub const level_names = [_][]const u8{
+        "TRACE", "DEBUG", "INFO", "NOTICE", "SUCCESS", "WARNING", "ERROR", "FAIL", "CRITICAL", "FATAL",
+    };
 };
 
 /// File rotation constants.
@@ -611,6 +730,189 @@ pub const SyslogConstants = struct {
         local6 = 22,
         local7 = 23,
     };
+
+    /// Default syslog UDP port.
+    pub const default_port: u16 = 514;
+};
+
+/// Compression algorithm constants.
+///
+/// Usage:
+///   Constants for DEFLATE/LZ77 window sizes and limits.
+///
+/// Complexity: O(1)
+pub const CompressionConstants = struct {
+    /// Window size for fast compression (256).
+    pub const window_fast: usize = 256;
+    /// Window size for default compression (1024).
+    pub const window_default: usize = 1024;
+    /// Window size for best compression (4096).
+    pub const window_best: usize = 4096;
+    /// Minimum match length (3).
+    pub const min_match: usize = 3;
+    /// Maximum match length (255).
+    pub const max_match: usize = 255;
+    /// Maximum run length for RLE (127).
+    pub const max_run_length: usize = 127;
+    /// LZMA dictionary size (64KB).
+    pub const lzma_dict_size: u32 = 65536;
+    /// LZMA maximum offset (64KB - 1).
+    pub const lzma_max_offset: usize = 65535;
+    /// LZMA hash bits (14).
+    pub const lzma_hash_bits: u5 = 14;
+    /// LZMA maximum match length (272).
+    pub const lzma_max_match: usize = 272;
+    /// LZMA2 chunk size (32KB).
+    pub const lzma2_chunk_size: usize = 32768;
+
+    /// Magic bytes for various formats
+    pub const Magic = struct {
+        pub const lzma = "\x5D\x00\x00\x80\x00"; // Typical start, but varied
+        pub const xz = "\xFD\x37\x7A\x58\x5A\x00";
+        pub const gzip = "\x1F\x8B";
+        pub const zlib = "\x78\x9C"; // Default
+        pub const logly = "LGZ";
+    };
+
+    /// LZMA properties: lc=3, lp=0, pb=2 (standard)
+    pub const lzma_properties_byte: u8 = (2 * 5 + 0) * 9 + 3;
+
+    /// RLE Markers
+    pub const Rle = struct {
+        pub const marker: u8 = 0xFE;
+        pub const escape: u8 = 0xFD;
+    };
+
+    /// File extensions for different compression algorithms.
+    pub const ArchivingExtensions = struct {
+        pub const gzip = ".gz";
+        pub const zstd = ".zst";
+        pub const lzma = ".lzma";
+        pub const lzma2 = ".lzma2";
+        pub const xz = ".xz";
+        pub const tar_gz = ".tar.gz";
+        pub const zip = ".zip";
+        pub const lz4 = ".lz4";
+        pub const none = "";
+    };
+};
+
+/// Scheduler defaults.
+///
+/// Usage:
+///   Default values for task scheduling and maintenance.
+///
+/// Complexity: O(1)
+pub const SchedulerDefaults = struct {
+    /// Default retry interval in milliseconds (5s).
+    pub const retry_interval_ms: u32 = 5000;
+    /// Default cleanup max age in seconds (7 days).
+    pub const max_age_seconds: u64 = 7 * 24 * 60 * 60;
+    /// Cron fallback interval in milliseconds (1 min).
+    pub const cron_fallback_interval_ms: i64 = 60 * 1000;
+};
+
+/// Rotation default settings.
+///
+/// Usage:
+///   Default values for log rotation.
+///
+/// Complexity: O(1)
+pub const RotationDefaults = struct {
+    /// Default retention count (10).
+    pub const retention_count: usize = 10;
+};
+
+/// General configuration defaults.
+///
+/// Usage:
+///   Default values for general logger configuration.
+///
+/// Complexity: O(1)
+pub const ConfigDefaults = struct {
+    /// Default stack size for stack trace capturing (1MB).
+    pub const stack_size: usize = 1024 * 1024;
+    /// Default arena reset threshold (64KB).
+    pub const arena_reset_threshold: usize = 64 * 1024;
+};
+
+/// Redaction defaults.
+///
+/// Usage:
+///   Default values for redaction configuration.
+///
+/// Complexity: O(1)
+pub const RedactionDefaults = struct {
+    /// Default characters to reveal at start.
+    pub const partial_start_chars: u8 = 4;
+    /// Default characters to reveal at end.
+    pub const partial_end_chars: u8 = 4;
+    /// Default mask character.
+    pub const mask_char: u8 = '*';
+};
+
+/// Rate limiting defaults.
+///
+/// Usage:
+///   Default values for rate limiting configuration.
+///
+/// Complexity: O(1)
+pub const RateLimitDefaults = struct {
+    /// Default max requests per second.
+    pub const max_per_second: u32 = 1000;
+    /// Default burst size.
+    pub const burst_size: u32 = 100;
+};
+
+/// Sampling defaults.
+///
+/// Usage:
+///   Default values for sampling configuration.
+///
+/// Complexity: O(1)
+pub const SamplingDefaults = struct {
+    /// Default rate limit window in milliseconds.
+    pub const rate_limit_window_ms: u64 = 1000;
+    /// Default adaptive adjustment interval in milliseconds.
+    pub const adaptive_adjustment_interval_ms: u64 = 1000;
+    /// Default minimum adaptive sample rate.
+    pub const adaptive_min_rate: f64 = 0.01;
+    /// Default maximum adaptive sample rate.
+    pub const adaptive_max_rate: f64 = 1.0;
+};
+
+/// Parallel sink writing defaults.
+///
+/// Usage:
+///   Default values for parallel sink configuration.
+///
+/// Complexity: O(1)
+pub const ParallelDefaults = struct {
+    /// Default maximum concurrent writes.
+    pub const max_concurrent: usize = 8;
+    /// High throughput maximum concurrent writes.
+    pub const high_throughput_max_concurrent: usize = 16;
+    /// Default buffer size.
+    pub const buffer_size: usize = 64;
+    /// High throughput buffer size.
+    pub const high_throughput_buffer_size: usize = 128;
+    /// Default maximum retries.
+    pub const max_retries: u3 = 3;
+    /// Default write timeout in milliseconds.
+    pub const write_timeout_ms: u64 = 5000;
+};
+
+/// Sink configuration defaults.
+///
+/// Usage:
+///   Default values for sink configuration.
+///
+/// Complexity: O(1)
+pub const SinkDefaults = struct {
+    /// Default max buffer records.
+    pub const max_buffer_records: usize = 1000;
+    /// Default flush interval in milliseconds.
+    pub const flush_interval_ms: u64 = 1000;
 };
 
 test "atomic types exist" {

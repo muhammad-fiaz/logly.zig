@@ -1197,17 +1197,21 @@ pub const Logger = struct {
             record.correlation_id = c;
         }
 
-        // Copy context
-        var it = self.context.iterator();
-        while (it.next()) |entry| {
-            try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+        // Copy context - fast path: skip if empty
+        if (self.context.count() > 0) {
+            var it = self.context.iterator();
+            while (it.next()) |entry| {
+                try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+            }
         }
 
-        // Copy extra context
+        // Copy extra context - fast path: skip if null or empty
         if (extra_context) |ec| {
-            var extra_it = ec.iterator();
-            while (extra_it.next()) |entry| {
-                try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+            if (ec.count() > 0) {
+                var extra_it = ec.iterator();
+                while (extra_it.next()) |entry| {
+                    try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+                }
             }
         }
 

@@ -261,5 +261,101 @@ pub fn main() !void {
     const files_processed = try batch_comp.compressDirectory(test_dir);
     std.debug.print("    Batch compressed {d} files in '{s}'\n\n", .{ files_processed, test_dir });
 
+    // Example 13: v0.1.6 New Algorithms
+    std.debug.print("13. New Algorithms (v0.1.6+)\n", .{});
+    std.debug.print("    ------------------------\n", .{});
+
+    const algo_test_data = "Testing new v0.1.6 compression algorithms " ** 30;
+
+    // LZMA
+    {
+        var lzma_comp = logly.Compression.lzmaCompression(allocator);
+        defer lzma_comp.deinit();
+        const lzma_compressed = try lzma_comp.compress(algo_test_data);
+        defer allocator.free(lzma_compressed);
+        const lzma_decompressed = try lzma_comp.decompress(lzma_compressed);
+        defer allocator.free(lzma_decompressed);
+        std.debug.print("    LZMA:   {} -> {} bytes ({s})\n", .{ algo_test_data.len, lzma_compressed.len, if (std.mem.eql(u8, algo_test_data, lzma_decompressed)) "✓" else "✗" });
+    }
+
+    // LZMA2
+    {
+        var lzma2_comp = logly.Compression.lzma2Compression(allocator);
+        defer lzma2_comp.deinit();
+        const lzma2_compressed = try lzma2_comp.compress(algo_test_data);
+        defer allocator.free(lzma2_compressed);
+        const lzma2_decompressed = try lzma2_comp.decompress(lzma2_compressed);
+        defer allocator.free(lzma2_decompressed);
+        std.debug.print("    LZMA2:  {} -> {} bytes ({s})\n", .{ algo_test_data.len, lzma2_compressed.len, if (std.mem.eql(u8, algo_test_data, lzma2_decompressed)) "✓" else "✗" });
+    }
+
+    // XZ
+    {
+        var xz_comp = logly.Compression.xzCompression(allocator);
+        defer xz_comp.deinit();
+        const xz_compressed = try xz_comp.compress(algo_test_data);
+        defer allocator.free(xz_compressed);
+        const xz_decompressed = try xz_comp.decompress(xz_compressed);
+        defer allocator.free(xz_decompressed);
+        std.debug.print("    XZ:     {} -> {} bytes ({s})\n", .{ algo_test_data.len, xz_compressed.len, if (std.mem.eql(u8, algo_test_data, xz_decompressed)) "✓" else "✗" });
+    }
+
+    // ZIP
+    {
+        var zip_comp = logly.Compression.zipCompression(allocator);
+        defer zip_comp.deinit();
+        const zip_compressed = try zip_comp.compress(algo_test_data);
+        defer allocator.free(zip_compressed);
+        const zip_decompressed = try zip_comp.decompress(zip_compressed);
+        defer allocator.free(zip_decompressed);
+        std.debug.print("    ZIP:    {} -> {} bytes ({s})\n", .{ algo_test_data.len, zip_compressed.len, if (std.mem.eql(u8, algo_test_data, zip_decompressed)) "✓" else "✗" });
+    }
+
+    // TAR.GZ
+    {
+        var targz_comp = logly.Compression.tarGzCompression(allocator);
+        defer targz_comp.deinit();
+        const targz_compressed = try targz_comp.compress(algo_test_data);
+        defer allocator.free(targz_compressed);
+        const targz_decompressed = try targz_comp.decompress(targz_compressed);
+        defer allocator.free(targz_decompressed);
+        std.debug.print("    TAR.GZ: {} -> {} bytes ({s})\n", .{ algo_test_data.len, targz_compressed.len, if (std.mem.eql(u8, algo_test_data, targz_decompressed)) "✓" else "✗" });
+    }
+
+    // LZ4
+    {
+        var lz4_comp = logly.Compression.lz4Compression(allocator);
+        defer lz4_comp.deinit();
+        const lz4_compressed = try lz4_comp.compress(algo_test_data);
+        defer allocator.free(lz4_compressed);
+        const lz4_decompressed = try lz4_comp.decompress(lz4_compressed);
+        defer allocator.free(lz4_decompressed);
+        std.debug.print("    LZ4:    {} -> {} bytes ({s})\n", .{ algo_test_data.len, lz4_compressed.len, if (std.mem.eql(u8, algo_test_data, lz4_decompressed)) "✓" else "✗" });
+    }
+
+    std.debug.print("\n", .{});
+
+    // Example 14: Config Presets for v0.1.6 Algorithms
+    std.debug.print("14. Config Presets (v0.1.6+)\n", .{});
+    std.debug.print("    ------------------------\n", .{});
+
+    const lzma_cfg = logly.Config.CompressionConfig.lzma();
+    std.debug.print("    CompressionConfig.lzma(): algorithm={s}, ext={s}\n", .{ @tagName(lzma_cfg.algorithm), lzma_cfg.extension });
+
+    const lzma2_cfg = logly.Config.CompressionConfig.lzma2();
+    std.debug.print("    CompressionConfig.lzma2(): algorithm={s}, ext={s}\n", .{ @tagName(lzma2_cfg.algorithm), lzma2_cfg.extension });
+
+    const xz_cfg = logly.Config.CompressionConfig.xz();
+    std.debug.print("    CompressionConfig.xz(): algorithm={s}, ext={s}\n", .{ @tagName(xz_cfg.algorithm), xz_cfg.extension });
+
+    const zip_cfg = logly.Config.CompressionConfig.zip();
+    std.debug.print("    CompressionConfig.zip(): algorithm={s}, ext={s}\n", .{ @tagName(zip_cfg.algorithm), zip_cfg.extension });
+
+    const targz_cfg = logly.Config.CompressionConfig.tarGz();
+    std.debug.print("    CompressionConfig.tarGz(): algorithm={s}, ext={s}\n", .{ @tagName(targz_cfg.algorithm), targz_cfg.extension });
+
+    const lz4_cfg = logly.Config.CompressionConfig.lz4();
+    std.debug.print("    CompressionConfig.lz4(): algorithm={s}, ext={s}\n\n", .{ @tagName(lz4_cfg.algorithm), lz4_cfg.extension });
+
     std.debug.print("=== Compression Example Complete ===\n", .{});
 }

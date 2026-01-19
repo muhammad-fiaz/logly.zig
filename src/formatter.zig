@@ -65,9 +65,9 @@ pub const Formatter = struct {
 
         /// Get plain text formats (total - json - custom).
         pub fn getPlainFormats(self: *const FormatterStats) u64 {
-            const total = self.getTotalFormatted();
-            const json_count = self.getJsonFormats();
-            const custom_count = self.getCustomFormats();
+            const total = Utils.atomicLoadU64(&self.total_records_formatted);
+            const json_count = Utils.atomicLoadU64(&self.json_formats);
+            const custom_count = Utils.atomicLoadU64(&self.custom_formats);
             if (total > json_count + custom_count) {
                 return total - json_count - custom_count;
             }
@@ -76,22 +76,22 @@ pub const Formatter = struct {
 
         /// Check if any records have been formatted.
         pub fn hasFormatted(self: *const FormatterStats) bool {
-            return self.getTotalFormatted() > 0;
+            return Utils.atomicLoadU64(&self.total_records_formatted) > 0;
         }
 
         /// Check if any JSON formats have been used.
         pub fn hasJsonFormats(self: *const FormatterStats) bool {
-            return self.getJsonFormats() > 0;
+            return Utils.atomicLoadU64(&self.json_formats) > 0;
         }
 
         /// Check if any custom formats have been used.
         pub fn hasCustomFormats(self: *const FormatterStats) bool {
-            return self.getCustomFormats() > 0;
+            return Utils.atomicLoadU64(&self.custom_formats) > 0;
         }
 
         /// Check if any format errors have occurred.
         pub fn hasErrors(self: *const FormatterStats) bool {
-            return self.getFormatErrors() > 0;
+            return Utils.atomicLoadU64(&self.format_errors) > 0;
         }
 
         /// Calculate JSON format usage rate (0.0 - 1.0).
@@ -134,7 +134,7 @@ pub const Formatter = struct {
         /// Calculate throughput (bytes per second).
         pub fn throughputBytesPerSecond(self: *const FormatterStats, elapsed_seconds: f64) f64 {
             return Utils.safeFloatDiv(
-                @as(f64, @floatFromInt(self.getTotalBytesFormatted())),
+                @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.total_bytes_formatted))),
                 elapsed_seconds,
             );
         }

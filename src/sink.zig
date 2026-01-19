@@ -254,7 +254,7 @@ pub const SinkConfig = struct {
     async_write: bool = true,
 
     /// Buffer size for async writing in bytes.
-    buffer_size: usize = 8192,
+    buffer_size: usize = Constants.BufferSizes.sink,
 
     /// Force JSON output for this sink.
     json: bool = false,
@@ -302,10 +302,10 @@ pub const SinkConfig = struct {
     on_error: ErrorBehavior = .log_stderr,
 
     /// Maximum records to buffer before forcing a flush.
-    max_buffer_records: usize = 1000,
+    max_buffer_records: usize = Constants.SinkDefaults.max_buffer_records,
 
     /// Flush interval in milliseconds.
-    flush_interval_ms: u64 = 1000,
+    flush_interval_ms: u64 = Constants.SinkDefaults.flush_interval_ms,
 
     /// File permissions for created log files (Unix only).
     file_mode: ?u32 = null,

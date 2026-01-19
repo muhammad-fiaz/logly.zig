@@ -1,6 +1,6 @@
 ---
 title: Log Compression Guide
-description: Learn how to compress log files with Logly.zig using DEFLATE, GZIP, ZLIB, or ZSTD algorithms. Covers automatic rotation compression, background processing, streaming mode, and performance optimization.
+description: Learn how to compress log files with Logly.zig using DEFLATE, GZIP, ZLIB, ZSTD, LZMA, XZ, LZ4, and archive formats. Covers automatic rotation compression, background processing, streaming mode, and performance optimization.
 head:
   - - meta
     - name: keywords
@@ -15,14 +15,14 @@ This guide covers log compression in Logly, including automatic and manual compr
 
 Logly provides a comprehensive compression module with advanced features:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD (v0.1.5+)
+- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4
 - **Smart Strategies**: Text-optimized, binary, RLE, adaptive auto-detection
 - **Flexible Modes**: Manual, on-rotation, size-based, scheduled, streaming
 - **Background Processing**: Offload compression to thread pool
 - **Real-time Monitoring**: Detailed statistics with atomic counters
-- **Callback System**: 5 callback types for complete observability
+- **Callback System**: Complete observability with event hooks
 - **Data Integrity**: CRC32 checksums with corruption detection
-- **Performance**: 100-500 MB/s compression, 200-1400 MB/s decompression (zstd fastest)
+- **Performance**: High-speed compression with modern algorithms
 
 ## Quick Start
 
@@ -86,11 +86,10 @@ var config8 = logly.Config.default().withProductionCompression();
 ### CompressionConfig Presets
 
 ```zig
-const CompressionConfig = logly.Config.CompressionConfig;
+const CompressionConfig = logly.CompressionConfig;
 
 // Preset configurations
 const enable_cfg = CompressionConfig.enable();        // Basic enabled
-const basic_cfg = CompressionConfig.basic();          // Alias for enable()
 const implicit_cfg = CompressionConfig.implicit();    // Auto on rotation
 const explicit_cfg = CompressionConfig.explicit();    // Manual control
 const fast_cfg = CompressionConfig.fast();            // Speed priority
@@ -104,12 +103,18 @@ const dev_cfg = CompressionConfig.development();      // Development mode
 const disable_cfg = CompressionConfig.disable();      // Disabled
 const bg_cfg = CompressionConfig.backgroundMode();    // Background thread
 const stream_cfg = CompressionConfig.streamingMode(); // Streaming mode
-
-// Zstd presets (v0.1.5+) - excellent compression with very fast decompression
 const zstd_cfg = CompressionConfig.zstd();            // Default zstd
 const zstd_fast_cfg = CompressionConfig.zstdFast();   // Fast zstd
 const zstd_best_cfg = CompressionConfig.zstdBest();   // Best zstd ratio
 const zstd_prod_cfg = CompressionConfig.zstdProduction(); // Production zstd
+const zstd_custom = CompressionConfig.zstdWithLevel(12); // Custom level
+
+// v0.1.6+ algorithms
+const lzma_cfg = CompressionConfig.lzma();            // LZMA
+const xz_cfg = CompressionConfig.xz();                // XZ
+const lz4_cfg = CompressionConfig.lz4();              // LZ4
+const zip_cfg = CompressionConfig.zip();              // ZIP
+const targz_cfg = CompressionConfig.tarGz();          // TAR.GZ
 
 // Size-based trigger (compress when file exceeds 5MB)
 const size_cfg = CompressionConfig.onSize(5 * 1024 * 1024);
@@ -127,8 +132,7 @@ var zstd_config = logly.Config.default().withZstdCompression();
 const allocator = std.heap.page_allocator;
 
 // One-liner compression instances
-var comp1 = logly.Compression.enable(allocator);       // Basic enabled
-var comp2 = logly.Compression.basic(allocator);        // Alias for enable()
+var comp1 = logly.Compression.init(allocator);         // Basic default
 var comp3 = logly.Compression.implicit(allocator);     // Auto on rotation
 var comp4 = logly.Compression.explicit(allocator);     // Manual control
 var comp5 = logly.Compression.fast(allocator);         // Speed priority
@@ -138,14 +142,17 @@ var comp8 = logly.Compression.forLogs(allocator);      // Log optimized
 var comp9 = logly.Compression.archive(allocator);      // Archival mode
 var comp10 = logly.Compression.production(allocator);  // Production ready
 var comp11 = logly.Compression.development(allocator); // Development mode
-var comp12 = logly.Compression.background(allocator);  // Background thread
-var comp13 = logly.Compression.streaming(allocator);   // Streaming mode
-
-// Zstd compression instances (v0.1.5+)
 var comp14 = logly.Compression.zstdCompression(allocator);   // Default zstd
 var comp15 = logly.Compression.zstdFast(allocator);          // Fast zstd
 var comp16 = logly.Compression.zstdBest(allocator);          // Best zstd ratio
 var comp17 = logly.Compression.zstdProduction(allocator);    // Production zstd
+
+// v0.1.6+ factory methods
+var lzma_comp = logly.Compression.lzmaCompression(allocator);
+var xz_comp = logly.Compression.xzCompression(allocator);
+var lz4_comp = logly.Compression.lz4Compression(allocator);
+var zip_comp = logly.Compression.zipCompression(allocator);
+var targz_comp = logly.Compression.tarGzCompression(allocator);
 
 defer comp1.deinit();
 // ... defer for others
@@ -225,6 +232,111 @@ try compressor.compressFile("logs/app.log", null);
 // Compress directory
 const files_compressed = try compressor.compressDirectory("logs/archive/");
 std.debug.print("Compressed {d} files\n", .{files_compressed});
+```
+
+## New Compression Algorithms (v0.1.6+)
+
+v0.1.6 introduces full compression and decompression support for six additional algorithms, providing flexibility for different use cases.
+
+### Algorithm Overview
+
+| Algorithm | Factory Method | Extension | Best For |
+|-----------|---------------|-----------|----------|
+| **LZMA** | `lzmaCompression()` | `.lzma` | High-ratio archival |
+| **LZMA2** | `lzma2Compression()` | `.lzma2` | Large file archival |
+| **XZ** | `xzCompression()` | `.xz` | Distribution packages |
+| **ZIP** | `zipCompression()` | `.zip` | Cross-platform sharing |
+| **TAR.GZ** | `tarGzCompression()` | `.tar.gz` | Unix-style archives |
+| **LZ4** | `lz4Compression()` | `.lz4` | Real-time high-speed |
+
+### LZMA/LZMA2/XZ Compression
+
+High-ratio compression ideal for long-term log archival:
+
+```zig
+const logly = @import("logly");
+
+// LZMA - highest compression ratio
+var lzma_comp = logly.Compression.lzmaCompression(allocator);
+defer lzma_comp.deinit();
+
+const data = "Log data for archival..." ** 1000;
+const compressed = try lzma_comp.compress(data);
+defer allocator.free(compressed);
+
+std.debug.print("LZMA: {d} -> {d} bytes\n", .{data.len, compressed.len});
+
+// XZ - standard distribution format
+var xz_comp = logly.Compression.xzCompression(allocator);
+defer xz_comp.deinit();
+
+const xz_compressed = try xz_comp.compress(data);
+defer allocator.free(xz_compressed);
+```
+
+### ZIP Compression
+
+Create standard ZIP archives compatible with all systems:
+
+```zig
+var zip_comp = logly.Compression.zipCompression(allocator);
+defer zip_comp.deinit();
+
+const log_data = "[2026-01-19] INFO: Application started\n" ** 100;
+const zipped = try zip_comp.compress(log_data);
+defer allocator.free(zipped);
+
+// Decompress back
+const original = try zip_comp.decompress(zipped);
+defer allocator.free(original);
+```
+
+### TAR.GZ Compression
+
+Unix-style tar archive with gzip compression:
+
+```zig
+var targz_comp = logly.Compression.tarGzCompression(allocator);
+defer targz_comp.deinit();
+
+const log_content = "Server log entry...\n" ** 500;
+const archived = try targz_comp.compress(log_content);
+defer allocator.free(archived);
+
+// Extract
+const extracted = try targz_comp.decompress(archived);
+defer allocator.free(extracted);
+```
+
+### LZ4 Fast Compression
+
+Ultra-fast compression for real-time logging scenarios:
+
+```zig
+var lz4_comp = logly.Compression.lz4Compression(allocator);
+defer lz4_comp.deinit();
+
+// LZ4 prioritizes speed over ratio
+const fast_data = "High-throughput log data..." ** 200;
+const fast_compressed = try lz4_comp.compress(fast_data);
+defer allocator.free(fast_compressed);
+```
+
+### Using CompressionConfig Presets
+
+```zig
+const CompressionConfig = logly.Config.CompressionConfig;
+
+// Use preset configurations
+const lzma_cfg = CompressionConfig.lzma();     // .lzma extension
+const lzma2_cfg = CompressionConfig.lzma2();   // .lzma2 extension
+const xz_cfg = CompressionConfig.xz();         // .xz extension
+const zip_cfg = CompressionConfig.zip();       // .zip extension
+const targz_cfg = CompressionConfig.tarGz();   // .tar.gz extension
+const lz4_cfg = CompressionConfig.lz4();       // .lz4 extension
+
+// Apply to config
+var config = logly.Config.default().withCompression(lzma_cfg);
 ```
 
 ## File Name Customization

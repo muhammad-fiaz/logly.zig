@@ -152,7 +152,7 @@ pub const SchedulerConfig = struct {
 | `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
 | `archive_root_dir` | `?[]const u8` | `null` | Centralized archive location |
 | `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd v0.1.5+) |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd, lzma, lzma2, xz, zip, tar.gz, lz4) |
 | `compression_level` | `CompressionLevel` | `.default` | Compression level |
 | `keep_originals` | `bool` | `false` | Keep originals after compression |
 | `archive_file_prefix` | `?[]const u8` | `null` | Prefix for archived files |
@@ -161,6 +161,9 @@ pub const SchedulerConfig = struct {
 | `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
 | `min_age_days_for_compression` | `u64` | `1` | Min age before compression |
 | `max_concurrent_compressions` | `usize` | `2` | Max parallel compressions |
+
+> Note: v0.1.6 expanded compression and archiving support — including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 — and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compression_algorithm` and `compression_level` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
+
 
 ### ScheduledTask
 

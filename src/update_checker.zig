@@ -20,6 +20,7 @@ const http = std.http;
 const SemanticVersion = std.SemanticVersion;
 const version_info = @import("version.zig");
 const Network = @import("network.zig");
+const Constants = @import("constants.zig");
 
 /// GitHub repository owner for update checks.
 const REPO_OWNER = "muhammad-fiaz";
@@ -167,11 +168,12 @@ fn checkWorker(allocator: std.mem.Allocator, global_console_display: bool) void 
     // const red_bg = "\x1b[41m";
     // std.log.info("{s}{s} [UPDATE ERROR] ❌ Failed to check for updates {s}", .{ bold_white, red_bg, reset });
 
-    const reset = "\x1b[0m";
-    const bold_white = "\x1b[1;37m";
-    const bold_black = "\x1b[1;30m";
-    const green_bg = "\x1b[42m"; // Professional Green
-    const cyan_bg = "\x1b[46m"; // Professional Cyan
+    const escape = "\x1b[";
+    const reset = escape ++ Constants.Colors.reset ++ "m";
+    const bold_white = escape ++ Constants.Colors.BrightFg.white ++ ";" ++ Constants.Colors.Style.bold ++ "m";
+    const bold_black = escape ++ Constants.Colors.BrightFg.black ++ ";" ++ Constants.Colors.Style.bold ++ "m";
+    const green_bg = escape ++ Constants.Colors.Bg.green ++ "m"; // Professional Green
+    const cyan_bg = escape ++ Constants.Colors.Bg.cyan ++ "m"; // Professional Cyan
 
     if (!global_console_display) return;
 

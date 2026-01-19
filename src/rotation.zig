@@ -704,17 +704,14 @@ pub const Rotation = struct {
     }
 
     fn uniqueCompressedPath(allocator: std.mem.Allocator, base: []const u8, algo: Compression.Algorithm) ![]u8 {
-        const ext = switch (algo) {
-            .deflate, .zlib, .raw_deflate => ".gz",
-            else => ".gz",
-        };
+        const ext = Utils.getCompressionExtension(algo);
         return std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ext });
     }
 
     fn shiftIndexFiles(self: *Rotation) !void {
         // This assumes we have a reasonable max retention to avoid infinite loop
         // We shift .N -> .N+1
-        const max = self.retention orelse 10; // Default limit for shifting
+        const max = self.retention orelse Constants.RotationDefaults.retention_count; // Default limit for shifting
         const target_dir = self.archive_dir orelse (std.fs.path.dirname(self.base_path) orelse ".");
         const base_name = std.fs.path.basename(self.base_path);
 

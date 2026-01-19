@@ -112,7 +112,7 @@ pub const ThreadPool = struct {
         pub fn lowResource() ThreadPoolConfig {
             return .{
                 .thread_count = 2,
-                .queue_size = 128,
+                .queue_size = Constants.ThreadDefaults.queue_size_low,
                 .work_stealing = false,
                 .stack_size = Constants.ThreadDefaults.stack_size / 2, // 512KB stack
             };

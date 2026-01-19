@@ -279,6 +279,38 @@ Calculates bytes per second given bytes and duration in milliseconds.
 pub fn calculateBytesPerSecond(bytes: u64, elapsed_ms: i64) f64
 ```
 
+### calculateCRC32
+
+Calculates CRC32 checksum of data.
+
+```zig
+pub fn calculateCRC32(data: []const u8) u32
+```
+
+### lzmaHash
+
+Calculates LZMA hash for match finding.
+
+```zig
+pub fn lzmaHash(data: []const u8, len: usize) u14
+```
+
+### getCompressionExtension
+
+Returns the canonical file extension for a given compression algorithm. Useful when generating archive or compressed file names consistently across rotation, scheduler, and compression utilities.
+
+```zig
+pub fn getCompressionExtension(algo: anytype) []const u8
+```
+
+Example:
+
+```zig
+const ext = Utils.getCompressionExtension(CompressionAlgorithm.zstd); // ".zst"
+```
+
+Note: Returns an empty string for `.none`.
+
 ## Date Formatting
 
 ### formatDatePattern

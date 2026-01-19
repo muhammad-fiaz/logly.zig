@@ -213,7 +213,7 @@ pub fn main() !void {
     config.color = true;
     config.show_filename = true;  // Enable clickable file:line
     config.show_lineno = true;
-    config.enable_callbacks = true;
+    config.enable_callbacks = true;  // Enable only when using log callbacks
     logger.configure(config);
 
     // Add sinks

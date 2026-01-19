@@ -1,6 +1,6 @@
 ---
 title: Log Compression Example
-description: Example of log compression with Logly.zig using DEFLATE, GZIP, ZLIB, and ZSTD algorithms. Compress logs with CRC32 verification, configurable levels, and rotation integration.
+description: Example of log compression with Logly.zig using DEFLATE, GZIP, ZLIB, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 algorithms. Compress logs with CRC32 verification, configurable levels, and rotation integration.
 head:
   - - meta
     - name: keywords
@@ -12,7 +12,7 @@ head:
 
 # Compression Example
 
-This example demonstrates log compression features in Logly, including GZIP, ZSTD (v0.1.5+), and Streaming APIs.
+This example demonstrates log compression features in Logly, including GZIP, ZSTD (v0.1.5+), LZMA, XZ, TAR.GZ, ZIP, LZ4, and the Streaming API.
 
 ## Source Code
 
@@ -153,7 +153,7 @@ zig build run-compression
 ```zig
 var config = logly.Config.default();
 config.compression = logly.CompressionConfig{
-    .algorithm = .gzip, // Supports .deflate, .gzip, .zlib, .raw_deflate
+    .algorithm = .gzip, // Supports .deflate, .gzip, .zlib, .raw_deflate, .zstd, .lzma, .lzma2, .xz, .zip, .tar_gz, .lz4
     .level = .default,
     .mode = .on_rotation,
 };
@@ -195,6 +195,8 @@ Logly uses a **hybrid LZ77+RLE** algorithm:
 .level = 9,  // Best ratio, slower
 ```
 
+```
+
 ## Integration with Rotation
 
 ```zig
@@ -205,6 +207,81 @@ config.rotation = .{
     .compress_rotated = true,
 };
 ```
+
+## New Algorithms (v0.1.6+)
+
+### LZMA/XZ Compression
+
+High-ratio compression for archiving:
+
+```zig
+// LZMA - Maximum compression ratio
+var lzma_comp = logly.Compression.lzmaCompression(allocator);
+defer lzma_comp.deinit();
+
+const lzma_compressed = try lzma_comp.compress(log_data);
+defer allocator.free(lzma_compressed);
+
+// XZ - Standard archive format
+var xz_comp = logly.Compression.xzCompression(allocator);
+defer xz_comp.deinit();
+
+const xz_compressed = try xz_comp.compress(log_data);
+defer allocator.free(xz_compressed);
+```
+
+### ZIP Archive
+
+Cross-platform compatible archives:
+
+```zig
+var zip_comp = logly.Compression.zipCompression(allocator);
+defer zip_comp.deinit();
+
+const zipped = try zip_comp.compress(log_data);
+defer allocator.free(zipped);
+
+// Decompress
+const unzipped = try zip_comp.decompress(zipped);
+defer allocator.free(unzipped);
+```
+
+### TAR.GZ Archive
+
+Unix-style archives:
+
+```zig
+var targz_comp = logly.Compression.tarGzCompression(allocator);
+defer targz_comp.deinit();
+
+const archived = try targz_comp.compress(log_content);
+defer allocator.free(archived);
+```
+
+### LZ4 Fast Compression
+
+Ultra-fast for real-time logging:
+
+```zig
+var lz4_comp = logly.Compression.lz4Compression(allocator);
+defer lz4_comp.deinit();
+
+// LZ4 prioritizes speed over ratio
+const fast_compressed = try lz4_comp.compress(log_data);
+defer allocator.free(fast_compressed);
+```
+
+### Algorithm Comparison
+
+| Algorithm | Speed | Ratio | Use Case |
+|-----------|-------|-------|----------|
+| `deflate` | ★★★★ | ★★★ | General purpose |
+| `zstd` | ★★★★★ | ★★★★ | High performance |
+| `lzma` | ★★ | ★★★★★ | Long-term storage |
+| `xz` | ★★ | ★★★★★ | Distribution |
+| `zip` | ★★★★ | ★★★ | Cross-platform |
+| `tar_gz` | ★★★ | ★★★★ | Unix archives |
+| `lz4` | ★★★★★ | ★★ | Real-time |
 
 ## See Also
 
