@@ -50,6 +50,8 @@ The `Formatter` struct handles the conversion of log records into string output.
 | `formatToWriter()` | `renderToWriter()`, `writeFormatted()` | Format record to writer |
 | `formatJson()` | `json()`, `toJson()` | Format record to JSON |
 | `formatJsonToWriter()` | `jsonToWriter()`, `writeJson()` | Format record to JSON writer |
+| `formatTimestamp()` | `timestamp()`, `formatTime()` | Format timestamp only |
+| `formatTimestampWithAllocator()` | `timestampWithAllocator()`, `formatTimeWithAllocator()` | Format timestamp with custom allocator |
 | `getStats()` | `statistics()` | Get formatter statistics |
 | `setFormatCompleteCallback()` | `onFormatComplete()`, `setOnFormatComplete()` | Set format complete callback |
 | `setJsonFormatCallback()` | `onJsonFormat()`, `setOnJsonFormat()` | Set JSON format callback |
@@ -102,6 +104,39 @@ const json = try formatter.formatJsonWithAllocator(record, config, logger.scratc
 #### `formatJsonToWriter(writer: anytype, record: *const Record, config: anytype) !void`
 
 Writes a log record as JSON directly to a writer without intermediate allocation.
+
+#### `formatTimestamp(timestamp_ms: i64, config: anytype) ![]u8`
+
+Formats a standalone timestamp string using the same logic as record formatting.
+
+- Honors `Config.time_format` and timezone behavior.
+- Useful when callers need consistent timestamp serialization outside full record formatting.
+
+#### `formatTimestampWithAllocator(timestamp_ms: i64, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Allocator-aware variant of `formatTimestamp(...)`.
+
+- Uses `scratch_allocator` when provided.
+- Falls back to formatter allocator when null.
+
+### Timestamp Timezone Behavior
+
+Timestamp formatting behavior depends on `Config.timezone`:
+
+- `.utc`: `ISO8601` emits `Z`, and `RFC3339` emits `+00:00`.
+- `.local`: uses process/system local timezone when available and emits `+/-HH:MM` for `ISO8601` and `RFC3339`.
+
+For custom `time_format` patterns, timezone tokens are also available:
+- `ZZZ` => `+HH:MM`
+- `ZZ` => `+HHMM`
+
+`time_format = "default"` resolves to the canonical default pattern (`YYYY-MM-DD HH:mm:ss.SSS`).
+
+`unix` and `unix_ms` formats remain numeric and timezone-agnostic, including JSON output.
+
+Why `ZZZ` and `ZZ` are needed:
+- Custom date/time layouts are often required by legacy parsers and SIEM pipelines.
+- Including explicit offsets prevents ambiguous timestamps when logs are aggregated across timezones.
 
 #### `setTheme(theme: Theme) void`
 

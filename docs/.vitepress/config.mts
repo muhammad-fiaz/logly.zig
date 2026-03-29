@@ -5,7 +5,7 @@ import llmstxt from "vitepress-plugin-llms";
 export const SITE_URL = "https://muhammad-fiaz.github.io/logly.zig";
 export const SITE_NAME = "Logly.zig";
 export const SITE_DESCRIPTION =
-  "High-performance structured logging library for Zig with async I/O, file rotation, JSON output, ANSI colors, and enterprise features like redaction, metrics, and distributed tracing.";
+  "High-performance structured logging library for Zig with async I/O, explicit rotation/thread-pool/scheduler controls, JSON output, ANSI colors, and enterprise features like redaction, metrics, and distributed tracing.";
 
 // Google Analytics and Google Tag Manager IDs
 export const GA_ID = "G-6BVYCRK57P";
@@ -16,7 +16,7 @@ export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
 
 // SEO Keywords
 export const KEYWORDS =
-  "zig, logging, logger, structured logging, async logging, json logging, file rotation, log rotation, thread pool, metrics, tracing, redaction, filtering, sampling, compression, zstd compression, gzip, network logging, zig library, production logging, enterprise logging";
+  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, rules engine, diagnostics rules, metrics, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
 
 export default defineConfig({
   lang: "en-US",
@@ -273,12 +273,12 @@ gtag('config', '${GA_ID}');`,
           priceCurrency: "USD",
         },
         downloadUrl: "https://github.com/muhammad-fiaz/logly.zig",
-        softwareVersion: "0.1.6",
+        softwareVersion: "0.1.7",
         license: "https://opensource.org/licenses/MIT",
       });
     } else {
       // Extract section from path (e.g. guide/getting-started -> Guide)
-      const pathParts = pageData.relativePath.split("/");
+      const pathParts: string[] = String(pageData.relativePath).split("/");
       const section =
         pathParts.length > 1
           ? pathParts[0].charAt(0).toUpperCase() + pathParts[0].slice(1)
@@ -308,15 +308,17 @@ gtag('config', '${GA_ID}');`,
     ];
 
     if (!isHome) {
-      const pathParts = pageData.relativePath.replace(/\.md$/, "").split("/");
+      const pathParts: string[] = String(pageData.relativePath)
+        .replace(/\.md$/, "")
+        .split("/");
       let currentPath = SITE_URL;
 
-      pathParts.forEach((part, index) => {
+      pathParts.forEach((part: string, index: number) => {
         currentPath += `/${part}`;
         // Best effort capitalization
         const name = part
           .split("-")
-          .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+          .map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
           .join(" ");
 
         breadcrumbs.push({
@@ -479,6 +481,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Async Logging", link: "/examples/async-logging" },
           { text: "Network Logging", link: "/examples/network-logging" },
           { text: "Advanced Config", link: "/examples/advanced-config" },
+          { text: "Allocator Strategies", link: "/examples/allocator-strategies" },
           { text: "Module Levels", link: "/examples/module-levels" },
           { text: "Custom Levels Full", link: "/examples/custom-levels-full" },
           { text: "Sink Formats", link: "/examples/sink-formats" },

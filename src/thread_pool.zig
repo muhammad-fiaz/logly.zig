@@ -240,10 +240,15 @@ pub const ThreadPool = struct {
         submitted_at: i64,
         priority: Priority = .normal,
 
+        /// Priority level for task scheduling.
         pub const Priority = enum(u8) {
+            /// Lowest priority task.
             low = 0,
+            /// Default priority task.
             normal = 1,
+            /// High priority task.
             high = 2,
+            /// Critical priority task.
             critical = 3,
         };
     };
@@ -255,15 +260,18 @@ pub const ThreadPool = struct {
         /// Callback with context
         callback: CallbackTask,
 
+        /// Function-only task payload.
         pub const FunctionTask = struct {
             func: *const fn (?std.mem.Allocator) void,
         };
 
+        /// Callback task payload with opaque context pointer.
         pub const CallbackTask = struct {
             func: *const fn (*anyopaque, ?std.mem.Allocator) void,
             context: *anyopaque,
         };
 
+        /// Executes this task variant.
         pub fn execute(self: Task, allocator: ?std.mem.Allocator) void {
             switch (self) {
                 .function => |f| f.func(allocator),
@@ -283,6 +291,7 @@ pub const ThreadPool = struct {
         mutex: std.Thread.Mutex = .{},
         condition: std.Thread.Condition = .{},
 
+        /// Initializes a queue with fixed `capacity`.
         pub fn init(allocator: std.mem.Allocator, capacity: usize) !WorkQueue {
             const items = try allocator.alloc(WorkItem, capacity);
             return .{
@@ -295,6 +304,7 @@ pub const ThreadPool = struct {
         /// Alias for init().
         pub const create = @This().init;
 
+        /// Releases queue storage.
         pub fn deinit(self: *WorkQueue) void {
             self.allocator.free(self.items);
         }
@@ -302,6 +312,9 @@ pub const ThreadPool = struct {
         /// Alias for deinit().
         pub const destroy = @This().deinit;
 
+        /// Pushes an item to the queue.
+        ///
+        /// Returns false when queue is at capacity.
         pub fn push(self: *WorkQueue, item: WorkItem) bool {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -317,6 +330,7 @@ pub const ThreadPool = struct {
             return true;
         }
 
+        /// Pops one item from the queue, if available.
         pub fn pop(self: *WorkQueue) ?WorkItem {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -372,6 +386,7 @@ pub const ThreadPool = struct {
             }
         }
 
+        /// Waits up to `timeout_ns` for an item, then pops once.
         pub fn popWait(self: *WorkQueue, timeout_ns: u64) ?WorkItem {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -385,6 +400,7 @@ pub const ThreadPool = struct {
             return self.popUnlocked();
         }
 
+        /// Steals one item from the queue tail.
         pub fn steal(self: *WorkQueue) ?WorkItem {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -401,18 +417,21 @@ pub const ThreadPool = struct {
             return item;
         }
 
+        /// Returns current queue depth.
         pub fn size(self: *WorkQueue) usize {
             self.mutex.lock();
             defer self.mutex.unlock();
             return self.count;
         }
 
+        /// Returns true when the queue is full.
         pub fn isFull(self: *WorkQueue) bool {
             self.mutex.lock();
             defer self.mutex.unlock();
             return self.count >= self.capacity;
         }
 
+        /// Removes all queued items.
         pub fn clear(self: *WorkQueue) void {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -431,6 +450,13 @@ pub const ThreadPool = struct {
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         tasks_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         arena: ?std.heap.ArenaAllocator = null,
+    };
+
+    /// Queue depth snapshot split by global and local queues.
+    pub const QueueDepth = struct {
+        global: usize,
+        local: usize,
+        total: usize,
     };
 
     /// Initializes a new ThreadPool.
@@ -624,6 +650,33 @@ pub const ThreadPool = struct {
         return submitted;
     }
 
+    /// Batch submit with bounded retries for transient queue pressure.
+    ///
+    /// Returns number of tasks eventually submitted.
+    pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, max_attempts: u8, retry_delay_us: u32) usize {
+        if (!self.running.load(.acquire)) return 0;
+        if (tasks.len == 0) return 0;
+
+        const attempts_limit: u8 = if (max_attempts == 0) 1 else max_attempts;
+        var submitted: usize = 0;
+
+        for (tasks) |task| {
+            var attempts: u8 = 0;
+            while (attempts < attempts_limit) : (attempts += 1) {
+                if (self.submit(task, priority)) {
+                    submitted += 1;
+                    break;
+                }
+
+                if (attempts + 1 < attempts_limit and retry_delay_us > 0) {
+                    std.Thread.sleep(@as(u64, retry_delay_us) * Constants.TimeConstants.ns_per_us);
+                }
+            }
+        }
+
+        return submitted;
+    }
+
     /// Try to submit without blocking (fast path for non-contended cases).
     pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool {
         if (!self.running.load(.acquire)) return false;
@@ -741,16 +794,70 @@ pub const ThreadPool = struct {
 
     /// Gets the number of pending tasks.
     pub fn pendingTasks(self: *ThreadPool) usize {
-        var total = self.work_queue.size();
+        return self.pendingTasksByQueue().total;
+    }
+
+    /// Gets a queue depth snapshot split by global and local queues.
+    pub fn pendingTasksByQueue(self: *ThreadPool) QueueDepth {
+        const global_count = self.work_queue.size();
+        var local_count: usize = 0;
+
         for (self.workers) |*worker| {
-            total += worker.local_queue.size();
+            local_count += worker.local_queue.size();
         }
-        return total;
+
+        return .{
+            .global = global_count,
+            .local = local_count,
+            .total = global_count + local_count,
+        };
+    }
+
+    /// Gets total queue capacity across global and per-worker queues.
+    pub fn queueCapacity(self: *const ThreadPool) usize {
+        return self.work_queue.capacity + (self.workers.len * self.config.queue_size);
+    }
+
+    /// Gets currently available queue slots.
+    pub fn availableQueueCapacity(self: *ThreadPool) usize {
+        const capacity = self.queueCapacity();
+        const pending = self.pendingTasks();
+        return if (capacity > pending) capacity - pending else 0;
+    }
+
+    /// Returns true when queue has at least `required_slots` free entries.
+    pub fn canAcceptTasks(self: *ThreadPool, required_slots: usize) bool {
+        if (required_slots == 0) return true;
+        return self.availableQueueCapacity() >= required_slots;
+    }
+
+    /// Gets queue utilization ratio in [0.0, 1.0].
+    pub fn queueUtilization(self: *ThreadPool) f64 {
+        const capacity = self.queueCapacity();
+        if (capacity == 0) return 0.0;
+        return @as(f64, @floatFromInt(self.pendingTasks())) / @as(f64, @floatFromInt(capacity));
+    }
+
+    /// Returns true if queue utilization is above the provided threshold.
+    pub fn isSaturated(self: *ThreadPool, threshold: f64) bool {
+        const clamped = if (threshold < 0.0)
+            0.0
+        else if (threshold > 1.0)
+            1.0
+        else
+            threshold;
+        return self.queueUtilization() >= clamped;
     }
 
     /// Gets the number of active threads.
     pub fn activeThreads(self: *const ThreadPool) u32 {
         return self.stats.active_threads.load(.monotonic);
+    }
+
+    fn hasTimedOut(started_at_ms: i64, timeout_ms: u64) bool {
+        if (timeout_ms == 0) return true;
+        const elapsed = Utils.currentMillis() - started_at_ms;
+        return elapsed >= @as(i64, @intCast(timeout_ms));
     }
 
     /// Waits for all pending tasks to complete.
@@ -767,6 +874,40 @@ pub const ThreadPool = struct {
         }
     }
 
+    /// Waits for all pending tasks with timeout.
+    ///
+    /// Returns true when all tasks completed before timeout.
+    pub fn waitAllTimeout(self: *ThreadPool, timeout_ms: u64) bool {
+        const started_at_ms = Utils.currentMillis();
+
+        while (true) {
+            const submitted = self.stats.tasks_submitted.load(.monotonic);
+            const completed = self.stats.tasks_completed.load(.monotonic);
+            const dropped = self.stats.tasks_dropped.load(.monotonic);
+
+            if (completed + dropped >= submitted) return true;
+
+            if (hasTimedOut(started_at_ms, timeout_ms)) return false;
+
+            std.Thread.sleep(1 * Constants.TimeConstants.ns_per_ms);
+        }
+    }
+
+    /// Waits until pending queue depth is below or equal to threshold.
+    ///
+    /// Returns true when threshold was reached before timeout.
+    pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeout_ms: u64) bool {
+        const started_at_ms = Utils.currentMillis();
+
+        while (true) {
+            if (self.pendingTasks() <= threshold) return true;
+
+            if (hasTimedOut(started_at_ms, timeout_ms)) return false;
+
+            std.Thread.sleep(1 * Constants.TimeConstants.ns_per_ms);
+        }
+    }
+
     /// Alias for waitAll() - waits for all tasks to complete.
     pub const await = waitAll;
     pub const join = waitAll;
@@ -775,12 +916,40 @@ pub const ThreadPool = struct {
     pub const push = submit;
     pub const enqueue = submit;
 
+    /// Alias for submitBatchWithRetry
+    pub const submitBatchRetry = submitBatchWithRetry;
+
     /// Alias for submitFn() - submit a function.
     pub const run = submitFn;
 
     /// Alias for pendingTasks() - get queue depth.
     pub const queueDepth = pendingTasks;
     pub const size = pendingTasks;
+
+    /// Alias for pendingTasksByQueue
+    pub const queueBreakdown = pendingTasksByQueue;
+
+    /// Alias for queueCapacity
+    pub const totalQueueCapacity = queueCapacity;
+
+    /// Alias for availableQueueCapacity
+    pub const freeQueueCapacity = availableQueueCapacity;
+    pub const availableCapacity = availableQueueCapacity;
+
+    /// Alias for canAcceptTasks
+    pub const hasCapacityFor = canAcceptTasks;
+
+    /// Alias for queueUtilization
+    pub const queueLoad = queueUtilization;
+
+    /// Alias for isSaturated
+    pub const saturated = isSaturated;
+
+    /// Alias for waitAllTimeout
+    pub const waitForAll = waitAllTimeout;
+
+    /// Alias for waitUntilQueueBelow
+    pub const waitForQueueBelow = waitUntilQueueBelow;
 
     /// Alias for activeThreads() - get worker count.
     pub const workerCount = activeThreads;
@@ -1443,4 +1612,199 @@ test "thread pool priority ordering" {
     try std.testing.expectEqual(@as(u8, 3), order.items[0]);
     try std.testing.expectEqual(@as(u8, 2), order.items[1]);
     try std.testing.expectEqual(@as(u8, 1), order.items[2]);
+}
+
+test "thread pool capacity helpers" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 2,
+        .queue_size = 8,
+    });
+    defer pool.deinit();
+
+    try std.testing.expectEqual(@as(usize, 32), pool.queueCapacity());
+    try std.testing.expectEqual(@as(usize, 32), pool.availableQueueCapacity());
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), pool.queueUtilization(), 0.0001);
+    try std.testing.expect(!pool.isSaturated(0.1));
+}
+
+test "thread pool wait all timeout" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 1,
+        .queue_size = 16,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    var gate = std.Thread.Mutex{};
+    gate.lock();
+
+    const BlockTask = struct {
+        fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
+            const m: *std.Thread.Mutex = @ptrCast(@alignCast(ctx));
+            m.lock();
+            m.unlock();
+        }
+    };
+
+    _ = pool.submit(.{ .callback = .{ .func = BlockTask.run, .context = &gate } }, .critical);
+
+    std.Thread.sleep(5 * Constants.TimeConstants.ns_per_ms);
+    try std.testing.expect(!pool.waitAllTimeout(10));
+
+    gate.unlock();
+    try std.testing.expect(pool.waitAllTimeout(2_000));
+}
+
+test "thread pool queue breakdown and capacity helpers" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 2,
+        .queue_size = 8,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    const breakdown = pool.pendingTasksByQueue();
+    try std.testing.expectEqual(@as(usize, 0), breakdown.global);
+    try std.testing.expectEqual(@as(usize, 0), breakdown.local);
+    try std.testing.expectEqual(@as(usize, 0), breakdown.total);
+
+    try std.testing.expect(pool.canAcceptTasks(1));
+    try std.testing.expect(pool.canAcceptTasks(pool.queueCapacity()));
+    try std.testing.expect(!pool.canAcceptTasks(pool.queueCapacity() + 1));
+}
+
+test "thread pool batch retry and queue threshold wait" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 2,
+        .queue_size = 8,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    const NoopTask = struct {
+        fn run(_: ?std.mem.Allocator) void {}
+    };
+
+    var tasks: [24]ThreadPool.Task = undefined;
+    for (&tasks) |*task| {
+        task.* = .{ .function = .{ .func = NoopTask.run } };
+    }
+
+    const submitted = pool.submitBatchWithRetry(&tasks, .normal, 64, 100);
+    try std.testing.expect(submitted > 0);
+    try std.testing.expect(submitted <= tasks.len);
+    try std.testing.expect(pool.waitUntilQueueBelow(0, 5_000));
+    try std.testing.expect(pool.waitAllTimeout(5_000));
+
+    const stats = pool.getStats();
+    try std.testing.expectEqual(@as(u64, @intCast(submitted)), stats.getSubmitted());
+    try std.testing.expectEqual(@as(u64, @intCast(submitted)), stats.getCompleted());
+}
+
+test "thread pool heavy concurrency stress loop" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 0,
+        .queue_size = 256,
+        .work_stealing = true,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    const producer_count = 4;
+    const tasks_per_producer = 3_000;
+    const total_tasks = producer_count * tasks_per_producer;
+    const total_tasks_u64: u64 = @intCast(total_tasks);
+
+    var executed = std.atomic.Value(u64).init(0);
+
+    const TaskCtx = struct {
+        counter: *std.atomic.Value(u64),
+        spin_iterations: u32,
+    };
+
+    var task_ctx = TaskCtx{
+        .counter = &executed,
+        .spin_iterations = 64,
+    };
+
+    const StressTask = struct {
+        fn run(raw_ctx: *anyopaque, _: ?std.mem.Allocator) void {
+            const ctx: *TaskCtx = @ptrCast(@alignCast(raw_ctx));
+
+            var i: u32 = 0;
+            while (i < ctx.spin_iterations) : (i += 1) {
+                std.atomic.spinLoopHint();
+            }
+
+            _ = ctx.counter.fetchAdd(1, .monotonic);
+        }
+    };
+
+    const ProducerCtx = struct {
+        pool: *ThreadPool,
+        task_ctx: *TaskCtx,
+        iterations: usize,
+    };
+
+    const Producer = struct {
+        fn run(ctx: *ProducerCtx) void {
+            var submitted: usize = 0;
+            while (submitted < ctx.iterations) {
+                const accepted = ctx.pool.submit(.{
+                    .callback = .{
+                        .func = StressTask.run,
+                        .context = ctx.task_ctx,
+                    },
+                }, .normal);
+
+                if (accepted) {
+                    submitted += 1;
+                } else {
+                    std.Thread.sleep(50 * Constants.TimeConstants.ns_per_us);
+                }
+            }
+        }
+    };
+
+    var producer_contexts: [producer_count]ProducerCtx = undefined;
+    var producer_threads: [producer_count]std.Thread = undefined;
+
+    for (0..producer_count) |i| {
+        producer_contexts[i] = .{
+            .pool = pool,
+            .task_ctx = &task_ctx,
+            .iterations = tasks_per_producer,
+        };
+        producer_threads[i] = try std.Thread.spawn(.{}, Producer.run, .{&producer_contexts[i]});
+    }
+
+    for (producer_threads) |thread| {
+        thread.join();
+    }
+
+    try std.testing.expect(pool.waitAllTimeout(20_000));
+
+    const executed_count = executed.load(.monotonic);
+    try std.testing.expectEqual(total_tasks_u64, executed_count);
+
+    const stats = pool.getStats();
+    try std.testing.expectEqual(total_tasks_u64, stats.getSubmitted());
+    try std.testing.expectEqual(total_tasks_u64, stats.getCompleted());
+
+    try std.testing.expect(pool.queueUtilization() <= 1.0);
+    try std.testing.expect(pool.availableQueueCapacity() <= pool.queueCapacity());
 }

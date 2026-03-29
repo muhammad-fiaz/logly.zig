@@ -131,13 +131,19 @@ pub const Scheduler = struct {
         depends_on: ?[]const u8 = null,
         config: TaskConfig = .{},
 
+        /// Task execution priority.
         pub const Priority = enum {
+            /// Lowest priority task.
             low,
+            /// Default task priority.
             normal,
+            /// High priority task.
             high,
+            /// Critical priority task.
             critical,
         };
 
+        /// Retry behavior for failed task executions.
         pub const RetryPolicy = struct {
             max_retries: u32 = 3,
             interval_ms: u32 = Constants.SchedulerDefaults.retry_interval_ms,
@@ -206,6 +212,19 @@ pub const Scheduler = struct {
         };
     };
 
+    /// Immutable task state snapshot for introspection APIs.
+    pub const TaskSnapshot = struct {
+        name: []const u8,
+        task_type: TaskType,
+        enabled: bool,
+        running: bool,
+        next_run: i64,
+        last_run: i64,
+        run_count: u64,
+        error_count: u64,
+        retries_remaining: u32,
+    };
+
     /// Types of scheduled tasks.
     pub const TaskType = enum {
         /// Clean up old log files
@@ -235,11 +254,13 @@ pub const Scheduler = struct {
         /// Cron-like schedule
         cron: CronSchedule,
 
+        /// Daily trigger schedule.
         pub const DailySchedule = struct {
             hour: u8 = 0,
             minute: u8 = 0,
         };
 
+        /// Cron-style trigger schedule.
         pub const CronSchedule = struct {
             minute: ?u8 = null, // 0-59 or null for any
             hour: ?u8 = null, // 0-23 or null for any
@@ -732,6 +753,176 @@ pub const Scheduler = struct {
     /// Alias for removeTask
     pub const remove = removeTask;
 
+    /// Finds a task index by name.
+    pub fn taskIndexByName(self: *Scheduler, name: []const u8) ?usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items, 0..) |task, i| {
+            if (std.mem.eql(u8, task.name, name)) return i;
+        }
+        return null;
+    }
+
+    /// Returns task snapshot by index.
+    pub fn getTaskSnapshot(self: *Scheduler, index: usize) ?TaskSnapshot {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (index >= self.tasks.items.len) return null;
+        const task = self.tasks.items[index];
+        return .{
+            .name = task.name,
+            .task_type = task.task_type,
+            .enabled = task.enabled,
+            .running = task.running,
+            .next_run = task.next_run,
+            .last_run = task.last_run,
+            .run_count = task.run_count,
+            .error_count = task.error_count,
+            .retries_remaining = task.retries_remaining,
+        };
+    }
+
+    /// Returns task snapshot by name.
+    pub fn getTaskSnapshotByName(self: *Scheduler, name: []const u8) ?TaskSnapshot {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items) |task| {
+            if (std.mem.eql(u8, task.name, name)) {
+                return .{
+                    .name = task.name,
+                    .task_type = task.task_type,
+                    .enabled = task.enabled,
+                    .running = task.running,
+                    .next_run = task.next_run,
+                    .last_run = task.last_run,
+                    .run_count = task.run_count,
+                    .error_count = task.error_count,
+                    .retries_remaining = task.retries_remaining,
+                };
+            }
+        }
+        return null;
+    }
+
+    /// Returns true when a task with this name exists.
+    pub fn hasTaskNamed(self: *Scheduler, name: []const u8) bool {
+        return self.taskIndexByName(name) != null;
+    }
+
+    /// Enables or disables a task by task name.
+    ///
+    /// Returns true when task exists and was updated.
+    pub fn setTaskEnabledByName(self: *Scheduler, name: []const u8, enabled: bool) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items) |*task| {
+            if (std.mem.eql(u8, task.name, name)) {
+                task.enabled = enabled;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Removes a task by name.
+    ///
+    /// Returns true when a task was removed.
+    pub fn removeTaskByName(self: *Scheduler, name: []const u8) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items, 0..) |task, i| {
+            if (std.mem.eql(u8, task.name, name)) {
+                const removed = self.tasks.orderedRemove(i);
+                self.allocator.free(removed.name);
+                if (removed.config.path) |p| self.allocator.free(p);
+                if (removed.config.file_pattern) |p| self.allocator.free(p);
+                if (removed.depends_on) |p| self.allocator.free(p);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Returns enabled task count.
+    pub fn enabledTaskCount(self: *Scheduler) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var enabled_total: usize = 0;
+        for (self.tasks.items) |task| {
+            if (task.enabled) enabled_total += 1;
+        }
+        return enabled_total;
+    }
+
+    /// Returns running task count.
+    pub fn runningTaskCount(self: *Scheduler) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var running_total: usize = 0;
+        for (self.tasks.items) |task| {
+            if (task.running) running_total += 1;
+        }
+        return running_total;
+    }
+
+    /// Returns milliseconds until task next run.
+    pub fn nextRunInMs(self: *Scheduler, index: usize) ?i64 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (index >= self.tasks.items.len) return null;
+        const delta = self.tasks.items[index].next_run - Utils.currentMillis();
+        return if (delta > 0) delta else 0;
+    }
+
+    /// Returns milliseconds until task next run by task name.
+    pub fn nextRunInMsByName(self: *Scheduler, name: []const u8) ?i64 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items) |task| {
+            if (std.mem.eql(u8, task.name, name)) {
+                const delta = task.next_run - Utils.currentMillis();
+                return if (delta > 0) delta else 0;
+            }
+        }
+
+        return null;
+    }
+
+    /// Updates schedule for a task and recalculates next run.
+    pub fn setTaskSchedule(self: *Scheduler, index: usize, schedule: Schedule) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (index >= self.tasks.items.len) return false;
+
+        self.tasks.items[index].schedule = schedule;
+        self.tasks.items[index].next_run = schedule.nextRunTime(Utils.currentMillis());
+        return true;
+    }
+
+    /// Forces a task to become runnable on next scheduler pass.
+    pub fn rescheduleNow(self: *Scheduler, index: usize) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (index >= self.tasks.items.len) return false;
+
+        self.tasks.items[index].next_run = Utils.currentMillis();
+        self.tasks.items[index].retries_remaining = self.tasks.items[index].retry_policy.max_retries;
+        return true;
+    }
+
     /// Sets the callback for task started events.
     pub fn setTaskStartedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void {
         self.mutex.lock();
@@ -837,37 +1028,84 @@ pub const Scheduler = struct {
     /// Alias for runNow
     pub const run = runNow;
 
+    /// Runs a task immediately by task name.
+    ///
+    /// Returns true when task exists and was executed.
+    pub fn runNowByName(self: *Scheduler, name: []const u8) !bool {
+        const index = self.taskIndexByName(name) orelse return false;
+        try self.runNow(index);
+        return true;
+    }
+
+    fn dependenciesSatisfiedLocked(self: *Scheduler, task: *const ScheduledTask) bool {
+        if (task.depends_on) |dep_name| {
+            for (self.tasks.items) |t| {
+                if (std.mem.eql(u8, t.name, dep_name) and t.running) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    fn resourceThresholdsSatisfied(task: *const ScheduledTask, scheduler: *Scheduler) bool {
+        if (task.config.trigger_disk_usage_percent) |threshold| {
+            const usage = scheduler.getDiskUsage(task.config.path orelse ".") catch return false;
+            if (usage < threshold) return false;
+        }
+
+        if (task.config.min_free_space_bytes) |min_free| {
+            const free = scheduler.getFreeSpace(task.config.path orelse ".") catch return false;
+            if (free < min_free) return false;
+        }
+
+        return true;
+    }
+
+    fn isTaskReadyLocked(self: *Scheduler, task: *const ScheduledTask, now: i64) bool {
+        if (!task.enabled or task.running or task.next_run > now) return false;
+        if (!self.dependenciesSatisfiedLocked(task)) return false;
+        return resourceThresholdsSatisfied(task, self);
+    }
+
+    /// Returns number of tasks currently ready to run.
+    pub fn readyTaskCount(self: *Scheduler) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const now = Utils.currentMillis();
+        var ready_total: usize = 0;
+        for (self.tasks.items) |task| {
+            if (self.isTaskReadyLocked(&task, now)) ready_total += 1;
+        }
+        return ready_total;
+    }
+
     /// Runs all pending tasks.
     pub fn runPending(self: *Scheduler) void {
+        var tick_cb: ?*const fn (u32, u32) void = null;
+        var ready_count: u32 = 0;
+        var total_count: u32 = 0;
+
+        self.mutex.lock();
+        const precheck_now = Utils.currentMillis();
+        total_count = @as(u32, @intCast(@min(self.tasks.items.len, std.math.maxInt(u32))));
+        for (self.tasks.items) |task| {
+            if (self.isTaskReadyLocked(&task, precheck_now)) {
+                ready_count += 1;
+            }
+        }
+        tick_cb = self.on_schedule_tick;
+        self.mutex.unlock();
+
+        if (tick_cb) |cb| cb(ready_count, total_count);
+
         self.mutex.lock();
         defer self.mutex.unlock();
 
         const now = Utils.currentMillis();
         for (self.tasks.items, 0..) |*task, i| {
-            if (task.enabled and !task.running and task.next_run <= now) {
-                // Check dependencies
-                if (task.depends_on) |dep_name| {
-                    var dep_running = false;
-                    for (self.tasks.items) |t| {
-                        if (std.mem.eql(u8, t.name, dep_name) and t.running) {
-                            dep_running = true;
-                            break;
-                        }
-                    }
-                    if (dep_running) continue;
-                }
-
-                // Check disk usage if configured
-                if (task.config.trigger_disk_usage_percent) |threshold| {
-                    const usage = self.getDiskUsage(task.config.path orelse ".") catch 0;
-                    if (usage < threshold) continue;
-                }
-
-                if (task.config.min_free_space_bytes) |min_free| {
-                    const free = self.getFreeSpace(task.config.path orelse ".") catch min_free;
-                    if (free < min_free) continue;
-                }
-
+            if (self.isTaskReadyLocked(task, now)) {
                 if (self.thread_pool) |tp| {
                     task.running = true;
                     const TaskCtx = struct {
@@ -900,13 +1138,13 @@ pub const Scheduler = struct {
                     if (!tp.submit(.{ .callback = .{ .func = TaskCtx.run, .context = ctx } }, tp_prio)) {
                         self.allocator.destroy(ctx);
                         self.executeTask(task) catch |err| {
-                            self.handleTaskError(i, err);
+                            self.handleTaskErrorLocked(i, err);
                         };
                         task.running = false;
                     }
                 } else {
                     self.executeTask(task) catch |err| {
-                        self.handleTaskError(i, err);
+                        self.handleTaskErrorLocked(i, err);
                     };
                 }
             }
@@ -920,6 +1158,10 @@ pub const Scheduler = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        self.handleTaskErrorLocked(index, err);
+    }
+
+    fn handleTaskErrorLocked(self: *Scheduler, index: usize, err: anyerror) void {
         if (index >= self.tasks.items.len) return;
         const task = &self.tasks.items[index];
 
@@ -1367,6 +1609,48 @@ pub const Scheduler = struct {
     /// Alias for taskCount
     pub const count = taskCount;
 
+    /// Alias for taskIndexByName
+    pub const indexOfTask = taskIndexByName;
+
+    /// Alias for getTaskSnapshot
+    pub const snapshotTask = getTaskSnapshot;
+
+    /// Alias for getTaskSnapshotByName
+    pub const snapshotTaskByName = getTaskSnapshotByName;
+
+    /// Alias for hasTaskNamed
+    pub const hasTask = hasTaskNamed;
+
+    /// Alias for setTaskEnabledByName
+    pub const enableByName = setTaskEnabledByName;
+
+    /// Alias for removeTaskByName
+    pub const removeNamed = removeTaskByName;
+
+    /// Alias for enabledTaskCount
+    pub const enabledCount = enabledTaskCount;
+
+    /// Alias for runningTaskCount
+    pub const runningCount = runningTaskCount;
+
+    /// Alias for readyTaskCount
+    pub const readyCount = readyTaskCount;
+
+    /// Alias for nextRunInMs
+    pub const nextRunMs = nextRunInMs;
+
+    /// Alias for nextRunInMsByName
+    pub const nextRunForTask = nextRunInMsByName;
+
+    /// Alias for setTaskSchedule
+    pub const updateSchedule = setTaskSchedule;
+
+    /// Alias for rescheduleNow
+    pub const runSoon = rescheduleNow;
+
+    /// Alias for runNowByName
+    pub const runNamed = runNowByName;
+
     /// Returns true if the scheduler is running.
     pub fn isRunning(self: *const Scheduler) bool {
         return self.running.load(.acquire);
@@ -1774,6 +2058,87 @@ test "scheduler maintenance task" {
 
     const result2 = try scheduler.performCleanup(tmp_path, config);
     try std.testing.expect(result2.files_deleted >= 1);
+}
+
+test "scheduler task introspection helpers" {
+    const allocator = std.testing.allocator;
+    const scheduler = try Scheduler.init(allocator);
+    defer scheduler.deinit();
+
+    const idx_a = try scheduler.addTask("introspect-a", .custom, .{ .once = 0 }, .{});
+    const idx_b = try scheduler.addTask("introspect-b", .custom, .{ .interval = 60_000 }, .{});
+
+    try std.testing.expectEqual(@as(?usize, idx_a), scheduler.taskIndexByName("introspect-a"));
+    try std.testing.expect(scheduler.hasTaskNamed("introspect-b"));
+    try std.testing.expect(!scheduler.hasTaskNamed("missing-task"));
+
+    scheduler.setTaskEnabled(idx_b, false);
+    try std.testing.expectEqual(@as(usize, 1), scheduler.enabledTaskCount());
+
+    const next_a = scheduler.nextRunInMs(idx_a);
+    try std.testing.expect(next_a != null);
+    try std.testing.expect(next_a.? >= 0);
+
+    try std.testing.expect(scheduler.setTaskSchedule(idx_b, .{ .once = 0 }));
+    try std.testing.expect(scheduler.rescheduleNow(idx_b));
+}
+
+test "scheduler name based controls and snapshots" {
+    const allocator = std.testing.allocator;
+    const scheduler = try Scheduler.init(allocator);
+    defer scheduler.deinit();
+
+    const idx = try scheduler.addTask("named-task", .custom, .{ .interval = 60_000 }, .{});
+    try std.testing.expectEqual(@as(usize, 0), idx);
+
+    const snapshot = scheduler.getTaskSnapshot(idx);
+    try std.testing.expect(snapshot != null);
+    try std.testing.expectEqualStrings("named-task", snapshot.?.name);
+    try std.testing.expect(snapshot.?.enabled);
+
+    const named_snapshot = scheduler.getTaskSnapshotByName("named-task");
+    try std.testing.expect(named_snapshot != null);
+    try std.testing.expectEqual(Scheduler.TaskType.custom, named_snapshot.?.task_type);
+
+    try std.testing.expect(scheduler.setTaskEnabledByName("named-task", false));
+    try std.testing.expect(!scheduler.getTaskSnapshotByName("named-task").?.enabled);
+
+    try std.testing.expect(scheduler.nextRunInMsByName("named-task") != null);
+    try std.testing.expect(!(try scheduler.runNowByName("missing-task")));
+    try std.testing.expect(try scheduler.runNowByName("named-task"));
+
+    try std.testing.expect(scheduler.removeTaskByName("named-task"));
+    try std.testing.expect(!scheduler.hasTaskNamed("named-task"));
+    try std.testing.expect(!scheduler.removeTaskByName("named-task"));
+}
+
+var scheduler_tick_called = false;
+var scheduler_tick_ready: u32 = 0;
+var scheduler_tick_total: u32 = 0;
+
+fn testSchedulerTickCallback(ready: u32, total: u32) void {
+    scheduler_tick_called = true;
+    scheduler_tick_ready = ready;
+    scheduler_tick_total = total;
+}
+
+test "scheduler tick callback receives ready and total" {
+    const allocator = std.testing.allocator;
+    const scheduler = try Scheduler.init(allocator);
+    defer scheduler.deinit();
+
+    scheduler_tick_called = false;
+    scheduler_tick_ready = 0;
+    scheduler_tick_total = 0;
+
+    _ = try scheduler.addTask("tick-task", .custom, .{ .once = 0 }, .{});
+    scheduler.setScheduleTickCallback(&testSchedulerTickCallback);
+
+    scheduler.runPending();
+
+    try std.testing.expect(scheduler_tick_called);
+    try std.testing.expect(scheduler_tick_total >= 1);
+    try std.testing.expect(scheduler_tick_ready >= 1);
 }
 
 // Windows helper functions

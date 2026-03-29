@@ -34,12 +34,26 @@ The scheduler module provides automatic log maintenance with scheduled cleanup, 
 | `addCustomTask()` | `custom()` | Add custom task |
 | `setTaskEnabled()` | `enable()` | Enable/disable task |
 | `removeTask()` | `remove()` | Remove task |
+| `taskIndexByName()` | `indexOfTask()` | Find task index by name |
+| `getTaskSnapshot()` | `snapshotTask()` | Get immutable task snapshot by index |
+| `getTaskSnapshotByName()` | `snapshotTaskByName()` | Get immutable task snapshot by name |
+| `hasTaskNamed()` | `hasTask()` | Check task existence by name |
+| `setTaskEnabledByName()` | `enableByName()` | Enable/disable task by name |
+| `removeTaskByName()` | `removeNamed()` | Remove task by name |
+| `enabledTaskCount()` | `enabledCount()` | Count enabled tasks |
+| `runningTaskCount()` | `runningCount()` | Count running tasks |
+| `readyTaskCount()` | `readyCount()` | Count tasks ready to run |
+| `nextRunInMs()` | `nextRunMs()` | Get ms until task next run |
+| `nextRunInMsByName()` | `nextRunForTask()` | Get ms until task next run by name |
+| `setTaskSchedule()` | `updateSchedule()` | Update task schedule |
+| `rescheduleNow()` | `runSoon()` | Force task runnable immediately |
 | `setTaskStartedCallback()` | `onStarted()` | Set task started callback |
 | `setTaskCompletedCallback()` | `onCompleted()` | Set task completed callback |
 | `setTaskErrorCallback()` | `onError()` | Set task error callback |
 | `setScheduleTickCallback()` | `onTick()` | Set tick callback |
 | `setHealthCheckCallback()` | `onHealthCheck()` | Set health check callback |
 | `runNow()` | `run()` | Run task immediately |
+| `runNowByName()` | `runNamed()` | Run task immediately by name |
 | `runPending()` | `pending()` | Run pending tasks |
 | `start()` | `begin()` | Start scheduler |
 | `stop()` | `end()`, `halt()` | Stop scheduler |
@@ -479,6 +493,114 @@ Set a dependency for a task (it will only run if the dependency is running).
 pub fn setTaskDependency(self: *Scheduler, index: usize, dependency_name: []const u8) !void
 ```
 
+### taskIndexByName
+
+Find a task index by its name.
+
+```zig
+pub fn taskIndexByName(self: *Scheduler, name: []const u8) ?usize
+```
+
+### getTaskSnapshot
+
+Returns immutable task state snapshot by task index.
+
+```zig
+pub fn getTaskSnapshot(self: *Scheduler, index: usize) ?TaskSnapshot
+```
+
+### getTaskSnapshotByName
+
+Returns immutable task state snapshot by task name.
+
+```zig
+pub fn getTaskSnapshotByName(self: *Scheduler, name: []const u8) ?TaskSnapshot
+```
+
+### hasTaskNamed
+
+Check whether a task with this name exists.
+
+```zig
+pub fn hasTaskNamed(self: *Scheduler, name: []const u8) bool
+```
+
+### setTaskEnabledByName
+
+Enable or disable task by task name.
+
+```zig
+pub fn setTaskEnabledByName(self: *Scheduler, name: []const u8, enabled: bool) bool
+```
+
+Returns `true` when task exists and was updated.
+
+### removeTaskByName
+
+Remove task by name.
+
+```zig
+pub fn removeTaskByName(self: *Scheduler, name: []const u8) bool
+```
+
+Returns `true` when task existed and was removed.
+
+### enabledTaskCount
+
+Get number of enabled tasks.
+
+```zig
+pub fn enabledTaskCount(self: *Scheduler) usize
+```
+
+### runningTaskCount
+
+Get number of tasks currently running.
+
+```zig
+pub fn runningTaskCount(self: *Scheduler) usize
+```
+
+### readyTaskCount
+
+Get number of tasks currently ready to run (time/dependency/resource checks passed).
+
+```zig
+pub fn readyTaskCount(self: *Scheduler) usize
+```
+
+### nextRunInMs
+
+Get remaining milliseconds until next run for a task index.
+
+```zig
+pub fn nextRunInMs(self: *Scheduler, index: usize) ?i64
+```
+
+### nextRunInMsByName
+
+Get remaining milliseconds until next run by task name.
+
+```zig
+pub fn nextRunInMsByName(self: *Scheduler, name: []const u8) ?i64
+```
+
+### setTaskSchedule
+
+Update schedule for a task and recalculate next-run timestamp.
+
+```zig
+pub fn setTaskSchedule(self: *Scheduler, index: usize, schedule: Schedule) bool
+```
+
+### rescheduleNow
+
+Force a task to become runnable on next scheduler pass.
+
+```zig
+pub fn rescheduleNow(self: *Scheduler, index: usize) bool
+```
+
 ### getDiskUsage
 
 Get current disk usage percentage for a path.
@@ -526,6 +648,16 @@ Execute a task immediately.
 ```zig
 pub fn runTaskNow(self: *Scheduler, index: usize) !void
 ```
+
+### runNowByName
+
+Run task immediately by task name.
+
+```zig
+pub fn runNowByName(self: *Scheduler, name: []const u8) !bool
+```
+
+Returns `true` when task exists and was executed.
 
 ### getStats
 

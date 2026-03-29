@@ -155,6 +155,13 @@ pub const AsyncLogger = struct {
             return Utils.atomicLoadU64(&self.records_dropped);
         }
 
+        /// Returns records that are queued but not yet written.
+        pub fn inFlight(self: *const AsyncStats) u64 {
+            const queued = self.getQueued();
+            const written = self.getWritten();
+            return if (queued > written) queued - written else 0;
+        }
+
         /// Returns total flush count as u64.
         pub fn getFlushCount(self: *const AsyncStats) u64 {
             return Utils.atomicLoadU64(&self.flush_count);
@@ -191,6 +198,9 @@ pub const AsyncLogger = struct {
         pub fn averageLatencyMs(self: *const AsyncStats) f64 {
             return @as(f64, @floatFromInt(self.averageLatencyNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
         }
+
+        /// Alias for inFlight
+        pub const pendingRecords = inFlight;
     };
 
     /// Represents a single log entry within the ring buffer.
@@ -691,6 +701,57 @@ pub const AsyncLogger = struct {
         return self.buffer.isEmpty();
     }
 
+    /// Returns available queue slots before reaching capacity.
+    pub fn availableCapacity(self: *AsyncLogger) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const current_depth = self.buffer.size();
+        return if (self.buffer.capacity > current_depth) self.buffer.capacity - current_depth else 0;
+    }
+
+    /// Returns queue utilization as a ratio in [0.0, 1.0].
+    pub fn queueUtilization(self: *AsyncLogger) f64 {
+        const capacity = self.bufferCapacity();
+        if (capacity == 0) return 0.0;
+
+        const current_depth = self.queueDepth();
+        return @as(f64, @floatFromInt(current_depth)) / @as(f64, @floatFromInt(capacity));
+    }
+
+    /// Returns true when queue utilization is above the provided threshold.
+    pub fn isNearCapacity(self: *AsyncLogger, threshold: f64) bool {
+        const clamped = if (threshold < 0.0)
+            0.0
+        else if (threshold > 1.0)
+            1.0
+        else
+            threshold;
+        return self.queueUtilization() >= clamped;
+    }
+
+    /// Wait until queue is drained or timeout is reached.
+    ///
+    /// Returns true when drained before timeout.
+    pub fn waitUntilDrained(self: *AsyncLogger, timeout_ms: u64) bool {
+        if (timeout_ms == 0) {
+            return self.isQueueEmpty();
+        }
+
+        const start = Utils.currentMillis();
+        while (true) {
+            if (self.isQueueEmpty()) return true;
+
+            const elapsed = Utils.currentMillis() - start;
+            if (elapsed >= @as(i64, @intCast(timeout_ms))) {
+                return false;
+            }
+
+            self.flush();
+            std.Thread.sleep(1 * Constants.TimeConstants.ns_per_ms);
+        }
+    }
+
     /// Sets overflow callback.
     pub fn setOverflowCallback(self: *AsyncLogger, callback: *const fn (u64) void) void {
         self.overflow_callback = callback;
@@ -767,6 +828,21 @@ pub const AsyncLogger = struct {
     /// Alias for queueDepth
     pub const depth = queueDepth;
     pub const pending = queueDepth;
+
+    /// Alias for availableCapacity
+    pub const capacityLeft = availableCapacity;
+    pub const freeSlots = availableCapacity;
+
+    /// Alias for queueUtilization
+    pub const utilization = queueUtilization;
+
+    /// Alias for isNearCapacity
+    pub const nearCapacity = isNearCapacity;
+    pub const isBackpressured = isNearCapacity;
+
+    /// Alias for waitUntilDrained
+    pub const waitForDrain = waitUntilDrained;
+    pub const drain = waitUntilDrained;
 
     /// Alias for isQueueEmpty
     pub const empty = isQueueEmpty;
@@ -915,14 +991,17 @@ pub const AsyncFileWriter = struct {
 
     pub const flush = flushSync;
 
+    /// Starts periodic background flushing.
     pub fn startAutoFlush(self: *AsyncFileWriter) !void {
         if (self.running.load(.acquire)) return;
         self.running.store(true, .release);
         self.flush_thread = try std.Thread.spawn(.{}, autoFlushLoop, .{self});
     }
 
+    /// Alias for `startAutoFlush`.
     pub const startFlush = startAutoFlush;
 
+    /// Stops periodic background flushing and joins flush thread.
     pub fn stop(self: *AsyncFileWriter) void {
         if (!self.running.load(.acquire)) return;
         self.running.store(false, .release);
@@ -932,6 +1011,7 @@ pub const AsyncFileWriter = struct {
         }
     }
 
+    /// Alias for `stop`.
     pub const halt = stop;
 
     fn autoFlushLoop(self: *AsyncFileWriter) void {
@@ -941,10 +1021,12 @@ pub const AsyncFileWriter = struct {
         }
     }
 
+    /// Returns total flushed bytes written by the async writer.
     pub fn bytesWritten(self: *const AsyncFileWriter) u64 {
         return @as(u64, self.bytes_written.load(.monotonic));
     }
 
+    /// Alias for `bytesWritten`.
     pub const written = bytesWritten;
 };
 
@@ -1031,6 +1113,16 @@ test "async stats" {
     try std.testing.expect(stats.dropRate() > 0.09 and stats.dropRate() < 0.11);
 }
 
+test "async stats in flight" {
+    var stats = AsyncLogger.AsyncStats{};
+
+    _ = stats.records_queued.fetchAdd(20, .monotonic);
+    _ = stats.records_written.fetchAdd(7, .monotonic);
+
+    try std.testing.expectEqual(@as(u64, 13), stats.inFlight());
+    try std.testing.expectEqual(@as(u64, 13), stats.pendingRecords());
+}
+
 const TestCallbacks = struct {
     pub var overflow_called: bool = false;
     pub var flush_called: bool = false;
@@ -1091,4 +1183,29 @@ test "async callbacks" {
     // Flush
     logger.flushSync();
     try std.testing.expect(TestCallbacks.flush_called);
+}
+
+test "async queue utilization and drain helpers" {
+    const allocator = std.testing.allocator;
+
+    const config = AsyncLogger.AsyncConfig{
+        .buffer_size = 4,
+        .background_worker = false,
+        .overflow_policy = .drop_newest,
+    };
+
+    var logger = try AsyncLogger.initWithConfig(allocator, config);
+    defer logger.deinit();
+
+    _ = logger.queue("one", 1);
+    _ = logger.queue("two", 1);
+
+    try std.testing.expectEqual(@as(usize, 2), logger.queueDepth());
+    try std.testing.expectEqual(@as(usize, 2), logger.availableCapacity());
+    try std.testing.expectApproxEqAbs(@as(f64, 0.5), logger.queueUtilization(), 0.001);
+    try std.testing.expect(logger.isNearCapacity(0.5));
+    try std.testing.expect(!logger.isNearCapacity(0.75));
+
+    logger.flushSync();
+    try std.testing.expect(logger.waitUntilDrained(25));
 }

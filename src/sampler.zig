@@ -101,6 +101,19 @@ pub const Sampler = struct {
         strategy_disabled,
     };
 
+    /// Detailed sampling decision payload.
+    pub const SampleDecision = struct {
+        /// Whether the record was accepted by sampler.
+        accepted: bool,
+        /// Effective sampling rate used for the decision.
+        sample_rate: f64,
+        /// Optional reject reason when `accepted` is false.
+        reject_reason: ?SampleRejectReason = null,
+    };
+
+    const RateExceededInfo = struct { count: u32, max: u32 };
+    const AdjustmentInfo = struct { old: f64, new: f64 };
+
     /// Sampling strategy configuration.
     pub const Strategy = Config.SamplingConfig.Strategy;
 
@@ -238,105 +251,124 @@ pub const Sampler = struct {
     ///     Typical: O(1) - fast path without mutex
     ///     Worst case: O(1) - short-lived lock for adaptive strategy
     pub fn shouldSample(self: *Sampler) bool {
+        return self.shouldSampleWithReason().accepted;
+    }
+
+    fn clampRate(input_rate: f64) f64 {
+        if (std.math.isNan(input_rate)) return 0.0;
+        return Utils.clamp(f64, input_rate, 0.0, 1.0);
+    }
+
+    fn evaluateSampleDecisionLocked(
+        self: *Sampler,
+        now: i64,
+        rate_exceeded_info: *?RateExceededInfo,
+        adjustment_info: *?AdjustmentInfo,
+    ) SampleDecision {
+        return switch (self.strategy) {
+            .none => .{ .accepted = true, .sample_rate = 1.0 },
+            .probability => |prob| blk: {
+                const effective = clampRate(prob);
+                const random = self.state.rng.random().float(f64);
+                if (random < effective) {
+                    break :blk .{ .accepted = true, .sample_rate = effective };
+                }
+                break :blk .{
+                    .accepted = false,
+                    .sample_rate = effective,
+                    .reject_reason = .probability_filter,
+                };
+            },
+            .rate_limit => |config| blk: {
+                const window_ms: i64 = @intCast(config.window_ms);
+
+                if (now - self.state.window_start >= window_ms) {
+                    self.state.window_start = now;
+                    self.state.window_count = 0;
+                }
+
+                if (self.state.window_count < config.max_records) {
+                    self.state.window_count += 1;
+                    break :blk .{ .accepted = true, .sample_rate = 1.0 };
+                }
+
+                _ = self.state.stats.rate_limit_exceeded.fetchAdd(1, .monotonic);
+                rate_exceeded_info.* = .{ .count = self.state.window_count, .max = config.max_records };
+                break :blk .{
+                    .accepted = false,
+                    .sample_rate = 1.0,
+                    .reject_reason = .rate_limit_exceeded,
+                };
+            },
+            .every_n => |n| blk: {
+                if (n == 0) {
+                    break :blk .{ .accepted = true, .sample_rate = 1.0 };
+                }
+
+                const effective = 1.0 / @as(f64, @floatFromInt(n));
+                self.state.counter += 1;
+                if ((self.state.counter % n) == 0) {
+                    break :blk .{ .accepted = true, .sample_rate = effective };
+                }
+
+                break :blk .{
+                    .accepted = false,
+                    .sample_rate = effective,
+                    .reject_reason = .every_n_filter,
+                };
+            },
+            .adaptive => |config| blk: {
+                if (Utils.elapsedMs(self.state.last_adjustment) >= config.adjustment_interval_ms) {
+                    const actual_rate = Utils.calculateThroughputMs(self.state.window_count, @intCast(config.adjustment_interval_ms));
+                    const old_rate = self.state.current_rate;
+                    const target: f64 = @floatFromInt(config.target_rate);
+
+                    if (actual_rate > target) {
+                        self.state.current_rate = @max(config.min_sample_rate, self.state.current_rate * 0.9);
+                    } else {
+                        self.state.current_rate = @min(config.max_sample_rate, self.state.current_rate * 1.1);
+                    }
+
+                    if (self.state.current_rate != old_rate) {
+                        _ = self.state.stats.rate_adjustments.fetchAdd(1, .monotonic);
+                        adjustment_info.* = .{ .old = old_rate, .new = self.state.current_rate };
+                    }
+
+                    self.state.window_count = 0;
+                    self.state.last_adjustment = now;
+                }
+
+                self.state.window_count += 1;
+                const effective = clampRate(self.state.current_rate);
+                const random = self.state.rng.random().float(f64);
+                if (random < effective) {
+                    break :blk .{ .accepted = true, .sample_rate = effective };
+                }
+
+                break :blk .{
+                    .accepted = false,
+                    .sample_rate = effective,
+                    .reject_reason = .adaptive_rate_exceeded,
+                };
+            },
+        };
+    }
+
+    /// Determines whether a record should be sampled and includes decision details.
+    pub fn shouldSampleWithReason(self: *Sampler) SampleDecision {
         _ = self.state.stats.total_records_sampled.fetchAdd(1, .monotonic);
 
-        var current_rate: f64 = 0;
-        var reject_reason: ?SampleRejectReason = null;
-        var rate_exceeded_info: ?struct { count: u32, max: u32 } = null;
-        var adjustment_info: ?struct { old: f64, new: f64 } = null;
+        var rate_exceeded_info: ?RateExceededInfo = null;
+        var adjustment_info: ?AdjustmentInfo = null;
 
-        const result = blk: {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+        self.mutex.lock();
+        const sample_decision = self.evaluateSampleDecisionLocked(
+            Utils.currentMillis(),
+            &rate_exceeded_info,
+            &adjustment_info,
+        );
+        self.mutex.unlock();
 
-            switch (self.strategy) {
-                .none => {
-                    current_rate = 1.0;
-                    break :blk true;
-                },
-                .probability => |prob| {
-                    current_rate = prob;
-                    const random = self.state.rng.random().float(f64);
-                    if (random < prob) {
-                        break :blk true;
-                    } else {
-                        reject_reason = .probability_filter;
-                        break :blk false;
-                    }
-                },
-                .rate_limit => |config| {
-                    current_rate = 1.0; // Rate limit doesn't have a probability rate
-                    const now = Utils.currentMillis();
-                    const window_ms: i64 = @intCast(config.window_ms);
-
-                    if (now - self.state.window_start >= window_ms) {
-                        self.state.window_start = now;
-                        self.state.window_count = 0;
-                    }
-
-                    if (self.state.window_count < config.max_records) {
-                        self.state.window_count += 1;
-                        break :blk true;
-                    }
-
-                    _ = self.state.stats.rate_limit_exceeded.fetchAdd(1, .monotonic);
-                    rate_exceeded_info = .{ .count = self.state.window_count, .max = config.max_records };
-                    reject_reason = .rate_limit_exceeded;
-                    break :blk false;
-                },
-                .every_n => |n| {
-                    current_rate = 1.0 / @as(f64, @floatFromInt(n));
-                    self.state.counter += 1;
-                    if ((self.state.counter % n) == 0) {
-                        break :blk true;
-                    } else {
-                        reject_reason = .every_n_filter;
-                        break :blk false;
-                    }
-                },
-                .adaptive => |config| {
-                    if (Utils.elapsedMs(self.state.last_adjustment) >= config.adjustment_interval_ms) {
-                        const actual_rate = Utils.calculateThroughputMs(self.state.window_count, @intCast(config.adjustment_interval_ms));
-
-                        const now = Utils.currentMillis();
-                        const old_rate = self.state.current_rate;
-                        const target: f64 = @floatFromInt(config.target_rate);
-
-                        if (actual_rate > target) {
-                            self.state.current_rate = @max(
-                                config.min_sample_rate,
-                                self.state.current_rate * 0.9,
-                            );
-                        } else {
-                            self.state.current_rate = @min(
-                                config.max_sample_rate,
-                                self.state.current_rate * 1.1,
-                            );
-                        }
-
-                        if (self.state.current_rate != old_rate) {
-                            _ = self.state.stats.rate_adjustments.fetchAdd(1, .monotonic);
-                            adjustment_info = .{ .old = old_rate, .new = self.state.current_rate };
-                        }
-
-                        self.state.window_count = 0;
-                        self.state.last_adjustment = now;
-                    }
-
-                    self.state.window_count += 1;
-                    current_rate = self.state.current_rate;
-                    const random = self.state.rng.random().float(f64);
-                    if (random < self.state.current_rate) {
-                        break :blk true;
-                    } else {
-                        reject_reason = .adaptive_rate_exceeded;
-                        break :blk false;
-                    }
-                },
-            }
-        };
-
-        // Callbacks and stats updates outside the lock
         if (adjustment_info) |info| {
             if (self.on_rate_adjustment) |cb| cb(info.old, info.new, "throughput adjustment");
         }
@@ -345,15 +377,123 @@ pub const Sampler = struct {
             if (self.on_rate_exceeded) |cb| cb(info.count, info.max);
         }
 
-        if (result) {
+        if (sample_decision.accepted) {
             _ = self.state.stats.records_accepted.fetchAdd(1, .monotonic);
-            if (self.on_sample_accept) |cb| cb(current_rate);
+            if (self.on_sample_accept) |cb| cb(sample_decision.sample_rate);
         } else {
             _ = self.state.stats.records_rejected.fetchAdd(1, .monotonic);
-            if (self.on_sample_reject) |cb| cb(current_rate, reject_reason.?);
+            if (self.on_sample_reject) |cb| cb(sample_decision.sample_rate, sample_decision.reject_reason orelse .strategy_disabled);
         }
 
-        return result;
+        return sample_decision;
+    }
+
+    fn resetStateForStrategy(self: *Sampler) void {
+        self.state.counter = 0;
+        self.state.window_count = 0;
+        self.state.window_start = Utils.currentMillis();
+        self.state.last_adjustment = Utils.currentMillis();
+        self.state.current_rate = switch (self.strategy) {
+            .adaptive => clampRate(self.state.current_rate),
+            .probability => |prob| clampRate(prob),
+            .none, .rate_limit => 1.0,
+            .every_n => |n| if (n == 0) 1.0 else 1.0 / @as(f64, @floatFromInt(n)),
+        };
+    }
+
+    /// Updates strategy at runtime and resets strategy-specific counters.
+    pub fn setStrategy(self: *Sampler, strategy: Strategy) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        self.strategy = strategy;
+        self.resetStateForStrategy();
+    }
+
+    /// Sets probability strategy using clamped probability [0.0, 1.0].
+    pub fn setProbability(self: *Sampler, probability_value: f64) void {
+        self.setStrategy(.{ .probability = clampRate(probability_value) });
+    }
+
+    /// Sets rate-limit strategy.
+    ///
+    /// Zero values are normalized to safe defaults.
+    pub fn setRateLimit(self: *Sampler, max_records: u32, window_ms: u64) void {
+        self.setStrategy(.{ .rate_limit = .{
+            .max_records = if (max_records == 0) 1 else max_records,
+            .window_ms = if (window_ms == 0) Constants.SamplingDefaults.rate_limit_window_ms else window_ms,
+        } });
+    }
+
+    /// Sets every-N strategy.
+    pub fn setEveryN(self: *Sampler, n: u32) void {
+        self.setStrategy(.{ .every_n = n });
+    }
+
+    /// Sets adaptive strategy and normalizes bounds.
+    pub fn setAdaptive(self: *Sampler, config: AdaptiveConfig) void {
+        const min_rate = clampRate(config.min_sample_rate);
+        const max_rate = clampRate(config.max_sample_rate);
+        const bounded_min = @min(min_rate, max_rate);
+        const bounded_max = @max(min_rate, max_rate);
+
+        self.setStrategy(.{ .adaptive = .{
+            .target_rate = if (config.target_rate == 0) 1 else config.target_rate,
+            .adjustment_interval_ms = if (config.adjustment_interval_ms == 0)
+                Constants.SamplingDefaults.adaptive_adjustment_interval_ms
+            else
+                config.adjustment_interval_ms,
+            .min_sample_rate = bounded_min,
+            .max_sample_rate = bounded_max,
+        } });
+
+        self.mutex.lock();
+        self.state.current_rate = bounded_max;
+        self.mutex.unlock();
+    }
+
+    /// Disables filtering and allows all records through.
+    pub fn disableSampling(self: *Sampler) void {
+        self.setStrategy(.none);
+    }
+
+    /// Returns remaining quota in current rate-limit window, if applicable.
+    pub fn remainingWindowQuota(self: *Sampler) ?u32 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return switch (self.strategy) {
+            .rate_limit => |config| {
+                if (self.state.window_count >= config.max_records) return 0;
+                return config.max_records - self.state.window_count;
+            },
+            else => null,
+        };
+    }
+
+    /// Returns milliseconds until rate-limit window reset, if applicable.
+    pub fn windowResetInMs(self: *Sampler) ?u64 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return switch (self.strategy) {
+            .rate_limit => |config| {
+                const elapsed = Utils.currentMillis() - self.state.window_start;
+                const remaining = @as(i64, @intCast(config.window_ms)) - elapsed;
+                return if (remaining > 0) @as(u64, @intCast(remaining)) else 0;
+            },
+            else => null,
+        };
+    }
+
+    /// Returns accept rate from stats.
+    pub fn acceptRate(self: *const Sampler) f64 {
+        return self.state.stats.getAcceptRate();
+    }
+
+    /// Returns reject rate from stats.
+    pub fn rejectRate(self: *const Sampler) f64 {
+        return self.state.stats.getRejectRate();
     }
 
     /// Resets the sampler state.
@@ -451,8 +591,45 @@ pub const Sampler = struct {
     pub const check = shouldSample;
     pub const allow = shouldSample;
 
+    /// Alias for shouldSampleWithReason
+    pub const sampleWithReason = shouldSampleWithReason;
+    pub const decision = shouldSampleWithReason;
+
     /// Alias for getCurrentRate
     pub const rate = getCurrentRate;
+
+    /// Alias for setStrategy
+    pub const configure = setStrategy;
+
+    /// Alias for setProbability
+    pub const probability = setProbability;
+    pub const setProb = setProbability;
+
+    /// Alias for setRateLimit
+    pub const rateLimit = setRateLimit;
+    pub const configureRateLimit = setRateLimit;
+
+    /// Alias for setEveryN
+    pub const everyN = setEveryN;
+
+    /// Alias for setAdaptive
+    pub const adaptive = setAdaptive;
+
+    /// Alias for disableSampling
+    pub const disable = disableSampling;
+    pub const off = disableSampling;
+
+    /// Alias for remainingWindowQuota
+    pub const quotaLeft = remainingWindowQuota;
+
+    /// Alias for windowResetInMs
+    pub const resetInMs = windowResetInMs;
+
+    /// Alias for acceptRate
+    pub const acceptanceRate = acceptRate;
+
+    /// Alias for rejectRate
+    pub const rejectionRate = rejectRate;
 
     /// Alias for getStats
     pub const statistics = getStats;
@@ -631,4 +808,80 @@ test "sampler adaptive" {
 
     const rate = sampler.getCurrentRate();
     try std.testing.expect(rate < 1.0);
+}
+
+test "sampler decision details include reason" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .every_n = 2 });
+    defer sampler.deinit();
+
+    const first = sampler.shouldSampleWithReason();
+    try std.testing.expect(!first.accepted);
+    try std.testing.expect(first.reject_reason != null);
+
+    const second = sampler.shouldSampleWithReason();
+    try std.testing.expect(second.accepted);
+    try std.testing.expectEqual(@as(?Sampler.SampleRejectReason, null), second.reject_reason);
+}
+
+test "sampler rate limit quota helpers" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .rate_limit = .{
+        .max_records = 3,
+        .window_ms = 500,
+    } });
+    defer sampler.deinit();
+
+    try std.testing.expectEqual(@as(?u32, 3), sampler.remainingWindowQuota());
+    try std.testing.expect(sampler.windowResetInMs().? <= 500);
+
+    _ = sampler.shouldSample();
+    _ = sampler.shouldSample();
+
+    try std.testing.expectEqual(@as(?u32, 1), sampler.remainingWindowQuota());
+}
+
+test "sampler set strategy runtime" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .probability = 1.0 });
+    defer sampler.deinit();
+
+    sampler.setStrategy(.{ .every_n = 3 });
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "every_n"));
+
+    // First two are rejected, third accepted for every_n=3.
+    try std.testing.expect(!sampler.shouldSample());
+    try std.testing.expect(!sampler.shouldSample());
+    try std.testing.expect(sampler.shouldSample());
+}
+
+test "sampler explicit strategy control helpers" {
+    var sampler = Sampler.init(std.testing.allocator, .none);
+    defer sampler.deinit();
+
+    sampler.setProbability(1.5);
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "probability"));
+    try std.testing.expectEqual(@as(f64, 1.0), sampler.getCurrentRate());
+
+    sampler.setRateLimit(2, 0);
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "rate_limit"));
+    try std.testing.expectEqual(@as(?u32, 2), sampler.remainingWindowQuota());
+    _ = sampler.shouldSample();
+    _ = sampler.shouldSample();
+    try std.testing.expectEqual(@as(?u32, 0), sampler.remainingWindowQuota());
+
+    sampler.setEveryN(2);
+    try std.testing.expect(!sampler.shouldSample());
+    try std.testing.expect(sampler.shouldSample());
+
+    sampler.setAdaptive(.{
+        .target_rate = 0,
+        .adjustment_interval_ms = 0,
+        .min_sample_rate = 0.8,
+        .max_sample_rate = 0.2,
+    });
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "adaptive"));
+    const adaptive_rate = sampler.getCurrentRate();
+    try std.testing.expect(adaptive_rate >= 0.2 and adaptive_rate <= 0.8);
+
+    sampler.disableSampling();
+    try std.testing.expect(!sampler.isEnabled());
+    try std.testing.expect(sampler.shouldSample());
 }

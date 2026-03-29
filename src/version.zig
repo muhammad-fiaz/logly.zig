@@ -1,4 +1,4 @@
 //! Logly Version Information
 
-/// Logly V0.1.6 | Author: Muhammad Fiaz | License: MIT
-pub const version = "0.1.6";
+/// Logly V0.1.7 | Author: Muhammad Fiaz | License: MIT
+pub const version = "0.1.7";

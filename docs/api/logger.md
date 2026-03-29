@@ -99,6 +99,26 @@ Initializes a new `Logger` instance with a specific configuration preset.
 - **config**: The configuration to use (e.g., `ConfigPresets.production()`).
 - **Returns**: A pointer to the initialized `Logger` or an error.
 
+### Allocator Strategy
+
+`Logger.init(...)` and `Logger.initWithConfig(...)` accept any allocator implementing `std.mem.Allocator`.
+
+- Use `std.heap.GeneralPurposeAllocator` for robust general-purpose ownership and leak detection.
+- Enable arena scratch allocation with `Config.withArenaAllocation()` (aliases: `withArenaAllocator()`, `withArena()`) for high-throughput temporary allocations.
+
+```zig
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+defer _ = gpa.deinit();
+
+var config = logly.Config.production().withArenaAllocator();
+config.arena_reset_threshold = 128 * 1024;
+
+const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
+defer logger.deinit();
+```
+
+`configure(...)` can also toggle arena allocation at runtime (`use_arena_allocator`) without recreating the logger.
+
 ### `deinit() void`
 
 Deinitializes the logger, freeing all allocated resources including sinks, context maps, custom levels, and enterprise components.
@@ -109,16 +129,42 @@ Updates the global configuration of the logger in a thread-safe manner.
 
 ## Distributed Logging
 
-### `withTrace(trace_id: ?[]const u8, span_id: ?[]const u8) DistributedLogger`
+### `withTrace(trace_id: []const u8, span_id: ?[]const u8) DistributedLogger`
 
 Creates a lightweight `DistributedLogger` handle that wraps the main logger but automatically injects the specified trace context into every log message. This is the preferred way to handle distributed tracing in concurrent environments (like request handlers).
 
 ```zig
 // In a request handler
 const req_logger = logger.withTrace(header_trace_id, header_span_id);
-try req_logger.info("Processing request"); 
+try req_logger.info("Processing request", null);
 // Result: { "trace_id": "...", "span_id": "...", "message": "Processing request" }
 ```
+
+### `withTraceparent(traceparent: []const u8) !DistributedLogger`
+
+Parses an incoming W3C `traceparent` header and returns a request-scoped `DistributedLogger`.
+
+- Returns `LoggerError.InvalidTraceparent` if the header is malformed.
+
+```zig
+const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+const req_logger = try logger.withTraceparent(incoming);
+try req_logger.info("Continuing distributed trace", null);
+```
+
+### `setTraceContextFromTraceparent(traceparent: []const u8) !void`
+
+Parses a W3C `traceparent` header and sets logger global trace context.
+
+- Returns `LoggerError.InvalidTraceparent` for invalid values.
+- Useful when using legacy/global trace context APIs.
+
+### `getTraceparentHeader(allocator: std.mem.Allocator) !?[]u8`
+
+Formats the current global logger trace context as a W3C `traceparent` header string.
+
+- Returns `null` when trace context is incomplete.
+- Returned string must be freed by the caller.
 
 ### `setTraceContext(trace_id: []const u8, span_id: ?[]const u8) !void`
 
@@ -131,6 +177,8 @@ try req_logger.info("Processing request");
 ## Arena Allocator Methods
 
 When `use_arena_allocator` is enabled in config, the logger uses an arena allocator for temporary allocations, improving performance.
+
+The logger tracks approximate temporary usage and automatically resets the arena between records when usage reaches `Config.arena_reset_threshold`.
 
 ### `scratchAllocator() std.mem.Allocator`
 
@@ -411,12 +459,52 @@ if (logger.getMetrics()) |metrics| {
 
 ## Distributed Tracing
 
+### `withTrace(trace_id: []const u8, span_id: ?[]const u8) DistributedLogger`
+
+Creates a request-scoped `DistributedLogger` without mutating global logger context.
+
+```zig
+const req_logger = logger.withTrace("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7");
+try req_logger.info("Incoming request", @src());
+```
+
+### `withTraceparent(traceparent: []const u8) !DistributedLogger`
+
+Builds a request-scoped distributed logger directly from an incoming W3C `traceparent` header.
+
+```zig
+const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+const req_logger = try logger.withTraceparent(incoming);
+```
+
+Returns `LoggerError.InvalidTraceparent` on malformed input.
+
 ### `setTraceContext(trace_id: []const u8, span_id: ?[]const u8) !void`
 
 Sets the trace context for distributed tracing. All subsequent log records will include these IDs.
 
 ```zig
 try logger.setTraceContext("trace-abc-123", "span-xyz-789");
+```
+
+### `setTraceContextFromTraceparent(traceparent: []const u8) !void`
+
+Parses and applies a W3C `traceparent` header to global logger trace context.
+
+```zig
+const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+try logger.setTraceContextFromTraceparent(incoming);
+```
+
+### `getTraceparentHeader(allocator: std.mem.Allocator) !?[]u8`
+
+Returns current global context as a W3C `traceparent` header.
+
+```zig
+if (try logger.getTraceparentHeader(allocator)) |header| {
+    defer allocator.free(header);
+    // Forward header to downstream services
+}
 ```
 
 ### `setCorrelationId(correlation_id: []const u8) !void`
@@ -441,6 +529,24 @@ defer span.end(null) catch {};
 
 // Your operation here
 try logger.info("Executing query");
+```
+
+### `DistributedLogger.child(child_span_id: []const u8) DistributedLogger`
+
+Returns a child distributed logger that reuses the same `trace_id` and replaces `span_id`.
+
+```zig
+const child = req_logger.child("7a085853722dc6d2");
+try child.debug("Nested operation", @src());
+```
+
+### `DistributedLogger.inModule(module: []const u8) DistributedLogger`
+
+Returns a distributed logger bound to a specific module name for module-level filtering/routing.
+
+```zig
+const db = req_logger.inModule("database.query");
+try db.info("Executing SQL", @src());
 ```
 
 ## Module-Level Logging
@@ -579,7 +685,7 @@ Temporarily disables all logging.
 ### `flush() !void`
 
 Flushes all sinks, ensuring all buffered data is written.
-Note: When `config.auto_flush` is true (default), this is called automatically after each log operation.
+Note: `config.auto_flush` defaults to `false` for throughput. Enable it when immediate durability is required.
 
 ### `logSystemDiagnostics(src: ?std.builtin.SourceLocation) !void`
 

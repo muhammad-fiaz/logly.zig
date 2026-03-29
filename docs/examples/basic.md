@@ -93,3 +93,7 @@ Each line is colored according to its level:
 ```bash
 zig build run-basic
 ```
+
+## Related
+
+- [Allocator Strategies Example](allocator-strategies.md) - Default GeneralPurposeAllocator workflow and optional arena allocation.

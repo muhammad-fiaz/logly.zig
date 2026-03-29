@@ -36,7 +36,7 @@ pub fn main() !void {
 
     var config = logly.Config.default();
 
-    // Example 1: Default format (YYYY-MM-DD HH:mm:ss)
+    // Example 1: Default format (YYYY-MM-DD HH:mm:ss.SSS)
     logger.configure(config);
     try logger.info("Default time format", @src());
 
@@ -49,10 +49,24 @@ pub fn main() !void {
     // Example 3: UTC timezone
     // Switch to UTC time instead of local time
     config.timezone = .utc;
+    config.time_format = logly.Config.TimeFormat.iso8601;
     logger.configure(config);
     try logger.info("UTC time", @src());
+
+    // Example 4: Local timezone offset in custom format (+HH:MM)
+    config.timezone = .local;
+    config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+    logger.configure(config);
+    try logger.info("Local timezone offset (ZZZ)", @src());
+
+    // Example 5: Local timezone compact offset (+HHMM)
+    config.time_format = "YYYY-MM-DD HH:mm:ss ZZ";
+    logger.configure(config);
+    try logger.info("Local timezone compact offset (ZZ)", @src());
 }
 ```
+
+  `ZZZ` and `ZZ` are useful in production when logs from multiple regions are aggregated, because each event keeps an explicit timezone offset.
 
 ## Expected Output
 
@@ -60,4 +74,6 @@ pub fn main() !void {
 [2024-06-01 12:00:00] [INFO] Default time format
 [12:00:00] [INFO] Short time format
 [10:00:00] [INFO] UTC time
+[2024-06-01 12:00:00 +02:00] [INFO] Local timezone offset (ZZZ)
+[2024-06-01 12:00:00 +0200] [INFO] Local timezone compact offset (ZZ)
 ```

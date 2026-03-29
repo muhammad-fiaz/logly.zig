@@ -586,6 +586,8 @@ pub const Sink = struct {
     enabled: bool = true,
     /// Track if this is the first JSON entry for file output.
     json_first_entry: bool = true,
+    /// Number of records currently buffered and pending flush.
+    buffered_records: usize = 0,
     /// Sink statistics.
     stats: SinkStats = .{},
 
@@ -1055,6 +1057,8 @@ pub const Sink = struct {
             try writer.writeByte('\n');
         }
 
+        self.buffered_records += 1;
+
         // Flush logic
         if (!self.config.async_write) {
             try self.flush();
@@ -1078,28 +1082,76 @@ pub const Sink = struct {
 
         if (!self.enabled) return;
 
+        const bytes_with_newline = data.len + 1;
+
         if (self.file) |file| {
             if (self.config.async_write) {
                 try self.buffer.appendSlice(self.allocator, data);
                 try self.buffer.append(self.allocator, '\n');
+                self.buffered_records += 1;
                 if (self.buffer.items.len >= self.config.buffer_size) {
                     try self.flush();
                 }
             } else {
-                try file.writeAll(data);
-                try file.writeAll("\n");
+                file.writeAll(data) catch |err| {
+                    try self.handleWriteError(err, 1);
+                    return;
+                };
+                file.writeAll("\n") catch |err| {
+                    try self.handleWriteError(err, 1);
+                    return;
+                };
+
+                _ = self.stats.total_written.fetchAdd(1, .monotonic);
+                _ = self.stats.bytes_written.fetchAdd(bytes_with_newline, .monotonic);
+                if (self.on_write) |cb| {
+                    cb(1, bytes_with_newline);
+                }
             }
         } else if (self.stream) |stream| {
-            try stream.writeAll(data);
-            try stream.writeAll("\n");
+            stream.writeAll(data) catch |err| {
+                try self.handleWriteError(err, 1);
+                return;
+            };
+            stream.writeAll("\n") catch |err| {
+                try self.handleWriteError(err, 1);
+                return;
+            };
+
+            _ = self.stats.total_written.fetchAdd(1, .monotonic);
+            _ = self.stats.bytes_written.fetchAdd(bytes_with_newline, .monotonic);
+            if (self.on_write) |cb| {
+                cb(1, bytes_with_newline);
+            }
         } else if (self.system_log) |*syslog| {
             // For raw writes, we assume INFO level if not specified, but Sink.write doesn't take a level.
             // We'll default to INFO.
-            try syslog.log(.info, data);
+            syslog.log(.info, data) catch |err| {
+                try self.handleWriteError(err, 1);
+                return;
+            };
+
+            _ = self.stats.total_written.fetchAdd(1, .monotonic);
+            _ = self.stats.bytes_written.fetchAdd(data.len, .monotonic);
+            if (self.on_write) |cb| {
+                cb(1, data.len);
+            }
         } else {
             const stdout_file = std.fs.File.stdout();
-            try stdout_file.writeAll(data);
-            try stdout_file.writeAll("\n");
+            stdout_file.writeAll(data) catch |err| {
+                try self.handleWriteError(err, 1);
+                return;
+            };
+            stdout_file.writeAll("\n") catch |err| {
+                try self.handleWriteError(err, 1);
+                return;
+            };
+
+            _ = self.stats.total_written.fetchAdd(1, .monotonic);
+            _ = self.stats.bytes_written.fetchAdd(bytes_with_newline, .monotonic);
+            if (self.on_write) |cb| {
+                cb(1, bytes_with_newline);
+            }
         }
     }
 
@@ -1109,16 +1161,53 @@ pub const Sink = struct {
 
         if (self.config.path) |uri| {
             if (std.mem.startsWith(u8, uri, "tcp://")) {
-                self.stream = Network.connectTcp(self.allocator, uri) catch return false;
-                return true;
+                const max_retries = Constants.TimeDefaults.max_retries;
+                const retry_sleep_ns = Constants.TimeDefaults.retry_delay_ms * std.time.ns_per_ms;
+
+                var attempt: u32 = 0;
+                while (attempt <= max_retries) : (attempt += 1) {
+                    self.stream = Network.connectTcp(self.allocator, uri) catch {
+                        if (attempt < max_retries) {
+                            std.Thread.sleep(retry_sleep_ns);
+                        }
+                        continue;
+                    };
+                    return true;
+                }
             }
         }
         return false;
     }
 
+    fn handleWriteError(self: *Sink, err: anyerror, record_count: u64) !void {
+        _ = self.stats.write_errors.fetchAdd(1, .monotonic);
+
+        if (self.on_error) |callback| {
+            callback(@errorName(err), record_count);
+        }
+
+        switch (self.config.on_error) {
+            .silent => {},
+            .log_stderr => {
+                const sink_name = self.config.name orelse "unnamed";
+                std.debug.print("[logly:sink:{s}] write error: {s}\n", .{ sink_name, @errorName(err) });
+            },
+            .disable_sink => {
+                self.enabled = false;
+                if (self.on_state_change) |callback| {
+                    callback(false);
+                }
+            },
+            .propagate => return err,
+        }
+    }
+
     /// Flushes the internal buffer to storage.
     pub fn flush(self: *Sink) !void {
         if (self.buffer.items.len == 0) return;
+
+        const start_ns = std.time.nanoTimestamp();
+        const buffered_records = if (self.buffered_records == 0) @as(u64, 1) else @as(u64, @intCast(self.buffered_records));
 
         // Compression for Network Sinks
         var data_to_write: []const u8 = self.buffer.items;
@@ -1143,36 +1232,83 @@ pub const Sink = struct {
         defer if (compressed_data) |d| self.allocator.free(d);
 
         if (self.file) |file| {
-            try file.writeAll(self.buffer.items);
+            file.writeAll(self.buffer.items) catch |err| {
+                try self.handleWriteError(err, buffered_records);
+                self.buffer.clearRetainingCapacity();
+                self.buffered_records = 0;
+                return;
+            };
         } else if (self.stream) |stream| {
             stream.writeAll(data_to_write) catch |err| {
                 if (self.reconnect()) {
                     if (self.stream) |new_stream| {
-                        try new_stream.writeAll(data_to_write);
+                        new_stream.writeAll(data_to_write) catch |retry_err| {
+                            try self.handleWriteError(retry_err, buffered_records);
+                            self.buffer.clearRetainingCapacity();
+                            self.buffered_records = 0;
+                            return;
+                        };
                     } else {
-                        return err;
+                        try self.handleWriteError(err, buffered_records);
+                        self.buffer.clearRetainingCapacity();
+                        self.buffered_records = 0;
+                        return;
                     }
                 } else {
-                    return err;
+                    try self.handleWriteError(err, buffered_records);
+                    self.buffer.clearRetainingCapacity();
+                    self.buffered_records = 0;
+                    return;
                 }
             };
         } else if (self.udp_socket) |sock| {
             if (self.udp_addr) |addr| {
-                _ = try std.posix.sendto(sock, data_to_write, 0, &addr.any, addr.getOsSockLen());
+                _ = std.posix.sendto(sock, data_to_write, 0, &addr.any, addr.getOsSockLen()) catch |err| {
+                    try self.handleWriteError(err, buffered_records);
+                    self.buffer.clearRetainingCapacity();
+                    self.buffered_records = 0;
+                    return;
+                };
             }
         } else if (self.system_log) |*syslog| {
             const msg = self.buffer.items;
             if (msg.len > 0) {
                 // Use info level as default for flushed buffers where we lost the record context
-                try syslog.log(.info, msg);
+                syslog.log(.info, msg) catch |err| {
+                    try self.handleWriteError(err, buffered_records);
+                    self.buffer.clearRetainingCapacity();
+                    self.buffered_records = 0;
+                    return;
+                };
             }
         } else {
             // Console
             const stdout_file = std.fs.File.stdout();
-            try stdout_file.writeAll(self.buffer.items);
+            stdout_file.writeAll(self.buffer.items) catch |err| {
+                try self.handleWriteError(err, buffered_records);
+                self.buffer.clearRetainingCapacity();
+                self.buffered_records = 0;
+                return;
+            };
+        }
+
+        const bytes_flushed = if (self.file != null) self.buffer.items.len else data_to_write.len;
+        const end_ns = std.time.nanoTimestamp();
+        const duration_ns: u64 = if (end_ns > start_ns) @as(u64, @intCast(end_ns - start_ns)) else 0;
+
+        _ = self.stats.total_written.fetchAdd(buffered_records, .monotonic);
+        _ = self.stats.bytes_written.fetchAdd(bytes_flushed, .monotonic);
+        _ = self.stats.flush_count.fetchAdd(1, .monotonic);
+
+        if (self.on_write) |callback| {
+            callback(buffered_records, bytes_flushed);
+        }
+        if (self.on_flush) |callback| {
+            callback(bytes_flushed, duration_ns);
         }
 
         self.buffer.clearRetainingCapacity();
+        self.buffered_records = 0;
     }
 
     /// Applies per-sink filter configuration to determine if the record should be logged.
@@ -1268,4 +1404,102 @@ test "sink filtering" {
     record.module = "auth";
     record.message = "inputted password was wrong";
     try std.testing.expect(!sink.applyFilterConfig(&record));
+}
+
+test "sink flush updates stats" {
+    const allocator = std.testing.allocator;
+    const log_path = ".zig-cache/logly-sink-auto-flush-stats.log";
+
+    var sink_cfg = SinkConfig.default();
+    sink_cfg.path = log_path;
+    sink_cfg.async_write = false;
+    sink_cfg.overwrite_mode = true;
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer std.fs.cwd().deleteFile(log_path) catch {};
+    defer sink.deinit();
+
+    var record = Record.init(allocator, .info, "stats check");
+    defer record.deinit();
+    record.timestamp = Utils.currentMillis();
+
+    var global_config = Config.default();
+    global_config.auto_sink = false;
+
+    try sink.write(&record, global_config);
+
+    const stats = sink.getStats();
+    try std.testing.expect(stats.getTotalWritten() >= 1);
+    try std.testing.expect(stats.getBytesWritten() > 0);
+    try std.testing.expect(stats.getFlushCount() >= 1);
+    try std.testing.expectEqual(@as(u64, 0), stats.getWriteErrors());
+}
+
+test "sink manual flushNow updates stats" {
+    const allocator = std.testing.allocator;
+    const log_path = ".zig-cache/logly-sink-manual-flush-stats.log";
+
+    var sink_cfg = SinkConfig.default();
+    sink_cfg.path = log_path;
+    sink_cfg.async_write = true;
+    sink_cfg.buffer_size = Constants.BufferSizes.sink;
+    sink_cfg.overwrite_mode = true;
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer std.fs.cwd().deleteFile(log_path) catch {};
+    defer sink.deinit();
+
+    var record = Record.init(allocator, .info, "manual flush stats check");
+    defer record.deinit();
+    record.timestamp = Utils.currentMillis();
+
+    var global_config = Config.default();
+    global_config.auto_sink = false;
+
+    try sink.write(&record, global_config);
+
+    const before_flush_stats = sink.getStats();
+    try std.testing.expectEqual(@as(u64, 0), before_flush_stats.getFlushCount());
+    try std.testing.expectEqual(@as(u64, 0), before_flush_stats.getTotalWritten());
+
+    try sink.flushNow();
+
+    const after_flush_stats = sink.getStats();
+    try std.testing.expect(after_flush_stats.getFlushCount() >= 1);
+    try std.testing.expect(after_flush_stats.getTotalWritten() >= 1);
+    try std.testing.expect(after_flush_stats.getBytesWritten() > 0);
+    try std.testing.expectEqual(@as(u64, 0), after_flush_stats.getWriteErrors());
+}
+
+test "sink on_error disable_sink disables sink" {
+    const allocator = std.testing.allocator;
+
+    var sink_cfg = SinkConfig.default();
+    sink_cfg.on_error = .disable_sink;
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer sink.deinit();
+
+    const TestError = error{WriteFailed};
+    try sink.handleWriteError(TestError.WriteFailed, 1);
+
+    try std.testing.expect(!sink.isEnabled());
+    const stats = sink.getStats();
+    try std.testing.expectEqual(@as(u64, 1), stats.getWriteErrors());
+}
+
+test "sink on_error propagate returns error" {
+    const allocator = std.testing.allocator;
+
+    var sink_cfg = SinkConfig.default();
+    sink_cfg.on_error = .propagate;
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer sink.deinit();
+
+    const TestError = error{WriteFailed};
+    try std.testing.expectError(TestError.WriteFailed, sink.handleWriteError(TestError.WriteFailed, 2));
+
+    const stats = sink.getStats();
+    try std.testing.expectEqual(@as(u64, 1), stats.getWriteErrors());
 }

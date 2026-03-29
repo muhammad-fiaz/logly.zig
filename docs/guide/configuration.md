@@ -67,14 +67,14 @@ logger.configure(config);
 | `include_pid`            | `bool`        | `false`                 | Include the process ID.                              |
 | `capture_stack_trace`    | `bool`        | `false`                 | Capture stack traces for Error/Critical logs.        |
 | `symbolize_stack_trace`  | `bool`        | `false`                 | Resolve stack trace addresses to symbols.            |
-| `show_lineno`            | `bool`        | `false`                 | Show line number                                     |
 | `auto_sink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
 | `check_for_updates`      | `bool`        | `true`                  | Check for updates on startup                         |
 | `enable_callbacks`       | `bool`        | `false`                 | Enable log callbacks (only when using callbacks)     |
 | `log_format`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
-| `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss"` | Timestamp format                                     |
+| `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss.SSS"` | Timestamp format                                 |
 | `timezone`               | `enum`        | `.local`                | Timezone for timestamps (`.local` or `.utc`)         |
 | `use_arena_allocator`    | `bool`        | `false`                 | Enable arena allocator for temporary allocations     |
+| `arena_reset_threshold`  | `usize`       | `64 * 1024`             | Scratch arena reset threshold in bytes               |
 | `emit_system_diagnostics_on_init` | `bool` | `false`           | Emit system diagnostics on logger initialization     |
 | `include_drive_diagnostics` | `bool`     | `true`                  | Include drive information in diagnostics             |
 | `auto_flush`             | `bool`        | `false`                 | Auto-flush sinks (set true only when immediate output is critical) |
@@ -186,26 +186,72 @@ Use helper methods for cleaner configuration:
 
 ```zig
 // Enable async logging
-var config = logly.Config.default().withAsync();
+var config = logly.Config.default().withAsync(.{
+    .enabled = true,
+    .buffer_size = 8192,
+});
 
 // Enable compression
-var config2 = logly.Config.default().withCompression();
+var config2 = logly.Config.default().withCompression(logly.CompressionConfig.production());
 
 // Enable thread pool with specific thread count
-var config3 = logly.Config.default().withThreadPool(4);
+var config3 = logly.Config.default().withThreadPool(.{
+    .enabled = true,
+    .thread_count = 4,
+});
 
 // Enable scheduler
-var config4 = logly.Config.default().withScheduler();
+var config4 = logly.Config.default().withScheduler(.{
+    .enabled = true,
+    .cleanup_max_age_days = 7,
+});
 
 // Enable arena allocation
 var config5 = logly.Config.default().withArenaAllocation();
 
 // Chain multiple features
 var config6 = logly.Config.default()
-    .withAsync()
-    .withCompression()
-    .withThreadPool(0)  // Auto-detect CPU cores
+    .withAsync(.{ .enabled = true, .buffer_size = 8192 })
+    .withCompression(logly.CompressionConfig.production())
+    .withThreadPool(.{ .enabled = true, .thread_count = 0 }) // Auto-detect CPU cores
     .withArenaAllocation();
+```
+
+### Allocator Configuration (Explicit vs Builder)
+
+Both forms are valid and supported:
+
+```zig
+var config = logly.Config.default();
+config.use_arena_allocator = true;
+
+// Equivalent builder aliases
+config = config.withArenaAllocation();
+config = config.withArenaAllocator();
+config = config.withArena();
+```
+
+Difference:
+- Field assignment mutates your existing `config` variable in place.
+- Builder/alias methods return a modified copy (reassign to keep changes).
+
+You can also run your application/request scratch allocations in your own arena that is backed by GPA, independently of Logly's internal arena:
+
+```zig
+const std = @import("std");
+
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+defer _ = gpa.deinit();
+
+var app_arena = std.heap.ArenaAllocator.init(gpa.allocator());
+defer app_arena.deinit();
+
+const request_alloc = app_arena.allocator();
+const tmp = try request_alloc.alloc(u8, 256);
+_ = tmp;
+
+// Release request-scoped allocations in one step
+_ = app_arena.reset(.retain_capacity);
 ```
 
 ## Configuration Presets
@@ -278,7 +324,7 @@ Logly supports multiple timestamp formats:
 
 | Format | Example Output | Description |
 |--------|----------------|-------------|
-| `YYYY-MM-DD HH:mm:ss` | `2025-12-04 06:39:53.091` | Default human-readable |
+| `YYYY-MM-DD HH:mm:ss.SSS` | `2025-12-04 06:39:53.091` | Default human-readable |
 | `ISO8601` | `2025-12-04T06:39:53.091Z` | ISO 8601 format |
 | `RFC3339` | `2025-12-04T06:39:53+00:00` | RFC 3339 format |
 | `YYYY-MM-DD` | `2025-12-04` | Date only |
@@ -289,10 +335,13 @@ Logly supports multiple timestamp formats:
 
 ```zig
 // Use ISO8601 format
-config.time_format = "ISO8601";
+config.time_format = logly.Config.TimeFormat.iso8601;
 
 // Use Unix timestamp
-config.time_format = "unix";
+config.time_format = logly.Config.TimeFormat.unix;
+
+// Use canonical default pattern
+config.time_format = logly.Config.TimeFormat.default_pattern;
 
 // Configure timezone
 config.timezone = .utc;   // Use UTC
@@ -560,6 +609,11 @@ Or use the convenience method:
 const config = logly.Config.default().withArenaAllocation();
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
+
+Both `config.use_arena_allocator = true` and `config = config.withArenaAllocator()` enable the same logger behavior.
+The difference is mutation style:
+- Field assignment updates an existing config value.
+- Builder aliases return a modified copy.
 
 **Benefits:**
 - Reduces allocation overhead for formatting operations

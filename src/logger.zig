@@ -47,6 +47,11 @@ pub const Logger = struct {
         parent_span_id: ?[]const u8 = null,
     };
 
+    /// Logger-specific errors for distributed tracing helpers.
+    pub const LoggerError = error{
+        InvalidTraceparent,
+    };
+
     /// Logger statistics for monitoring and diagnostics.
     pub const LoggerStats = struct {
         /// Total number of records successfully logged.
@@ -215,6 +220,9 @@ pub const Logger = struct {
     /// The parent allocator used to create the arena (if applicable).
     parent_allocator: ?std.mem.Allocator = null,
 
+    /// Approximate arena bytes consumed since the last reset.
+    arena_bytes_since_reset: usize = 0,
+
     /// Returns the arena allocator if enabled, otherwise the main allocator.
     pub fn scratchAllocator(self: *Logger) std.mem.Allocator {
         if (self.arena_state) |*arena| {
@@ -228,6 +236,64 @@ pub const Logger = struct {
     pub fn resetArena(self: *Logger) void {
         if (self.arena_state) |*arena| {
             _ = arena.reset(.retain_capacity);
+            self.arena_bytes_since_reset = 0;
+        }
+    }
+
+    /// Resets arena state before processing a new record when threshold is exceeded.
+    fn maybeResetArenaBeforeRecord(self: *Logger) void {
+        if (!self.config.use_arena_allocator) return;
+        if (self.arena_state == null) return;
+        if (self.config.arena_reset_threshold == 0) return;
+        if (self.arena_bytes_since_reset < self.config.arena_reset_threshold) return;
+
+        self.resetArena();
+    }
+
+    /// Tracks approximate temporary bytes allocated through the arena.
+    fn accountArenaUsage(self: *Logger, approx_bytes: usize) void {
+        if (!self.config.use_arena_allocator) return;
+        if (self.arena_state == null) return;
+        self.arena_bytes_since_reset +%= approx_bytes;
+    }
+
+    /// Allocates and initializes a logger with common base state.
+    fn initBaseLogger(allocator: std.mem.Allocator, config: Config) !*Logger {
+        const logger = try allocator.create(Logger);
+        logger.* = .{
+            .allocator = allocator,
+            .config = config,
+            .sinks = .empty,
+            .context = std.StringHashMap(std.json.Value).init(allocator),
+            .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
+            .module_levels = std.StringHashMap(Level).init(allocator),
+            .init_timestamp = Utils.currentSeconds(),
+            .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
+        };
+
+        if (config.use_arena_allocator) {
+            logger.arena_state = std.heap.ArenaAllocator.init(allocator);
+            logger.parent_allocator = allocator;
+        }
+
+        return logger;
+    }
+
+    /// Creates the default console sink and startup diagnostics when enabled.
+    fn setupStartupOutputs(self: *Logger) !void {
+        if (self.config.auto_sink and self.config.global_console_display) {
+            _ = try self.addSink(SinkConfig.console());
+        }
+
+        if (self.config.emit_system_diagnostics_on_init) {
+            self.logSystemDiagnostics(null) catch {};
+        }
+    }
+
+    /// Starts update checker thread when enabled.
+    fn maybeStartUpdateChecker(self: *Logger) void {
+        if (self.config.check_for_updates and self.config.global_console_display) {
+            self.update_thread = UpdateChecker.checkForUpdates(self.allocator, true);
         }
     }
 
@@ -243,35 +309,11 @@ pub const Logger = struct {
     ///     A pointer to the initialized Logger or an error.
     pub fn init(allocator: std.mem.Allocator) !*Logger {
         const config = Config.default();
-        const logger = try allocator.create(Logger);
-        logger.* = .{
-            .allocator = allocator,
-            .config = config,
-            .sinks = .empty,
-            .context = std.StringHashMap(std.json.Value).init(allocator),
-            .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
-            .module_levels = std.StringHashMap(Level).init(allocator),
-            .init_timestamp = Utils.currentSeconds(),
-            .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
-        };
+        const logger = try initBaseLogger(allocator, config);
+        errdefer logger.deinit();
 
-        // Initialize arena allocator if configured in default config
-        if (config.use_arena_allocator) {
-            logger.arena_state = std.heap.ArenaAllocator.init(allocator);
-            logger.parent_allocator = allocator;
-        }
-
-        if (logger.config.auto_sink and logger.config.global_console_display) {
-            _ = try logger.addSink(SinkConfig.console());
-        }
-
-        if (logger.config.emit_system_diagnostics_on_init) {
-            logger.logSystemDiagnostics(null) catch {};
-        }
-
-        if (logger.config.check_for_updates and logger.config.global_console_display) {
-            logger.update_thread = UpdateChecker.checkForUpdates(allocator, true);
-        }
+        try logger.setupStartupOutputs();
+        logger.maybeStartUpdateChecker();
 
         return logger;
     }
@@ -288,36 +330,15 @@ pub const Logger = struct {
     /// Returns:
     ///     A pointer to the initialized Logger.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: Config) !*Logger {
-        const logger = try allocator.create(Logger);
-        logger.* = .{
-            .allocator = allocator,
-            .config = config,
-            .sinks = .empty,
-            .context = std.StringHashMap(std.json.Value).init(allocator),
-            .custom_levels = std.StringHashMap(CustomLevel).init(allocator),
-            .module_levels = std.StringHashMap(Level).init(allocator),
-            .init_timestamp = Utils.currentSeconds(),
-            .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
-        };
-
-        // Initialize arena allocator if configured
-        if (config.use_arena_allocator) {
-            logger.arena_state = std.heap.ArenaAllocator.init(allocator);
-            logger.parent_allocator = allocator;
-        }
+        const logger = try initBaseLogger(allocator, config);
+        errdefer logger.deinit();
 
         if (config.async_config.enabled) {
             const al = try AsyncLogger.initWithConfig(allocator, config.async_config);
             logger.async_logger = al;
         }
 
-        if (config.auto_sink and config.global_console_display) {
-            _ = try logger.addSink(SinkConfig.console());
-        }
-
-        if (config.emit_system_diagnostics_on_init) {
-            logger.logSystemDiagnostics(null) catch {};
-        }
+        try logger.setupStartupOutputs();
 
         if (config.enable_metrics) {
             const m = try allocator.create(Metrics);
@@ -331,9 +352,7 @@ pub const Logger = struct {
             logger.thread_pool = tp;
         }
 
-        if (config.check_for_updates and config.global_console_display) {
-            logger.update_thread = UpdateChecker.checkForUpdates(allocator, true);
-        }
+        logger.maybeStartUpdateChecker();
 
         return logger;
     }
@@ -407,6 +426,23 @@ pub const Logger = struct {
     pub fn configure(self: *Logger, config: Config) void {
         self.mutex.lock();
         defer self.mutex.unlock();
+
+        const has_arena = self.arena_state != null;
+        const wants_arena = config.use_arena_allocator;
+
+        if (wants_arena and !has_arena) {
+            self.arena_state = std.heap.ArenaAllocator.init(self.allocator);
+            self.parent_allocator = self.allocator;
+            self.arena_bytes_since_reset = 0;
+        } else if (!wants_arena and has_arena) {
+            if (self.arena_state) |*arena| {
+                arena.deinit();
+            }
+            self.arena_state = null;
+            self.parent_allocator = null;
+            self.arena_bytes_since_reset = 0;
+        }
+
         self.config = config;
         self.atomic_level.store(@intFromEnum(config.level), .monotonic);
     }
@@ -503,6 +539,12 @@ pub const Logger = struct {
         }
     }
 
+    /// Parses a W3C `traceparent` header and updates logger trace context.
+    pub fn setTraceContextFromTraceparent(self: *Logger, traceparent: []const u8) !void {
+        const parsed = Utils.parseTraceparentHeader(traceparent) orelse return LoggerError.InvalidTraceparent;
+        try self.setTraceContext(parsed.trace_id, parsed.span_id);
+    }
+
     /// Sets the correlation ID for request tracking.
     ///
     /// Arguments:
@@ -532,6 +574,19 @@ pub const Logger = struct {
             self.allocator.free(c);
             self.correlation_id = null;
         }
+    }
+
+    /// Returns current trace context encoded as W3C `traceparent` header.
+    ///
+    /// Returns `null` when trace or span context is missing.
+    pub fn getTraceparentHeader(self: *Logger, allocator: std.mem.Allocator) !?[]u8 {
+        self.mutex.lockShared();
+        defer self.mutex.unlockShared();
+
+        const trace_id = self.trace_id orelse return null;
+        const span_id = self.span_id orelse return null;
+
+        return try Utils.formatTraceparentHeader(allocator, trace_id, span_id, true);
     }
 
     /// Creates a child span for nested tracing.
@@ -1028,6 +1083,12 @@ pub const Logger = struct {
         };
     }
 
+    /// Creates a distributed logger from an incoming W3C `traceparent` header.
+    pub fn withTraceparent(self: *Logger, traceparent: []const u8) !DistributedLogger {
+        const parsed = Utils.parseTraceparentHeader(traceparent) orelse return LoggerError.InvalidTraceparent;
+        return self.withTrace(parsed.trace_id, parsed.span_id);
+    }
+
     /// Returns a persistent context logger that maintains context across calls.
     /// The returned logger must be manually deinited.
     pub fn with(self: *Logger) PersistentContextLogger {
@@ -1089,6 +1150,10 @@ pub const Logger = struct {
         const use_arena = self.config.use_arena_allocator;
         if (use_arena) self.mutex.lock() else self.mutex.lockShared();
         defer if (use_arena) self.mutex.unlock() else self.mutex.unlockShared();
+
+        if (use_arena) {
+            self.maybeResetArenaBeforeRecord();
+        }
 
         // Check level filtering
         var effective_min_level = self.config.level;
@@ -1230,6 +1295,10 @@ pub const Logger = struct {
 
         // Dispatch the record
         try self.dispatchRecord(&record);
+
+        if (use_arena) {
+            self.accountArenaUsage(final_message.len);
+        }
     }
 
     /// Dispatches a record to the appropriate logging backend (async logger, thread pool, or direct sinks).
@@ -2207,6 +2276,28 @@ pub const DistributedLogger = struct {
     pub fn critical(self: *const DistributedLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
         try self.log(.critical, message, src);
     }
+
+    /// Returns a child distributed logger context with parent span linkage.
+    pub fn child(self: *const DistributedLogger, child_span_id: []const u8) DistributedLogger {
+        return .{
+            .logger = self.logger,
+            .trace_id = self.trace_id,
+            .span_id = child_span_id,
+            .parent_span_id = self.span_id,
+            .module = self.module,
+        };
+    }
+
+    /// Returns a distributed logger bound to a specific module.
+    pub fn inModule(self: *const DistributedLogger, module: []const u8) DistributedLogger {
+        return .{
+            .logger = self.logger,
+            .trace_id = self.trace_id,
+            .span_id = self.span_id,
+            .parent_span_id = self.parent_span_id,
+            .module = module,
+        };
+    }
 };
 
 test "logger basic" {
@@ -2270,4 +2361,75 @@ test "global trace context" {
     try logger.info("Test message", null);
 
     logger.clearTraceContext();
+}
+
+test "logger traceparent context helpers" {
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    try logger.setTraceContextFromTraceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+
+    const traceparent = try logger.getTraceparentHeader(std.testing.allocator);
+    defer if (traceparent) |tp| std.testing.allocator.free(tp);
+
+    try std.testing.expect(traceparent != null);
+    try std.testing.expect(std.mem.indexOf(u8, traceparent.?, "4bf92f3577b34da6a3ce929d0e0e4736") != null);
+    try std.testing.expect(std.mem.indexOf(u8, traceparent.?, "00f067aa0ba902b7") != null);
+
+    try std.testing.expectError(Logger.LoggerError.InvalidTraceparent, logger.setTraceContextFromTraceparent("invalid-traceparent"));
+}
+
+test "distributed logger child and module helpers" {
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    const root = logger.withTrace("trace-123", "span-root");
+    const child = root.child("span-child").inModule("service.auth");
+
+    try std.testing.expectEqualStrings("trace-123", child.trace_id.?);
+    try std.testing.expectEqualStrings("span-child", child.span_id.?);
+    try std.testing.expectEqualStrings("span-root", child.parent_span_id.?);
+    try std.testing.expectEqualStrings("service.auth", child.module.?);
+}
+
+test "logger supports GeneralPurposeAllocator" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+
+    const logger = try Logger.initWithConfig(gpa.allocator(), config);
+    defer logger.deinit();
+
+    try logger.info("gpa-backed logger", null);
+}
+
+test "logger arena threshold resets between records" {
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+    config.use_arena_allocator = true;
+    config.arena_reset_threshold = 32;
+
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    try std.testing.expect(logger.arena_state != null);
+    try std.testing.expectEqual(@as(usize, 0), logger.arena_bytes_since_reset);
+
+    try logger.info("abcdefghijklmnopqrstuvwxyz0123456789", null);
+    try std.testing.expect(logger.arena_bytes_since_reset >= config.arena_reset_threshold);
+
+    try logger.info("small", null);
+    try std.testing.expect(logger.arena_bytes_since_reset < config.arena_reset_threshold);
 }

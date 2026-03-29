@@ -48,6 +48,9 @@ The `Metrics` struct provides comprehensive observability into the logging syste
 | `minLatencyNs()` | `minLatency()` | Get minimum latency |
 | `maxLatencyNs()` | `maxLatency()` | Get maximum latency |
 | `getHistogram()` | `latencyHistogram()`, `getLatencyHistogram()` | Get latency histogram |
+| `latencyPercentileNs()` | `latencyPercentile()`, `percentileNs()` | Estimate latency percentile (ns) |
+| `latencyPercentileMs()` | `percentileMs()` | Estimate latency percentile (ms) |
+| `getLatencySummary()` | `latencySummary()`, `summaryLatency()` | Get latency summary (p50/p95/p99) |
 | `format()` | `formatMetrics()`, `stringify()` | Format metrics |
 | `recordCustomLog()` | `recordCustom()`, `customLog()` | Record custom log |
 | `hasRecords()` | `hasData()` | Check if has records |
@@ -62,6 +65,9 @@ The `Metrics` struct provides comprehensive observability into the logging syste
 | `hasHighDropRate()` | `highDropRate()`, `dropRateHigh()` | Check if high drop rate |
 | `levelCount()` | `countForLevel()`, `levelRecords()` | Get level count |
 | `sinkCount()` | `sinks()`, `sinkTotal()` | Get sink count |
+| `totalSinkErrors()` | `sinkErrorsTotal()` | Get total sink errors |
+| `totalSinkFlushes()` | `sinkFlushesTotal()` | Get total sink flushes |
+| `lastRecordAgeMs()` | `recordAgeMs()`, `ageSinceLastRecordMs()` | Get age since last record |
 | `recordSinkFlush()` | `sinkFlush()`, `recordSinkFlushOp()` | Record sink flush |
 | `getSinkMetrics()` | `sinkMetrics()`, `getSinkStats()` | Get sink metrics |
 | `getSinkMetricsByName()` | `sinkMetricsByName()`, `getSinkStatsByName()` | Get sink metrics by name |
@@ -362,6 +368,18 @@ Returns maximum latency in nanoseconds.
 
 Returns histogram bucket data.
 
+#### `latencyPercentileNs(percentile: f64) u64`
+
+Estimates latency percentile in nanoseconds using histogram buckets.
+
+#### `latencyPercentileMs(percentile: f64) f64`
+
+Estimates latency percentile in milliseconds.
+
+#### `getLatencySummary() LatencySummary`
+
+Returns aggregated latency values including `min`, `max`, `avg`, `p50`, `p95`, and `p99`.
+
 ### Statistics
 
 #### `totalRecordCount() u64`
@@ -415,6 +433,18 @@ Returns the count for a specific log level.
 #### `sinkCount() usize`
 
 Returns the number of sinks being tracked.
+
+#### `totalSinkErrors() u64`
+
+Returns total sink write errors across all tracked sinks.
+
+#### `totalSinkFlushes() u64`
+
+Returns total sink flush count across all tracked sinks.
+
+#### `lastRecordAgeMs() ?i64`
+
+Returns age in milliseconds since the last recorded log entry, or `null` when no record has been logged yet.
 
 ### State
 

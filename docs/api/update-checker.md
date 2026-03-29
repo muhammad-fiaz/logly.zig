@@ -169,6 +169,10 @@ pub fn main() !void {
 
 ## Recent Changes
 
+### v0.1.7
+
+- Updated examples and version references to the latest release (`0.1.7`).
+
 ### v0.1.6
 
 - Fixed a telemetry compilation issue: Resolved a compile-time error in the telemetry module (OTLP exporter) by removing an unnecessary discard of the `self` parameter in `writeOtlpSpan`. This ensures the telemetry feature compiles cleanly across targets and prevents build failures when telemetry is enabled.

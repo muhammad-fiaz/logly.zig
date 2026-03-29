@@ -9,7 +9,7 @@ head:
 
 # Distributed Logging Example
 
-This example simulates a "User Service" in a distributed environment. It demonstrates how to configure service identity and handle traces.
+This example simulates a "User Service" in a distributed environment. It demonstrates service identity, W3C `traceparent` ingestion, scoped request logging, and downstream propagation.
 
 ```zig
 const std = @import("std");
@@ -38,35 +38,40 @@ pub fn main() !void {
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    // 2. Simulate Incoming Request (e.g., from an API Gateway)
-    // In a real app, these come from HTTP headers
-    const incoming_trace = "trace-8899aabb-ccdd";
-    const incoming_span = "span-gateway-01";
+    // 2. Simulate Incoming Request Header (e.g., API Gateway)
+    const incoming_traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
     std.debug.print("--- Simulating Request Processing ---\n", .{});
 
-    // 3. Create Scoped Logger for this Request
-    const req_logger = logger.withTrace(incoming_trace, incoming_span);
+    // 3. Create scoped logger from W3C trace context
+    var req_logger = try logger.withTraceparent(incoming_traceparent);
+    req_logger = req_logger.inModule("http.request");
 
     // 4. Log events
-    try req_logger.info("Received getUser(id=42)");
+    try req_logger.info("Received getUser(id=42)", @src());
     // Output: 
     // {
     //   "timestamp": ...,
     //   "level": "INFO", 
     //   "message": "Received getUser(id=42)",
     //   "service": "user-service",
-    //   "trace_id": "trace-8899aabb-ccdd",
-    //   "span_id": "span-gateway-01",
+    //   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    //   "span_id": "00f067aa0ba902b7",
     //   "env": "production"
     // }
 
     // 5. Simulate DB Call (Child Operation)
     {
-        // manually creating a sub-span logic or just logging with same context
-        try req_logger.debug("Querying database: SELECT * FROM users WHERE id=42");
+      const db_logger = req_logger.child("7a085853722dc6d2").inModule("database.query");
+      try db_logger.debug("Querying database: SELECT * FROM users WHERE id=42", @src());
     }
 
-    try req_logger.success("User found, returning 200 OK");
+    // 6. Propagate trace context to downstream service
+    if (try logger.getTraceparentHeader(allocator)) |traceparent| {
+      defer allocator.free(traceparent);
+      std.debug.print("Forward traceparent: {s}\n", .{traceparent});
+    }
+
+    try req_logger.success("User found, returning 200 OK", @src());
 }
 ```

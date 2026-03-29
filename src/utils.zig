@@ -19,6 +19,7 @@
 //! - Thread-safe (no global state)
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Constants = @import("constants.zig");
 
 /// Parses a size string (e.g., "10MB", "5GB") into bytes.
@@ -180,6 +181,132 @@ pub fn fromMilliTimestamp(timestamp: i64) TimeComponents {
     return fromEpochSeconds(@divFloor(timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))));
 }
 
+/// Converts a civil date to days since Unix epoch (1970-01-01).
+///
+/// Uses Howard Hinnant's algorithm and performs only integer arithmetic.
+fn daysFromCivil(year: i32, month: u8, day: u8) i64 {
+    const y: i64 = @as(i64, @intCast(year));
+    const m: i64 = @as(i64, @intCast(month));
+    const d: i64 = @as(i64, @intCast(day));
+
+    const adjusted_year = y - (if (m <= 2) @as(i64, 1) else @as(i64, 0));
+    const era = @divFloor(if (adjusted_year >= 0) adjusted_year else adjusted_year - 399, 400);
+    const yoe = adjusted_year - era * 400;
+    const month_adjusted = m + (if (m > 2) @as(i64, -3) else @as(i64, 9));
+    const doy = @divFloor(153 * month_adjusted + 2, 5) + d - 1;
+    const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
+
+    return era * 146097 + doe - 719468;
+}
+
+/// Converts time components to epoch seconds.
+///
+/// Treats the components as a UTC-like civil instant.
+fn epochSecondsFromComponents(tc: TimeComponents) i64 {
+    const days = daysFromCivil(tc.year, tc.month, tc.day);
+    const seconds_in_day: i64 = @as(i64, @intCast(tc.hour)) * @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour)) +
+        @as(i64, @intCast(tc.minute)) * @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute)) +
+        @as(i64, @intCast(tc.second));
+    return days * @as(i64, @intCast(Constants.TimeConstants.seconds_per_day)) + seconds_in_day;
+}
+
+/// Converts epoch seconds to local-time components via libc.
+///
+/// Returns `null` when libc or timezone APIs are unavailable.
+fn localTimeComponentsFromLibc(timestamp_seconds: i64) ?TimeComponents {
+    if (!builtin.link_libc) return null;
+
+    if (comptime (@hasDecl(std.c, "time_t") and @hasDecl(std.c, "tm"))) {
+        var epoch_seconds: std.c.time_t = @intCast(timestamp_seconds);
+        var local_tm: std.c.tm = undefined;
+
+        if (@hasDecl(std.c, "localtime_r")) {
+            if (std.c.localtime_r(&epoch_seconds, &local_tm) == null) return null;
+        } else if (@hasDecl(std.c, "localtime")) {
+            const tm_ptr = std.c.localtime(&epoch_seconds);
+            if (tm_ptr == null) return null;
+            local_tm = tm_ptr.*;
+        } else {
+            return null;
+        }
+
+        return .{
+            .year = @as(i32, @intCast(local_tm.tm_year + 1900)),
+            .month = @as(u8, @intCast(local_tm.tm_mon + 1)),
+            .day = @as(u8, @intCast(local_tm.tm_mday)),
+            .hour = @as(u64, @intCast(local_tm.tm_hour)),
+            .minute = @as(u64, @intCast(local_tm.tm_min)),
+            .second = @as(u64, @intCast(local_tm.tm_sec)),
+        };
+    }
+
+    return null;
+}
+
+/// Extracts local-time components from a millisecond timestamp.
+/// Falls back to UTC conversion when libc localtime support is unavailable.
+pub fn fromMilliTimestampLocal(timestamp: i64) TimeComponents {
+    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+    if (localTimeComponentsFromLibc(safe_seconds)) |tc| {
+        return tc;
+    }
+    return fromEpochSeconds(safe_seconds);
+}
+
+/// Returns local UTC offset in minutes for a millisecond timestamp.
+/// Returns 0 when local timezone conversion is unavailable.
+pub fn localUtcOffsetMinutes(timestamp: i64) i16 {
+    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+    const local_tc = localTimeComponentsFromLibc(safe_seconds) orelse return 0;
+
+    const local_as_utc_seconds = epochSecondsFromComponents(local_tc);
+    const offset_minutes = @divTrunc(local_as_utc_seconds - safe_seconds, @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute)));
+
+    const min_offset = @as(i64, Constants.TimeConstants.min_utc_offset_minutes);
+    const max_offset = @as(i64, Constants.TimeConstants.max_utc_offset_minutes);
+    const bounded = clamp(i64, offset_minutes, min_offset, max_offset);
+
+    return @as(i16, @intCast(bounded));
+}
+
+fn splitUtcOffsetMinutes(offset_minutes: i16) struct { sign: u8, hours: u16, minutes: u16 } {
+    const clamped_offset = clamp(i16, offset_minutes, Constants.TimeConstants.min_utc_offset_minutes, Constants.TimeConstants.max_utc_offset_minutes);
+    const sign: u8 = if (clamped_offset < 0) '-' else '+';
+    const abs_minutes_i32: i32 = if (clamped_offset < 0)
+        -@as(i32, clamped_offset)
+    else
+        @as(i32, clamped_offset);
+    const abs_minutes_u16: u16 = @intCast(abs_minutes_i32);
+    const minutes_per_hour: u16 = Constants.TimeConstants.minutes_per_hour;
+
+    return .{
+        .sign = sign,
+        .hours = @divFloor(abs_minutes_u16, minutes_per_hour),
+        .minutes = @mod(abs_minutes_u16, minutes_per_hour),
+    };
+}
+
+/// Writes a UTC offset in `+HH:MM` or `-HH:MM` format.
+///
+/// The offset is expressed in minutes and is clamped by callers to a safe range.
+pub fn writeUtcOffset(writer: anytype, offset_minutes: i16) !void {
+    const offset_parts = splitUtcOffsetMinutes(offset_minutes);
+
+    try writer.writeByte(offset_parts.sign);
+    try write2Digits(writer, offset_parts.hours);
+    try writer.writeByte(':');
+    try write2Digits(writer, offset_parts.minutes);
+}
+
+/// Writes a compact UTC offset in `+HHMM` or `-HHMM` format.
+pub fn writeUtcOffsetCompact(writer: anytype, offset_minutes: i16) !void {
+    const offset_parts = splitUtcOffsetMinutes(offset_minutes);
+
+    try writer.writeByte(offset_parts.sign);
+    try write2Digits(writer, offset_parts.hours);
+    try write2Digits(writer, offset_parts.minutes);
+}
+
 /// Gets current time components.
 pub fn nowComponents() TimeComponents {
     return fromMilliTimestamp(std.time.milliTimestamp());
@@ -217,13 +344,13 @@ pub fn isSameHour(ts1: i64, ts2: i64) bool {
 /// Returns the start of the current day (midnight) as epoch seconds.
 pub fn startOfDay(timestamp: i64) i64 {
     const tc = fromEpochSeconds(timestamp);
-    return timestamp - @as(i64, @intCast(tc.hour * 3600 + tc.minute * 60 + tc.second));
+    return timestamp - @as(i64, @intCast(tc.hour * Constants.TimeConstants.seconds_per_hour + tc.minute * Constants.TimeConstants.seconds_per_minute + tc.second));
 }
 
 /// Returns the start of the current hour as epoch seconds.
 pub fn startOfHour(timestamp: i64) i64 {
     const tc = fromEpochSeconds(timestamp);
-    return timestamp - @as(i64, @intCast(tc.minute * 60 + tc.second));
+    return timestamp - @as(i64, @intCast(tc.minute * Constants.TimeConstants.seconds_per_minute + tc.second));
 }
 
 /// Calculates elapsed time in milliseconds since start_time.
@@ -235,7 +362,7 @@ pub fn elapsedMs(start_time: i64) u64 {
 
 /// Calculates elapsed time in seconds since start_time.
 pub fn elapsedSeconds(start_time: i64) u64 {
-    return elapsedMs(start_time) / 1000;
+    return elapsedMs(start_time) / Constants.TimeConstants.ms_per_second;
 }
 
 /// Formats a date/time string based on a format pattern using granular tokens.
@@ -244,15 +371,26 @@ pub fn elapsedSeconds(start_time: i64) u64 {
 /// Supported tokens:
 /// YYYY - Year (4 digits)
 /// YY   - Year (2 digits)
+/// ZZZ  - Timezone offset with colon (+05:30)
 /// MM   - Month (01-12)
 /// DD   - Day (01-31)
 /// HH   - Hour (00-23)
 /// mm   - Minute (00-59)
 /// ss   - Second (00-59)
+/// ZZ   - Timezone offset compact (+0530)
 /// M    - Month (1-12) - single digit
 /// D    - Day (1-31) - single digit
 /// H    - Hour (0-23) - single digit
 pub fn formatDatePattern(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64) !void {
+    return formatDatePatternInternal(writer, fmt, year, month, day, hour, minute, second, millis, null);
+}
+
+/// Formats a date/time pattern and enables timezone tokens (`ZZZ`, `ZZ`).
+pub fn formatDatePatternWithOffset(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: i16) !void {
+    return formatDatePatternInternal(writer, fmt, year, month, day, hour, minute, second, millis, timezone_offset_minutes);
+}
+
+fn formatDatePatternInternal(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: ?i16) !void {
     var i: usize = 0;
     while (i < fmt.len) {
         if (i + 4 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 4], "YYYY")) {
@@ -260,6 +398,20 @@ pub fn formatDatePattern(writer: anytype, fmt: []const u8, year: i32, month: u8,
             i += 4;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "YY")) {
             try write2Digits(writer, @mod(year, 100));
+            i += 2;
+        } else if (i + 3 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 3], "ZZZ")) {
+            if (timezone_offset_minutes) |offset| {
+                try writeUtcOffset(writer, offset);
+            } else {
+                try writer.writeAll("ZZZ");
+            }
+            i += 3;
+        } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "ZZ")) {
+            if (timezone_offset_minutes) |offset| {
+                try writeUtcOffsetCompact(writer, offset);
+            } else {
+                try writer.writeAll("ZZ");
+            }
             i += 2;
         } else if (i + 3 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 3], "SSS")) {
             try write3Digits(writer, millis);
@@ -306,6 +458,13 @@ pub fn formatDatePattern(writer: anytype, fmt: []const u8, year: i32, month: u8,
 pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64) ![]u8 {
     var fbs = std.io.fixedBufferStream(buf);
     try formatDatePattern(fbs.writer(), fmt, year, month, day, hour, minute, second, millis);
+    return fbs.getWritten();
+}
+
+/// Formats a date/time to a caller-provided buffer with timezone token support.
+pub fn formatDateToBufWithOffset(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: i16) ![]u8 {
+    var fbs = std.io.fixedBufferStream(buf);
+    try formatDatePatternWithOffset(fbs.writer(), fmt, year, month, day, hour, minute, second, millis, timezone_offset_minutes);
     return fbs.getWritten();
 }
 
@@ -516,7 +675,7 @@ pub fn calculateThroughput(count: u64, elapsed_ns: u64) f64 {
 ///     Items per second as a float
 pub fn calculateThroughputMs(count: u64, elapsed_ms: i64) f64 {
     if (elapsed_ms <= 0) return 0.0;
-    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
+    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / @as(f64, @floatFromInt(Constants.TimeConstants.ms_per_second));
     return @as(f64, @floatFromInt(count)) / seconds;
 }
 
@@ -590,7 +749,8 @@ test "parseDuration" {
     try std.testing.expectEqual(@as(?i64, 30000), parseDuration("30s"));
     try std.testing.expectEqual(@as(?i64, 300000), parseDuration("5m"));
     try std.testing.expectEqual(@as(?i64, 7200000), parseDuration("2h"));
-    try std.testing.expectEqual(@as(?i64, 86400000), parseDuration("1d"));
+    const one_day_ms = @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
+    try std.testing.expectEqual(@as(?i64, one_day_ms), parseDuration("1d"));
 }
 
 test "fromEpochSeconds" {
@@ -600,9 +760,23 @@ test "fromEpochSeconds" {
     try std.testing.expectEqual(@as(u8, 1), tc.day);
 }
 
+test "fromMilliTimestampLocal returns valid components" {
+    const tc = fromMilliTimestampLocal(1735689600000);
+    try std.testing.expect(tc.month >= 1 and tc.month <= 12);
+    try std.testing.expect(tc.day >= 1 and tc.day <= 31);
+    try std.testing.expect(tc.hour <= 23);
+    try std.testing.expect(tc.minute <= 59);
+    try std.testing.expect(tc.second <= 59);
+}
+
+test "localUtcOffsetMinutes is bounded" {
+    const offset = localUtcOffsetMinutes(1735689600000);
+    try std.testing.expect(offset >= Constants.TimeConstants.min_utc_offset_minutes and offset <= Constants.TimeConstants.max_utc_offset_minutes);
+}
+
 test "isSameDay" {
-    try std.testing.expect(isSameDay(1735689600, 1735689600 + 3600));
-    try std.testing.expect(!isSameDay(1735689600, 1735689600 + 86400));
+    try std.testing.expect(isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour))));
+    try std.testing.expect(!isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.seconds_per_day))));
 }
 
 test "clamp" {
@@ -622,6 +796,18 @@ test "formatDatePattern basic" {
     try std.testing.expectEqualStrings("2025-12-25 | 14:30:45.123", result);
 }
 
+test "formatDatePatternWithOffset timezone tokens" {
+    var buf: [64]u8 = undefined;
+    const result = try formatDateToBufWithOffset(&buf, "YYYY-MM-DD HH:mm:ss ZZZ ZZ", 2025, 12, 25, 14, 30, 45, 123, 330);
+    try std.testing.expectEqualStrings("2025-12-25 14:30:45 +05:30 +0530", result);
+}
+
+test "formatDatePattern timezone tokens are literal without offset" {
+    var buf: [16]u8 = undefined;
+    const result = try formatDateToBuf(&buf, "ZZZ ZZ", 2025, 12, 25, 14, 30, 45, 123);
+    try std.testing.expectEqualStrings("ZZZ ZZ", result);
+}
+
 test "formatIsoDate basic" {
     const tc = TimeComponents{ .year = 2025, .month = 12, .day = 25, .hour = 14, .minute = 30, .second = 45 };
     var buf: [32]u8 = undefined;
@@ -636,6 +822,7 @@ test "formatIsoDateTime basic" {
     try std.testing.expect(result.len > 0);
 }
 
+/// Writes a value as exactly 2 decimal digits (zero-padded).
 pub fn write2Digits(writer: anytype, value: anytype) !void {
     const v: u64 = @intCast(value);
     const v2 = v % 100;
@@ -643,6 +830,7 @@ pub fn write2Digits(writer: anytype, value: anytype) !void {
     try writer.writeByte(@intCast('0' + (v2 % 10)));
 }
 
+/// Writes a value as exactly 3 decimal digits (zero-padded).
 pub fn write3Digits(writer: anytype, value: anytype) !void {
     const v: u64 = @intCast(value);
     const v3 = v % 1000;
@@ -651,6 +839,7 @@ pub fn write3Digits(writer: anytype, value: anytype) !void {
     try writer.writeByte(@intCast('0' + (v3 % 10)));
 }
 
+/// Writes a value as exactly 4 decimal digits (zero-padded).
 pub fn write4Digits(writer: anytype, value: anytype) !void {
     const v: u64 = @intCast(value);
     const v4 = v % 10000;
@@ -660,6 +849,7 @@ pub fn write4Digits(writer: anytype, value: anytype) !void {
     try writer.writeByte(@intCast('0' + (v4 % 10)));
 }
 
+/// Writes a value using 1 or 2 decimal digits.
 pub fn write1Or2Digits(writer: anytype, value: anytype) !void {
     const v: u64 = @intCast(value);
     if (v < 10) {
@@ -669,6 +859,7 @@ pub fn write1Or2Digits(writer: anytype, value: anytype) !void {
     }
 }
 
+/// Writes a 16-bit value as 4 lowercase hexadecimal digits.
 pub fn write4Hex(writer: anytype, value: u16) !void {
     const hex = "0123456789abcdef";
     try writer.writeByte(hex[(value >> 12) & 0xF]);
@@ -676,6 +867,7 @@ pub fn write4Hex(writer: anytype, value: u16) !void {
     try writer.writeByte(hex[(value >> 4) & 0xF]);
     try writer.writeByte(hex[value & 0xF]);
 }
+/// Writes an integer value using decimal representation.
 pub fn writeInt(writer: anytype, value: anytype) !void {
     try writer.print("{d}", .{value});
 }
@@ -708,6 +900,80 @@ pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
     return result;
 }
 
+/// Parsed W3C traceparent context.
+pub const TraceparentContext = struct {
+    version: []const u8,
+    trace_id: []const u8,
+    span_id: []const u8,
+    flags: []const u8,
+    sampled: bool,
+};
+
+/// Errors returned by traceparent helpers.
+pub const TraceparentError = error{
+    InvalidTraceId,
+    InvalidSpanId,
+};
+
+fn isHexSlice(value: []const u8) bool {
+    for (value) |c| {
+        if (!std.ascii.isHex(c)) return false;
+    }
+    return true;
+}
+
+fn isAllZerosHex(value: []const u8) bool {
+    for (value) |c| {
+        if (c != '0') return false;
+    }
+    return true;
+}
+
+/// Parses a W3C `traceparent` header.
+///
+/// Expected format: `00-<32_hex_trace_id>-<16_hex_span_id>-<2_hex_flags>`.
+pub fn parseTraceparentHeader(header: []const u8) ?TraceparentContext {
+    if (header.len != 55) return null;
+    if (header[2] != '-' or header[35] != '-' or header[52] != '-') return null;
+
+    const version = header[0..2];
+    const trace_id = header[3..35];
+    const span_id = header[36..52];
+    const flags = header[53..55];
+
+    if (!isHexSlice(version) or !isHexSlice(trace_id) or !isHexSlice(span_id) or !isHexSlice(flags)) {
+        return null;
+    }
+
+    if (isAllZerosHex(trace_id) or isAllZerosHex(span_id)) {
+        return null;
+    }
+
+    const flags_byte = std.fmt.parseInt(u8, flags, 16) catch return null;
+
+    return .{
+        .version = version,
+        .trace_id = trace_id,
+        .span_id = span_id,
+        .flags = flags,
+        .sampled = (flags_byte & 0x01) == 0x01,
+    };
+}
+
+/// Formats a W3C `traceparent` header string.
+pub fn formatTraceparentHeader(allocator: std.mem.Allocator, trace_id: []const u8, span_id: []const u8, sampled: bool) ![]u8 {
+    if (trace_id.len != 32 or !isHexSlice(trace_id) or isAllZerosHex(trace_id)) {
+        return TraceparentError.InvalidTraceId;
+    }
+
+    if (span_id.len != 16 or !isHexSlice(span_id) or isAllZerosHex(span_id)) {
+        return TraceparentError.InvalidSpanId;
+    }
+
+    const flags = if (sampled) "01" else "00";
+    return std.fmt.allocPrint(allocator, "00-{s}-{s}-{s}", .{ trace_id, span_id, flags });
+}
+
 /// Determines if a trace should be sampled based on the sampling rate.
 /// rate: 0.0 to 1.0 (0% to 100%)
 pub fn shouldSample(rate: f64) bool {
@@ -728,6 +994,32 @@ test "generateSpanId" {
     const span_id = try generateSpanId(allocator);
     defer allocator.free(span_id);
     try std.testing.expectEqual(span_id.len, 16);
+}
+
+test "parseTraceparentHeader valid and sampled" {
+    const ctx = parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+    try std.testing.expect(ctx != null);
+    try std.testing.expectEqualStrings("00", ctx.?.version);
+    try std.testing.expectEqualStrings("4bf92f3577b34da6a3ce929d0e0e4736", ctx.?.trace_id);
+    try std.testing.expectEqualStrings("00f067aa0ba902b7", ctx.?.span_id);
+    try std.testing.expect(ctx.?.sampled);
+}
+
+test "parseTraceparentHeader rejects invalid values" {
+    try std.testing.expect(parseTraceparentHeader("00-short-span-01") == null);
+    try std.testing.expect(parseTraceparentHeader("00-00000000000000000000000000000000-00f067aa0ba902b7-01") == null);
+    try std.testing.expect(parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01") == null);
+    try std.testing.expect(parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-zz") == null);
+}
+
+test "formatTraceparentHeader" {
+    const allocator = std.testing.allocator;
+    const traceparent = try formatTraceparentHeader(allocator, "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", true);
+    defer allocator.free(traceparent);
+    try std.testing.expectEqualStrings("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", traceparent);
+
+    try std.testing.expectError(TraceparentError.InvalidTraceId, formatTraceparentHeader(allocator, "short", "00f067aa0ba902b7", true));
+    try std.testing.expectError(TraceparentError.InvalidSpanId, formatTraceparentHeader(allocator, "4bf92f3577b34da6a3ce929d0e0e4736", "short", true));
 }
 
 test "shouldSample" {
@@ -815,9 +1107,11 @@ pub fn calculateThroughputBytes(bytes: u64, elapsed_ms: i64) f64 {
 pub fn calculateCRC32(data: []const u8) u32 {
     return std.hash.Crc32.hash(data);
 }
+
+/// Calculates bytes per second throughput from bytes and elapsed milliseconds.
 pub fn calculateBytesPerSecond(bytes: u64, elapsed_ms: i64) f64 {
     if (elapsed_ms <= 0) return 0.0;
-    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
+    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / @as(f64, @floatFromInt(Constants.TimeConstants.ms_per_second));
     return @as(f64, @floatFromInt(bytes)) / seconds;
 }
 

@@ -7,6 +7,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Documentation for versions below 0.1.2 is not available. Please refer to commit history or pull requests for those versions.
 
+## [0.1.7]
+
+### Added
+
+- **Custom Timezone Placeholders in `time_format`**:
+  - `ZZZ` for timezone offsets in `+HH:MM` format.
+  - `ZZ` for compact timezone offsets in `+HHMM` format.
+- **Centralized Time Format Constants**:
+  - Added `Config.TimeFormat` constants (`default_pattern`, `default_alias`, `iso8601`, `rfc3339`, `unix`, `unix_ms`) to avoid string-literal drift in production code.
+- **Timezone-Aware Pattern Formatting Utilities**:
+  - Added `Utils.formatDatePatternWithOffset(...)` and `Utils.formatDateToBufWithOffset(...)`.
+  - Added `Utils.writeUtcOffsetCompact(...)` for reusable compact offset formatting.
+- **W3C Trace Context Logger Helpers**:
+  - Added `Logger.setTraceContextFromTraceparent(...)` for safe trace context ingestion from incoming headers.
+  - Added `Logger.withTraceparent(...)` and `Logger.getTraceparentHeader(...)` for request-scoped propagation.
+  - Added `DistributedLogger.child(...)` and `DistributedLogger.inModule(...)` helpers for nested spans and module-scoped tracing.
+- **Sink Reliability & Observability Enhancements**:
+  - Centralized sink write/flush error handling through configured `SinkConfig.on_error` behavior.
+  - Added buffered record accounting in sink internals to improve flush statistics accuracy.
+  - Added retry-aware TCP reconnect behavior using centralized `Constants.TimeDefaults` retry settings.
+- **Allocator Ergonomics Improvements**:
+  - Added `Config.withArenaAllocator()` and `Config.withArena()` aliases for clearer arena configuration in production code.
+  - Refactored logger initialization paths to reuse shared setup internals and improve consistency.
+  - Added explicit test coverage for `Logger` initialization with `GeneralPurposeAllocator`.
+  - Added allocator strategy example (`examples/allocator_strategies.zig`) and matching docs page (`docs/examples/allocator-strategies.md`).
+- **Metrics Observability Extensions**:
+  - Added latency percentile helpers: `latencyPercentileNs(...)` and `latencyPercentileMs(...)`.
+  - Added `getLatencySummary()` with `min`, `max`, `avg`, `p50`, `p95`, `p99`, and sample count.
+  - Added sink aggregate helpers: `totalSinkErrors()` and `totalSinkFlushes()`.
+  - Added `lastRecordAgeMs()` to track time since most recent recorded log.
+- **Async Queue Control Extensions**:
+  - Added queue capacity helpers: `availableCapacity()`, `queueUtilization()`, and `isNearCapacity(...)`.
+  - Added bounded drain wait helper: `waitUntilDrained(timeout_ms)`.
+  - Added `AsyncStats.inFlight()` for queued-but-not-yet-written record tracking.
+- **Thread Pool Capacity Extensions**:
+  - Added queue metrics helpers: `queueCapacity()`, `availableQueueCapacity()`, `queueUtilization()`, and `isSaturated(...)`.
+  - Added bounded completion wait helper: `waitAllTimeout(timeout_ms)`.
+- **Rotation Decision Extensions**:
+  - Added `RotationReason` enum (`interval`, `size`, `interval_and_size`).
+  - Added rotation introspection helpers: `getRotationReason(...)`, `shouldRotate(...)`, and `nextRotationInSeconds()`.
+  - Added `previewNextPath()` for pre-rotation path planning without mutating state.
+- **Redactor Rule Management Extensions**:
+  - Added `addFields(...)` for batch field registration.
+  - Added preflight helpers: `wouldRedact(...)` and `hasFieldRule(...)`.
+  - Added `previewFieldRedaction(...)` for non-mutating redaction previews.
+- **Sampler, Scheduler, and Rules Operational Controls**:
+  - Sampler: added structured sampling decisions (`shouldSampleWithReason(...)`), runtime strategy switching (`setStrategy(...)`), and rate-limit introspection (`remainingWindowQuota(...)`, `windowResetInMs(...)`).
+  - Scheduler: added task introspection/count helpers, schedule update helpers (`setTaskSchedule(...)`, `rescheduleNow(...)`), and richer tick callback readiness reporting.
+  - Rules: added bulk enable/disable and name-based removal helpers, non-mutating match preview APIs (`wouldMatchAny(...)`, `matchingRuleIds(...)`), priority sorting helper (`sortByPriority(...)`), and `max_messages_per_rule` enforcement during evaluation.
+- **Additional Redactor, Rules, and Formatter Enhancements**:
+  - Redactor: added batch pattern registration (`addPatterns(...)`), field and pattern removal helpers (`removeField(...)`, `removePatternByName(...)`), message-level preview APIs (`previewRedaction(...)`, `previewRedactionWithAllocator(...)`), and matching pattern count helper (`matchingPatternCount(...)`).
+  - Rules: added non-mutating match count and first-match preview helpers (`matchingRuleCount(...)`, `firstMatchingRuleId(...)`), per-rule priority update API (`setRulePriority(...)`), and disabled-rule pruning helper (`removeDisabledRules(...)`).
+  - Formatter: added timestamp-only formatting APIs (`formatTimestamp(...)`, `formatTimestampWithAllocator(...)`) and centralized JSON timestamp value rendering for consistent numeric/text timestamp handling.
+- **Rotation, Sampler, Thread Pool, Scheduler, and Telemetry Explicit Controls**:
+  - Rotation: added direct control helpers for interval/size/retention (`setInterval(...)`, `setIntervalFromString(...)`, `setSizeLimit(...)`, `setRetentionCount(...)`, `setRetentionPolicy(...)`) and manual trigger API (`forceRotate(...)`).
+  - Sampler: added direct runtime strategy setters (`setProbability(...)`, `setRateLimit(...)`, `setEveryN(...)`, `setAdaptive(...)`) plus fast disable helper (`disableSampling(...)`).
+  - Thread Pool: added retry-aware batch submission (`submitBatchWithRetry(...)`), queue breakdown snapshot (`pendingTasksByQueue(...)`), capacity check (`canAcceptTasks(...)`), and threshold wait (`waitUntilQueueBelow(...)`).
+  - Scheduler: added immutable task snapshots (`getTaskSnapshot(...)`, `getTaskSnapshotByName(...)`) and name-based controls (`setTaskEnabledByName(...)`, `removeTaskByName(...)`, `nextRunInMsByName(...)`, `runNowByName(...)`).
+  - Telemetry: added runtime sampling/header controls (`setSampling(...)`, `setContextHeaders(...)`), pending-state helpers, metric batch recording (`recordMetricsBatch(...)`), and span batch attribute setter (`Span.setAttributes(...)`).
+
+### Fixed
+
+- **Timezone Local Formatting (#29)**: `Config.timezone = .local` now formats timestamps using the process/system local timezone when libc localtime support is available.
+- **ISO8601/RFC3339 Timezone Suffixes**: `ISO8601` and `RFC3339` timestamp output now emits timezone-aware suffixes (`Z` for UTC, `+/-HH:MM` for local).
+- **Cross-Platform Fallback Safety**: On targets where localtime APIs are unavailable, formatting safely falls back to UTC behavior.
+- **Default Time Format Alias**: `time_format = "default"` now resolves to the canonical default pattern (`YYYY-MM-DD HH:mm:ss.SSS`) instead of being treated as a custom literal pattern.
+- **JSON Numeric Timestamp Consistency**: `unix` and `unix_ms` formats now always emit numeric JSON values (not quoted strings).
+- **Sink Error Policy Consistency**: Sink write and flush failures now consistently apply `.silent`, `.log_stderr`, `.disable_sink`, and `.propagate` behavior.
+- **Sink Flush Statistics**: Async and manual flush paths now update `SinkStats` counters consistently for records, bytes, and flush count.
+- **Arena Reset Threshold Enforcement**: `Config.arena_reset_threshold` is now actively enforced by logger arena scratch allocation logic between records.
+- **Telemetry Baggage Replacement Safety**: `Baggage.set(...)` now frees replaced key/value entries when updating existing baggage keys.
+- **Sampling Rate Normalization Safety**: Runtime sampling updates now handle `NaN` input defensively and normalize through shared clamp utilities.
+
+### Changed
+
+- Bumped project version to `0.1.7` in package/runtime metadata and documentation.
+- Updated installation and quick-start fetch URLs to `tags/0.1.7.tar.gz`.
+- Replaced timestamp/time-offset magic values in time utilities with centralized `Constants.TimeConstants` values.
+- Clarified allocator docs/examples to preserve explicit `config.use_arena_allocator = true` usage and document mutation-vs-builder behavior for `withArenaAllocation()` aliases.
+- Updated architecture-sized constants (`AtomicUnsigned`, `AtomicSigned`, `NativeUint`, `NativeInt`) to derive from pointer width for consistent 32-bit/64-bit target behavior.
+- Centralized distributed tracing header defaults under `Constants.ConfigDefaults` and reused them across `Config`/`DistributedConfig` defaults.
+
+### Tests
+
+- Added formatter tests to validate UTC vs local ISO8601 timezone suffix behavior.
+- Added utility tests for local timestamp conversion validity and UTC offset bounds.
+- Added formatter regression coverage for `Config.TimeFormat.default_alias` and strict numeric `unix_ms` JSON output.
+- Added logger tests for traceparent parsing/propagation helper methods and distributed logger child/module helpers.
+- Added sink tests for flush stats correctness, error behavior (`disable_sink` / `propagate`), and manual `flushNow()` flow.
+- Added logger tests validating arena threshold reset behavior and `GeneralPurposeAllocator` compatibility.
+- Added regression tests for new metrics percentile/summary helpers and sink aggregate helpers.
+- Added regression tests for async in-flight stats and queue drain/utilization helpers.
+- Added regression tests for thread pool queue capacity/load helpers and timeout waits.
+- Added regression tests for rotation reason detection, preview path generation, and interval countdown.
+- Added regression tests for redactor batch field registration and redaction preflight/preview helpers.
+- Added regression tests for sampler decision/reason payloads and runtime strategy/quota helpers.
+- Added regression tests for scheduler introspection and schedule tick callback readiness totals.
+- Added regression tests for rules bulk enable/disable counts, non-mutating match previews, priority sorting, and max message cap enforcement.
+- Added deterministic heavy-concurrency stress tests for rules and thread pool behavior under multi-thread contention.
+- Added regression tests for redactor batch pattern management/removal and non-mutating message preview behavior.
+- Added regression tests for rules match-count/first-match helpers, priority updates, and disabled-rule pruning.
+- Added formatter regression tests for standalone timestamp helper APIs.
+- Added regression tests for explicit rotation control setters and forced-rotation behavior.
+- Added regression tests for sampler direct strategy control helpers.
+- Added regression tests for thread pool retry-batch submission and queue-threshold waiting helpers.
+- Added regression tests for scheduler name-based controls and immutable task snapshots.
+- Added regression tests for telemetry sampling/header controls, metric batch recording, pending-state helpers, and span batch attributes.
+- Added regression test coverage for baggage key replacement updates.
+
 ## [0.1.6]
 
 ### Added

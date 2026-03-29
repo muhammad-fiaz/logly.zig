@@ -33,7 +33,7 @@ const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
-/// zstd support feature
+/// zstd compression backend.
 const zstd = @import("zstd");
 
 /// Log compression utilities with callback support and comprehensive monitoring.

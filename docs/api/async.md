@@ -25,6 +25,10 @@ The async module provides non-blocking asynchronous logging with configurable bu
 | `resetStats()` | `clearStats()` | Reset statistics |
 | `queueDepth()` | `depth()`, `pending()` | Get queue depth |
 | `isQueueEmpty()` | `empty()` | Check if queue empty |
+| `availableCapacity()` | `capacityLeft()`, `freeSlots()` | Get available queue slots |
+| `queueUtilization()` | `utilization()` | Get queue utilization ratio |
+| `isNearCapacity()` | `nearCapacity()`, `isBackpressured()` | Check backpressure threshold |
+| `waitUntilDrained()` | `waitForDrain()`, `drain()` | Wait for queue drain with timeout |
 | `setOverflowCallback()` | `onOverflow()` | Set overflow callback |
 | `setFlushCallback()` | `onFlush()` | Set flush callback |
 | `setWorkerStartCallback()` | `onWorkerStart()` | Set worker start callback |
@@ -297,6 +301,38 @@ Get current async statistics.
 pub fn getStats(self: *const AsyncLogger) AsyncStats
 ```
 
+### availableCapacity
+
+Get available slots before the queue reaches capacity.
+
+```zig
+pub fn availableCapacity(self: *AsyncLogger) usize
+```
+
+### queueUtilization
+
+Get queue utilization as a ratio in `[0.0, 1.0]`.
+
+```zig
+pub fn queueUtilization(self: *AsyncLogger) f64
+```
+
+### isNearCapacity
+
+Check whether queue utilization is above a threshold.
+
+```zig
+pub fn isNearCapacity(self: *AsyncLogger, threshold: f64) bool
+```
+
+### waitUntilDrained
+
+Wait for the queue to drain until timeout.
+
+```zig
+pub fn waitUntilDrained(self: *AsyncLogger, timeout_ms: u64) bool
+```
+
 ### scratchAllocator
 
 Returns the arena allocator if enabled, otherwise returns the main allocator. Use for temporary allocations that can be batch-freed.
@@ -339,6 +375,12 @@ pub fn getDropped(self: *const AsyncStats) u64
 Get total flush operations.
 ```zig
 pub fn getFlushCount(self: *const AsyncStats) u64
+```
+
+#### inFlight
+Get queued-but-not-yet-written records.
+```zig
+pub fn inFlight(self: *const AsyncStats) u64
 ```
 
 #### getMaxQueueDepth
@@ -558,6 +600,12 @@ The AsyncLogger provides convenience aliases:
 | `statistics` | `getStats` |
 | `depth` | `queueDepth` |
 | `pending` | `queueDepth` |
+| `capacityLeft` | `availableCapacity` |
+| `freeSlots` | `availableCapacity` |
+| `utilization` | `queueUtilization` |
+| `nearCapacity` | `isNearCapacity` |
+| `waitForDrain` | `waitUntilDrained` |
+| `drain` | `waitUntilDrained` |
 | `begin` | `startWorker` |
 | `halt` | `stop` |
 | `end` | `stop` |
@@ -569,6 +617,10 @@ The AsyncLogger provides convenience aliases:
 - `isFull() bool` - Returns true if the buffer is at capacity
 - `queueDepth() usize` - Returns current queue depth
 - `isQueueEmpty() bool` - Returns true if queue is empty
+- `availableCapacity() usize` - Returns remaining queue slots
+- `queueUtilization() f64` - Returns current queue utilization ratio
+- `isNearCapacity(threshold: f64) bool` - Returns true when utilization exceeds threshold
+- `waitUntilDrained(timeout_ms: u64) bool` - Waits for queue drain until timeout
 - `resetStats() void` - Resets all statistics
 
 ## Callbacks

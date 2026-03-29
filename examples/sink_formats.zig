@@ -15,7 +15,7 @@ pub fn main() !void {
     config.show_lineno = true;
 
     // Custom date format
-    config.time_format = "default"; // Will use YYYY-MM-DD HH:MM:SS.mmm
+    config.time_format = logly.Config.TimeFormat.default_pattern;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();

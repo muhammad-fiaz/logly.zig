@@ -33,11 +33,18 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 | `recordCounter()` | `counter()` | Record a counter metric |
 | `recordGauge()` | `gauge()` | Record a gauge metric |
 | `recordHistogram()` | `histogram()` | Record a histogram metric |
+| `recordMetricsBatch()` | `recordBatch()` | Record multiple metrics in one call |
 | `exportSpans()` | `export_()` | Export spans |
 | `flush()` | `sync()` | Flush telemetry data |
 | `getStats()` | `statistics()`, `stats_()` | Get telemetry statistics |
 | `setEnabled()` | `enable()` | Enable telemetry |
 | `isEnabled()` | `is_enabled()` | Check if telemetry is enabled |
+| `setSampling()` | `setSampler()` | Update sampling strategy/rate at runtime |
+| `getSampling()` | `sampling()` | Get current sampling snapshot |
+| `setContextHeaders()` | `configureHeaders()` | Set trace/baggage header names |
+| `getContextHeaders()` | `contextHeaders()` | Get trace/baggage header names |
+| `hasPendingData()` | `hasPending()` | Check if spans/metrics are pending export |
+| `pendingItemCount()` | `pendingCount()` | Total pending spans + metrics |
 | `resetStats()` | `clearStats()` | Reset telemetry statistics |
 
 ## Core Types
@@ -83,6 +90,7 @@ pub const Telemetry = struct {
     pub fn recordCounter(self: *Telemetry, name: []const u8, value: f64) !void
     pub fn recordGauge(self: *Telemetry, name: []const u8, value: f64) !void
     pub fn recordHistogram(self: *Telemetry, name: []const u8, value: f64) !void
+    pub fn recordMetricsBatch(self: *Telemetry, metrics: []const MetricInput) !usize
     pub fn exportSpans(self: *Telemetry) !void
     pub fn exportMetrics(self: *Telemetry) !void
     pub fn flush(self: *Telemetry) !void
@@ -95,12 +103,46 @@ pub const Telemetry = struct {
     pub fn parseTraceparentHeader(header: []const u8) ?TraceContext
     pub fn setEnabled(self: *Telemetry, enabled: bool) void
     pub fn isEnabled(self: *Telemetry) bool
+    pub fn setSampling(self: *Telemetry, strategy: TelemetryConfig.SamplingStrategy, sampling_rate: f64) void
+    pub fn getSampling(self: *Telemetry) SamplingSnapshot
+    pub fn setContextHeaders(self: *Telemetry, trace_header: []const u8, baggage_header: []const u8) void
+    pub fn getContextHeaders(self: *Telemetry) ContextHeaders
+    pub fn hasPendingData(self: *Telemetry) bool
+    pub fn pendingItemCount(self: *Telemetry) usize
     pub fn getResource(self: *Telemetry) Resource
     pub fn setResource(self: *Telemetry, resource: Resource) void
     pub fn resetStats(self: *Telemetry) void
     pub fn findSpanByTraceId(self: *Telemetry, trace_id: []const u8) ?*const Span
 };
 ```
+
+### Runtime Helper Types
+
+`Telemetry` exposes lightweight helper types for runtime control and batching:
+
+```zig
+pub const SamplingSnapshot = struct {
+    strategy: TelemetryConfig.SamplingStrategy,
+    rate: f64,
+};
+
+pub const ContextHeaders = struct {
+    trace_header: []const u8,
+    baggage_header: []const u8,
+};
+
+pub const MetricInput = struct {
+    name: []const u8,
+    value: f64,
+    options: MetricOptions = .{},
+};
+```
+
+Runtime control notes:
+
+- `setSampling(strategy, sampling_rate)` clamps rate to `[0.0, 1.0]` and treats `NaN` as `0.0` for deterministic behavior.
+- `setContextHeaders(trace_header, baggage_header)` updates propagation header names in-place.
+- `hasPendingData()` and `pendingItemCount()` report pending spans/metrics before explicit export or flush.
 
 ### ExporterStats
 
@@ -294,6 +336,26 @@ Convenience method to record a histogram metric.
 try telemetry.recordHistogram("response.latency_ms", 123.4);
 ```
 
+##### `recordMetricsBatch(metrics) -> usize`
+
+Records a batch of metric entries.
+
+**Parameters:**
+
+- `metrics`: Slice of `Telemetry.MetricInput`
+
+**Returns:** Number of successfully recorded metrics
+
+**Example:**
+
+```zig
+const metrics = [_]logly.Telemetry.MetricInput{
+    .{ .name = "requests.total", .value = 10.0, .options = .{ .kind = .counter } },
+    .{ .name = "cpu.usage", .value = 55.0, .options = .{ .kind = .gauge, .unit = "%" } },
+};
+_ = try telemetry.recordMetricsBatch(metrics[0..]);
+```
+
 ##### `getExporterStats() -> ExporterStats`
 
 Returns real-time exporter statistics.
@@ -370,6 +432,30 @@ telemetry.setEnabled(false);
 // Re-enable telemetry
 telemetry.setEnabled(true);
 ```
+
+##### `setSampling(strategy, sampling_rate) -> void`
+
+Updates runtime sampling strategy and effective sampling rate. Sampling rate is clamped into `[0.0, 1.0]`.
+
+##### `getSampling() -> SamplingSnapshot`
+
+Returns current `strategy` and `rate` used by telemetry sampler.
+
+##### `setContextHeaders(trace_header, baggage_header) -> void`
+
+Updates trace and baggage header names used for context propagation.
+
+##### `getContextHeaders() -> ContextHeaders`
+
+Returns currently configured trace and baggage header names.
+
+##### `hasPendingData() -> bool`
+
+Returns `true` when there are spans or metrics waiting for export.
+
+##### `pendingItemCount() -> usize`
+
+Returns total pending spans + metrics.
 
 ##### `isEnabled() -> bool`
 
@@ -460,6 +546,7 @@ pub const Span = struct {
     events: std.ArrayList(SpanEvent),
     
     pub fn setAttribute(self: *Span, key: []const u8, value: SpanAttribute) !void
+    pub fn setAttributes(self: *Span, attrs: []const AttributeEntry) !usize
     pub fn addEvent(self: *Span, name: []const u8, attributes: ?std.StringHashMap(SpanAttribute)) !void
     pub fn setStatus(self: *Span, status: SpanStatus) void
     pub fn end(self: *Span) void
@@ -497,6 +584,16 @@ try span.setAttribute("http.method", logly.SpanAttribute{ .string = "POST" });
 try span.setAttribute("http.status_code", logly.SpanAttribute{ .integer = 200 });
 try span.setAttribute("cache.hit", logly.SpanAttribute{ .boolean = true });
 ```
+
+##### `setAttributes(attrs) -> usize`
+
+Applies multiple attributes in one call.
+
+**Parameters:**
+
+- `attrs`: Slice of `Span.AttributeEntry`
+
+**Returns:** Number of attributes applied
 
 ##### `addEvent(name, attributes) -> void`
 

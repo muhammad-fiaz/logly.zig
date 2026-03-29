@@ -22,6 +22,25 @@ zig build
 zig build run
 ```
 
+## Allocator Defaults
+
+This starter uses `std.heap.GeneralPurposeAllocator` as the base allocator.
+
+- Default logger behavior uses the allocator passed to `Logger.init(...)`.
+- Arena scratch allocation is optional and controlled by `Config.use_arena_allocator`.
+
+Equivalent arena enablement styles:
+
+```zig
+var config = logly.Config.default();
+config.use_arena_allocator = true;
+
+// or
+config = config.withArenaAllocator();
+```
+
+Both forms enable the same logger behavior. The field form mutates in place, while the builder form returns a modified copy.
+
 ## Project Structure
 
 ```

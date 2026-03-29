@@ -17,6 +17,9 @@ head:
 
 Logly.zig supports optional arena allocation for improved performance in high-throughput logging scenarios. Arena allocation reduces memory allocation overhead by batching temporary allocations and releasing them efficiently.
 
+By default, arena allocation is disabled (`use_arena_allocator = false`) and the logger uses the allocator passed to `Logger.init(...)` / `Logger.initWithConfig(...)`.
+In most applications, that allocator is `std.heap.GeneralPurposeAllocator`.
+
 ## Overview
 
 Arena allocation is a memory management technique that:
@@ -37,10 +40,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     // Configure logger with arena allocator
-    const config = logly.Config{
-        .use_arena_allocator = true,           // Enable arena allocation
-        .arena_reset_threshold = 64 * 1024,    // Reset when arena reaches 64KB (default)
-    };
+    var config = logly.Config.default();
+    config.use_arena_allocator = true;
+    config.arena_reset_threshold = 64 * 1024; // Reset when arena reaches 64KB (default)
 
     const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
     defer logger.deinit();
@@ -48,6 +50,41 @@ pub fn main() !void {
     // Log messages - temporary allocations use arena
     try logger.info("High-throughput logging enabled", @src());
 }
+```
+
+Equivalent builder style:
+
+```zig
+var config = logly.Config.default().withArenaAllocator();
+config.arena_reset_threshold = 64 * 1024;
+```
+
+`withArenaAllocator()` and `withArena()` are aliases of `withArenaAllocation()`. The explicit field form (`config.use_arena_allocator = true`) remains fully supported and is not deprecated.
+
+Difference:
+- `config.use_arena_allocator = true` mutates an existing config value.
+- `config = config.withArenaAllocator()` returns a modified copy and must be reassigned.
+
+## Using Your Own GPA-Backed Arena
+
+If your application already uses arena allocation (for example, per-request memory), keep using it. Logly's `use_arena_allocator` controls only the logger's internal scratch allocations.
+
+```zig
+const std = @import("std");
+
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+defer _ = gpa.deinit();
+
+// Application-level arena (independent from logger internal arena)
+var request_arena = std.heap.ArenaAllocator.init(gpa.allocator());
+defer request_arena.deinit();
+
+const req_alloc = request_arena.allocator();
+const tmp = try req_alloc.alloc(u8, 1024);
+_ = tmp;
+
+// Reset request arena when request completes
+_ = request_arena.reset(.retain_capacity);
 ```
 
 ## Thread Pool Integration

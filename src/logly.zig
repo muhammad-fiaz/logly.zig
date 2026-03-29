@@ -17,10 +17,12 @@
 //! ## Quick Start
 //!
 //! ```zig
+//! const std = @import("std");
 //! const logly = @import("logly");
 //!
 //! pub fn main() !void {
 //!     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//!     defer _ = gpa.deinit();
 //!     const allocator = gpa.allocator();
 //!
 //!     const logger = try logly.Logger.init(allocator);
@@ -34,7 +36,8 @@
 //! ## Production Configuration
 //!
 //! ```zig
-//! const config = logly.Config.production();
+//! var config = logly.Config.production();
+//! config.use_arena_allocator = true; // optional high-throughput scratch arena
 //! const logger = try logly.Logger.initWithConfig(allocator, config);
 //! ```
 //!

@@ -35,6 +35,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "custom_colors", .path = "examples/custom_colors.zig" },
         .{ .name = "async_logging", .path = "examples/async_logging.zig" },
         .{ .name = "advanced_config", .path = "examples/advanced_config.zig" },
+        .{ .name = "allocator_strategies", .path = "examples/allocator_strategies.zig" },
         .{ .name = "module_levels", .path = "examples/module_levels.zig" },
         .{ .name = "sink_formats", .path = "examples/sink_formats.zig" },
         .{ .name = "formatted_logging", .path = "examples/formatted_logging.zig" },

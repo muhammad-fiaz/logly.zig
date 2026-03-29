@@ -24,6 +24,7 @@ The `Sampler` struct controls log throughput by selectively processing records.
 | `setRejectCallback()` | `onReject()` | Set reject callback |
 | `setRateLimitCallback()` | `onRateLimit()` | Set rate limit callback |
 | `setAdjustmentCallback()` | `onAdjustment()` | Set adjustment callback |
+| `shouldSampleWithReason()` | `sampleWithReason()`, `decision()` | Sample with reject reason details |
 | `reset()` | `clear()` | Reset sampler state |
 | `resetStats()` | `clearStats()` | Reset statistics |
 | `isEnabled()` | `enabled()` | Check if sampler is enabled |
@@ -32,6 +33,16 @@ The `Sampler` struct controls log throughput by selectively processing records.
 | `totalAccepted()` | `accepted_()` | Get total accepted count |
 | `totalRejected()` | `rejected_()` | Get total rejected count |
 | `shouldSample()` | `sample()`, `check()`, `allow()` | Check if record should be sampled |
+| `setStrategy()` | `configure()` | Update strategy at runtime |
+| `setProbability()` | `probability()`, `setProb()` | Set probability strategy with clamping |
+| `setRateLimit()` | `rateLimit()`, `configureRateLimit()` | Set rate-limit strategy |
+| `setEveryN()` | `everyN()` | Set deterministic every-N strategy |
+| `setAdaptive()` | `adaptive()` | Set adaptive strategy with normalized bounds |
+| `disableSampling()` | `disable()`, `off()` | Disable filtering (allow all records) |
+| `remainingWindowQuota()` | `quotaLeft()` | Remaining rate-limit tokens in current window |
+| `windowResetInMs()` | `resetInMs()` | Milliseconds until window reset |
+| `acceptRate()` | `acceptanceRate()` | Convenience accept rate from stats |
+| `rejectRate()` | `rejectionRate()` | Convenience reject rate from stats |
 | `getCurrentRate()` | `rate()` | Get current sampling rate |
 | `getStats()` | `statistics()`, `stats_()` | Get sampler statistics |
 
@@ -112,6 +123,18 @@ pub const SamplerStats = struct {
 };
 ```
 
+### SampleDecision
+
+Detailed decision payload returned by `shouldSampleWithReason()`.
+
+```zig
+pub const SampleDecision = struct {
+    accepted: bool,
+    sample_rate: f64,
+    reject_reason: ?SampleRejectReason = null,
+};
+```
+
 ## Methods
 
 ### Initialization
@@ -135,6 +158,75 @@ Releases all resources associated with the sampler.
 Determines if the current record should be sampled (processed). Returns `true` to process, `false` to drop.
 
 **Alias**: `sample`, `check`, `allow`
+
+#### `shouldSampleWithReason() SampleDecision`
+
+Evaluates sampling and returns structured decision details including reject reason.
+
+**Alias**: `sampleWithReason`, `decision`
+
+#### `setStrategy(strategy: Strategy) void`
+
+Updates sampler strategy at runtime and resets strategy-specific counters.
+
+**Alias**: `configure`
+
+#### `setProbability(probability_value: f64) void`
+
+Sets probability sampling strategy and clamps value into `[0.0, 1.0]`.
+
+**Alias**: `probability`, `setProb`
+
+#### `setRateLimit(max_records: u32, window_ms: u64) void`
+
+Sets rate-limit strategy with safe normalization:
+
+- `max_records == 0` becomes `1`
+- `window_ms == 0` uses centralized default window
+
+**Alias**: `rateLimit`, `configureRateLimit`
+
+#### `setEveryN(n: u32) void`
+
+Sets deterministic every-N sampling strategy.
+
+**Alias**: `everyN`
+
+#### `setAdaptive(config: AdaptiveConfig) void`
+
+Sets adaptive strategy and normalizes min/max sampling bounds.
+
+**Alias**: `adaptive`
+
+#### `disableSampling() void`
+
+Disables filtering strategy (`.none`) so all records are accepted.
+
+**Alias**: `disable`, `off`
+
+#### `remainingWindowQuota() ?u32`
+
+For `.rate_limit` strategy, returns remaining records in current window. Returns `null` for non-rate-limit strategies.
+
+**Alias**: `quotaLeft`
+
+#### `windowResetInMs() ?u64`
+
+For `.rate_limit` strategy, returns milliseconds until current window reset. Returns `null` for non-rate-limit strategies.
+
+**Alias**: `resetInMs`
+
+#### `acceptRate() f64`
+
+Convenience wrapper around sampler stats accept rate.
+
+**Alias**: `acceptanceRate`
+
+#### `rejectRate() f64`
+
+Convenience wrapper around sampler stats reject rate.
+
+**Alias**: `rejectionRate`
 
 ### Statistics
 
