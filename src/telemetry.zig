@@ -245,16 +245,19 @@ pub const ExporterStats = struct {
 /// - thread_pool.zig for parallel processing
 /// - utils.zig for ID generation and time utilities
 pub const Telemetry = struct {
+    /// Snapshot of the currently active sampling configuration.
     pub const SamplingSnapshot = struct {
         strategy: TelemetryConfig.SamplingStrategy,
         rate: f64,
     };
 
+    /// Runtime context propagation header names.
     pub const ContextHeaders = struct {
         trace_header: []const u8,
         baggage_header: []const u8,
     };
 
+    /// Input payload for batch metric recording.
     pub const MetricInput = struct {
         name: []const u8,
         value: f64,
@@ -1195,17 +1198,17 @@ pub const Telemetry = struct {
         self.enabled = enabled;
     }
 
+    fn clampSamplingRate(input_rate: f64) f64 {
+        if (std.math.isNan(input_rate)) return 0.0;
+        return utils.clamp(f64, input_rate, 0.0, 1.0);
+    }
+
     /// Updates telemetry sampling strategy and effective sampling rate.
     pub fn setSampling(self: *Telemetry, strategy: TelemetryConfig.SamplingStrategy, sampling_rate: f64) void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const clamped_rate = if (sampling_rate < 0.0)
-            0.0
-        else if (sampling_rate > 1.0)
-            1.0
-        else
-            sampling_rate;
+        const clamped_rate = clampSamplingRate(sampling_rate);
 
         self.config.sampling_strategy = strategy;
         self.config.sampling_rate = clamped_rate;
@@ -1390,6 +1393,7 @@ pub const TelemetryStats = struct {
 
 /// Span represents a single unit of work in a trace
 pub const Span = struct {
+    /// Key-value pair used by `setAttributes` for batch updates.
     pub const AttributeEntry = struct {
         key: []const u8,
         value: SpanAttribute,
@@ -1652,6 +1656,7 @@ pub const Baggage = struct {
     allocator: std.mem.Allocator,
     items: std.StringHashMap([]const u8),
 
+    /// Creates an empty baggage container.
     pub fn init(allocator: std.mem.Allocator) Baggage {
         return .{
             .allocator = allocator,
@@ -1659,6 +1664,7 @@ pub const Baggage = struct {
         };
     }
 
+    /// Releases all baggage storage.
     pub fn deinit(self: *Baggage) void {
         var it = self.items.iterator();
         while (it.next()) |entry| {
@@ -1668,16 +1674,29 @@ pub const Baggage = struct {
         self.items.deinit();
     }
 
+    /// Sets or replaces a baggage item.
     pub fn set(self: *Baggage, key: []const u8, value: []const u8) !void {
         const key_copy = try self.allocator.dupe(u8, key);
+        errdefer self.allocator.free(key_copy);
         const value_copy = try self.allocator.dupe(u8, value);
+        errdefer self.allocator.free(value_copy);
+
+        if (self.items.getEntry(key)) |entry| {
+            self.allocator.free(entry.value_ptr.*);
+            entry.value_ptr.* = value_copy;
+            self.allocator.free(key_copy);
+            return;
+        }
+
         try self.items.put(key_copy, value_copy);
     }
 
+    /// Retrieves a baggage value by key.
     pub fn get(self: *Baggage, key: []const u8) ?[]const u8 {
         return self.items.get(key);
     }
 
+    /// Removes a baggage value by key.
     pub fn remove(self: *Baggage, key: []const u8) void {
         if (self.items.fetchRemove(key)) |entry| {
             self.allocator.free(entry.key);
@@ -2140,6 +2159,20 @@ test "Baggage" {
     try std.testing.expectEqualStrings("123", baggage.get("user_id").?);
     try std.testing.expectEqualStrings("abc", baggage.get("session_id").?);
     try std.testing.expect(baggage.get("nonexistent") == null);
+}
+
+test "Baggage set replaces existing key" {
+    const allocator = std.testing.allocator;
+
+    var baggage = Baggage.init(allocator);
+    defer baggage.deinit();
+
+    try baggage.set("user_id", "123");
+    try std.testing.expectEqual(@as(usize, 1), baggage.count());
+
+    try baggage.set("user_id", "456");
+    try std.testing.expectEqual(@as(usize, 1), baggage.count());
+    try std.testing.expectEqualStrings("456", baggage.get("user_id").?);
 }
 
 test "Baggage header serialization" {

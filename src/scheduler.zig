@@ -131,13 +131,19 @@ pub const Scheduler = struct {
         depends_on: ?[]const u8 = null,
         config: TaskConfig = .{},
 
+        /// Task execution priority.
         pub const Priority = enum {
+            /// Lowest priority task.
             low,
+            /// Default task priority.
             normal,
+            /// High priority task.
             high,
+            /// Critical priority task.
             critical,
         };
 
+        /// Retry behavior for failed task executions.
         pub const RetryPolicy = struct {
             max_retries: u32 = 3,
             interval_ms: u32 = Constants.SchedulerDefaults.retry_interval_ms,
@@ -248,11 +254,13 @@ pub const Scheduler = struct {
         /// Cron-like schedule
         cron: CronSchedule,
 
+        /// Daily trigger schedule.
         pub const DailySchedule = struct {
             hour: u8 = 0,
             minute: u8 = 0,
         };
 
+        /// Cron-style trigger schedule.
         pub const CronSchedule = struct {
             minute: ?u8 = null, // 0-59 or null for any
             hour: ?u8 = null, // 0-23 or null for any

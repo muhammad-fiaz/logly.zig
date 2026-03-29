@@ -991,14 +991,17 @@ pub const AsyncFileWriter = struct {
 
     pub const flush = flushSync;
 
+    /// Starts periodic background flushing.
     pub fn startAutoFlush(self: *AsyncFileWriter) !void {
         if (self.running.load(.acquire)) return;
         self.running.store(true, .release);
         self.flush_thread = try std.Thread.spawn(.{}, autoFlushLoop, .{self});
     }
 
+    /// Alias for `startAutoFlush`.
     pub const startFlush = startAutoFlush;
 
+    /// Stops periodic background flushing and joins flush thread.
     pub fn stop(self: *AsyncFileWriter) void {
         if (!self.running.load(.acquire)) return;
         self.running.store(false, .release);
@@ -1008,6 +1011,7 @@ pub const AsyncFileWriter = struct {
         }
     }
 
+    /// Alias for `stop`.
     pub const halt = stop;
 
     fn autoFlushLoop(self: *AsyncFileWriter) void {
@@ -1017,10 +1021,12 @@ pub const AsyncFileWriter = struct {
         }
     }
 
+    /// Returns total flushed bytes written by the async writer.
     pub fn bytesWritten(self: *const AsyncFileWriter) u64 {
         return @as(u64, self.bytes_written.load(.monotonic));
     }
 
+    /// Alias for `bytesWritten`.
     pub const written = bytesWritten;
 };
 

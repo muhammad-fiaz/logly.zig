@@ -183,7 +183,7 @@ pub const Config = struct {
     enable_tracing: bool = false,
 
     /// Trace ID header name for distributed tracing.
-    trace_header: []const u8 = "X-Trace-ID",
+    trace_header: []const u8 = Constants.ConfigDefaults.distributed_trace_header,
 
     /// Enable metrics collection.
     enable_metrics: bool = false,
@@ -317,16 +317,16 @@ pub const Config = struct {
         instance_id: ?[]const u8 = null,
 
         /// HTTP header name for Trace ID propagation.
-        trace_header: []const u8 = "X-Trace-ID",
+        trace_header: []const u8 = Constants.ConfigDefaults.distributed_trace_header,
 
         /// HTTP header name for Span ID propagation.
-        span_header: []const u8 = "X-Span-ID",
+        span_header: []const u8 = Constants.ConfigDefaults.distributed_span_header,
 
         /// HTTP header name for Parent Span ID propagation.
-        parent_header: []const u8 = "X-Parent-ID",
+        parent_header: []const u8 = Constants.ConfigDefaults.distributed_parent_header,
 
         /// HTTP header name for Baggage/Correlation Context.
-        baggage_header: []const u8 = "Correlation-Context",
+        baggage_header: []const u8 = Constants.ConfigDefaults.distributed_baggage_header,
 
         /// Sampling rate for distributed tracing (0.0 to 1.0).
         trace_sampling_rate: f64 = 1.0,
@@ -2363,6 +2363,11 @@ test "config default values" {
     try std.testing.expect(config.color);
     try std.testing.expect(!config.json);
     try std.testing.expect(config.auto_sink);
+    try std.testing.expectEqualStrings(Constants.ConfigDefaults.distributed_trace_header, config.trace_header);
+    try std.testing.expectEqualStrings(Constants.ConfigDefaults.distributed_trace_header, config.distributed.trace_header);
+    try std.testing.expectEqualStrings(Constants.ConfigDefaults.distributed_span_header, config.distributed.span_header);
+    try std.testing.expectEqualStrings(Constants.ConfigDefaults.distributed_parent_header, config.distributed.parent_header);
+    try std.testing.expectEqualStrings(Constants.ConfigDefaults.distributed_baggage_header, config.distributed.baggage_header);
 }
 
 test "config time format constants are centralized" {

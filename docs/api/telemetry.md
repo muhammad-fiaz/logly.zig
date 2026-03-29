@@ -116,6 +116,34 @@ pub const Telemetry = struct {
 };
 ```
 
+### Runtime Helper Types
+
+`Telemetry` exposes lightweight helper types for runtime control and batching:
+
+```zig
+pub const SamplingSnapshot = struct {
+    strategy: TelemetryConfig.SamplingStrategy,
+    rate: f64,
+};
+
+pub const ContextHeaders = struct {
+    trace_header: []const u8,
+    baggage_header: []const u8,
+};
+
+pub const MetricInput = struct {
+    name: []const u8,
+    value: f64,
+    options: MetricOptions = .{},
+};
+```
+
+Runtime control notes:
+
+- `setSampling(strategy, sampling_rate)` clamps rate to `[0.0, 1.0]` and treats `NaN` as `0.0` for deterministic behavior.
+- `setContextHeaders(trace_header, baggage_header)` updates propagation header names in-place.
+- `hasPendingData()` and `pendingItemCount()` report pending spans/metrics before explicit export or flush.
+
 ### ExporterStats
 
 Statistics for monitoring export performance.

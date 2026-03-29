@@ -134,11 +134,13 @@ Configuration for distributed tracing and service identification. Contains:
 *   `datacenter: ?[]const u8`: Datacenter identifier.
 *   `region: ?[]const u8`: Cloud region (e.g. "us-east-1").
 *   `instance_id: ?[]const u8`: Unique instance identifier.
-*   `trace_header: []const u8`: HTTP header for Trace ID (default: "X-Trace-ID").
-*   `span_header: []const u8`: HTTP header for Span ID (default: "X-Span-ID").
-*   `parent_header: []const u8`: HTTP header for Parent Span ID (default: "X-Parent-ID").
-*   `baggage_header: []const u8`: HTTP header for Baggage/Correlation Context (default: "Correlation-Context").
+*   `trace_header: []const u8`: HTTP header for Trace ID (default: `Constants.ConfigDefaults.distributed_trace_header`).
+*   `span_header: []const u8`: HTTP header for Span ID (default: `Constants.ConfigDefaults.distributed_span_header`).
+*   `parent_header: []const u8`: HTTP header for Parent Span ID (default: `Constants.ConfigDefaults.distributed_parent_header`).
+*   `baggage_header: []const u8`: HTTP header for Baggage/Correlation Context (default: `Constants.ConfigDefaults.distributed_baggage_header`).
 *   `trace_sampling_rate: f64`: Sampling rate for distributed tracing 0.0 to 1.0 (default: 1.0).
+
+Defaults for distributed headers are centralized in `Constants.ConfigDefaults` to prevent string-literal drift.
 
 ### Telemetry
 

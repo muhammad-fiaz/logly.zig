@@ -45,12 +45,13 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Recent Changes](#recent-changes)
   - [Version 0.1.7](#version-017)
 - [Installation](#installation)
-  - [Method 1: Zig Fetch (Recommended)](#method-1-zig-fetch-recommended)
+  - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
   - [Method 2: Project Starter Template (Quick Start)](#method-2-project-starter-template-quick-start)
   - [Method 3: Manual Configuration](#method-3-manual-configuration)
   - [Method 4: Building from Source](#method-4-building-from-source)
   - [Prebuilt Library](#prebuilt-library)
 - [Quick Start](#quick-start)
+- [Allocator Strategies (GPA + Arena)](#allocator-strategies-gpa--arena)
 - [Usage Examples](#usage-examples)
   - [File Logging](#file-logging)
   - [File Rotation](#file-rotation)
@@ -208,67 +209,26 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ### Version 0.1.7
 
-**Added:**
+**Highlights:**
 
-- New custom `time_format` timezone placeholders:
-    - `ZZZ` -> `+HH:MM`
-    - `ZZ` -> `+HHMM`
-- New centralized `Config.TimeFormat` constants for production-safe reuse:
-    - `default_pattern`, `default_alias`, `iso8601`, `rfc3339`, `unix`, `unix_ms`
-- Extended time-format examples and documentation for timezone-aware custom patterns.
-- New distributed tracing helper APIs for W3C `traceparent` workflows:
-    - `logger.setTraceContextFromTraceparent(...)`
-    - `logger.withTraceparent(...)`
-    - `logger.getTraceparentHeader(...)`
-    - `DistributedLogger.child(...)` and `DistributedLogger.inModule(...)`
-- Sink reliability and observability improvements:
-    - Centralized sink `on_error` policy handling across write and flush paths.
-    - Retry-aware TCP reconnect behavior based on `Constants.TimeDefaults`.
-    - Accurate buffered flush accounting for `SinkStats` and sink callbacks.
-- New operational introspection and control APIs across core modules:
-    - Metrics: latency percentile helpers (`p50`/`p95`/`p99`), latency summary, sink error/flush totals, and last-record age.
-    - Async: queue capacity/utilization helpers and `waitUntilDrained(...)` for controlled shutdown/flush flows.
-    - Thread Pool: queue capacity/load helpers and `waitAllTimeout(...)` for bounded waits.
-    - Rotation: trigger reason introspection (`interval`/`size`/both), next-path preview, and next-rotation countdown.
-    - Redactor: batch field rule registration, field-rule existence checks, redaction preflight checks, and non-mutating field preview.
-    - Sampler: structured decision API (`shouldSampleWithReason(...)`), runtime strategy switching, and rate-limit quota/reset introspection.
-    - Scheduler: task introspection helpers (index/existence/counts), schedule updates (`setTaskSchedule(...)`), and forced rescheduling (`rescheduleNow(...)`).
-    - Rules: bulk rule toggles/removal by name, non-mutating match previews (`wouldMatchAny(...)`, `matchingRuleIds(...)`), and explicit priority sorting.
+- Added timezone tokens for custom `time_format`: `ZZZ` (`+HH:MM`) and `ZZ` (`+HHMM`).
+- Added centralized `Config.TimeFormat` constants (`default_pattern`, `default_alias`, `iso8601`, `rfc3339`, `unix`, `unix_ms`).
+- Expanded distributed tracing helpers for W3C `traceparent` workflows.
+- Improved sink reliability (`on_error` handling, retry-aware reconnect, flush accounting).
+- Added runtime control/introspection APIs across metrics, async, thread pool, rotation, redactor, sampler, scheduler, rules, and telemetry.
 
-Why this matters:
-- Custom patterns without offset tokens can produce ambiguous timestamps across regions.
-- `ZZZ` and `ZZ` ensure logs retain explicit timezone context for ingestion, correlation, and incident forensics.
-- `traceparent` helpers remove manual header parsing/formatting boilerplate in request handlers.
-- Buffered and manual flush workflows now produce deterministic sink stats and consistent failure behavior.
-- Operational guards are easier to implement with explicit queue/load/rotation reason APIs and timeout-based draining/waits.
-- Sampling, maintenance scheduling, and diagnostics guidance flows now support richer preflight checks and runtime controls without breaking existing APIs.
+**Fixes:**
 
-**Fixed:**
+- Improved local timezone handling for formatted timestamps (see [#29](https://github.com/muhammad-fiaz/logly.zig/issues/29)).
+- Correct timezone suffix behavior for ISO8601/RFC3339 output.
+- Ensured `unix` and `unix_ms` JSON timestamps are emitted as numbers.
+- Resolved `time_format = "default"` alias behavior to map to canonical default pattern.
+- Made sink write/flush error policy handling and flush statistics more consistent.
 
-- Timezone handling for formatted timestamps: `config.timezone = .local` now uses the process/system local timezone when available (issue [#29](https://github.com/muhammad-fiaz/logly.zig/issues/29)).
-- ISO8601 and RFC3339 output now emits timezone-aware suffixes (`Z` for UTC and `+/-HH:MM` for local time).
-- `unix` and `unix_ms` JSON timestamps are now consistently emitted as numeric values (not strings).
-- `time_format = "default"` now resolves to the canonical default pattern (`YYYY-MM-DD HH:mm:ss.SSS`) instead of being parsed as a literal custom pattern.
-- Sink write/flush failures now consistently honor configured `on_error` policy (`silent`, `log_stderr`, `disable_sink`, `propagate`).
-- Sink flush paths now reliably update records/bytes/flush counters for async and manual flush modes.
+**Quality & Tests:**
 
-**Changed:**
-
-- Version bumped from `0.1.6` to `0.1.7` across package metadata and docs.
-- Added regression tests for UTC/local timezone formatting paths.
-- Expanded logger/sink regression coverage for distributed trace helpers, sink error behavior, and manual flush semantics.
-- Expanded regression coverage for new sampler/scheduler/rules helpers and evaluation-control paths.
-- Added deterministic heavy-concurrency stress tests for rules and thread pool behavior.
-- Added redactor expansion: batch pattern registration/removal, field-rule removal, message-level redaction preview APIs, and matched-pattern counting helpers.
-- Added rules expansion: matching rule count/first-match ID preview helpers, per-rule priority updates, and disabled-rule pruning helpers.
-- Improved formatter reuse/efficiency with standalone timestamp formatting APIs and consolidated JSON timestamp rendering logic.
-- Expanded explicit operational controls across core runtime modules:
-    - Rotation: direct interval/size/retention policy setters plus forced rotation API (`forceRotate(...)`).
-    - Sampler: direct strategy setters (`setProbability`, `setRateLimit`, `setEveryN`, `setAdaptive`) and quick disable helper.
-    - Thread pool: retry-aware batch submit (`submitBatchWithRetry(...)`), queue breakdown snapshots, and threshold wait API (`waitUntilQueueBelow(...)`).
-    - Scheduler: name-based task controls and immutable task snapshots for safer runtime orchestration.
-    - Telemetry: runtime sampling/header controls, pending-state helpers, metric batch recording, and span batch-attribute helper.
-- Added regression coverage for all newly added explicit-control APIs in rotation, sampler, thread pool, scheduler, and telemetry modules.
+- Broadened regression coverage across logger/sink, sampler/scheduler/rules, thread-pool stress, formatter, rotation, redactor, and telemetry APIs.
+- Added explicit test coverage for newly introduced runtime control helpers.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -277,12 +237,21 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 ## Installation
 
 
-### Method 1: Zig Fetch (Recommended)
+### Method 1: Zig Fetch (Recommended Stable)
 
 The easiest way to add Logly to your project:
 
+Latest stable (`0.1.7`):
+
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
+```
+This automatically adds the dependency with the correct hash to your `build.zig.zon`.
+
+Previous stable (`0.1.6`):
+
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.6.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 

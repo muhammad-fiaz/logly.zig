@@ -1006,6 +1006,14 @@ pub const ConfigDefaults = struct {
     pub const stack_size: usize = 1024 * 1024;
     /// Default arena reset threshold (64KB).
     pub const arena_reset_threshold: usize = 64 * 1024;
+    /// Default distributed trace header name.
+    pub const distributed_trace_header: []const u8 = "X-Trace-ID";
+    /// Default distributed span header name.
+    pub const distributed_span_header: []const u8 = "X-Span-ID";
+    /// Default distributed parent span header name.
+    pub const distributed_parent_header: []const u8 = "X-Parent-ID";
+    /// Default distributed baggage header name.
+    pub const distributed_baggage_header: []const u8 = "Correlation-Context";
 };
 
 /// Redaction defaults.

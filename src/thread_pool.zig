@@ -240,10 +240,15 @@ pub const ThreadPool = struct {
         submitted_at: i64,
         priority: Priority = .normal,
 
+        /// Priority level for task scheduling.
         pub const Priority = enum(u8) {
+            /// Lowest priority task.
             low = 0,
+            /// Default priority task.
             normal = 1,
+            /// High priority task.
             high = 2,
+            /// Critical priority task.
             critical = 3,
         };
     };
@@ -255,15 +260,18 @@ pub const ThreadPool = struct {
         /// Callback with context
         callback: CallbackTask,
 
+        /// Function-only task payload.
         pub const FunctionTask = struct {
             func: *const fn (?std.mem.Allocator) void,
         };
 
+        /// Callback task payload with opaque context pointer.
         pub const CallbackTask = struct {
             func: *const fn (*anyopaque, ?std.mem.Allocator) void,
             context: *anyopaque,
         };
 
+        /// Executes this task variant.
         pub fn execute(self: Task, allocator: ?std.mem.Allocator) void {
             switch (self) {
                 .function => |f| f.func(allocator),
@@ -283,6 +291,7 @@ pub const ThreadPool = struct {
         mutex: std.Thread.Mutex = .{},
         condition: std.Thread.Condition = .{},
 
+        /// Initializes a queue with fixed `capacity`.
         pub fn init(allocator: std.mem.Allocator, capacity: usize) !WorkQueue {
             const items = try allocator.alloc(WorkItem, capacity);
             return .{
@@ -295,6 +304,7 @@ pub const ThreadPool = struct {
         /// Alias for init().
         pub const create = @This().init;
 
+        /// Releases queue storage.
         pub fn deinit(self: *WorkQueue) void {
             self.allocator.free(self.items);
         }
@@ -302,6 +312,9 @@ pub const ThreadPool = struct {
         /// Alias for deinit().
         pub const destroy = @This().deinit;
 
+        /// Pushes an item to the queue.
+        ///
+        /// Returns false when queue is at capacity.
         pub fn push(self: *WorkQueue, item: WorkItem) bool {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -317,6 +330,7 @@ pub const ThreadPool = struct {
             return true;
         }
 
+        /// Pops one item from the queue, if available.
         pub fn pop(self: *WorkQueue) ?WorkItem {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -372,6 +386,7 @@ pub const ThreadPool = struct {
             }
         }
 
+        /// Waits up to `timeout_ns` for an item, then pops once.
         pub fn popWait(self: *WorkQueue, timeout_ns: u64) ?WorkItem {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -385,6 +400,7 @@ pub const ThreadPool = struct {
             return self.popUnlocked();
         }
 
+        /// Steals one item from the queue tail.
         pub fn steal(self: *WorkQueue) ?WorkItem {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -401,18 +417,21 @@ pub const ThreadPool = struct {
             return item;
         }
 
+        /// Returns current queue depth.
         pub fn size(self: *WorkQueue) usize {
             self.mutex.lock();
             defer self.mutex.unlock();
             return self.count;
         }
 
+        /// Returns true when the queue is full.
         pub fn isFull(self: *WorkQueue) bool {
             self.mutex.lock();
             defer self.mutex.unlock();
             return self.count >= self.capacity;
         }
 
+        /// Removes all queued items.
         pub fn clear(self: *WorkQueue) void {
             self.mutex.lock();
             defer self.mutex.unlock();
@@ -835,6 +854,12 @@ pub const ThreadPool = struct {
         return self.stats.active_threads.load(.monotonic);
     }
 
+    fn hasTimedOut(started_at_ms: i64, timeout_ms: u64) bool {
+        if (timeout_ms == 0) return true;
+        const elapsed = Utils.currentMillis() - started_at_ms;
+        return elapsed >= @as(i64, @intCast(timeout_ms));
+    }
+
     /// Waits for all pending tasks to complete.
     pub fn waitAll(self: *ThreadPool) void {
         // Wait until all submitted tasks are completed
@@ -862,10 +887,7 @@ pub const ThreadPool = struct {
 
             if (completed + dropped >= submitted) return true;
 
-            if (timeout_ms == 0) return false;
-
-            const elapsed = Utils.currentMillis() - started_at_ms;
-            if (elapsed >= @as(i64, @intCast(timeout_ms))) return false;
+            if (hasTimedOut(started_at_ms, timeout_ms)) return false;
 
             std.Thread.sleep(1 * Constants.TimeConstants.ns_per_ms);
         }
@@ -880,10 +902,7 @@ pub const ThreadPool = struct {
         while (true) {
             if (self.pendingTasks() <= threshold) return true;
 
-            if (timeout_ms == 0) return false;
-
-            const elapsed = Utils.currentMillis() - started_at_ms;
-            if (elapsed >= @as(i64, @intCast(timeout_ms))) return false;
+            if (hasTimedOut(started_at_ms, timeout_ms)) return false;
 
             std.Thread.sleep(1 * Constants.TimeConstants.ns_per_ms);
         }

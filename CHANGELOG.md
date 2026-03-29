@@ -77,6 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sink Error Policy Consistency**: Sink write and flush failures now consistently apply `.silent`, `.log_stderr`, `.disable_sink`, and `.propagate` behavior.
 - **Sink Flush Statistics**: Async and manual flush paths now update `SinkStats` counters consistently for records, bytes, and flush count.
 - **Arena Reset Threshold Enforcement**: `Config.arena_reset_threshold` is now actively enforced by logger arena scratch allocation logic between records.
+- **Telemetry Baggage Replacement Safety**: `Baggage.set(...)` now frees replaced key/value entries when updating existing baggage keys.
+- **Sampling Rate Normalization Safety**: Runtime sampling updates now handle `NaN` input defensively and normalize through shared clamp utilities.
 
 ### Changed
 
@@ -85,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced timestamp/time-offset magic values in time utilities with centralized `Constants.TimeConstants` values.
 - Clarified allocator docs/examples to preserve explicit `config.use_arena_allocator = true` usage and document mutation-vs-builder behavior for `withArenaAllocation()` aliases.
 - Updated architecture-sized constants (`AtomicUnsigned`, `AtomicSigned`, `NativeUint`, `NativeInt`) to derive from pointer width for consistent 32-bit/64-bit target behavior.
+- Centralized distributed tracing header defaults under `Constants.ConfigDefaults` and reused them across `Config`/`DistributedConfig` defaults.
 
 ### Tests
 
@@ -111,6 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added regression tests for thread pool retry-batch submission and queue-threshold waiting helpers.
 - Added regression tests for scheduler name-based controls and immutable task snapshots.
 - Added regression tests for telemetry sampling/header controls, metric batch recording, pending-state helpers, and span batch attributes.
+- Added regression test coverage for baggage key replacement updates.
 
 ## [0.1.6]
 

@@ -274,6 +274,7 @@ pub const Rotation = struct {
     /// Mutex for thread-safe operations.
     mutex: std.Thread.Mutex = .{},
 
+    /// Initializes rotation with optional interval, size limit, and retention count.
     pub fn init(
         allocator: std.mem.Allocator,
         path: []const u8,
@@ -307,22 +308,26 @@ pub const Rotation = struct {
     /// Alias for init().
     pub const create = init;
 
+    /// Enables compression for rotated files.
     pub fn withCompression(self: *Rotation, config: CompressionConfig) !void {
         self.compression = config;
         // Pre-initialize compressor if needed
         self.compressor = Compression.initWithConfig(self.allocator, config);
     }
 
+    /// Sets naming strategy used for rotated files.
     pub fn withNaming(self: *Rotation, strategy: NamingStrategy) void {
         self.naming = strategy;
     }
 
+    /// Sets a custom naming format and switches to custom naming strategy.
     pub fn withNamingFormat(self: *Rotation, format: []const u8) !void {
         if (self.naming_format) |f| self.allocator.free(f);
         self.naming_format = try self.allocator.dupe(u8, format);
         self.naming = .custom;
     }
 
+    /// Sets max retention age in seconds.
     pub fn withMaxAge(self: *Rotation, seconds: i64) void {
         self.max_age_seconds = seconds;
     }
@@ -362,11 +367,13 @@ pub const Rotation = struct {
         self.max_age_seconds = max_age_seconds;
     }
 
+    /// Sets archive directory for rotated files.
     pub fn withArchiveDir(self: *Rotation, dir: []const u8) !void {
         if (self.archive_dir) |d| self.allocator.free(d);
         self.archive_dir = try self.allocator.dupe(u8, dir);
     }
 
+    /// Enables or disables cleanup of empty directories during retention cleanup.
     pub fn setCleanEmptyDirs(self: *Rotation, clean: bool) void {
         self.clean_empty_dirs = clean;
     }
@@ -409,6 +416,7 @@ pub const Rotation = struct {
         self.delete_after_retention_compress = config.delete_after_retention_compress;
     }
 
+    /// Releases rotation-owned allocations.
     pub fn deinit(self: *Rotation) void {
         self.allocator.free(self.base_path);
         if (self.archive_dir) |d| self.allocator.free(d);
@@ -418,14 +426,17 @@ pub const Rotation = struct {
     /// Alias for deinit().
     pub const destroy = deinit;
 
+    /// Returns current rotation statistics.
     pub fn getStats(self: *const Rotation) RotationStats {
         return self.stats;
     }
 
+    /// Returns whether any rotation trigger is currently enabled.
     pub fn isEnabled(self: *const Rotation) bool {
         return self.interval != null or self.size_limit != null;
     }
 
+    /// Returns current interval name, or `"none"` when disabled.
     pub fn intervalName(self: *const Rotation) []const u8 {
         if (self.interval) |i| return i.name();
         return "none";
@@ -492,6 +503,7 @@ pub const Rotation = struct {
         return self.generateRotatedPath();
     }
 
+    /// Performs rotation when interval and/or size triggers are met.
     pub fn checkAndRotate(self: *Rotation, file_ptr: *std.fs.File) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
