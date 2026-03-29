@@ -35,6 +35,11 @@ const Utils = @import("utils.zig");
 
 /// Redaction utilities for masking sensitive data in logs.
 pub const Redactor = struct {
+    const RedactionApplyMode = enum {
+        track,
+        preview,
+    };
+
     /// Redactor statistics for monitoring and diagnostics.
     pub const RedactorStats = struct {
         total_values_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
@@ -386,6 +391,14 @@ pub const Redactor = struct {
     ///     field_name: The name of the field to redact.
     ///     redaction_type: The type of redaction to apply.
     pub fn addField(self: *Redactor, field_name: []const u8, redaction_type: RedactionType) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.fields.getPtr(field_name)) |existing| {
+            existing.* = redaction_type;
+            return;
+        }
+
         const owned_name = try self.allocator.dupe(u8, field_name);
         try self.fields.put(owned_name, redaction_type);
     }
@@ -427,6 +440,75 @@ pub const Redactor = struct {
         });
     }
 
+    /// Adds multiple redaction patterns.
+    ///
+    /// Returns the number of patterns added.
+    pub fn addPatterns(self: *Redactor, patterns: []const RedactionPattern) !usize {
+        var added: usize = 0;
+        for (patterns) |pattern| {
+            try self.addPattern(pattern.name, pattern.pattern_type, pattern.pattern, pattern.replacement);
+            added += 1;
+        }
+        return added;
+    }
+
+    /// Removes a field rule by name.
+    ///
+    /// Returns true when a matching field was removed.
+    pub fn removeField(self: *Redactor, field_name: []const u8) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.fields.fetchRemove(field_name)) |entry| {
+            self.allocator.free(entry.key);
+            return true;
+        }
+
+        if (self.config.case_insensitive) {
+            var key_to_remove: ?[]const u8 = null;
+            var it = self.fields.iterator();
+            while (it.next()) |entry| {
+                if (std.ascii.eqlIgnoreCase(entry.key_ptr.*, field_name)) {
+                    key_to_remove = entry.key_ptr.*;
+                    break;
+                }
+            }
+
+            if (key_to_remove) |key| {
+                if (self.fields.fetchRemove(key)) |entry| {
+                    self.allocator.free(entry.key);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Removes all pattern rules matching the provided name.
+    ///
+    /// Returns the number of removed patterns.
+    pub fn removePatternByName(self: *Redactor, name: []const u8) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var removed: usize = 0;
+        var i = self.patterns.items.len;
+        while (i > 0) {
+            i -= 1;
+            const pattern = self.patterns.items[i];
+            if (std.mem.eql(u8, pattern.name, name)) {
+                self.allocator.free(pattern.name);
+                self.allocator.free(pattern.pattern);
+                self.allocator.free(pattern.replacement);
+                _ = self.patterns.orderedRemove(i);
+                removed += 1;
+            }
+        }
+
+        return removed;
+    }
+
     /// Redacts sensitive data from a message.
     /// Uses config settings for replacement text and audit logging.
     pub fn redact(self: *Redactor, message: []const u8) ![]u8 {
@@ -437,20 +519,37 @@ pub const Redactor = struct {
     /// If scratch_allocator is provided, it will be used for temporary allocations.
     /// This is useful for arena allocators that batch-free memory.
     pub fn redactWithAllocator(self: *Redactor, message: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        return self.redactInternal(message, scratch_allocator, .track);
+    }
+
+    /// Redacts sensitive data from a message without mutating stats.
+    pub fn previewRedaction(self: *Redactor, message: []const u8) ![]u8 {
+        return self.previewRedactionWithAllocator(message, null);
+    }
+
+    /// Redacts sensitive data from a message without mutating stats using an optional allocator.
+    pub fn previewRedactionWithAllocator(self: *Redactor, message: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        return self.redactInternal(message, scratch_allocator, .preview);
+    }
+
+    fn redactInternal(self: *Redactor, message: []const u8, scratch_allocator: ?std.mem.Allocator, mode: RedactionApplyMode) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
 
-        // Track processing
-        _ = self.stats.total_values_processed.fetchAdd(1, .monotonic);
+        if (mode == .track) {
+            _ = self.stats.total_values_processed.fetchAdd(1, .monotonic);
+        }
 
         var result = try alloc.dupe(u8, message);
         errdefer alloc.free(result);
 
         var was_redacted = false;
         for (self.patterns.items) |pattern| {
-            const original_len = result.len;
+            if (!patternMatchesMessage(pattern, result)) continue;
+
             result = try self.applyPatternWithAllocator(result, pattern, alloc);
-            if (result.len != original_len or !std.mem.eql(u8, result, message)) {
-                was_redacted = true;
+
+            was_redacted = true;
+            if (mode == .track) {
                 _ = self.stats.patterns_matched.fetchAdd(1, .monotonic);
 
                 // Invoke pattern matched callback
@@ -460,7 +559,7 @@ pub const Redactor = struct {
             }
         }
 
-        if (was_redacted) {
+        if (mode == .track and was_redacted) {
             _ = self.stats.values_redacted.fetchAdd(1, .monotonic);
 
             // Invoke redaction applied callback
@@ -643,6 +742,17 @@ pub const Redactor = struct {
         return false;
     }
 
+    /// Returns how many pattern rules match a message.
+    pub fn matchingPatternCount(self: *const Redactor, message: []const u8) usize {
+        var count: usize = 0;
+        for (self.patterns.items) |pattern| {
+            if (patternMatchesMessage(pattern, message)) {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
     /// Returns the number of patterns.
     pub fn patternCount(self: *const Redactor) usize {
         return self.patterns.items.len;
@@ -699,10 +809,21 @@ pub const Redactor = struct {
     pub const addFieldsBatch = addFields;
     pub const addSensitiveFields = addFields;
 
+    /// Alias for addPatterns
+    pub const addPatternBatch = addPatterns;
+    pub const addRules = addPatterns;
+
     /// Alias for redact
     pub const mask = redact;
     pub const sanitize = redact;
     pub const process = redact;
+
+    /// Alias for previewRedaction
+    pub const previewMessage = previewRedaction;
+    pub const preview = previewRedaction;
+
+    /// Alias for previewRedactionWithAllocator
+    pub const previewMessageWithAllocator = previewRedactionWithAllocator;
 
     /// Alias for redactField
     pub const maskField = redactField;
@@ -759,6 +880,18 @@ pub const Redactor = struct {
     /// Alias for wouldRedact
     pub const shouldRedact = wouldRedact;
     pub const needsRedaction = wouldRedact;
+
+    /// Alias for matchingPatternCount
+    pub const matchingPatterns = matchingPatternCount;
+    pub const matchedPatternCount = matchingPatternCount;
+
+    /// Alias for removeField
+    pub const deleteField = removeField;
+    pub const removeSensitiveField = removeField;
+
+    /// Alias for removePatternByName
+    pub const removePattern = removePatternByName;
+    pub const deletePattern = removePatternByName;
 
     /// Alias for patternCount
     pub const ruleCount = patternCount;
@@ -941,4 +1074,53 @@ test "redactor preflight and preview helpers" {
     const passthrough = try redactor.previewFieldRedaction("username", "alice");
     defer std.testing.allocator.free(passthrough);
     try std.testing.expectEqualStrings("alice", passthrough);
+}
+
+test "redactor batch patterns remove helpers and matching count" {
+    var redactor = Redactor.init(std.testing.allocator);
+    defer redactor.deinit();
+
+    const patterns = [_]Redactor.RedactionPattern{
+        .{ .name = "token_pattern", .pattern_type = .contains, .pattern = "token=", .replacement = "token=[REDACTED]" },
+        .{ .name = "password_pattern", .pattern_type = .contains, .pattern = "password=", .replacement = "password=[REDACTED]" },
+    };
+
+    const added = try redactor.addPatterns(patterns[0..]);
+    try std.testing.expectEqual(@as(usize, 2), added);
+    try std.testing.expectEqual(@as(usize, 2), redactor.patternCount());
+
+    try redactor.addField("api_key", .mask_middle);
+    try std.testing.expect(redactor.removeField("API_KEY"));
+    try std.testing.expect(!redactor.removeField("API_KEY"));
+
+    try std.testing.expectEqual(@as(usize, 2), redactor.matchingPatternCount("token=abc password=xyz"));
+    try std.testing.expectEqual(@as(usize, 0), redactor.matchingPatternCount("safe message"));
+
+    const removed = redactor.removePatternByName("token_pattern");
+    try std.testing.expectEqual(@as(usize, 1), removed);
+    try std.testing.expectEqual(@as(usize, 1), redactor.patternCount());
+}
+
+test "redactor preview message does not mutate stats" {
+    var redactor = Redactor.init(std.testing.allocator);
+    defer redactor.deinit();
+
+    try redactor.addPattern("token_pattern", .contains, "token=", "token=[REDACTED]");
+
+    const before_processed = redactor.getStats().getTotalProcessed();
+    const before_redacted = redactor.getStats().getValuesRedacted();
+
+    const preview = try redactor.previewRedaction("token=abc");
+    defer std.testing.allocator.free(preview);
+    try std.testing.expect(std.mem.indexOf(u8, preview, "[REDACTED]") != null);
+
+    const after_processed = redactor.getStats().getTotalProcessed();
+    const after_redacted = redactor.getStats().getValuesRedacted();
+    try std.testing.expectEqual(before_processed, after_processed);
+    try std.testing.expectEqual(before_redacted, after_redacted);
+
+    const actual = try redactor.redact("token=abc");
+    defer std.testing.allocator.free(actual);
+    try std.testing.expect(std.mem.indexOf(u8, actual, "[REDACTED]") != null);
+    try std.testing.expect(redactor.getStats().getTotalProcessed() > after_processed);
 }

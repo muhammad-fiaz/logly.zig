@@ -872,6 +872,7 @@ pub const Rules = struct {
 
         var ids: std.ArrayList(u32) = .empty;
         errdefer ids.deinit(alloc);
+        ids.ensureTotalCapacity(alloc, self.rules.items.len) catch {};
 
         for (self.rules.items) |*rule| {
             if (rule.matches(record)) {
@@ -886,6 +887,77 @@ pub const Rules = struct {
     /// Returns matching rule IDs using engine allocator.
     pub fn matchingRuleIds(self: *Rules, record: *const Record) ?[]u32 {
         return self.matchingRuleIdsWithAllocator(record, null);
+    }
+
+    /// Returns how many rules would match this record.
+    /// This does not mutate once-only rule state.
+    pub fn matchingRuleCount(self: *Rules, record: *const Record) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (!self.enabled or self.rules.items.len == 0) return 0;
+
+        var total_matches: usize = 0;
+        for (self.rules.items) |*rule| {
+            if (rule.matches(record)) {
+                total_matches += 1;
+            }
+        }
+        return total_matches;
+    }
+
+    /// Returns the first rule ID that would match this record.
+    /// This does not mutate once-only rule state.
+    pub fn firstMatchingRuleId(self: *Rules, record: *const Record) ?u32 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (!self.enabled or self.rules.items.len == 0) return null;
+
+        for (self.rules.items) |*rule| {
+            if (rule.matches(record)) return rule.id;
+        }
+        return null;
+    }
+
+    /// Updates a rule priority by ID.
+    ///
+    /// Returns true when the rule exists and was updated.
+    pub fn setRulePriority(self: *Rules, id: u32, priority: u8) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.rules.items) |*rule| {
+            if (rule.id == id) {
+                rule.priority = priority;
+                if (self.config.sort_by_severity) {
+                    self.sortRulesByPriorityLocked();
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Removes all currently disabled rules.
+    ///
+    /// Returns number of removed rules.
+    pub fn removeDisabledRules(self: *Rules) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var removed: usize = 0;
+        var i = self.rules.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (!self.rules.items[i].enabled) {
+                _ = self.rules.orderedRemove(i);
+                removed += 1;
+            }
+        }
+
+        return removed;
     }
 
     /// Sorts rules by descending priority, then ascending rule ID.
@@ -1255,11 +1327,26 @@ pub const Rules = struct {
     /// Alias for matchingRuleIds
     pub const previewRuleIds = matchingRuleIds;
 
+    /// Alias for matchingRuleCount
+    pub const previewRuleCount = matchingRuleCount;
+    pub const matchCount = matchingRuleCount;
+
+    /// Alias for firstMatchingRuleId
+    pub const previewFirstRuleId = firstMatchingRuleId;
+    pub const firstMatchId = firstMatchingRuleId;
+
     /// Alias for matchingRuleIdsWithAllocator
     pub const previewRuleIdsWithAllocator = matchingRuleIdsWithAllocator;
 
     /// Alias for sortByPriority
     pub const sortRules = sortByPriority;
+
+    /// Alias for setRulePriority
+    pub const updatePriority = setRulePriority;
+
+    /// Alias for removeDisabledRules
+    pub const pruneDisabled = removeDisabledRules;
+    pub const removeInactive = removeDisabledRules;
 
     /// Alias for initFromGlobalConfig
     pub const createFromGlobalConfig = initFromGlobalConfig;
@@ -2044,6 +2131,51 @@ test "rules sorting by priority via config" {
     try std.testing.expectEqual(@as(u32, 200), list_ref[0].id);
     try std.testing.expectEqual(@as(u32, 300), list_ref[1].id);
     try std.testing.expectEqual(@as(u32, 100), list_ref[2].id);
+}
+
+test "rules matching count first match and priority update" {
+    var cfg = Rules.RulesConfig.development();
+    cfg.sort_by_severity = true;
+
+    var rules = Rules.initWithConfig(std.testing.allocator, cfg);
+    defer rules.deinit();
+    rules.enable();
+
+    const messages = [_]Rules.RuleMessage{
+        .{ .category = .general_information, .message = "m" },
+    };
+
+    try rules.add(.{ .id = 1, .priority = 10, .level_match = .{ .exact = .err }, .message_contains = "db", .messages = &messages });
+    try rules.add(.{ .id = 2, .priority = 20, .level_match = .{ .exact = .err }, .message_contains = "db", .messages = &messages });
+    try rules.add(.{ .id = 3, .priority = 5, .level_match = .{ .exact = .warning }, .messages = &messages });
+
+    var record = Record.init(std.testing.allocator, .err, "db timeout");
+    defer record.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), rules.matchingRuleCount(&record));
+    try std.testing.expectEqual(@as(?u32, 2), rules.firstMatchingRuleId(&record));
+
+    try std.testing.expect(rules.setRulePriority(1, 99));
+    try std.testing.expectEqual(@as(?u32, 1), rules.firstMatchingRuleId(&record));
+    try std.testing.expect(!rules.setRulePriority(999, 1));
+}
+
+test "rules remove disabled rules helper" {
+    var rules = Rules.init(std.testing.allocator);
+    defer rules.deinit();
+
+    const messages = [_]Rules.RuleMessage{
+        .{ .category = .general_information, .message = "m" },
+    };
+
+    try rules.add(.{ .id = 10, .enabled = true, .messages = &messages });
+    try rules.add(.{ .id = 11, .enabled = false, .messages = &messages });
+    try rules.add(.{ .id = 12, .enabled = false, .messages = &messages });
+
+    const removed = rules.removeDisabledRules();
+    try std.testing.expectEqual(@as(usize, 2), removed);
+    try std.testing.expectEqual(@as(usize, 1), rules.count());
+    try std.testing.expect(rules.hasRule(10));
 }
 
 test "rules concurrent stress loop" {

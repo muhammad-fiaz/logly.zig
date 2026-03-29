@@ -206,6 +206,19 @@ pub const Scheduler = struct {
         };
     };
 
+    /// Immutable task state snapshot for introspection APIs.
+    pub const TaskSnapshot = struct {
+        name: []const u8,
+        task_type: TaskType,
+        enabled: bool,
+        running: bool,
+        next_run: i64,
+        last_run: i64,
+        run_count: u64,
+        error_count: u64,
+        retries_remaining: u32,
+    };
+
     /// Types of scheduled tasks.
     pub const TaskType = enum {
         /// Clean up old log files
@@ -743,9 +756,90 @@ pub const Scheduler = struct {
         return null;
     }
 
+    /// Returns task snapshot by index.
+    pub fn getTaskSnapshot(self: *Scheduler, index: usize) ?TaskSnapshot {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (index >= self.tasks.items.len) return null;
+        const task = self.tasks.items[index];
+        return .{
+            .name = task.name,
+            .task_type = task.task_type,
+            .enabled = task.enabled,
+            .running = task.running,
+            .next_run = task.next_run,
+            .last_run = task.last_run,
+            .run_count = task.run_count,
+            .error_count = task.error_count,
+            .retries_remaining = task.retries_remaining,
+        };
+    }
+
+    /// Returns task snapshot by name.
+    pub fn getTaskSnapshotByName(self: *Scheduler, name: []const u8) ?TaskSnapshot {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items) |task| {
+            if (std.mem.eql(u8, task.name, name)) {
+                return .{
+                    .name = task.name,
+                    .task_type = task.task_type,
+                    .enabled = task.enabled,
+                    .running = task.running,
+                    .next_run = task.next_run,
+                    .last_run = task.last_run,
+                    .run_count = task.run_count,
+                    .error_count = task.error_count,
+                    .retries_remaining = task.retries_remaining,
+                };
+            }
+        }
+        return null;
+    }
+
     /// Returns true when a task with this name exists.
     pub fn hasTaskNamed(self: *Scheduler, name: []const u8) bool {
         return self.taskIndexByName(name) != null;
+    }
+
+    /// Enables or disables a task by task name.
+    ///
+    /// Returns true when task exists and was updated.
+    pub fn setTaskEnabledByName(self: *Scheduler, name: []const u8, enabled: bool) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items) |*task| {
+            if (std.mem.eql(u8, task.name, name)) {
+                task.enabled = enabled;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Removes a task by name.
+    ///
+    /// Returns true when a task was removed.
+    pub fn removeTaskByName(self: *Scheduler, name: []const u8) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items, 0..) |task, i| {
+            if (std.mem.eql(u8, task.name, name)) {
+                const removed = self.tasks.orderedRemove(i);
+                self.allocator.free(removed.name);
+                if (removed.config.path) |p| self.allocator.free(p);
+                if (removed.config.file_pattern) |p| self.allocator.free(p);
+                if (removed.depends_on) |p| self.allocator.free(p);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// Returns enabled task count.
@@ -780,6 +874,21 @@ pub const Scheduler = struct {
         if (index >= self.tasks.items.len) return null;
         const delta = self.tasks.items[index].next_run - Utils.currentMillis();
         return if (delta > 0) delta else 0;
+    }
+
+    /// Returns milliseconds until task next run by task name.
+    pub fn nextRunInMsByName(self: *Scheduler, name: []const u8) ?i64 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.tasks.items) |task| {
+            if (std.mem.eql(u8, task.name, name)) {
+                const delta = task.next_run - Utils.currentMillis();
+                return if (delta > 0) delta else 0;
+            }
+        }
+
+        return null;
     }
 
     /// Updates schedule for a task and recalculates next run.
@@ -910,6 +1019,15 @@ pub const Scheduler = struct {
 
     /// Alias for runNow
     pub const run = runNow;
+
+    /// Runs a task immediately by task name.
+    ///
+    /// Returns true when task exists and was executed.
+    pub fn runNowByName(self: *Scheduler, name: []const u8) !bool {
+        const index = self.taskIndexByName(name) orelse return false;
+        try self.runNow(index);
+        return true;
+    }
 
     fn dependenciesSatisfiedLocked(self: *Scheduler, task: *const ScheduledTask) bool {
         if (task.depends_on) |dep_name| {
@@ -1486,8 +1604,20 @@ pub const Scheduler = struct {
     /// Alias for taskIndexByName
     pub const indexOfTask = taskIndexByName;
 
+    /// Alias for getTaskSnapshot
+    pub const snapshotTask = getTaskSnapshot;
+
+    /// Alias for getTaskSnapshotByName
+    pub const snapshotTaskByName = getTaskSnapshotByName;
+
     /// Alias for hasTaskNamed
     pub const hasTask = hasTaskNamed;
+
+    /// Alias for setTaskEnabledByName
+    pub const enableByName = setTaskEnabledByName;
+
+    /// Alias for removeTaskByName
+    pub const removeNamed = removeTaskByName;
 
     /// Alias for enabledTaskCount
     pub const enabledCount = enabledTaskCount;
@@ -1501,11 +1631,17 @@ pub const Scheduler = struct {
     /// Alias for nextRunInMs
     pub const nextRunMs = nextRunInMs;
 
+    /// Alias for nextRunInMsByName
+    pub const nextRunForTask = nextRunInMsByName;
+
     /// Alias for setTaskSchedule
     pub const updateSchedule = setTaskSchedule;
 
     /// Alias for rescheduleNow
     pub const runSoon = rescheduleNow;
+
+    /// Alias for runNowByName
+    pub const runNamed = runNowByName;
 
     /// Returns true if the scheduler is running.
     pub fn isRunning(self: *const Scheduler) bool {
@@ -1937,6 +2073,35 @@ test "scheduler task introspection helpers" {
 
     try std.testing.expect(scheduler.setTaskSchedule(idx_b, .{ .once = 0 }));
     try std.testing.expect(scheduler.rescheduleNow(idx_b));
+}
+
+test "scheduler name based controls and snapshots" {
+    const allocator = std.testing.allocator;
+    const scheduler = try Scheduler.init(allocator);
+    defer scheduler.deinit();
+
+    const idx = try scheduler.addTask("named-task", .custom, .{ .interval = 60_000 }, .{});
+    try std.testing.expectEqual(@as(usize, 0), idx);
+
+    const snapshot = scheduler.getTaskSnapshot(idx);
+    try std.testing.expect(snapshot != null);
+    try std.testing.expectEqualStrings("named-task", snapshot.?.name);
+    try std.testing.expect(snapshot.?.enabled);
+
+    const named_snapshot = scheduler.getTaskSnapshotByName("named-task");
+    try std.testing.expect(named_snapshot != null);
+    try std.testing.expectEqual(Scheduler.TaskType.custom, named_snapshot.?.task_type);
+
+    try std.testing.expect(scheduler.setTaskEnabledByName("named-task", false));
+    try std.testing.expect(!scheduler.getTaskSnapshotByName("named-task").?.enabled);
+
+    try std.testing.expect(scheduler.nextRunInMsByName("named-task") != null);
+    try std.testing.expect(!(try scheduler.runNowByName("missing-task")));
+    try std.testing.expect(try scheduler.runNowByName("named-task"));
+
+    try std.testing.expect(scheduler.removeTaskByName("named-task"));
+    try std.testing.expect(!scheduler.hasTaskNamed("named-task"));
+    try std.testing.expect(!scheduler.removeTaskByName("named-task"));
 }
 
 var scheduler_tick_called = false;

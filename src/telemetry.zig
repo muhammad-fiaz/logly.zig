@@ -245,6 +245,22 @@ pub const ExporterStats = struct {
 /// - thread_pool.zig for parallel processing
 /// - utils.zig for ID generation and time utilities
 pub const Telemetry = struct {
+    pub const SamplingSnapshot = struct {
+        strategy: TelemetryConfig.SamplingStrategy,
+        rate: f64,
+    };
+
+    pub const ContextHeaders = struct {
+        trace_header: []const u8,
+        baggage_header: []const u8,
+    };
+
+    pub const MetricInput = struct {
+        name: []const u8,
+        value: f64,
+        options: MetricOptions = .{},
+    };
+
     allocator: std.mem.Allocator,
     config: TelemetryConfig,
     enabled: bool,
@@ -528,6 +544,18 @@ pub const Telemetry = struct {
     /// Records a histogram metric (distribution)
     pub fn recordHistogram(self: *Telemetry, name: []const u8, value: f64) !void {
         try self.recordMetric(name, value, .{ .kind = .histogram });
+    }
+
+    /// Records multiple metrics in one call.
+    ///
+    /// Returns number of successfully recorded metric inputs.
+    pub fn recordMetricsBatch(self: *Telemetry, metrics: []const MetricInput) !usize {
+        var recorded: usize = 0;
+        for (metrics) |metric| {
+            try self.recordMetric(metric.name, metric.value, metric.options);
+            recorded += 1;
+        }
+        return recorded;
     }
 
     /// Internal span export implementation
@@ -1167,6 +1195,73 @@ pub const Telemetry = struct {
         self.enabled = enabled;
     }
 
+    /// Updates telemetry sampling strategy and effective sampling rate.
+    pub fn setSampling(self: *Telemetry, strategy: TelemetryConfig.SamplingStrategy, sampling_rate: f64) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const clamped_rate = if (sampling_rate < 0.0)
+            0.0
+        else if (sampling_rate > 1.0)
+            1.0
+        else
+            sampling_rate;
+
+        self.config.sampling_strategy = strategy;
+        self.config.sampling_rate = clamped_rate;
+        self.sampler = .{
+            .strategy = strategy,
+            .sampling_rate = clamped_rate,
+        };
+    }
+
+    /// Returns current telemetry sampling configuration.
+    pub fn getSampling(self: *Telemetry) SamplingSnapshot {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return .{
+            .strategy = self.config.sampling_strategy,
+            .rate = self.config.sampling_rate,
+        };
+    }
+
+    /// Sets context propagation header names at runtime.
+    pub fn setContextHeaders(self: *Telemetry, trace_header: []const u8, baggage_header: []const u8) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        self.config.trace_header = trace_header;
+        self.config.baggage_header = baggage_header;
+    }
+
+    /// Returns currently configured context propagation headers.
+    pub fn getContextHeaders(self: *Telemetry) ContextHeaders {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return .{
+            .trace_header = self.config.trace_header,
+            .baggage_header = self.config.baggage_header,
+        };
+    }
+
+    /// Returns true when spans or metrics are waiting to be exported.
+    pub fn hasPendingData(self: *Telemetry) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.completed_span_count > 0 or self.metric_count > 0;
+    }
+
+    /// Returns total number of pending spans + metrics.
+    pub fn pendingItemCount(self: *Telemetry) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.completed_span_count + self.metric_count;
+    }
+
     /// Check if telemetry is currently enabled
     pub fn isEnabled(self: *Telemetry) bool {
         return self.enabled;
@@ -1259,6 +1354,20 @@ pub const Telemetry = struct {
     pub const enable = setEnabled;
     /// Alias for isEnabled
     pub const is_enabled = isEnabled;
+    /// Alias for setSampling
+    pub const setSampler = setSampling;
+    /// Alias for getSampling
+    pub const sampling = getSampling;
+    /// Alias for setContextHeaders
+    pub const configureHeaders = setContextHeaders;
+    /// Alias for getContextHeaders
+    pub const contextHeaders = getContextHeaders;
+    /// Alias for hasPendingData
+    pub const hasPending = hasPendingData;
+    /// Alias for pendingItemCount
+    pub const pendingCount = pendingItemCount;
+    /// Alias for recordMetricsBatch
+    pub const recordBatch = recordMetricsBatch;
     /// Alias for resetStats
     pub const clearStats = resetStats;
 };
@@ -1281,6 +1390,11 @@ pub const TelemetryStats = struct {
 
 /// Span represents a single unit of work in a trace
 pub const Span = struct {
+    pub const AttributeEntry = struct {
+        key: []const u8,
+        value: SpanAttribute,
+    };
+
     allocator: std.mem.Allocator,
     span_id: []const u8,
     trace_id: []const u8,
@@ -1326,6 +1440,20 @@ pub const Span = struct {
 
         const key_copy = try self.allocator.dupe(u8, key);
         try self.attributes.put(key_copy, value);
+    }
+
+    /// Adds multiple attributes in a single call.
+    ///
+    /// Returns number of attributes applied.
+    pub fn setAttributes(self: *Span, attrs: []const AttributeEntry) !usize {
+        if (self.span_id.len == 0) return 0;
+
+        var applied: usize = 0;
+        for (attrs) |entry| {
+            try self.setAttribute(entry.key, entry.value);
+            applied += 1;
+        }
+        return applied;
     }
 
     /// Adds an event to the span
@@ -2157,6 +2285,27 @@ test "Span attributes" {
     try std.testing.expect(span.has_attributes);
 }
 
+test "Span setAttributes batch helper" {
+    const allocator = std.testing.allocator;
+
+    const config = TelemetryConfig.development();
+    var telemetry = try Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    var span = try telemetry.startSpan("batch_attrs", .{});
+    defer span.deinit();
+
+    const attrs = [_]Span.AttributeEntry{
+        .{ .key = "http.method", .value = .{ .string = "GET" } },
+        .{ .key = "http.status_code", .value = .{ .integer = 200 } },
+        .{ .key = "cache.hit", .value = .{ .boolean = true } },
+    };
+
+    const applied = try span.setAttributes(attrs[0..]);
+    try std.testing.expectEqual(@as(usize, 3), applied);
+    try std.testing.expect(span.has_attributes);
+}
+
 test "Span events" {
     const allocator = std.testing.allocator;
 
@@ -2409,6 +2558,54 @@ test "Telemetry getResource and setResource" {
     const updated = telemetry.getResource();
     try std.testing.expectEqualStrings("updated-service", updated.service_name.?);
     try std.testing.expectEqualStrings("2.0.0", updated.service_version.?);
+}
+
+test "Telemetry sampling and context header helpers" {
+    const allocator = std.testing.allocator;
+
+    const config = TelemetryConfig.development();
+    var telemetry = try Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    telemetry.setSampling(.trace_id_ratio, 1.5);
+    const sampling = telemetry.getSampling();
+    try std.testing.expectEqual(TelemetryConfig.SamplingStrategy.trace_id_ratio, sampling.strategy);
+    try std.testing.expectEqual(@as(f64, 1.0), sampling.rate);
+
+    telemetry.setContextHeaders("x-trace-id", "x-baggage");
+    const headers = telemetry.getContextHeaders();
+    try std.testing.expectEqualStrings("x-trace-id", headers.trace_header);
+    try std.testing.expectEqualStrings("x-baggage", headers.baggage_header);
+
+    try std.testing.expect(!telemetry.hasPendingData());
+
+    var span = try telemetry.startSpan("pending_span", .{});
+    defer span.deinit();
+    span.end();
+    try telemetry.endSpan(&span);
+    try std.testing.expect(telemetry.hasPendingData());
+    try std.testing.expect(telemetry.pendingItemCount() >= 1);
+
+    try telemetry.flush();
+    try std.testing.expect(!telemetry.hasPendingData());
+}
+
+test "Telemetry metric batch helper" {
+    const allocator = std.testing.allocator;
+
+    const config = TelemetryConfig.development();
+    var telemetry = try Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    const metrics = [_]Telemetry.MetricInput{
+        .{ .name = "requests.total", .value = 10.0, .options = .{ .kind = .counter } },
+        .{ .name = "cpu.usage", .value = 55.0, .options = .{ .kind = .gauge, .unit = "%" } },
+        .{ .name = "latency.ms", .value = 12.5, .options = .{ .kind = .histogram, .unit = "ms" } },
+    };
+
+    const recorded = try telemetry.recordMetricsBatch(metrics[0..]);
+    try std.testing.expectEqual(@as(usize, 3), recorded);
+    try std.testing.expectEqual(@as(usize, 3), telemetry.getMetricCount());
 }
 
 test "Telemetry startSpanFromTraceparent" {

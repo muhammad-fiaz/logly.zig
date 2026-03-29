@@ -327,6 +327,41 @@ pub const Rotation = struct {
         self.max_age_seconds = seconds;
     }
 
+    /// Sets the time-based interval directly.
+    pub fn setInterval(self: *Rotation, interval: ?RotationInterval) void {
+        self.interval = interval;
+    }
+
+    /// Sets the interval from a string value.
+    ///
+    /// Returns true when parsing succeeds. Passing null disables interval rotation.
+    pub fn setIntervalFromString(self: *Rotation, interval_str: ?[]const u8) bool {
+        if (interval_str) |value| {
+            const parsed = RotationInterval.fromString(value) orelse return false;
+            self.interval = parsed;
+            return true;
+        }
+
+        self.interval = null;
+        return true;
+    }
+
+    /// Sets size-based rotation threshold in bytes.
+    pub fn setSizeLimit(self: *Rotation, size_limit: ?u64) void {
+        self.size_limit = size_limit;
+    }
+
+    /// Sets max number of retained rotated files.
+    pub fn setRetentionCount(self: *Rotation, retention_count: ?usize) void {
+        self.retention = retention_count;
+    }
+
+    /// Sets retention count and max age in a single call.
+    pub fn setRetentionPolicy(self: *Rotation, retention_count: ?usize, max_age_seconds: ?i64) void {
+        self.retention = retention_count;
+        self.max_age_seconds = max_age_seconds;
+    }
+
     pub fn withArchiveDir(self: *Rotation, dir: []const u8) !void {
         if (self.archive_dir) |d| self.allocator.free(d);
         self.archive_dir = try self.allocator.dupe(u8, dir);
@@ -442,6 +477,14 @@ pub const Rotation = struct {
         return if (remaining > 0) remaining else 0;
     }
 
+    /// Forces immediate rotation regardless of current interval/size checks.
+    pub fn forceRotate(self: *Rotation, file_ptr: *std.fs.File) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        try self.performRotation(file_ptr);
+    }
+
     /// Returns the next rotated path without mutating state.
     pub fn previewNextPath(self: *Rotation) ![]u8 {
         self.mutex.lock();
@@ -480,6 +523,21 @@ pub const Rotation = struct {
     /// Alias for withMaxAge
     pub const maxAge = withMaxAge;
     pub const setMaxAge = withMaxAge;
+
+    /// Alias for setInterval
+    pub const updateInterval = setInterval;
+
+    /// Alias for setIntervalFromString
+    pub const configureInterval = setIntervalFromString;
+
+    /// Alias for setSizeLimit
+    pub const updateSizeLimit = setSizeLimit;
+
+    /// Alias for setRetentionCount
+    pub const updateRetentionCount = setRetentionCount;
+
+    /// Alias for setRetentionPolicy
+    pub const configureRetention = setRetentionPolicy;
 
     /// Alias for withArchiveDir
     pub const archiveDir = withArchiveDir;
@@ -526,6 +584,10 @@ pub const Rotation = struct {
 
     /// Alias for nextRotationInSeconds
     pub const secondsUntilNextRotation = nextRotationInSeconds;
+
+    /// Alias for forceRotate
+    pub const rotateNow = forceRotate;
+    pub const force = forceRotate;
 
     /// Alias for previewNextPath
     pub const previewPath = previewNextPath;
@@ -1312,6 +1374,59 @@ test "rotation configuration methods" {
 
     rot.setCleanEmptyDirs(true);
     try std.testing.expect(rot.clean_empty_dirs);
+}
+
+test "rotation explicit control helpers" {
+    const allocator = std.testing.allocator;
+
+    var rot = try Rotation.init(allocator, "rotation_controls.log", "daily", 1024, 7);
+    defer rot.deinit();
+
+    rot.setInterval(.hourly);
+    try std.testing.expectEqual(Rotation.RotationInterval.hourly, rot.interval.?);
+
+    try std.testing.expect(rot.setIntervalFromString("weekly"));
+    try std.testing.expectEqual(Rotation.RotationInterval.weekly, rot.interval.?);
+
+    try std.testing.expect(rot.setIntervalFromString(null));
+    try std.testing.expect(rot.interval == null);
+    try std.testing.expect(!rot.setIntervalFromString("invalid-interval"));
+
+    rot.setSizeLimit(2048);
+    try std.testing.expectEqual(@as(?u64, 2048), rot.size_limit);
+
+    rot.setRetentionCount(12);
+    try std.testing.expectEqual(@as(?usize, 12), rot.retention);
+
+    rot.setRetentionPolicy(5, @as(i64, Constants.TimeConstants.seconds_per_day));
+    try std.testing.expectEqual(@as(?usize, 5), rot.retention);
+    try std.testing.expectEqual(@as(?i64, Constants.TimeConstants.seconds_per_day), rot.max_age_seconds);
+}
+
+test "rotation force rotate helper" {
+    const allocator = std.testing.allocator;
+
+    const file_name = try std.fmt.allocPrint(allocator, "rotation_force_{d}.log", .{Utils.currentMillis()});
+    defer allocator.free(file_name);
+    defer std.fs.cwd().deleteFile(file_name) catch {};
+
+    const rotated_name = try std.fmt.allocPrint(allocator, "{s}.1", .{file_name});
+    defer allocator.free(rotated_name);
+    defer std.fs.cwd().deleteFile(rotated_name) catch {};
+
+    var file = try std.fs.cwd().createFile(file_name, .{ .read = true, .truncate = true });
+    defer file.close();
+    try file.writeAll("force rotation content");
+
+    var rot = try Rotation.init(allocator, file_name, null, null, 3);
+    defer rot.deinit();
+    rot.withNaming(.index);
+
+    try rot.forceRotate(&file);
+
+    try std.fs.cwd().access(file_name, .{});
+    try std.fs.cwd().access(rotated_name, .{});
+    try std.testing.expect(rot.getStats().rotationCount() >= 1);
 }
 
 test "rotation sink creation" {

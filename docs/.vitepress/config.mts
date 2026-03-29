@@ -5,7 +5,7 @@ import llmstxt from "vitepress-plugin-llms";
 export const SITE_URL = "https://muhammad-fiaz.github.io/logly.zig";
 export const SITE_NAME = "Logly.zig";
 export const SITE_DESCRIPTION =
-  "High-performance structured logging library for Zig with async I/O, file rotation, JSON output, ANSI colors, and enterprise features like redaction, metrics, and distributed tracing.";
+  "High-performance structured logging library for Zig with async I/O, explicit rotation/thread-pool/scheduler controls, JSON output, ANSI colors, and enterprise features like redaction, metrics, and distributed tracing.";
 
 // Google Analytics and Google Tag Manager IDs
 export const GA_ID = "G-6BVYCRK57P";
@@ -16,7 +16,7 @@ export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
 
 // SEO Keywords
 export const KEYWORDS =
-  "zig, logging, logger, structured logging, async logging, json logging, file rotation, log rotation, thread pool, scheduler, rules engine, diagnostics rules, metrics, tracing, redaction, filtering, sampling, compression, zstd compression, gzip, network logging, zig library, production logging, enterprise logging";
+  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, rules engine, diagnostics rules, metrics, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
 
 export default defineConfig({
   lang: "en-US",

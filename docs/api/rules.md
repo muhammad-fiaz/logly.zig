@@ -48,8 +48,12 @@ The Rules module provides a powerful compiler-style diagnostic system for log me
 | `addOrUpdate()` | `upsert()` | Add or update rule |
 | `wouldMatchAny()` | `hasMatch()` | Non-mutating match preflight |
 | `matchingRuleIds()` | `previewRuleIds()` | Non-mutating matching rule ID preview |
+| `matchingRuleCount()` | `previewRuleCount()`, `matchCount()` | Count matching rules without allocation |
+| `firstMatchingRuleId()` | `previewFirstRuleId()`, `firstMatchId()` | First matching rule ID preview |
 | `matchingRuleIdsWithAllocator()` | `previewRuleIdsWithAllocator()` | Matching ID preview with allocator |
 | `sortByPriority()` | `sortRules()` | Sort rules by priority (desc) then ID |
+| `setRulePriority()` | `updatePriority()` | Update priority for a specific rule |
+| `removeDisabledRules()` | `pruneDisabled()`, `removeInactive()` | Remove all disabled rules |
 | `hasRule()` | `containsRule()` | Check if has rule |
 | `getById()` | `getRule()` | Get rule by ID |
 | `clear()` | `clearAll()` | Clear all rules |
@@ -311,9 +315,34 @@ Returns IDs of rules that would match this record.
 - Non-mutating: does not fire `once` rules.
 - Caller owns returned memory.
 
+#### `matchingRuleCount(record: *const Record) usize`
+
+Returns number of rules that would match this record.
+
+- Non-mutating: does not fire `once` rules.
+- Allocation-free fast preflight helper.
+
+#### `firstMatchingRuleId(record: *const Record) ?u32`
+
+Returns first matching rule ID for this record.
+
+- Non-mutating: does not fire `once` rules.
+- Returns `null` when no rule would match.
+
 #### `matchingRuleIdsWithAllocator(record: *const Record, scratch_allocator: ?std.mem.Allocator) ?[]u32`
 
 Same as `matchingRuleIds(...)`, with explicit allocator control for the returned slice.
+
+#### `setRulePriority(id: u32, priority: u8) bool`
+
+Updates rule priority for the rule with provided ID.
+
+- Returns `true` when the rule was found and updated.
+- If severity sorting is enabled, ordering is refreshed automatically.
+
+#### `removeDisabledRules() usize`
+
+Removes all disabled rules and returns number of removed rules.
 
 **Example:**
 ```zig
@@ -333,8 +362,12 @@ const messages = rules.evaluateWithAllocator(record, logger.scratchAllocator());
 | `setAllEnabled(enabled)` | Bulk enable/disable all rules |
 | `enabledRuleCount()` | Count enabled rules |
 | `disabledRuleCount()` | Count disabled rules |
+| `matchingRuleCount(record)` | Count matching rules (non-mutating) |
+| `firstMatchingRuleId(record)` | First matching rule ID (non-mutating) |
 | `getById(id)` | Get rule pointer by ID |
 | `sortByPriority()` | Sort by priority (desc), then rule ID |
+| `setRulePriority(id, priority)` | Update rule priority by ID |
+| `removeDisabledRules()` | Remove disabled rules |
 | `clear()` | Remove all rules |
 | `count()` | Get rule count |
 
@@ -673,8 +706,12 @@ For convenience, several aliases are provided:
 | `disabledRuleCount()` | `disabledCount()` |
 | `wouldMatchAny()` | `hasMatch()` |
 | `matchingRuleIds()` | `previewRuleIds()` |
+| `matchingRuleCount()` | `previewRuleCount()`, `matchCount()` |
+| `firstMatchingRuleId()` | `previewFirstRuleId()`, `firstMatchId()` |
 | `matchingRuleIdsWithAllocator()` | `previewRuleIdsWithAllocator()` |
 | `sortByPriority()` | `sortRules()` |
+| `setRulePriority()` | `updatePriority()` |
+| `removeDisabledRules()` | `pruneDisabled()`, `removeInactive()` |
 
 ## Advanced Usage
 

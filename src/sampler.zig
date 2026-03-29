@@ -254,10 +254,10 @@ pub const Sampler = struct {
         return self.shouldSampleWithReason().accepted;
     }
 
-    fn clampRate(probability: f64) f64 {
-        if (probability < 0.0) return 0.0;
-        if (probability > 1.0) return 1.0;
-        return probability;
+    fn clampRate(input_rate: f64) f64 {
+        if (input_rate < 0.0) return 0.0;
+        if (input_rate > 1.0) return 1.0;
+        return input_rate;
     }
 
     fn evaluateSampleDecisionLocked(
@@ -411,6 +411,53 @@ pub const Sampler = struct {
         self.resetStateForStrategy();
     }
 
+    /// Sets probability strategy using clamped probability [0.0, 1.0].
+    pub fn setProbability(self: *Sampler, probability_value: f64) void {
+        self.setStrategy(.{ .probability = clampRate(probability_value) });
+    }
+
+    /// Sets rate-limit strategy.
+    ///
+    /// Zero values are normalized to safe defaults.
+    pub fn setRateLimit(self: *Sampler, max_records: u32, window_ms: u64) void {
+        self.setStrategy(.{ .rate_limit = .{
+            .max_records = if (max_records == 0) 1 else max_records,
+            .window_ms = if (window_ms == 0) Constants.SamplingDefaults.rate_limit_window_ms else window_ms,
+        } });
+    }
+
+    /// Sets every-N strategy.
+    pub fn setEveryN(self: *Sampler, n: u32) void {
+        self.setStrategy(.{ .every_n = n });
+    }
+
+    /// Sets adaptive strategy and normalizes bounds.
+    pub fn setAdaptive(self: *Sampler, config: AdaptiveConfig) void {
+        const min_rate = clampRate(config.min_sample_rate);
+        const max_rate = clampRate(config.max_sample_rate);
+        const bounded_min = @min(min_rate, max_rate);
+        const bounded_max = @max(min_rate, max_rate);
+
+        self.setStrategy(.{ .adaptive = .{
+            .target_rate = if (config.target_rate == 0) 1 else config.target_rate,
+            .adjustment_interval_ms = if (config.adjustment_interval_ms == 0)
+                Constants.SamplingDefaults.adaptive_adjustment_interval_ms
+            else
+                config.adjustment_interval_ms,
+            .min_sample_rate = bounded_min,
+            .max_sample_rate = bounded_max,
+        } });
+
+        self.mutex.lock();
+        self.state.current_rate = bounded_max;
+        self.mutex.unlock();
+    }
+
+    /// Disables filtering and allows all records through.
+    pub fn disableSampling(self: *Sampler) void {
+        self.setStrategy(.none);
+    }
+
     /// Returns remaining quota in current rate-limit window, if applicable.
     pub fn remainingWindowQuota(self: *Sampler) ?u32 {
         self.mutex.lock();
@@ -554,6 +601,24 @@ pub const Sampler = struct {
 
     /// Alias for setStrategy
     pub const configure = setStrategy;
+
+    /// Alias for setProbability
+    pub const probability = setProbability;
+    pub const setProb = setProbability;
+
+    /// Alias for setRateLimit
+    pub const rateLimit = setRateLimit;
+    pub const configureRateLimit = setRateLimit;
+
+    /// Alias for setEveryN
+    pub const everyN = setEveryN;
+
+    /// Alias for setAdaptive
+    pub const adaptive = setAdaptive;
+
+    /// Alias for disableSampling
+    pub const disable = disableSampling;
+    pub const off = disableSampling;
 
     /// Alias for remainingWindowQuota
     pub const quotaLeft = remainingWindowQuota;
@@ -785,5 +850,39 @@ test "sampler set strategy runtime" {
     // First two are rejected, third accepted for every_n=3.
     try std.testing.expect(!sampler.shouldSample());
     try std.testing.expect(!sampler.shouldSample());
+    try std.testing.expect(sampler.shouldSample());
+}
+
+test "sampler explicit strategy control helpers" {
+    var sampler = Sampler.init(std.testing.allocator, .none);
+    defer sampler.deinit();
+
+    sampler.setProbability(1.5);
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "probability"));
+    try std.testing.expectEqual(@as(f64, 1.0), sampler.getCurrentRate());
+
+    sampler.setRateLimit(2, 0);
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "rate_limit"));
+    try std.testing.expectEqual(@as(?u32, 2), sampler.remainingWindowQuota());
+    _ = sampler.shouldSample();
+    _ = sampler.shouldSample();
+    try std.testing.expectEqual(@as(?u32, 0), sampler.remainingWindowQuota());
+
+    sampler.setEveryN(2);
+    try std.testing.expect(!sampler.shouldSample());
+    try std.testing.expect(sampler.shouldSample());
+
+    sampler.setAdaptive(.{
+        .target_rate = 0,
+        .adjustment_interval_ms = 0,
+        .min_sample_rate = 0.8,
+        .max_sample_rate = 0.2,
+    });
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "adaptive"));
+    const adaptive_rate = sampler.getCurrentRate();
+    try std.testing.expect(adaptive_rate >= 0.2 and adaptive_rate <= 0.8);
+
+    sampler.disableSampling();
+    try std.testing.expect(!sampler.isEnabled());
     try std.testing.expect(sampler.shouldSample());
 }

@@ -27,13 +27,17 @@ The thread pool module provides parallel log processing capabilities with work s
 | `shutdown()` | `stop()`, `halt()` | Stop worker threads |
 | `submit()` | `push()`, `enqueue()`, `add()` | Submit task to pool |
 | `submitFn()` | `run()` | Submit function task |
+| `submitBatchWithRetry()` | `submitBatchRetry()` | Batch submit with retry budget |
 | `waitAll()` | `await()`, `join()` | Wait for all tasks |
 | `waitAllTimeout()` | `waitForAll()` | Wait for completion with timeout |
 | `pendingTasks()` | `queueDepth()`, `size()` | Get pending task count |
+| `pendingTasksByQueue()` | `queueBreakdown()` | Get global/local queue depth snapshot |
 | `queueCapacity()` | `totalQueueCapacity()` | Get total queue capacity |
 | `availableQueueCapacity()` | `freeQueueCapacity()`, `availableCapacity()` | Get free queue capacity |
+| `canAcceptTasks()` | `hasCapacityFor()` | Check if queue can accept N tasks |
 | `queueUtilization()` | `queueLoad()` | Get queue utilization |
 | `isSaturated()` | `saturated()` | Check if queue load is above threshold |
+| `waitUntilQueueBelow()` | `waitForQueueBelow()` | Wait until pending queue <= threshold |
 | `activeThreads()` | `workerCount()` | Get active thread count |
 | `clear()` | `discard()`, `flush()` | Clear pending tasks |
 | `getStats()` | `statistics()` | Get pool statistics |
@@ -352,6 +356,14 @@ Submits multiple tasks at once. Returns the number of successfully submitted tas
 pub fn submitBatch(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority) usize
 ```
 
+### submitBatchWithRetry
+
+Submits tasks with bounded retries for transient queue pressure.
+
+```zig
+pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, max_attempts: u8, retry_delay_us: u32) usize
+```
+
 ### trySubmit
 
 Attempts to submit without blocking. Returns true if successful.
@@ -384,6 +396,16 @@ Wait for all submitted tasks until timeout.
 pub fn waitAllTimeout(self: *ThreadPool, timeout_ms: u64) bool
 ```
 
+### waitUntilQueueBelow
+
+Wait until pending queue depth is below or equal to a threshold.
+
+```zig
+pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeout_ms: u64) bool
+```
+
+Returns `true` when queue depth reaches threshold before timeout.
+
 ### queueCapacity
 
 Get total queue capacity across global and worker-local queues.
@@ -392,12 +414,33 @@ Get total queue capacity across global and worker-local queues.
 pub fn queueCapacity(self: *const ThreadPool) usize
 ```
 
+### pendingTasksByQueue
+
+Returns queue depth split by global and worker-local queues.
+
+```zig
+pub fn pendingTasksByQueue(self: *ThreadPool) QueueDepth
+```
+
+`QueueDepth` fields:
+- `global`: tasks in global queue
+- `local`: total tasks across all worker local queues
+- `total`: `global + local`
+
 ### availableQueueCapacity
 
 Get currently available queue slots.
 
 ```zig
 pub fn availableQueueCapacity(self: *ThreadPool) usize
+```
+
+### canAcceptTasks
+
+Checks whether the pool has enough free queue slots for `required_slots`.
+
+```zig
+pub fn canAcceptTasks(self: *ThreadPool, required_slots: usize) bool
 ```
 
 ### queueUtilization

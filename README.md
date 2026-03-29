@@ -259,6 +259,16 @@ Why this matters:
 - Expanded logger/sink regression coverage for distributed trace helpers, sink error behavior, and manual flush semantics.
 - Expanded regression coverage for new sampler/scheduler/rules helpers and evaluation-control paths.
 - Added deterministic heavy-concurrency stress tests for rules and thread pool behavior.
+- Added redactor expansion: batch pattern registration/removal, field-rule removal, message-level redaction preview APIs, and matched-pattern counting helpers.
+- Added rules expansion: matching rule count/first-match ID preview helpers, per-rule priority updates, and disabled-rule pruning helpers.
+- Improved formatter reuse/efficiency with standalone timestamp formatting APIs and consolidated JSON timestamp rendering logic.
+- Expanded explicit operational controls across core runtime modules:
+    - Rotation: direct interval/size/retention policy setters plus forced rotation API (`forceRotate(...)`).
+    - Sampler: direct strategy setters (`setProbability`, `setRateLimit`, `setEveryN`, `setAdaptive`) and quick disable helper.
+    - Thread pool: retry-aware batch submit (`submitBatchWithRetry(...)`), queue breakdown snapshots, and threshold wait API (`waitUntilQueueBelow(...)`).
+    - Scheduler: name-based task controls and immutable task snapshots for safer runtime orchestration.
+    - Telemetry: runtime sampling/header controls, pending-state helpers, metric batch recording, and span batch-attribute helper.
+- Added regression coverage for all newly added explicit-control APIs in rotation, sampler, thread pool, scheduler, and telemetry modules.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 

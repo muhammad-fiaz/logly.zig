@@ -56,6 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Sampler: added structured sampling decisions (`shouldSampleWithReason(...)`), runtime strategy switching (`setStrategy(...)`), and rate-limit introspection (`remainingWindowQuota(...)`, `windowResetInMs(...)`).
   - Scheduler: added task introspection/count helpers, schedule update helpers (`setTaskSchedule(...)`, `rescheduleNow(...)`), and richer tick callback readiness reporting.
   - Rules: added bulk enable/disable and name-based removal helpers, non-mutating match preview APIs (`wouldMatchAny(...)`, `matchingRuleIds(...)`), priority sorting helper (`sortByPriority(...)`), and `max_messages_per_rule` enforcement during evaluation.
+- **Additional Redactor, Rules, and Formatter Enhancements**:
+  - Redactor: added batch pattern registration (`addPatterns(...)`), field and pattern removal helpers (`removeField(...)`, `removePatternByName(...)`), message-level preview APIs (`previewRedaction(...)`, `previewRedactionWithAllocator(...)`), and matching pattern count helper (`matchingPatternCount(...)`).
+  - Rules: added non-mutating match count and first-match preview helpers (`matchingRuleCount(...)`, `firstMatchingRuleId(...)`), per-rule priority update API (`setRulePriority(...)`), and disabled-rule pruning helper (`removeDisabledRules(...)`).
+  - Formatter: added timestamp-only formatting APIs (`formatTimestamp(...)`, `formatTimestampWithAllocator(...)`) and centralized JSON timestamp value rendering for consistent numeric/text timestamp handling.
+- **Rotation, Sampler, Thread Pool, Scheduler, and Telemetry Explicit Controls**:
+  - Rotation: added direct control helpers for interval/size/retention (`setInterval(...)`, `setIntervalFromString(...)`, `setSizeLimit(...)`, `setRetentionCount(...)`, `setRetentionPolicy(...)`) and manual trigger API (`forceRotate(...)`).
+  - Sampler: added direct runtime strategy setters (`setProbability(...)`, `setRateLimit(...)`, `setEveryN(...)`, `setAdaptive(...)`) plus fast disable helper (`disableSampling(...)`).
+  - Thread Pool: added retry-aware batch submission (`submitBatchWithRetry(...)`), queue breakdown snapshot (`pendingTasksByQueue(...)`), capacity check (`canAcceptTasks(...)`), and threshold wait (`waitUntilQueueBelow(...)`).
+  - Scheduler: added immutable task snapshots (`getTaskSnapshot(...)`, `getTaskSnapshotByName(...)`) and name-based controls (`setTaskEnabledByName(...)`, `removeTaskByName(...)`, `nextRunInMsByName(...)`, `runNowByName(...)`).
+  - Telemetry: added runtime sampling/header controls (`setSampling(...)`, `setContextHeaders(...)`), pending-state helpers, metric batch recording (`recordMetricsBatch(...)`), and span batch attribute setter (`Span.setAttributes(...)`).
 
 ### Fixed
 
@@ -93,6 +103,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added regression tests for scheduler introspection and schedule tick callback readiness totals.
 - Added regression tests for rules bulk enable/disable counts, non-mutating match previews, priority sorting, and max message cap enforcement.
 - Added deterministic heavy-concurrency stress tests for rules and thread pool behavior under multi-thread contention.
+- Added regression tests for redactor batch pattern management/removal and non-mutating message preview behavior.
+- Added regression tests for rules match-count/first-match helpers, priority updates, and disabled-rule pruning.
+- Added formatter regression tests for standalone timestamp helper APIs.
+- Added regression tests for explicit rotation control setters and forced-rotation behavior.
+- Added regression tests for sampler direct strategy control helpers.
+- Added regression tests for thread pool retry-batch submission and queue-threshold waiting helpers.
+- Added regression tests for scheduler name-based controls and immutable task snapshots.
+- Added regression tests for telemetry sampling/header controls, metric batch recording, pending-state helpers, and span batch attributes.
 
 ## [0.1.6]
 

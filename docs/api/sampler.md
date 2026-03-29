@@ -34,6 +34,11 @@ The `Sampler` struct controls log throughput by selectively processing records.
 | `totalRejected()` | `rejected_()` | Get total rejected count |
 | `shouldSample()` | `sample()`, `check()`, `allow()` | Check if record should be sampled |
 | `setStrategy()` | `configure()` | Update strategy at runtime |
+| `setProbability()` | `probability()`, `setProb()` | Set probability strategy with clamping |
+| `setRateLimit()` | `rateLimit()`, `configureRateLimit()` | Set rate-limit strategy |
+| `setEveryN()` | `everyN()` | Set deterministic every-N strategy |
+| `setAdaptive()` | `adaptive()` | Set adaptive strategy with normalized bounds |
+| `disableSampling()` | `disable()`, `off()` | Disable filtering (allow all records) |
 | `remainingWindowQuota()` | `quotaLeft()` | Remaining rate-limit tokens in current window |
 | `windowResetInMs()` | `resetInMs()` | Milliseconds until window reset |
 | `acceptRate()` | `acceptanceRate()` | Convenience accept rate from stats |
@@ -165,6 +170,39 @@ Evaluates sampling and returns structured decision details including reject reas
 Updates sampler strategy at runtime and resets strategy-specific counters.
 
 **Alias**: `configure`
+
+#### `setProbability(probability_value: f64) void`
+
+Sets probability sampling strategy and clamps value into `[0.0, 1.0]`.
+
+**Alias**: `probability`, `setProb`
+
+#### `setRateLimit(max_records: u32, window_ms: u64) void`
+
+Sets rate-limit strategy with safe normalization:
+
+- `max_records == 0` becomes `1`
+- `window_ms == 0` uses centralized default window
+
+**Alias**: `rateLimit`, `configureRateLimit`
+
+#### `setEveryN(n: u32) void`
+
+Sets deterministic every-N sampling strategy.
+
+**Alias**: `everyN`
+
+#### `setAdaptive(config: AdaptiveConfig) void`
+
+Sets adaptive strategy and normalizes min/max sampling bounds.
+
+**Alias**: `adaptive`
+
+#### `disableSampling() void`
+
+Disables filtering strategy (`.none`) so all records are accepted.
+
+**Alias**: `disable`, `off`
 
 #### `remainingWindowQuota() ?u32`
 

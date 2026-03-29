@@ -24,7 +24,12 @@ The `Redactor` struct handles the masking of sensitive data in log messages and 
 | `addPattern()` | `addRule()` | Add redaction pattern |
 | `addField()` | `field()`, `sensitiveField()` | Add sensitive field |
 | `addFields()` | `addFieldsBatch()`, `addSensitiveFields()` | Add multiple sensitive fields |
+| `addPatterns()` | `addPatternBatch()`, `addRules()` | Add multiple redaction patterns |
+| `removeField()` | `deleteField()`, `removeSensitiveField()` | Remove field rule |
+| `removePatternByName()` | `removePattern()`, `deletePattern()` | Remove patterns by name |
 | `redact()` | `mask()`, `sanitize()`, `process()` | Redact text |
+| `previewRedaction()` | `previewMessage()`, `preview()` | Preview full-message redaction without stats mutation |
+| `previewRedactionWithAllocator()` | `previewMessageWithAllocator()` | Preview redaction with allocator |
 | `redactField()` | `maskField()` | Redact field |
 | `previewFieldRedaction()` | `previewField()` | Preview field redaction without stats mutation |
 | `redactWithAllocator()` | `maskWithAllocator()`, `sanitizeWithAllocator()` | Redact with allocator |
@@ -43,6 +48,7 @@ The `Redactor` struct handles the masking of sensitive data in log messages and 
 | `getFieldRedaction()` | `getFieldRule()` | Get field redaction |
 | `hasFieldRule()` | `hasRuleForField()` | Check whether a field has a rule |
 | `wouldRedact()` | `shouldRedact()`, `needsRedaction()` | Check whether a message matches configured patterns |
+| `matchingPatternCount()` | `matchingPatterns()`, `matchedPatternCount()` | Count matched patterns for a message |
 | `apply()` | `redact()`, `mask()` | Apply pattern (RedactionPattern) |
 | `getTotalProcessed()` | `totalProcessed()`, `processedCount()` | Get total processed (RedactorStats) |
 | `getValuesRedacted()` | `valuesRedacted()`, `redactedCount()` | Get values redacted (RedactorStats) |
@@ -282,6 +288,27 @@ Adds multiple field-based redaction rules and returns the number of fields added
 
 **Alias**: `addFieldsBatch`, `addSensitiveFields`
 
+#### `addPatterns(patterns: []const RedactionPattern) !usize`
+
+Adds multiple pattern-based redaction rules and returns the number of patterns added.
+
+**Alias**: `addPatternBatch`, `addRules`
+
+#### `removeField(field_name: []const u8) bool`
+
+Removes a field redaction rule by name.
+
+- Honors case-insensitive matching when enabled in config.
+- Returns `true` when a rule was removed.
+
+**Alias**: `deleteField`, `removeSensitiveField`
+
+#### `removePatternByName(name: []const u8) usize`
+
+Removes all pattern rules with the provided name and returns number of removed rules.
+
+**Alias**: `removePattern`, `deletePattern`
+
 #### `clearPatterns() void`
 
 Removes all pattern rules.
@@ -311,6 +338,18 @@ Applies redaction using an optional scratch allocator. If provided, temporary al
 const result = try redactor.redactWithAllocator(message, logger.scratchAllocator());
 ```
 
+#### `previewRedaction(value: []const u8) ![]u8`
+
+Previews how full-message pattern redaction would look without mutating stats or callbacks.
+
+**Alias**: `previewMessage`, `preview`
+
+#### `previewRedactionWithAllocator(value: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Allocator-aware variant of `previewRedaction(...)`.
+
+**Alias**: `previewMessageWithAllocator`
+
 #### `redactField(field_name: []const u8, value: []const u8) ![]u8`
 
 Redacts a field value based on field rules with config settings.
@@ -328,6 +367,12 @@ Returns how a field value would be redacted without incrementing runtime counter
 Returns true when at least one configured pattern would match and redact the provided value.
 
 **Alias**: `shouldRedact`, `needsRedaction`
+
+#### `matchingPatternCount(value: []const u8) usize`
+
+Returns count of configured pattern rules that match this value.
+
+**Alias**: `matchingPatterns`, `matchedPatternCount`
 
 ### Configuration
 

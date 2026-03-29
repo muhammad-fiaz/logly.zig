@@ -645,6 +645,23 @@ pub const Formatter = struct {
         return if (@hasField(@TypeOf(config), "log_format")) config.log_format != null else false;
     }
 
+    /// Formats a timestamp string using the provided configuration.
+    ///
+    /// This reuses the same timestamp logic as plain-text and JSON record formatting.
+    pub fn formatTimestamp(self: *Formatter, timestamp_ms: i64, config: anytype) ![]u8 {
+        return self.formatTimestampWithAllocator(timestamp_ms, config, null);
+    }
+
+    /// Formats a timestamp string using an optional scratch allocator.
+    pub fn formatTimestampWithAllocator(self: *Formatter, timestamp_ms: i64, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        const alloc = scratch_allocator orelse self.allocator;
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(alloc);
+
+        try self.writeTimestamp(buf.writer(alloc), timestamp_ms, config);
+        return buf.toOwnedSlice(alloc);
+    }
+
     /// Formats a log record directly to a writer.
     ///
     /// This avoids intermediate allocations when writing directly to a sink.
@@ -876,6 +893,17 @@ pub const Formatter = struct {
         return isUnixSecondsFormat(time_format) or isUnixMillisFormat(time_format);
     }
 
+    fn writeNumericTimestamp(writer: anytype, timestamp_ms: i64, time_format: []const u8) !void {
+        if (isUnixSecondsFormat(time_format)) {
+            const unix_seconds = @divFloor(timestamp_ms, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+            try Utils.writeInt(writer, unix_seconds);
+            return;
+        }
+
+        // unix_ms
+        try Utils.writeInt(writer, timestamp_ms);
+    }
+
     /// Writes a timestamp according to configured format and timezone.
     ///
     /// Supports predefined formats (`ISO8601`, `RFC3339`, `unix`, `unix_ms`) and
@@ -886,13 +914,8 @@ pub const Formatter = struct {
         const time_format = normalizedTimeFormat(config.time_format);
 
         // Handle special time formats
-        if (isUnixSecondsFormat(time_format)) {
-            const unix_seconds = @divFloor(timestamp_ms, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
-            try Utils.writeInt(writer, unix_seconds);
-            return;
-        }
-        if (isUnixMillisFormat(time_format)) {
-            try Utils.writeInt(writer, timestamp_ms);
+        if (isNumericTimestampFormat(time_format)) {
+            try writeNumericTimestamp(writer, timestamp_ms, time_format);
             return;
         }
 
@@ -940,6 +963,19 @@ pub const Formatter = struct {
         // ss = 2-digit second
         // Custom format parsing via shared utility
         try Utils.formatDatePatternWithOffset(writer, time_format, tc.year, tc.month, tc.day, tc.hour, tc.minute, tc.second, millis, utc_offset_minutes);
+    }
+
+    /// Writes timestamp field value for JSON output.
+    /// Numeric formats stay numeric; all others are quoted strings.
+    fn writeJsonTimestampValue(self: *Formatter, writer: anytype, timestamp_ms: i64, config: anytype) !void {
+        const time_format = normalizedTimeFormat(config.time_format);
+        if (isNumericTimestampFormat(time_format)) {
+            try writeNumericTimestamp(writer, timestamp_ms, time_format);
+        } else {
+            try writer.writeAll("\"");
+            try self.writeTimestamp(writer, timestamp_ms, config);
+            try writer.writeAll("\"");
+        }
     }
 
     /// Formats a log record as JSON string.
@@ -1019,19 +1055,7 @@ pub const Formatter = struct {
         try writer.writeAll(indent);
         try writer.writeAll("\"timestamp\"");
         try writer.writeAll(sep);
-        const time_format = normalizedTimeFormat(config.time_format);
-        if (isNumericTimestampFormat(time_format)) {
-            if (isUnixSecondsFormat(time_format)) {
-                const unix_seconds = @divFloor(record.timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
-                try Utils.writeInt(writer, unix_seconds);
-            } else {
-                try Utils.writeInt(writer, record.timestamp);
-            }
-        } else {
-            try writer.writeAll("\"");
-            try self.writeTimestamp(writer, record.timestamp, config);
-            try writer.writeAll("\"");
-        }
+        try self.writeJsonTimestampValue(writer, record.timestamp, config);
 
         // Level (use custom name if available)
         try writer.writeAll(comma);
@@ -1367,6 +1391,14 @@ pub const Formatter = struct {
     pub const renderWithAllocator = formatWithAllocator;
     pub const outputWithAllocator = formatWithAllocator;
 
+    /// Alias for formatTimestamp
+    pub const timestamp = formatTimestamp;
+    pub const formatTime = formatTimestamp;
+
+    /// Alias for formatTimestampWithAllocator
+    pub const timestampWithAllocator = formatTimestampWithAllocator;
+    pub const formatTimeWithAllocator = formatTimestampWithAllocator;
+
     /// Alias for formatJsonWithAllocator
     pub const jsonWithAllocator = formatJsonWithAllocator;
     pub const toJsonWithAllocator = formatJsonWithAllocator;
@@ -1640,6 +1672,30 @@ test "formatter custom pattern supports timezone tokens" {
 
     try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_colon) != null);
     try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_compact) != null);
+}
+
+test "formatter timestamp helper formats numeric and textual values" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var unix_cfg = Config{};
+    unix_cfg.timezone = .utc;
+    unix_cfg.time_format = Config.TimeFormat.unix_ms;
+
+    const unix_text = try formatter.formatTimestamp(1700000000123, unix_cfg);
+    defer allocator.free(unix_text);
+    try std.testing.expectEqualStrings("1700000000123", unix_text);
+
+    var textual_cfg = Config{};
+    textual_cfg.timezone = .utc;
+    textual_cfg.time_format = Config.TimeFormat.default_alias;
+
+    const textual = try formatter.formatTimestampWithAllocator(1700000000123, textual_cfg, allocator);
+    defer allocator.free(textual);
+
+    try std.testing.expect(textual.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, textual, "default") == null);
 }
 
 test "formatter plain text" {

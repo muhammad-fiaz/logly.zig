@@ -433,6 +433,13 @@ pub const ThreadPool = struct {
         arena: ?std.heap.ArenaAllocator = null,
     };
 
+    /// Queue depth snapshot split by global and local queues.
+    pub const QueueDepth = struct {
+        global: usize,
+        local: usize,
+        total: usize,
+    };
+
     /// Initializes a new ThreadPool.
     ///
     /// Arguments:
@@ -624,6 +631,33 @@ pub const ThreadPool = struct {
         return submitted;
     }
 
+    /// Batch submit with bounded retries for transient queue pressure.
+    ///
+    /// Returns number of tasks eventually submitted.
+    pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, max_attempts: u8, retry_delay_us: u32) usize {
+        if (!self.running.load(.acquire)) return 0;
+        if (tasks.len == 0) return 0;
+
+        const attempts_limit: u8 = if (max_attempts == 0) 1 else max_attempts;
+        var submitted: usize = 0;
+
+        for (tasks) |task| {
+            var attempts: u8 = 0;
+            while (attempts < attempts_limit) : (attempts += 1) {
+                if (self.submit(task, priority)) {
+                    submitted += 1;
+                    break;
+                }
+
+                if (attempts + 1 < attempts_limit and retry_delay_us > 0) {
+                    std.Thread.sleep(@as(u64, retry_delay_us) * Constants.TimeConstants.ns_per_us);
+                }
+            }
+        }
+
+        return submitted;
+    }
+
     /// Try to submit without blocking (fast path for non-contended cases).
     pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool {
         if (!self.running.load(.acquire)) return false;
@@ -741,11 +775,23 @@ pub const ThreadPool = struct {
 
     /// Gets the number of pending tasks.
     pub fn pendingTasks(self: *ThreadPool) usize {
-        var total = self.work_queue.size();
+        return self.pendingTasksByQueue().total;
+    }
+
+    /// Gets a queue depth snapshot split by global and local queues.
+    pub fn pendingTasksByQueue(self: *ThreadPool) QueueDepth {
+        const global_count = self.work_queue.size();
+        var local_count: usize = 0;
+
         for (self.workers) |*worker| {
-            total += worker.local_queue.size();
+            local_count += worker.local_queue.size();
         }
-        return total;
+
+        return .{
+            .global = global_count,
+            .local = local_count,
+            .total = global_count + local_count,
+        };
     }
 
     /// Gets total queue capacity across global and per-worker queues.
@@ -758,6 +804,12 @@ pub const ThreadPool = struct {
         const capacity = self.queueCapacity();
         const pending = self.pendingTasks();
         return if (capacity > pending) capacity - pending else 0;
+    }
+
+    /// Returns true when queue has at least `required_slots` free entries.
+    pub fn canAcceptTasks(self: *ThreadPool, required_slots: usize) bool {
+        if (required_slots == 0) return true;
+        return self.availableQueueCapacity() >= required_slots;
     }
 
     /// Gets queue utilization ratio in [0.0, 1.0].
@@ -819,6 +871,24 @@ pub const ThreadPool = struct {
         }
     }
 
+    /// Waits until pending queue depth is below or equal to threshold.
+    ///
+    /// Returns true when threshold was reached before timeout.
+    pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeout_ms: u64) bool {
+        const started_at_ms = Utils.currentMillis();
+
+        while (true) {
+            if (self.pendingTasks() <= threshold) return true;
+
+            if (timeout_ms == 0) return false;
+
+            const elapsed = Utils.currentMillis() - started_at_ms;
+            if (elapsed >= @as(i64, @intCast(timeout_ms))) return false;
+
+            std.Thread.sleep(1 * Constants.TimeConstants.ns_per_ms);
+        }
+    }
+
     /// Alias for waitAll() - waits for all tasks to complete.
     pub const await = waitAll;
     pub const join = waitAll;
@@ -827,6 +897,9 @@ pub const ThreadPool = struct {
     pub const push = submit;
     pub const enqueue = submit;
 
+    /// Alias for submitBatchWithRetry
+    pub const submitBatchRetry = submitBatchWithRetry;
+
     /// Alias for submitFn() - submit a function.
     pub const run = submitFn;
 
@@ -834,12 +907,18 @@ pub const ThreadPool = struct {
     pub const queueDepth = pendingTasks;
     pub const size = pendingTasks;
 
+    /// Alias for pendingTasksByQueue
+    pub const queueBreakdown = pendingTasksByQueue;
+
     /// Alias for queueCapacity
     pub const totalQueueCapacity = queueCapacity;
 
     /// Alias for availableQueueCapacity
     pub const freeQueueCapacity = availableQueueCapacity;
     pub const availableCapacity = availableQueueCapacity;
+
+    /// Alias for canAcceptTasks
+    pub const hasCapacityFor = canAcceptTasks;
 
     /// Alias for queueUtilization
     pub const queueLoad = queueUtilization;
@@ -849,6 +928,9 @@ pub const ThreadPool = struct {
 
     /// Alias for waitAllTimeout
     pub const waitForAll = waitAllTimeout;
+
+    /// Alias for waitUntilQueueBelow
+    pub const waitForQueueBelow = waitUntilQueueBelow;
 
     /// Alias for activeThreads() - get worker count.
     pub const workerCount = activeThreads;
@@ -1557,6 +1639,58 @@ test "thread pool wait all timeout" {
 
     gate.unlock();
     try std.testing.expect(pool.waitAllTimeout(2_000));
+}
+
+test "thread pool queue breakdown and capacity helpers" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 2,
+        .queue_size = 8,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    const breakdown = pool.pendingTasksByQueue();
+    try std.testing.expectEqual(@as(usize, 0), breakdown.global);
+    try std.testing.expectEqual(@as(usize, 0), breakdown.local);
+    try std.testing.expectEqual(@as(usize, 0), breakdown.total);
+
+    try std.testing.expect(pool.canAcceptTasks(1));
+    try std.testing.expect(pool.canAcceptTasks(pool.queueCapacity()));
+    try std.testing.expect(!pool.canAcceptTasks(pool.queueCapacity() + 1));
+}
+
+test "thread pool batch retry and queue threshold wait" {
+    const allocator = std.testing.allocator;
+
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .thread_count = 2,
+        .queue_size = 8,
+    });
+    defer pool.deinit();
+
+    try pool.start();
+
+    const NoopTask = struct {
+        fn run(_: ?std.mem.Allocator) void {}
+    };
+
+    var tasks: [24]ThreadPool.Task = undefined;
+    for (&tasks) |*task| {
+        task.* = .{ .function = .{ .func = NoopTask.run } };
+    }
+
+    const submitted = pool.submitBatchWithRetry(&tasks, .normal, 64, 100);
+    try std.testing.expect(submitted > 0);
+    try std.testing.expect(submitted <= tasks.len);
+    try std.testing.expect(pool.waitUntilQueueBelow(0, 5_000));
+    try std.testing.expect(pool.waitAllTimeout(5_000));
+
+    const stats = pool.getStats();
+    try std.testing.expectEqual(@as(u64, @intCast(submitted)), stats.getSubmitted());
+    try std.testing.expectEqual(@as(u64, @intCast(submitted)), stats.getCompleted());
 }
 
 test "thread pool heavy concurrency stress loop" {

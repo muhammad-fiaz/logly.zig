@@ -12,6 +12,11 @@ The `Rotation` module provides enterprise-grade log rotation capabilities, inclu
 | `withNaming()` | `setNaming()` | Set naming strategy |
 | `withNamingFormat()` | `namingFormat()`, `setNamingFormat()` | Set naming format |
 | `withMaxAge()` | `maxAge()`, `setMaxAge()` | Set max age |
+| `setInterval()` | `updateInterval()` | Set rotation interval directly |
+| `setIntervalFromString()` | `configureInterval()` | Set interval from string or disable |
+| `setSizeLimit()` | `updateSizeLimit()` | Set size limit directly |
+| `setRetentionCount()` | `updateRetentionCount()` | Set retention count directly |
+| `setRetentionPolicy()` | `configureRetention()` | Set retention count + max age |
 | `withArchiveDir()` | `archiveDir()`, `setArchiveDir()` | Set archive directory |
 | `setCleanEmptyDirs()` | `cleanEmptyDirs()` | Set clean empty dirs |
 | `withKeepOriginal()` | `keepOriginal()`, `setKeepOriginal()` | Set keep original |
@@ -24,6 +29,7 @@ The `Rotation` module provides enterprise-grade log rotation capabilities, inclu
 | `shouldRotate()` | `shouldRotateNow()` | Check if conditions currently require rotation |
 | `nextRotationInSeconds()` | `secondsUntilNextRotation()` | Get remaining interval seconds |
 | `previewNextPath()` | `previewPath()`, `nextPath()` | Preview next rotated file path |
+| `forceRotate()` | `rotateNow()`, `force()` | Force rotation immediately |
 | `checkAndRotate()` | `rotateIfNeeded()`, `maybeRotate()` | Check and rotate if needed |
 | `createRotatingSink()` | `rotatingSink()` | Create rotating sink |
 | `createSizeRotatingSink()` | `sizeSink()` | Create size rotating sink |
@@ -114,6 +120,48 @@ pub fn withMaxAge(self: *Rotation, seconds: i64) void
 rot.withMaxAge(86400 * 7); // 7 days
 ```
 
+#### `setInterval`
+
+Sets interval rotation trigger directly.
+
+```zig
+pub fn setInterval(self: *Rotation, interval: ?RotationInterval) void
+```
+
+#### `setIntervalFromString`
+
+Sets interval from string (`"daily"`, `"hourly"`, etc.) or disables interval when passed `null`.
+
+```zig
+pub fn setIntervalFromString(self: *Rotation, interval_str: ?[]const u8) bool
+```
+
+Returns `true` when update succeeds.
+
+#### `setSizeLimit`
+
+Sets size-based rotation threshold in bytes.
+
+```zig
+pub fn setSizeLimit(self: *Rotation, size_limit: ?u64) void
+```
+
+#### `setRetentionCount`
+
+Sets retention count directly.
+
+```zig
+pub fn setRetentionCount(self: *Rotation, retention_count: ?usize) void
+```
+
+#### `setRetentionPolicy`
+
+Sets retention count and max age in one call.
+
+```zig
+pub fn setRetentionPolicy(self: *Rotation, retention_count: ?usize, max_age_seconds: ?i64) void
+```
+
 #### `withArchiveDir`
 Sets a specific directory to move rotated files into.
 
@@ -191,6 +239,10 @@ Returns remaining seconds until next interval rotation, or `null` if interval ro
 #### `previewNextPath(self: *Rotation) ![]u8`
 
 Returns the next rotated path without mutating internal state.
+
+#### `forceRotate(self: *Rotation, file_ptr: *std.fs.File) !void`
+
+Forces an immediate rotation regardless of interval or size checks.
 
 ## Configuration Structs
 
