@@ -100,7 +100,7 @@ pub const ThreadPool = struct {
         /// Optimized for sustained high volume workloads.
         pub fn highThroughput() ThreadPoolConfig {
             return .{
-                .thread_count = 0, // Auto-detect
+                .thread_count = Constants.ThreadDefaults.thread_count, // Auto-detect
                 .queue_size = Constants.ThreadDefaults.max_tasks,
                 .work_stealing = true,
                 .stack_size = 2 * Constants.ThreadDefaults.stack_size, // 2MB stack
@@ -1035,15 +1035,15 @@ pub const ParallelSinkWriter = struct {
     };
 
     pub const ParallelStats = struct {
-        writes_submitted: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        writes_completed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        writes_failed: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        retries: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-        bytes_written: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        writes_submitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        writes_completed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        writes_failed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        retries: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         pub fn successRate(self: *const ParallelStats) f64 {
-            const completed = @as(f64, @floatFromInt(self.writes_completed.load(.monotonic)));
-            const total = @as(f64, @floatFromInt(self.writes_submitted.load(.monotonic)));
+            const completed = @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.writes_completed)));
+            const total = @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.writes_submitted)));
             if (total == 0) return 1.0;
             return completed / total;
         }
@@ -1316,7 +1316,7 @@ pub const ThreadPoolPresets = struct {
     /// CPU-bound workload (one thread per core).
     pub fn cpuBound() ThreadPool.ThreadPoolConfig {
         return .{
-            .thread_count = 0, // Auto-detect
+            .thread_count = Constants.ThreadDefaults.thread_count, // Auto-detect
             .work_stealing = true,
         };
     }
@@ -1729,10 +1729,10 @@ test "thread pool heavy concurrency stress loop" {
     const total_tasks = producer_count * tasks_per_producer;
     const total_tasks_u64: u64 = @intCast(total_tasks);
 
-    var executed = std.atomic.Value(u64).init(0);
+    var executed = std.atomic.Value(Constants.AtomicUnsigned).init(0);
 
     const TaskCtx = struct {
-        counter: *std.atomic.Value(u64),
+        counter: *std.atomic.Value(Constants.AtomicUnsigned),
         spin_iterations: u32,
     };
 
@@ -1798,7 +1798,7 @@ test "thread pool heavy concurrency stress loop" {
 
     try std.testing.expect(pool.waitAllTimeout(20_000));
 
-    const executed_count = executed.load(.monotonic);
+    const executed_count = Utils.atomicLoadU64(&executed);
     try std.testing.expectEqual(total_tasks_u64, executed_count);
 
     const stats = pool.getStats();

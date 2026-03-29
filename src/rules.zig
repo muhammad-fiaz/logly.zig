@@ -1821,8 +1821,8 @@ test "rules config advanced fields" {
     try std.testing.expectEqual(false, default_config.show_rule_id);
     try std.testing.expectEqual(false, default_config.include_rule_id_prefix);
     try std.testing.expectEqual(true, default_config.include_in_json);
-    try std.testing.expectEqual(@as(usize, 1000), default_config.max_rules);
-    try std.testing.expectEqual(@as(usize, 10), default_config.max_messages_per_rule);
+    try std.testing.expectEqual(Constants.RulesConstants.default_max_rules, default_config.max_rules);
+    try std.testing.expectEqual(Constants.RulesConstants.default_max_messages, default_config.max_messages_per_rule);
     try std.testing.expectEqual(true, default_config.console_output);
     try std.testing.expectEqual(true, default_config.file_output);
     try std.testing.expectEqual(false, default_config.verbose);
@@ -2227,14 +2227,14 @@ test "rules concurrent stress loop" {
     const worker_iterations = 3_000;
     const control_iterations = 1_200;
 
-    var match_hits = std.atomic.Value(u64).init(0);
-    var eval_hits = std.atomic.Value(u64).init(0);
+    var match_hits = std.atomic.Value(Constants.AtomicUnsigned).init(0);
+    var eval_hits = std.atomic.Value(Constants.AtomicUnsigned).init(0);
 
     const WorkerCtx = struct {
         rules: *Rules,
         iterations: usize,
-        match_hits: *std.atomic.Value(u64),
-        eval_hits: *std.atomic.Value(u64),
+        match_hits: *std.atomic.Value(Constants.AtomicUnsigned),
+        eval_hits: *std.atomic.Value(Constants.AtomicUnsigned),
     };
 
     const Worker = struct {
@@ -2327,8 +2327,8 @@ test "rules concurrent stress loop" {
 
     const stats = rules.getStats();
     try std.testing.expect(stats.getRulesEvaluated() > 0);
-    try std.testing.expect(match_hits.load(.monotonic) > 0);
-    try std.testing.expect(eval_hits.load(.monotonic) > 0);
+    try std.testing.expect(Utils.atomicLoadU64(&match_hits) > 0);
+    try std.testing.expect(Utils.atomicLoadU64(&eval_hits) > 0);
 
     const total_rules = rules.count();
     const enabled_rules = rules.enabledRuleCount();

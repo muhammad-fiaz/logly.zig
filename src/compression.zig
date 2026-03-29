@@ -1049,9 +1049,9 @@ pub const Compression = struct {
 
         if (data.len == 0) return;
 
-        const min_match: usize = 4; // LZ4 minimum match length
-        const max_offset: usize = 65535; // LZ4 max offset (16-bit)
-        const hash_bits: u5 = 16;
+        const min_match: usize = Constants.CompressionConstants.lz4_min_match;
+        const max_offset: usize = Constants.CompressionConstants.lz4_max_offset;
+        const hash_bits: u5 = Constants.CompressionConstants.lz4_hash_bits;
         const hash_size: usize = 1 << hash_bits;
 
         // Hash table for fast match finding
@@ -1231,7 +1231,7 @@ pub const Compression = struct {
             var best_offset: usize = 0;
             var search_pos = prev_pos;
             var chain_len: usize = 0;
-            const max_chain: usize = 32; // Limit chain search
+            const max_chain: usize = Constants.CompressionConstants.lzma_max_chain_search;
 
             while (search_pos > 0 and chain_len < max_chain) : (chain_len += 1) {
                 // Check if search_pos is valid relative to pos (must be < pos) and within max_offset window

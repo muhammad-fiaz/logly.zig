@@ -662,7 +662,7 @@ pub const SamplerPresets = struct {
     pub fn limit100PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .rate_limit = .{
             .max_records = 100,
-            .window_ms = 1000,
+            .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
         } });
     }
 
@@ -670,7 +670,7 @@ pub const SamplerPresets = struct {
     pub fn limit1000PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .rate_limit = .{
             .max_records = 1000,
-            .window_ms = 1000,
+            .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
         } });
     }
 
@@ -678,7 +678,7 @@ pub const SamplerPresets = struct {
     pub fn limit10PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .rate_limit = .{
             .max_records = 10,
-            .window_ms = 1000,
+            .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
         } });
     }
 

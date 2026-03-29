@@ -296,7 +296,7 @@ pub const Scheduler = struct {
                     // Find closest match within the next 30 days
                     const limit = now_ms + @as(i64, @intCast(30 * @as(u64, Constants.TimeConstants.seconds_per_day) * @as(u64, Constants.TimeConstants.ms_per_second)));
                     while (check_time < limit) : (check_time += @as(i64, @intCast(@as(u64, Constants.TimeConstants.seconds_per_minute) * @as(u64, Constants.TimeConstants.ms_per_second)))) {
-                        const sec = @divFloor(check_time, 1000);
+                        const sec = @divFloor(check_time, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
                         const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(sec) };
                         const day = epoch.getEpochDay();
                         const year_day = day.calculateYearDay();
@@ -1977,7 +1977,7 @@ test "scheduler basic" {
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    _ = try scheduler.addTask("test", .cleanup, .{ .interval = 60000 }, .{});
+    _ = try scheduler.addTask("test", .cleanup, .{ .interval = Constants.TimeConstants.rotation_check_interval_ms }, .{});
 
     try std.testing.expectEqual(@as(usize, 1), scheduler.tasks.items.len);
 }
@@ -1985,11 +1985,11 @@ test "scheduler basic" {
 test "schedule next run time" {
     const now = Utils.currentMillis();
 
-    const interval = Scheduler.Schedule{ .interval = 5000 };
+    const interval = Scheduler.Schedule{ .interval = Constants.SchedulerDefaults.retry_interval_ms };
     const next = interval.nextRunTime(now);
 
     try std.testing.expect(next > now);
-    try std.testing.expect(next <= now + 5000);
+    try std.testing.expect(next <= now + @as(i64, @intCast(Constants.SchedulerDefaults.retry_interval_ms)));
 }
 
 test "pattern matching" {
@@ -2066,7 +2066,7 @@ test "scheduler task introspection helpers" {
     defer scheduler.deinit();
 
     const idx_a = try scheduler.addTask("introspect-a", .custom, .{ .once = 0 }, .{});
-    const idx_b = try scheduler.addTask("introspect-b", .custom, .{ .interval = 60_000 }, .{});
+    const idx_b = try scheduler.addTask("introspect-b", .custom, .{ .interval = Constants.TimeConstants.rotation_check_interval_ms }, .{});
 
     try std.testing.expectEqual(@as(?usize, idx_a), scheduler.taskIndexByName("introspect-a"));
     try std.testing.expect(scheduler.hasTaskNamed("introspect-b"));
@@ -2088,7 +2088,7 @@ test "scheduler name based controls and snapshots" {
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    const idx = try scheduler.addTask("named-task", .custom, .{ .interval = 60_000 }, .{});
+    const idx = try scheduler.addTask("named-task", .custom, .{ .interval = Constants.TimeConstants.rotation_check_interval_ms }, .{});
     try std.testing.expectEqual(@as(usize, 0), idx);
 
     const snapshot = scheduler.getTaskSnapshot(idx);

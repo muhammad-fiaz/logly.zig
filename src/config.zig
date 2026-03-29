@@ -767,7 +767,7 @@ pub const Config = struct {
         /// Enable thread pool for parallel processing.
         enabled: bool = false,
         /// Number of worker threads (0 = auto-detect based on CPU cores).
-        thread_count: usize = 0,
+        thread_count: usize = Constants.ThreadDefaults.thread_count,
         /// Maximum queue size for pending tasks.
         queue_size: usize = Constants.ThreadDefaults.max_tasks,
         /// Stack size per thread in bytes.
@@ -856,7 +856,7 @@ pub const Config = struct {
         /// Enable the scheduler.
         enabled: bool = false,
         /// Default cleanup max age in days.
-        cleanup_max_age_days: u64 = 7,
+        cleanup_max_age_days: u64 = Constants.SchedulerDefaults.max_age_seconds / Constants.TimeConstants.seconds_per_day,
         /// Default max files to keep.
         max_files: ?usize = null,
         /// Enable compression before cleanup.
@@ -1718,10 +1718,10 @@ pub const Config = struct {
         rule_id_format: []const u8 = "R{d}",
 
         /// Indent string for rule messages.
-        indent: []const u8 = "    ",
+        indent: []const u8 = Constants.RulesConstants.default_indent,
 
         /// Message prefix character/string (deprecated, use symbols).
-        message_prefix: []const u8 = "↳",
+        message_prefix: []const u8 = Constants.RulesConstants.default_prefix,
 
         /// Custom symbols for message categories.
         symbols: RuleSymbols = .{},
@@ -1730,10 +1730,10 @@ pub const Config = struct {
         include_in_json: bool = true,
 
         /// Maximum number of rules allowed.
-        max_rules: usize = 1000,
+        max_rules: usize = Constants.RulesConstants.default_max_rules,
 
         /// Maximum messages per rule to display.
-        max_messages_per_rule: usize = 10,
+        max_messages_per_rule: usize = Constants.RulesConstants.default_max_messages,
 
         /// Display rule messages on console (respects global_console_display).
         console_output: bool = true,
@@ -1832,11 +1832,11 @@ pub const Config = struct {
         /// Batch size for flushing.
         batch_size: usize = Constants.AsyncConstants.batch_size,
         /// Flush interval in milliseconds.
-        flush_interval_ms: u64 = 100,
+        flush_interval_ms: u64 = Constants.TimeDefaults.retry_delay_ms,
         /// Minimum time between flushes to avoid thrashing.
         min_flush_interval_ms: u64 = 0,
         /// Maximum latency before forcing a flush.
-        max_latency_ms: u64 = 5000,
+        max_latency_ms: u64 = Constants.TimeDefaults.write_timeout_ms,
         /// What to do when buffer is full.
         overflow_policy: OverflowPolicy = .drop_oldest,
         /// Auto-start worker thread.
@@ -1937,24 +1937,24 @@ pub const Config = struct {
     pub fn highThroughput() Config {
         return .{
             .level = .warning,
-            .sampling = .{ .enabled = true, .strategy = .{ .adaptive = .{ .target_rate = 1000 } } },
-            .rate_limit = .{ .enabled = true, .max_per_second = 10000 },
+            .sampling = .{ .enabled = true, .strategy = .{ .adaptive = .{ .target_rate = Constants.ConfigPresetDefaults.high_throughput_sampling_target_rate } } },
+            .rate_limit = .{ .enabled = true, .max_per_second = Constants.ConfigPresetDefaults.high_throughput_rate_limit_per_second },
             .buffer_config = .{
-                .size = 65536,
-                .flush_interval_ms = 500,
-                .max_pending = 100000,
+                .size = Constants.ConfigPresetDefaults.high_throughput_buffer_size,
+                .flush_interval_ms = Constants.ConfigPresetDefaults.high_throughput_buffer_flush_interval_ms,
+                .max_pending = Constants.ConfigPresetDefaults.high_throughput_max_pending,
             },
             .thread_pool = .{
                 .enabled = true,
-                .thread_count = 0, // auto-detect
-                .queue_size = 50000,
+                .thread_count = Constants.ThreadDefaults.thread_count, // auto-detect
+                .queue_size = Constants.ConfigPresetDefaults.high_throughput_thread_pool_queue_size,
                 .work_stealing = true,
             },
             .async_config = .{
                 .enabled = true,
-                .buffer_size = 32768,
-                .batch_size = 256,
-                .flush_interval_ms = 50,
+                .buffer_size = Constants.ConfigPresetDefaults.high_throughput_async_buffer_size,
+                .batch_size = Constants.ConfigPresetDefaults.high_throughput_async_batch_size,
+                .flush_interval_ms = Constants.ConfigPresetDefaults.high_throughput_async_flush_interval_ms,
             },
             .rotation = .{
                 .enabled = true,
@@ -2455,8 +2455,8 @@ test "rules config default values" {
     try std.testing.expect(!rules_config.show_rule_id);
     try std.testing.expect(!rules_config.include_rule_id_prefix);
     try std.testing.expect(rules_config.include_in_json);
-    try std.testing.expectEqual(@as(usize, 1000), rules_config.max_rules);
-    try std.testing.expectEqual(@as(usize, 10), rules_config.max_messages_per_rule);
+    try std.testing.expectEqual(Constants.RulesConstants.default_max_rules, rules_config.max_rules);
+    try std.testing.expectEqual(Constants.RulesConstants.default_max_messages, rules_config.max_messages_per_rule);
     try std.testing.expect(rules_config.console_output);
     try std.testing.expect(rules_config.file_output);
     try std.testing.expect(!rules_config.verbose);

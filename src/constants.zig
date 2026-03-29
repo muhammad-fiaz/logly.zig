@@ -273,6 +273,52 @@ pub const TelemetryDefaults = struct {
     pub const baggage_header: []const u8 = "baggage";
 };
 
+/// Async preset tuning defaults.
+///
+/// Usage:
+///   Shared values used by async-related configuration presets.
+///
+/// Complexity: O(1)
+pub const AsyncPresetDefaults = struct {
+    /// High-throughput preset values.
+    pub const high_throughput_buffer_size: usize = 64 * 1024;
+    pub const high_throughput_flush_interval_ms: u64 = 500;
+    pub const high_throughput_min_flush_interval_ms: u64 = 50;
+    pub const high_throughput_max_latency_ms: u64 = 1000;
+    pub const high_throughput_batch_size: usize = TelemetryDefaults.batch_size;
+
+    /// Low-latency preset values.
+    pub const low_latency_buffer_size: usize = 1024;
+    pub const low_latency_flush_interval_ms: u64 = 10;
+    pub const low_latency_min_flush_interval_ms: u64 = 1;
+    pub const low_latency_max_latency_ms: u64 = 50;
+    pub const low_latency_batch_size: usize = 16;
+
+    /// Balanced / no-drop preset values.
+    pub const balanced_flush_interval_ms: u64 = 100;
+    pub const balanced_min_flush_interval_ms: u64 = 10;
+    pub const balanced_max_latency_ms: u64 = 500;
+};
+
+/// Logger config preset tuning defaults.
+///
+/// Usage:
+///   Shared values used by top-level `Config` presets.
+///
+/// Complexity: O(1)
+pub const ConfigPresetDefaults = struct {
+    /// High-throughput preset values.
+    pub const high_throughput_sampling_target_rate: u32 = 1000;
+    pub const high_throughput_rate_limit_per_second: u32 = 10000;
+    pub const high_throughput_buffer_size: usize = AsyncPresetDefaults.high_throughput_buffer_size;
+    pub const high_throughput_buffer_flush_interval_ms: u64 = AsyncPresetDefaults.high_throughput_flush_interval_ms;
+    pub const high_throughput_max_pending: usize = Limits.max_pending_records * 2;
+    pub const high_throughput_thread_pool_queue_size: usize = Limits.max_pending_records;
+    pub const high_throughput_async_buffer_size: usize = BufferSizes.compression;
+    pub const high_throughput_async_batch_size: usize = AsyncPresetDefaults.high_throughput_batch_size;
+    pub const high_throughput_async_flush_interval_ms: u64 = AsyncPresetDefaults.high_throughput_min_flush_interval_ms;
+};
+
 test "telemetry defaults exist" {
     // Ensure central telemetry defaults are present and correct
     try std.testing.expectEqual(@as(usize, TelemetryDefaults.batch_size), @as(usize, 256));
@@ -922,6 +968,15 @@ pub const CompressionConstants = struct {
     /// LZMA2 chunk size (32KB).
     pub const lzma2_chunk_size: usize = 32768;
 
+    /// LZ4 minimum match length.
+    pub const lz4_min_match: usize = 4;
+    /// LZ4 maximum back-reference offset (16-bit).
+    pub const lz4_max_offset: usize = 65535;
+    /// LZ4 hash table bit width.
+    pub const lz4_hash_bits: u5 = 16;
+    /// Maximum chain depth for LZMA match search.
+    pub const lzma_max_chain_search: usize = 32;
+
     /// Magic bytes for various formats
     pub const Magic = struct {
         pub const lzma = "\x5D\x00\x00\x80\x00"; // Typical start, but varied
@@ -1317,6 +1372,15 @@ test "time default flush is consistent" {
 
 test "compression gzip extension reused" {
     try std.testing.expectEqualStrings(CompressionConstants.ArchivingExtensions.gzip, RotationConstants.compressed_ext);
+}
+
+test "preset defaults are reasonable" {
+    try std.testing.expect(AsyncPresetDefaults.high_throughput_buffer_size > 0);
+    try std.testing.expect(AsyncPresetDefaults.low_latency_buffer_size > 0);
+    try std.testing.expect(AsyncPresetDefaults.high_throughput_batch_size > 0);
+    try std.testing.expect(ConfigPresetDefaults.high_throughput_buffer_size > 0);
+    try std.testing.expect(ConfigPresetDefaults.high_throughput_thread_pool_queue_size > 0);
+    try std.testing.expect(ConfigPresetDefaults.high_throughput_max_pending > ConfigPresetDefaults.high_throughput_thread_pool_queue_size);
 }
 
 /// System diagnostics constants.

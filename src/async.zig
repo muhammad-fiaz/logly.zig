@@ -1035,11 +1035,11 @@ pub const AsyncPresets = struct {
     /// High-throughput configuration for maximum performance.
     pub fn highThroughput() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = 65536,
-            .flush_interval_ms = 500,
-            .min_flush_interval_ms = 50,
-            .max_latency_ms = 1000,
-            .batch_size = 256,
+            .buffer_size = Constants.AsyncPresetDefaults.high_throughput_buffer_size,
+            .flush_interval_ms = Constants.AsyncPresetDefaults.high_throughput_flush_interval_ms,
+            .min_flush_interval_ms = Constants.AsyncPresetDefaults.high_throughput_min_flush_interval_ms,
+            .max_latency_ms = Constants.AsyncPresetDefaults.high_throughput_max_latency_ms,
+            .batch_size = Constants.AsyncPresetDefaults.high_throughput_batch_size,
             .overflow_policy = .drop_oldest,
             .background_worker = true,
         };
@@ -1048,11 +1048,11 @@ pub const AsyncPresets = struct {
     /// Low-latency configuration for responsive logging.
     pub fn lowLatency() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = 1024,
-            .flush_interval_ms = 10,
-            .min_flush_interval_ms = 1,
-            .max_latency_ms = 50,
-            .batch_size = 16,
+            .buffer_size = Constants.AsyncPresetDefaults.low_latency_buffer_size,
+            .flush_interval_ms = Constants.AsyncPresetDefaults.low_latency_flush_interval_ms,
+            .min_flush_interval_ms = Constants.AsyncPresetDefaults.low_latency_min_flush_interval_ms,
+            .max_latency_ms = Constants.AsyncPresetDefaults.low_latency_max_latency_ms,
+            .batch_size = Constants.AsyncPresetDefaults.low_latency_batch_size,
             .overflow_policy = .block,
             .background_worker = true,
         };
@@ -1062,10 +1062,10 @@ pub const AsyncPresets = struct {
     pub fn balanced() AsyncLogger.AsyncConfig {
         return .{
             .buffer_size = Constants.BufferSizes.async_queue,
-            .flush_interval_ms = 100,
-            .min_flush_interval_ms = 10,
-            .max_latency_ms = 500,
-            .batch_size = 64,
+            .flush_interval_ms = Constants.AsyncPresetDefaults.balanced_flush_interval_ms,
+            .min_flush_interval_ms = Constants.AsyncPresetDefaults.balanced_min_flush_interval_ms,
+            .max_latency_ms = Constants.AsyncPresetDefaults.balanced_max_latency_ms,
+            .batch_size = Constants.AsyncConstants.batch_size,
             .overflow_policy = .drop_oldest,
             .background_worker = true,
         };
@@ -1075,10 +1075,10 @@ pub const AsyncPresets = struct {
     pub fn noDrop() AsyncLogger.AsyncConfig {
         return .{
             .buffer_size = Constants.BufferSizes.async_queue * 2,
-            .flush_interval_ms = 100,
-            .min_flush_interval_ms = 10,
-            .max_latency_ms = 500,
-            .batch_size = 64,
+            .flush_interval_ms = Constants.AsyncPresetDefaults.balanced_flush_interval_ms,
+            .min_flush_interval_ms = Constants.AsyncPresetDefaults.balanced_min_flush_interval_ms,
+            .max_latency_ms = Constants.AsyncPresetDefaults.balanced_max_latency_ms,
+            .batch_size = Constants.AsyncConstants.batch_size,
             .overflow_policy = .block,
             .background_worker = true,
         };

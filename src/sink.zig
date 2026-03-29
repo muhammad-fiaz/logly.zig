@@ -1295,8 +1295,12 @@ pub const Sink = struct {
         const bytes_flushed = if (self.file != null) self.buffer.items.len else data_to_write.len;
         const end_ns = std.time.nanoTimestamp();
         const duration_ns: u64 = if (end_ns > start_ns) @as(u64, @intCast(end_ns - start_ns)) else 0;
+        const buffered_records_atomic: Constants.AtomicUnsigned = @intCast(@min(
+            buffered_records,
+            @as(u64, std.math.maxInt(Constants.AtomicUnsigned)),
+        ));
 
-        _ = self.stats.total_written.fetchAdd(buffered_records, .monotonic);
+        _ = self.stats.total_written.fetchAdd(buffered_records_atomic, .monotonic);
         _ = self.stats.bytes_written.fetchAdd(bytes_flushed, .monotonic);
         _ = self.stats.flush_count.fetchAdd(1, .monotonic);
 
