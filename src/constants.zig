@@ -14,7 +14,6 @@
 //! - Network Constants: Network I/O settings
 //! - Rules System: Diagnostic rules formatting
 
-const builtin = @import("builtin");
 const std = @import("std");
 
 // Internal buffer pool used by color formatting helpers (fg256/bg256/fgRgb/bgRgb).
@@ -24,52 +23,23 @@ var colorBufs: [8][32]u8 = undefined;
 
 /// Architecture-dependent unsigned atomic integer type.
 ///
-/// Provides the optimal atomic integer size for the target architecture.
-/// Use this type for all atomic counters to ensure compatibility across
-/// 32-bit and 64-bit targets (e.g., x86 vs x86_64).
+/// Derived from native pointer width, so it naturally supports both
+/// current and future 32-bit / 64-bit architectures.
 ///
 /// Fixes: https://github.com/muhammad-fiaz/logly.zig/issues/11
-pub const AtomicUnsigned = switch (builtin.target.cpu.arch) {
-    .x86_64 => u64,
-    .aarch64 => u64,
-    .riscv64 => u64,
-    .powerpc64 => u64,
-    .x86 => u32,
-    .arm => u32,
-    else => u32,
-};
+pub const AtomicUnsigned = std.meta.Int(.unsigned, @bitSizeOf(usize));
 
 /// Architecture-dependent signed atomic integer type.
 ///
-/// Provides the optimal atomic signed integer size for the target architecture.
-/// Use this type for atomic counters that may hold negative values.
-pub const AtomicSigned = switch (builtin.target.cpu.arch) {
-    .x86_64 => i64,
-    .aarch64 => i64,
-    .riscv64 => i64,
-    .powerpc64 => i64,
-    .x86 => i32,
-    .arm => i32,
-    else => i32,
-};
+/// Derived from native pointer width to keep signed counters aligned with
+/// platform word size across 32-bit and 64-bit targets.
+pub const AtomicSigned = std.meta.Int(.signed, @bitSizeOf(usize));
 
 /// Native pointer-sized unsigned integer for the target architecture.
-pub const NativeUint = switch (builtin.target.cpu.arch) {
-    .x86_64 => u64,
-    .aarch64 => u64,
-    .riscv64 => u64,
-    .powerpc64 => u64,
-    else => u32,
-};
+pub const NativeUint = usize;
 
 /// Native pointer-sized signed integer for the target architecture.
-pub const NativeInt = switch (builtin.target.cpu.arch) {
-    .x86_64 => i64,
-    .aarch64 => i64,
-    .riscv64 => i64,
-    .powerpc64 => i64,
-    else => i32,
-};
+pub const NativeInt = isize;
 
 /// Default buffer sizes for various operations.
 ///
@@ -379,6 +349,17 @@ pub const TimeConstants = struct {
     pub const seconds_per_week: u64 = seconds_per_day * 7;
     pub const seconds_per_month: u64 = seconds_per_day * 30; // 30-day month approximation
     pub const seconds_per_year: u64 = seconds_per_day * 365;
+
+    /// Minute-based helpers for timestamp and offset calculations.
+    pub const minutes_per_hour: u16 = @intCast(seconds_per_hour / seconds_per_minute);
+    pub const minutes_per_day: u16 = @intCast(seconds_per_day / seconds_per_minute);
+
+    /// Supported UTC offset bounds in minutes (derived from 24h clock constraints).
+    pub const max_utc_offset_minutes: i16 = @as(i16, @intCast(minutes_per_day - 1));
+    pub const min_utc_offset_minutes: i16 = -max_utc_offset_minutes;
+
+    /// Default human-readable timestamp pattern.
+    pub const default_time_pattern: []const u8 = "YYYY-MM-DD HH:mm:ss.SSS";
 
     /// Derived conversions for convenient, consistent unit conversions.
     /// - `us_per_ms`: microseconds per millisecond (1_000)
@@ -1123,6 +1104,14 @@ test "atomic types exist" {
     try std.testing.expect(@sizeOf(NativeInt) > 0);
 }
 
+test "atomic and native types match pointer width" {
+    const ptr_bits = @bitSizeOf(usize);
+    try std.testing.expectEqual(ptr_bits, @bitSizeOf(AtomicUnsigned));
+    try std.testing.expectEqual(ptr_bits, @bitSizeOf(AtomicSigned));
+    try std.testing.expectEqual(ptr_bits, @bitSizeOf(NativeUint));
+    try std.testing.expectEqual(ptr_bits, @bitSizeOf(NativeInt));
+}
+
 test "buffer sizes are reasonable" {
     try std.testing.expect(BufferSizes.message > 0);
     try std.testing.expect(BufferSizes.format >= BufferSizes.message);
@@ -1155,6 +1144,12 @@ test "time constants are correct" {
     try std.testing.expectEqual(@as(u64, 604800), TimeConstants.seconds_per_week);
     try std.testing.expectEqual(@as(u64, 2592000), TimeConstants.seconds_per_month);
     try std.testing.expectEqual(@as(u64, 31536000), TimeConstants.seconds_per_year);
+
+    try std.testing.expectEqual(@as(u16, 60), TimeConstants.minutes_per_hour);
+    try std.testing.expectEqual(@as(u16, 1440), TimeConstants.minutes_per_day);
+    try std.testing.expectEqual(@as(i16, 1439), TimeConstants.max_utc_offset_minutes);
+    try std.testing.expectEqual(@as(i16, -1439), TimeConstants.min_utc_offset_minutes);
+    try std.testing.expectEqualStrings("YYYY-MM-DD HH:mm:ss.SSS", TimeConstants.default_time_pattern);
 
     // Rotation check interval must be consistent with seconds_per_minute and ms_per_second
     try std.testing.expectEqual(TimeConstants.seconds_per_minute * TimeConstants.ms_per_second, TimeConstants.rotation_check_interval_ms);

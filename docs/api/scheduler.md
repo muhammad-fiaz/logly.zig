@@ -34,6 +34,14 @@ The scheduler module provides automatic log maintenance with scheduled cleanup, 
 | `addCustomTask()` | `custom()` | Add custom task |
 | `setTaskEnabled()` | `enable()` | Enable/disable task |
 | `removeTask()` | `remove()` | Remove task |
+| `taskIndexByName()` | `indexOfTask()` | Find task index by name |
+| `hasTaskNamed()` | `hasTask()` | Check task existence by name |
+| `enabledTaskCount()` | `enabledCount()` | Count enabled tasks |
+| `runningTaskCount()` | `runningCount()` | Count running tasks |
+| `readyTaskCount()` | `readyCount()` | Count tasks ready to run |
+| `nextRunInMs()` | `nextRunMs()` | Get ms until task next run |
+| `setTaskSchedule()` | `updateSchedule()` | Update task schedule |
+| `rescheduleNow()` | `runSoon()` | Force task runnable immediately |
 | `setTaskStartedCallback()` | `onStarted()` | Set task started callback |
 | `setTaskCompletedCallback()` | `onCompleted()` | Set task completed callback |
 | `setTaskErrorCallback()` | `onError()` | Set task error callback |
@@ -477,6 +485,70 @@ Set a dependency for a task (it will only run if the dependency is running).
 
 ```zig
 pub fn setTaskDependency(self: *Scheduler, index: usize, dependency_name: []const u8) !void
+```
+
+### taskIndexByName
+
+Find a task index by its name.
+
+```zig
+pub fn taskIndexByName(self: *Scheduler, name: []const u8) ?usize
+```
+
+### hasTaskNamed
+
+Check whether a task with this name exists.
+
+```zig
+pub fn hasTaskNamed(self: *Scheduler, name: []const u8) bool
+```
+
+### enabledTaskCount
+
+Get number of enabled tasks.
+
+```zig
+pub fn enabledTaskCount(self: *Scheduler) usize
+```
+
+### runningTaskCount
+
+Get number of tasks currently running.
+
+```zig
+pub fn runningTaskCount(self: *Scheduler) usize
+```
+
+### readyTaskCount
+
+Get number of tasks currently ready to run (time/dependency/resource checks passed).
+
+```zig
+pub fn readyTaskCount(self: *Scheduler) usize
+```
+
+### nextRunInMs
+
+Get remaining milliseconds until next run for a task index.
+
+```zig
+pub fn nextRunInMs(self: *Scheduler, index: usize) ?i64
+```
+
+### setTaskSchedule
+
+Update schedule for a task and recalculate next-run timestamp.
+
+```zig
+pub fn setTaskSchedule(self: *Scheduler, index: usize, schedule: Schedule) bool
+```
+
+### rescheduleNow
+
+Force a task to become runnable on next scheduler pass.
+
+```zig
+pub fn rescheduleNow(self: *Scheduler, index: usize) bool
 ```
 
 ### getDiskUsage

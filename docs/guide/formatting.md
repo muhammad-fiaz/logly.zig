@@ -219,6 +219,17 @@ config.time_format = "unix_ms";
 // Output: 1764830393091
 ```
 
+When `config.timezone = .local`, `ISO8601` and `RFC3339` include your local offset:
+
+```zig
+config.timezone = .local;
+config.time_format = "ISO8601";
+// Output example: 2025-12-04T07:39:53.091+01:00
+
+config.time_format = "RFC3339";
+// Output example: 2025-12-04T07:39:53+01:00
+```
+
 ### Custom Format Placeholders
 
 Create any format using these placeholders:
@@ -236,6 +247,8 @@ Create any format using these placeholders:
 | `mm` | 2-digit minute (00-59) | 30 |
 | `ss` | 2-digit second (00-59) | 45 |
 | `SSS` | 3-digit millisecond (000-999) | 091 |
+| `ZZZ` | Timezone offset (`+HH:MM`) | +01:00 |
+| `ZZ` | Timezone offset compact (`+HHMM`) | +0100 |
 
 Any other characters are output literally (-, /, ., :, space, T, etc.).
 
@@ -273,6 +286,13 @@ config.time_format = "MM/DD/YYYY hh:mm:ss";
 // Custom separator and order
 config.time_format = "DD/MM/YY - HH:mm";
 // Output: 04/12/25 - 06:39
+
+// Include timezone offsets in custom patterns
+config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+// Output (local): 2025-12-04 07:39:53 +01:00
+
+config.time_format = "YYYY-MM-DD HH:mm:ss ZZ";
+// Output (local): 2025-12-04 07:39:53 +0100
 ```
 
 ### Timezone Configuration
@@ -281,6 +301,10 @@ config.time_format = "DD/MM/YY - HH:mm";
 config.timezone = .utc;    // Use UTC time
 config.timezone = .local;  // Use local time (default)
 ```
+
+Timezone notes:
+- `.utc`: `ISO8601` ends with `Z`, `RFC3339` uses `+00:00`.
+- `.local`: uses the process/system local timezone (when available) and emits `+/-HH:MM` offsets for `ISO8601`/`RFC3339`.
 
 ## Formatted Logging
 

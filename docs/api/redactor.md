@@ -23,8 +23,10 @@ The `Redactor` struct handles the masking of sensitive data in log messages and 
 | `initWithConfig()` | `createWithConfig()` | Initialize with config |
 | `addPattern()` | `addRule()` | Add redaction pattern |
 | `addField()` | `field()`, `sensitiveField()` | Add sensitive field |
+| `addFields()` | `addFieldsBatch()`, `addSensitiveFields()` | Add multiple sensitive fields |
 | `redact()` | `mask()`, `sanitize()`, `process()` | Redact text |
 | `redactField()` | `maskField()` | Redact field |
+| `previewFieldRedaction()` | `previewField()` | Preview field redaction without stats mutation |
 | `redactWithAllocator()` | `maskWithAllocator()`, `sanitizeWithAllocator()` | Redact with allocator |
 | `getStats()` | `statistics()` | Get statistics |
 | `resetStats()` | `resetStatistics()` | Reset statistics |
@@ -39,6 +41,8 @@ The `Redactor` struct handles the masking of sensitive data in log messages and 
 | `setInitializedCallback()` | `onInitialized()` | Set initialized callback |
 | `setErrorCallback()` | `onError()` | Set error callback |
 | `getFieldRedaction()` | `getFieldRule()` | Get field redaction |
+| `hasFieldRule()` | `hasRuleForField()` | Check whether a field has a rule |
+| `wouldRedact()` | `shouldRedact()`, `needsRedaction()` | Check whether a message matches configured patterns |
 | `apply()` | `redact()`, `mask()` | Apply pattern (RedactionPattern) |
 | `getTotalProcessed()` | `totalProcessed()`, `processedCount()` | Get total processed (RedactorStats) |
 | `getValuesRedacted()` | `valuesRedacted()`, `redactedCount()` | Get values redacted (RedactorStats) |
@@ -272,6 +276,12 @@ Adds a field-based redaction rule (for structured logging context).
 
 **Alias**: `field`, `sensitiveField`
 
+#### `addFields(field_names: []const []const u8, redaction_type: RedactionType) !usize`
+
+Adds multiple field-based redaction rules and returns the number of fields added.
+
+**Alias**: `addFieldsBatch`, `addSensitiveFields`
+
 #### `clearPatterns() void`
 
 Removes all pattern rules.
@@ -307,6 +317,18 @@ Redacts a field value based on field rules with config settings.
 
 **Alias**: `maskField`
 
+#### `previewFieldRedaction(field_name: []const u8, value: []const u8) ![]u8`
+
+Returns how a field value would be redacted without incrementing runtime counters.
+
+**Alias**: `previewField`
+
+#### `wouldRedact(value: []const u8) bool`
+
+Returns true when at least one configured pattern would match and redact the provided value.
+
+**Alias**: `shouldRedact`, `needsRedaction`
+
 ### Configuration
 
 #### `getConfig() RedactionConfig`
@@ -340,6 +362,10 @@ Returns the number of pattern rules.
 #### `fieldCount() usize`
 
 Returns the number of field rules.
+
+#### `hasFieldRule(field_name: []const u8) bool`
+
+Returns true if a field rule exists (including case-insensitive matches when enabled).
 
 ### State
 

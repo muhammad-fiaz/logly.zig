@@ -18,10 +18,10 @@ pub fn main() !void {
     config.log_format = "{time} | {level} | {message}";
 
     // 2. Time Format Options:
-    //    - "YYYY-MM-DD HH:mm:ss" (default) - Human readable format
-    //    - "unix" - Unix timestamp in seconds
-    //    - "unix_ms" - Unix timestamp in milliseconds
-    config.time_format = "unix";
+    //    - Config.TimeFormat.default_pattern (default) - Human readable format with milliseconds
+    //    - Config.TimeFormat.unix - Unix timestamp in seconds
+    //    - Config.TimeFormat.unix_ms - Unix timestamp in milliseconds
+    config.time_format = logly.Config.TimeFormat.unix;
 
     // 3. Timezone (Local or UTC)
     config.timezone = .utc;
@@ -29,6 +29,12 @@ pub fn main() !void {
     // 4. Stack Trace Configuration
     config.capture_stack_trace = true;
     config.symbolize_stack_trace = true;
+
+    // 5. Optional logger arena scratch allocator for high-throughput temporary allocations
+    config.use_arena_allocator = true;
+    config.arena_reset_threshold = 64 * 1024;
+    // Equivalent builder style:
+    // config = config.withArenaAllocator();
 
     logger.configure(config);
 
@@ -38,7 +44,7 @@ pub fn main() !void {
 
     // Change format dynamically
     config.log_format = "[{level}] {message} (at {time})";
-    config.time_format = "YYYY-MM-DD HH:mm:ss"; // Switch back to human readable
+    config.time_format = logly.Config.TimeFormat.default_pattern; // Switch back to human readable
     logger.configure(config);
 
     try logger.success("Now the format has changed!", @src());

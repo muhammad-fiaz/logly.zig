@@ -28,7 +28,12 @@ The thread pool module provides parallel log processing capabilities with work s
 | `submit()` | `push()`, `enqueue()`, `add()` | Submit task to pool |
 | `submitFn()` | `run()` | Submit function task |
 | `waitAll()` | `await()`, `join()` | Wait for all tasks |
+| `waitAllTimeout()` | `waitForAll()` | Wait for completion with timeout |
 | `pendingTasks()` | `queueDepth()`, `size()` | Get pending task count |
+| `queueCapacity()` | `totalQueueCapacity()` | Get total queue capacity |
+| `availableQueueCapacity()` | `freeQueueCapacity()`, `availableCapacity()` | Get free queue capacity |
+| `queueUtilization()` | `queueLoad()` | Get queue utilization |
+| `isSaturated()` | `saturated()` | Check if queue load is above threshold |
 | `activeThreads()` | `workerCount()` | Get active thread count |
 | `clear()` | `discard()`, `flush()` | Clear pending tasks |
 | `getStats()` | `statistics()` | Get pool statistics |
@@ -369,6 +374,46 @@ Wait until all submitted tasks are completed.
 
 ```zig
 pub fn waitAll(self: *ThreadPool) void
+```
+
+### waitAllTimeout
+
+Wait for all submitted tasks until timeout.
+
+```zig
+pub fn waitAllTimeout(self: *ThreadPool, timeout_ms: u64) bool
+```
+
+### queueCapacity
+
+Get total queue capacity across global and worker-local queues.
+
+```zig
+pub fn queueCapacity(self: *const ThreadPool) usize
+```
+
+### availableQueueCapacity
+
+Get currently available queue slots.
+
+```zig
+pub fn availableQueueCapacity(self: *ThreadPool) usize
+```
+
+### queueUtilization
+
+Get queue load ratio in `[0.0, 1.0]`.
+
+```zig
+pub fn queueUtilization(self: *ThreadPool) f64
+```
+
+### isSaturated
+
+Returns true if queue utilization is above a threshold.
+
+```zig
+pub fn isSaturated(self: *ThreadPool, threshold: f64) bool
 ```
 
 ### getStats

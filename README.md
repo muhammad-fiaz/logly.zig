@@ -43,7 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-  - [Version 0.1.6](#version-016)
+  - [Version 0.1.7](#version-017)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended)](#method-1-zig-fetch-recommended)
   - [Method 2: Project Starter Template (Quick Start)](#method-2-project-starter-template-quick-start)
@@ -206,27 +206,59 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.6
+### Version 0.1.7
 
 **Added:**
 
-- Full compression algorithm support: LZMA, LZMA2, XZ, ZIP, TAR.GZ, LZ4.
-  - New archiving formats, factory methods, and helper `Utils.getCompressionExtension()`; centralized extensions via `Constants.CompressionConstants.ArchivingExtensions`.
-- Comprehensive compression tests for new algorithms and edge cases.
+- New custom `time_format` timezone placeholders:
+    - `ZZZ` -> `+HH:MM`
+    - `ZZ` -> `+HHMM`
+- New centralized `Config.TimeFormat` constants for production-safe reuse:
+    - `default_pattern`, `default_alias`, `iso8601`, `rfc3339`, `unix`, `unix_ms`
+- Extended time-format examples and documentation for timezone-aware custom patterns.
+- New distributed tracing helper APIs for W3C `traceparent` workflows:
+    - `logger.setTraceContextFromTraceparent(...)`
+    - `logger.withTraceparent(...)`
+    - `logger.getTraceparentHeader(...)`
+    - `DistributedLogger.child(...)` and `DistributedLogger.inModule(...)`
+- Sink reliability and observability improvements:
+    - Centralized sink `on_error` policy handling across write and flush paths.
+    - Retry-aware TCP reconnect behavior based on `Constants.TimeDefaults`.
+    - Accurate buffered flush accounting for `SinkStats` and sink callbacks.
+- New operational introspection and control APIs across core modules:
+    - Metrics: latency percentile helpers (`p50`/`p95`/`p99`), latency summary, sink error/flush totals, and last-record age.
+    - Async: queue capacity/utilization helpers and `waitUntilDrained(...)` for controlled shutdown/flush flows.
+    - Thread Pool: queue capacity/load helpers and `waitAllTimeout(...)` for bounded waits.
+    - Rotation: trigger reason introspection (`interval`/`size`/both), next-path preview, and next-rotation countdown.
+    - Redactor: batch field rule registration, field-rule existence checks, redaction preflight checks, and non-mutating field preview.
+    - Sampler: structured decision API (`shouldSampleWithReason(...)`), runtime strategy switching, and rate-limit quota/reset introspection.
+    - Scheduler: task introspection helpers (index/existence/counts), schedule updates (`setTaskSchedule(...)`), and forced rescheduling (`rescheduleNow(...)`).
+    - Rules: bulk rule toggles/removal by name, non-mutating match previews (`wouldMatchAny(...)`, `matchingRuleIds(...)`), and explicit priority sorting.
+
+Why this matters:
+- Custom patterns without offset tokens can produce ambiguous timestamps across regions.
+- `ZZZ` and `ZZ` ensure logs retain explicit timezone context for ingestion, correlation, and incident forensics.
+- `traceparent` helpers remove manual header parsing/formatting boilerplate in request handlers.
+- Buffered and manual flush workflows now produce deterministic sink stats and consistent failure behavior.
+- Operational guards are easier to implement with explicit queue/load/rotation reason APIs and timeout-based draining/waits.
+- Sampling, maintenance scheduling, and diagnostics guidance flows now support richer preflight checks and runtime controls without breaking existing APIs.
 
 **Fixed:**
 
-- Critical performance regression: changed `auto_flush` and `enable_callbacks` defaults to `false` and optimized context-copy hot paths to restore performance.
-- Telemetry: resolved a compile-time issue in the OTLP exporter (`writeOtlpSpan`) by removing an unnecessary discard of the `self` parameter so the telemetry exporter builds reliably across targets.
+- Timezone handling for formatted timestamps: `config.timezone = .local` now uses the process/system local timezone when available (issue [#29](https://github.com/muhammad-fiaz/logly.zig/issues/29)).
+- ISO8601 and RFC3339 output now emits timezone-aware suffixes (`Z` for UTC and `+/-HH:MM` for local time).
+- `unix` and `unix_ms` JSON timestamps are now consistently emitted as numeric values (not strings).
+- `time_format = "default"` now resolves to the canonical default pattern (`YYYY-MM-DD HH:mm:ss.SSS`) instead of being parsed as a literal custom pattern.
+- Sink write/flush failures now consistently honor configured `on_error` policy (`silent`, `log_stderr`, `disable_sink`, `propagate`).
+- Sink flush paths now reliably update records/bytes/flush counters for async and manual flush modes.
 
 **Changed:**
 
-- Performance-first defaults and centralized constants for consistent behavior across the library.
-
-**Refactored:**
-
-- Core architecture optimized for modularity and reuse (Utils, Redactor, Compression configurations).
-- Standardized API documentation and expanded utility functions (`maskString`, `replaceString`).
+- Version bumped from `0.1.6` to `0.1.7` across package metadata and docs.
+- Added regression tests for UTC/local timezone formatting paths.
+- Expanded logger/sink regression coverage for distributed trace helpers, sink error behavior, and manual flush semantics.
+- Expanded regression coverage for new sampler/scheduler/rules helpers and evaluation-control paths.
+- Added deterministic heavy-concurrency stress tests for rules and thread pool behavior.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -240,7 +272,7 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.6.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
 ```
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
@@ -289,7 +321,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.6.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -371,6 +403,59 @@ pub fn main() !void {
     try logger.fatal("Fatal system failure!", @src());        // White on Red (highest severity)
 }
 ```
+
+## Allocator Strategies (GPA + Arena)
+
+Logly works with any `std.mem.Allocator` implementation.
+
+Default behavior:
+
+- Logger allocation strategy is the allocator you pass to `Logger.init(...)` / `Logger.initWithConfig(...)`.
+- `Config.use_arena_allocator` defaults to `false`.
+- The recommended default in applications is `std.heap.GeneralPurposeAllocator`.
+
+Use `GeneralPurposeAllocator` as a production-safe default with leak tracking:
+
+```zig
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+defer _ = gpa.deinit();
+
+const logger = try logly.Logger.init(gpa.allocator());
+defer logger.deinit();
+```
+
+For high-throughput workloads with lots of temporary formatting allocations, enable arena-backed scratch allocation:
+
+```zig
+var config = logly.Config.production();
+config.use_arena_allocator = true;
+config.arena_reset_threshold = 128 * 1024; // reset scratch arena after ~128KB of temporary allocations
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+```
+
+Equivalent builder-style configuration:
+
+```zig
+var config = logly.Config.production().withArenaAllocator();
+config.arena_reset_threshold = 128 * 1024; // reset scratch arena after ~128KB of temporary allocations
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+// Optional manual reset hook for long-running loops
+logger.resetArena();
+```
+
+Field-vs-builder difference:
+
+- `config.use_arena_allocator = true` mutates your existing config variable.
+- `config = config.withArenaAllocator()` (or `withArenaAllocation()` / `withArena()`) returns a modified copy and requires reassignment.
+
+All examples in the `examples/` directory use `std.heap.GeneralPurposeAllocator` as the base allocator and then optionally enable logger arena scratch allocation per config.
+
+When arena allocation is enabled, Logly automatically performs threshold-based arena resets between records to keep memory usage bounded while preserving high throughput.
 
 ## Usage Examples
 
@@ -528,22 +613,42 @@ logger.configure(config);
 ### Distributed Tracing
 
 ```zig
-// Set trace context for request tracking
+// Legacy/global context (applies to all subsequent logs)
 try logger.setTraceContext("trace-abc123", "span-001");
 try logger.setCorrelationId("request-789");
-
 try logger.info("Processing request", @src());
 
-// Create child spans for nested operations
+// W3C traceparent -> request-scoped distributed logger
+const incoming_traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+var req_logger = try logger.withTraceparent(incoming_traceparent);
+req_logger = req_logger.inModule("http.request");
+try req_logger.info("Request accepted", @src());
+
+// Create child span context for nested operations
+const db_logger = req_logger.child("7a085853722dc6d2").inModule("database.query");
+try db_logger.debug("Executing query", @src());
+
+// Optional: update global context directly from traceparent
+try logger.setTraceContextFromTraceparent(incoming_traceparent);
+
+// Export global context for outbound propagation
+if (try logger.getTraceparentHeader(allocator)) |traceparent| {
+    defer allocator.free(traceparent);
+    // Inject header into HTTP/gRPC metadata: traceparent: {traceparent}
+}
+
+// Legacy span helper for nested operations
 {
     var span = try logger.startSpan("database-query");
     try logger.info("Executing query", @src());
     try span.end(null);
 }
 
-// Clear context
+// Clear global context
 logger.clearTraceContext();
 ```
+
+`withTraceparent(...)` and `setTraceContextFromTraceparent(...)` return `LoggerError.InvalidTraceparent` for malformed headers.
 
 ### OpenTelemetry Integration
 
@@ -1132,6 +1237,7 @@ zig build example-async_advanced
 zig build example-compression_demo
 zig build example-scheduler_demo
 zig build example-thread_pool_arena
+zig build example-allocator_strategies
 
 # Run an example
 ./zig-out/bin/basic

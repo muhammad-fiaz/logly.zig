@@ -19,7 +19,7 @@ pub fn main() !void {
     config.color = true; // Enable colors for JSON output
     config.include_hostname = true;
     config.include_pid = true;
-    config.time_format = "default"; // Use formatted time
+    config.time_format = logly.Config.TimeFormat.default_pattern;
 
     logger.configure(config);
 

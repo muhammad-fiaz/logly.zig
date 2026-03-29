@@ -57,12 +57,14 @@ pub const Config = struct {
     log_format: ?[]const u8 = null,
 
     /// Time format string - supports custom formats with any separators.
+    /// Prefer `Config.TimeFormat.*` constants in application code.
     ///
     /// Predefined formats:
     ///   - "ISO8601" - ISO 8601 format (2025-12-04T06:39:53.091Z)
     ///   - "RFC3339" - RFC 3339 format (2025-12-04T06:39:53+00:00)
     ///   - "unix" - Unix timestamp in seconds
     ///   - "unix_ms" - Unix timestamp in milliseconds
+    ///   - "default" - Alias for default pattern (YYYY-MM-DD HH:mm:ss.SSS)
     ///
     /// Custom format placeholders (any separator allowed: -, /, ., :, space, etc.):
     ///   - YYYY = 4-digit year (2025)
@@ -76,6 +78,8 @@ pub const Config = struct {
     ///   - mm = 2-digit minute (00-59)
     ///   - ss = 2-digit second (00-59)
     ///   - SSS = 3-digit millisecond (000-999)
+    ///   - ZZZ = timezone offset with colon (+05:30)
+    ///   - ZZ = compact timezone offset (+0530)
     ///
     /// Examples:
     ///   - "YYYY-MM-DD HH:mm:ss.SSS" (default)
@@ -85,7 +89,9 @@ pub const Config = struct {
     ///   - "YY.MM.DD"
     ///   - "HH:mm:ss"
     ///   - "HH:mm:ss.SSS"
-    time_format: []const u8 = "YYYY-MM-DD HH:mm:ss.SSS",
+    ///   - "YYYY-MM-DD HH:mm:ss ZZZ"
+    ///   - "YYYY-MM-DD HH:mm:ss ZZ"
+    time_format: []const u8 = Constants.TimeConstants.default_time_pattern,
 
     /// Timezone for timestamp formatting.
     timezone: Timezone = .local,
@@ -110,9 +116,6 @@ pub const Config = struct {
     /// If false, stack traces will not be collected or displayed.
     capture_stack_trace: bool = false,
 
-    /// Resolve memory addresses in stack traces to function names and file locations.
-    /// Requires `capture_stack_trace` to be true (or implicit capture for Error/Critical).
-    /// This provides human-readable stack traces but has a performance cost.
     /// Resolve memory addresses in stack traces to function names and file locations.
     /// Requires `capture_stack_trace` to be true (or implicit capture for Error/Critical).
     /// This provides human-readable stack traces but has a performance cost.
@@ -241,6 +244,25 @@ pub const Config = struct {
 
     /// Highlighter and alert configuration.
     highlighters: HighlighterConfig = .{},
+
+    /// Named time-format presets and identifiers.
+    ///
+    /// Use these constants instead of string literals to keep configuration
+    /// values centralized and avoid typos in production code.
+    pub const TimeFormat = struct {
+        /// Default human-readable pattern.
+        pub const default_pattern: []const u8 = Constants.TimeConstants.default_time_pattern;
+        /// Alias that resolves to `default_pattern` in the formatter.
+        pub const default_alias: []const u8 = "default";
+        /// ISO 8601 timestamp format.
+        pub const iso8601: []const u8 = "ISO8601";
+        /// RFC 3339 timestamp format.
+        pub const rfc3339: []const u8 = "RFC3339";
+        /// Unix timestamp in seconds.
+        pub const unix: []const u8 = "unix";
+        /// Unix timestamp in milliseconds.
+        pub const unix_ms: []const u8 = "unix_ms";
+    };
 
     /// Custom log format structure configuration.
     pub const FormatStructureConfig = struct {
@@ -2276,6 +2298,12 @@ pub const Config = struct {
         return result;
     }
 
+    /// Alias for withArenaAllocation.
+    pub const withArenaAllocator = withArenaAllocation;
+
+    /// Short alias for withArenaAllocation.
+    pub const withArena = withArenaAllocation;
+
     /// Returns a configuration for log-only mode (no console display, only file storage).
     ///
     /// Disables console output while keeping file storage enabled.
@@ -2337,6 +2365,15 @@ test "config default values" {
     try std.testing.expect(config.auto_sink);
 }
 
+test "config time format constants are centralized" {
+    try std.testing.expectEqualStrings(Constants.TimeConstants.default_time_pattern, Config.TimeFormat.default_pattern);
+    try std.testing.expectEqualStrings("default", Config.TimeFormat.default_alias);
+    try std.testing.expectEqualStrings("ISO8601", Config.TimeFormat.iso8601);
+    try std.testing.expectEqualStrings("RFC3339", Config.TimeFormat.rfc3339);
+    try std.testing.expectEqualStrings("unix", Config.TimeFormat.unix);
+    try std.testing.expectEqualStrings("unix_ms", Config.TimeFormat.unix_ms);
+}
+
 test "config presets" {
     // Production preset
     const prod_config = Config.production();
@@ -2388,6 +2425,19 @@ test "config with display storage" {
     const both = Config.withDisplayStorage(true, true, true);
     try std.testing.expect(both.global_console_display);
     try std.testing.expect(both.global_file_storage);
+}
+
+test "config arena allocation aliases" {
+    const base = Config.default();
+
+    const arena_via_primary = base.withArenaAllocation();
+    try std.testing.expect(arena_via_primary.use_arena_allocator);
+
+    const arena_via_alias = base.withArenaAllocator();
+    try std.testing.expect(arena_via_alias.use_arena_allocator);
+
+    const arena_via_short_alias = base.withArena();
+    try std.testing.expect(arena_via_short_alias.use_arena_allocator);
 }
 
 test "rules config default values" {

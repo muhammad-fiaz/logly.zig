@@ -30,6 +30,10 @@ The Rules module provides a powerful compiler-style diagnostic system for log me
 | `remove()` | `removeRule()`, `deleteRule()`, `delete()` | Remove rule |
 | `enableRule()` | `activateRule()` | Enable specific rule |
 | `disableRule()` | `deactivateRule()` | Disable specific rule |
+| `setAllEnabled()` | `setEnabledAll()` | Enable/disable all rules |
+| `removeByName()` | `removeNamed()` | Remove rules by name |
+| `enabledRuleCount()` | `enabledCount()` | Count enabled rules |
+| `disabledRuleCount()` | `disabledCount()` | Count disabled rules |
 | `configure()` | `setConfiguration()` | Configure rules |
 | `setUnicode()` | `unicode()` | Set unicode mode |
 | `setColors()` | `colors()` | Set colors |
@@ -42,6 +46,10 @@ The Rules module provides a powerful compiler-style diagnostic system for log me
 | `setBeforeEvaluateCallback()` | `onBeforeEvaluate()` | Set before evaluate callback |
 | `setAfterEvaluateCallback()` | `onAfterEvaluate()` | Set after evaluate callback |
 | `addOrUpdate()` | `upsert()` | Add or update rule |
+| `wouldMatchAny()` | `hasMatch()` | Non-mutating match preflight |
+| `matchingRuleIds()` | `previewRuleIds()` | Non-mutating matching rule ID preview |
+| `matchingRuleIdsWithAllocator()` | `previewRuleIdsWithAllocator()` | Matching ID preview with allocator |
+| `sortByPriority()` | `sortRules()` | Sort rules by priority (desc) then ID |
 | `hasRule()` | `containsRule()` | Check if has rule |
 | `getById()` | `getRule()` | Get rule by ID |
 | `clear()` | `clearAll()` | Clear all rules |
@@ -256,6 +264,15 @@ const removed = rules.remove(1);
 rules.enableRule(1);
 rules.disableRule(1);
 
+// Enable or disable all rules in one call
+_ = rules.setAllEnabled(true);
+
+// Remove all rules sharing the same name
+_ = rules.removeByName("database-error");
+
+// Optionally force sorting by priority (highest first)
+rules.sortByPriority();
+
 // Get rule by ID
 if (rules.getById(1)) |rule| {
     std.debug.print("Rule enabled: {}\n", .{rule.enabled});
@@ -278,6 +295,26 @@ Evaluates all enabled rules against a log record. Returns a slice of rule messag
 
 Evaluates rules using an optional scratch allocator for the resulting message slice.
 
+Evaluation respects `RulesConfig.max_messages_per_rule`, which caps emitted messages per matching rule during each evaluation pass.
+
+#### `wouldMatchAny(record: *const Record) bool`
+
+Returns `true` if at least one enabled rule would match the record.
+
+- Non-mutating: does not fire `once` rules.
+- Useful for preflight checks before full evaluation.
+
+#### `matchingRuleIds(record: *const Record) ?[]u32`
+
+Returns IDs of rules that would match this record.
+
+- Non-mutating: does not fire `once` rules.
+- Caller owns returned memory.
+
+#### `matchingRuleIdsWithAllocator(record: *const Record, scratch_allocator: ?std.mem.Allocator) ?[]u32`
+
+Same as `matchingRuleIds(...)`, with explicit allocator control for the returned slice.
+
 **Example:**
 ```zig
 const messages = rules.evaluateWithAllocator(record, logger.scratchAllocator());
@@ -290,9 +327,14 @@ const messages = rules.evaluateWithAllocator(record, logger.scratchAllocator());
 | `addOrUpdate(rule)` | Add or update a rule |
 | `hasRule(id)` | Check if rule ID exists |
 | `remove(id)` | Remove a rule by ID |
+| `removeByName(name)` | Remove all rules with matching name |
 | `enableRule(id)` | Enable a rule |
 | `disableRule(id)` | Disable a rule |
+| `setAllEnabled(enabled)` | Bulk enable/disable all rules |
+| `enabledRuleCount()` | Count enabled rules |
+| `disabledRuleCount()` | Count disabled rules |
 | `getById(id)` | Get rule pointer by ID |
+| `sortByPriority()` | Sort by priority (desc), then rule ID |
 | `clear()` | Remove all rules |
 | `count()` | Get rule count |
 
@@ -520,10 +562,12 @@ const config = logly.Config.RulesConfig{
     // Advanced options
     .verbose = false,                   // Full context output
     .max_rules = 1000,                  // Maximum rules allowed
-    .max_messages_per_rule = 10,        // Max messages to show per match
-    .sort_by_severity = false,          // Order by severity
+    .max_messages_per_rule = 10,        // Cap messages emitted per matching rule
+    .sort_by_severity = false,          // Keep rules sorted by descending priority
 };
 ```
+
+When `sort_by_severity` is enabled, the engine keeps rules ordered by `priority` (highest first, then rule ID) during add/update/config-sync flows.
 
 ### Global Switch Integration
 
@@ -623,6 +667,14 @@ For convenience, several aliases are provided:
 | `remove()` | `removeRule()`, `deleteRule()`, `delete()` |
 | `enableRule()` | `activateRule()` |
 | `disableRule()` | `deactivateRule()` |
+| `setAllEnabled()` | `setEnabledAll()` |
+| `removeByName()` | `removeNamed()` |
+| `enabledRuleCount()` | `enabledCount()` |
+| `disabledRuleCount()` | `disabledCount()` |
+| `wouldMatchAny()` | `hasMatch()` |
+| `matchingRuleIds()` | `previewRuleIds()` |
+| `matchingRuleIdsWithAllocator()` | `previewRuleIdsWithAllocator()` |
+| `sortByPriority()` | `sortRules()` |
 
 ## Advanced Usage
 

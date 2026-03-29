@@ -226,6 +226,32 @@ pub const Metrics = struct {
         pub const dropPercentage = getDropRate;
     };
 
+    /// Aggregated latency view built from raw counters and histogram buckets.
+    pub const LatencySummary = struct {
+        /// Total latency samples available in histogram buckets.
+        samples: u64,
+        /// Minimum observed latency in nanoseconds.
+        min_ns: u64,
+        /// Maximum observed latency in nanoseconds.
+        max_ns: u64,
+        /// Average latency in nanoseconds.
+        avg_ns: u64,
+        /// 50th percentile latency in nanoseconds.
+        p50_ns: u64,
+        /// 95th percentile latency in nanoseconds.
+        p95_ns: u64,
+        /// 99th percentile latency in nanoseconds.
+        p99_ns: u64,
+
+        /// Returns true when at least one latency sample is present.
+        pub fn hasSamples(self: *const LatencySummary) bool {
+            return self.samples > 0;
+        }
+
+        /// Alias for hasSamples
+        pub const hasData = hasSamples;
+    };
+
     /// Level index mapping for metrics array.
     /// Re-exported from Constants.LevelConstants.LevelIndex for consistency.
     pub const LevelIndex = Constants.LevelConstants.LevelIndex;
@@ -310,6 +336,15 @@ pub const Metrics = struct {
     /// Maps an index back to a histogram bucket boundary (in nanoseconds).
     fn histogramBucketBoundary(bucket: usize) u64 {
         return if (bucket < Constants.MetricsConstants.histogram_boundaries.len) Constants.MetricsConstants.histogram_boundaries[bucket] else std.math.maxInt(u64);
+    }
+
+    /// Returns the total number of histogram samples.
+    fn histogramSampleCount(self: *const Metrics) u64 {
+        var total: u64 = 0;
+        for (0..self.histogram.len) |i| {
+            total += @as(u64, self.histogram[i].load(.monotonic));
+        }
+        return total;
     }
 
     /// Maps a LevelIndex back to a Level name string.
@@ -749,6 +784,88 @@ pub const Metrics = struct {
         return result;
     }
 
+    /// Estimate latency at a percentile using histogram bucket boundaries.
+    ///
+    /// Percentile values are clamped to [0, 100].
+    pub fn latencyPercentileNs(self: *const Metrics, percentile: f64) u64 {
+        const clamped = if (percentile < 0.0)
+            0.0
+        else if (percentile > 100.0)
+            100.0
+        else
+            percentile;
+
+        if (clamped <= 0.0) return self.minLatencyNs();
+        if (clamped >= 100.0) return self.maxLatencyNs();
+
+        const total_samples = self.histogramSampleCount();
+        if (total_samples == 0) return self.avgLatencyNs();
+
+        const rank_f = (clamped / 100.0) * @as(f64, @floatFromInt(total_samples));
+        const rank = @max(@as(u64, 1), @as(u64, @intFromFloat(@ceil(rank_f))));
+
+        var cumulative: u64 = 0;
+        for (0..self.histogram.len) |i| {
+            const bucket_count = @as(u64, self.histogram[i].load(.monotonic));
+            if (bucket_count == 0) continue;
+
+            cumulative += bucket_count;
+            if (cumulative >= rank) {
+                const boundary = histogramBucketBoundary(i);
+                return if (boundary == std.math.maxInt(u64)) self.maxLatencyNs() else boundary;
+            }
+        }
+
+        return self.maxLatencyNs();
+    }
+
+    /// Estimate latency at a percentile in milliseconds.
+    pub fn latencyPercentileMs(self: *const Metrics, percentile: f64) f64 {
+        return @as(f64, @floatFromInt(self.latencyPercentileNs(percentile))) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
+    }
+
+    /// Returns an aggregated latency summary.
+    pub fn getLatencySummary(self: *const Metrics) LatencySummary {
+        return .{
+            .samples = self.histogramSampleCount(),
+            .min_ns = self.minLatencyNs(),
+            .max_ns = self.maxLatencyNs(),
+            .avg_ns = self.avgLatencyNs(),
+            .p50_ns = self.latencyPercentileNs(50.0),
+            .p95_ns = self.latencyPercentileNs(95.0),
+            .p99_ns = self.latencyPercentileNs(99.0),
+        };
+    }
+
+    /// Returns total sink write errors across all tracked sinks.
+    pub fn totalSinkErrors(self: *const Metrics) u64 {
+        var total: u64 = 0;
+        for (self.sink_metrics.items) |metric| {
+            total += metric.getWriteErrors();
+        }
+        return total;
+    }
+
+    /// Returns total sink flush count across all tracked sinks.
+    pub fn totalSinkFlushes(self: *const Metrics) u64 {
+        var total: u64 = 0;
+        for (self.sink_metrics.items) |metric| {
+            total += metric.getFlushCount();
+        }
+        return total;
+    }
+
+    /// Returns age in milliseconds since the last recorded log entry.
+    ///
+    /// Returns null when no record has been logged yet.
+    pub fn lastRecordAgeMs(self: *const Metrics) ?i64 {
+        const last = @as(i64, self.last_record_time.load(.monotonic));
+        if (last <= 0) return null;
+
+        const age = Utils.currentMillis() - last;
+        return if (age < 0) 0 else age;
+    }
+
     /// Formats metrics as a human-readable string.
     ///
     /// Arguments:
@@ -1045,6 +1162,27 @@ pub const Metrics = struct {
     pub const latencyHistogram = getHistogram;
     pub const getLatencyHistogram = getHistogram;
 
+    /// Alias for latencyPercentileNs
+    pub const latencyPercentile = latencyPercentileNs;
+    pub const percentileNs = latencyPercentileNs;
+
+    /// Alias for latencyPercentileMs
+    pub const percentileMs = latencyPercentileMs;
+
+    /// Alias for getLatencySummary
+    pub const latencySummary = getLatencySummary;
+    pub const summaryLatency = getLatencySummary;
+
+    /// Alias for totalSinkErrors
+    pub const sinkErrorsTotal = totalSinkErrors;
+
+    /// Alias for totalSinkFlushes
+    pub const sinkFlushesTotal = totalSinkFlushes;
+
+    /// Alias for lastRecordAgeMs
+    pub const recordAgeMs = lastRecordAgeMs;
+    pub const ageSinceLastRecordMs = lastRecordAgeMs;
+
     /// Alias for format
     pub const formatMetrics = format;
     pub const stringify = format;
@@ -1239,4 +1377,50 @@ test "metrics helper methods" {
     try std.testing.expect(metrics.hasErrors());
     try std.testing.expect(metrics.hasDropped());
     try std.testing.expect(metrics.isEnabled() == false); // default config has enabled = false
+}
+
+test "metrics latency summary and percentiles" {
+    var metrics = Metrics.initWithConfig(std.testing.allocator, .{
+        .track_latency = true,
+        .enable_histogram = true,
+    });
+    defer metrics.deinit();
+
+    metrics.recordLogWithLatency(.info, 100, 1_000_000);
+    metrics.recordLogWithLatency(.info, 100, 5_000_000);
+    metrics.recordLogWithLatency(.info, 100, 10_000_000);
+
+    const p50 = metrics.latencyPercentileNs(50.0);
+    const p95 = metrics.latencyPercentileNs(95.0);
+    const summary = metrics.getLatencySummary();
+
+    try std.testing.expect(summary.hasSamples());
+    try std.testing.expect(p50 > 0);
+    try std.testing.expect(p95 >= p50);
+    try std.testing.expect(summary.p99_ns >= summary.p95_ns);
+}
+
+test "metrics sink totals and last record age" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    try std.testing.expectEqual(@as(?i64, null), metrics.lastRecordAgeMs());
+
+    const sink_a = try metrics.addSink("sink_a");
+    const sink_b = try metrics.addSink("sink_b");
+
+    metrics.recordSinkError(sink_a);
+    metrics.recordSinkError(sink_b);
+    metrics.recordSinkFlush(sink_a);
+    metrics.recordSinkFlush(sink_b);
+    metrics.recordSinkFlush(sink_b);
+
+    metrics.recordLog(.info, 42);
+
+    const age_ms = metrics.lastRecordAgeMs();
+    try std.testing.expect(age_ms != null);
+    try std.testing.expect(age_ms.? >= 0);
+
+    try std.testing.expectEqual(@as(u64, 2), metrics.totalSinkErrors());
+    try std.testing.expectEqual(@as(u64, 3), metrics.totalSinkFlushes());
 }

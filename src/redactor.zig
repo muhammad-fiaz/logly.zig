@@ -390,6 +390,18 @@ pub const Redactor = struct {
         try self.fields.put(owned_name, redaction_type);
     }
 
+    /// Adds multiple sensitive fields using the same redaction type.
+    ///
+    /// Returns the number of fields added.
+    pub fn addFields(self: *Redactor, field_names: []const []const u8, redaction_type: RedactionType) !usize {
+        var added: usize = 0;
+        for (field_names) |name| {
+            try self.addField(name, redaction_type);
+            added += 1;
+        }
+        return added;
+    }
+
     /// Adds a pattern-based redaction rule.
     ///
     /// Arguments:
@@ -479,6 +491,15 @@ pub const Redactor = struct {
             return self.applyRedactionType(rtype, value);
         }
 
+        return self.allocator.dupe(u8, value);
+    }
+
+    /// Previews how a field would be redacted without changing counters.
+    pub fn previewFieldRedaction(self: *Redactor, field_name: []const u8, value: []const u8) ![]u8 {
+        const redaction_type = self.getFieldRedactionWithConfig(field_name);
+        if (redaction_type) |rtype| {
+            return self.applyRedactionType(rtype, value);
+        }
         return self.allocator.dupe(u8, value);
     }
 
@@ -585,6 +606,17 @@ pub const Redactor = struct {
         }
     }
 
+    /// Checks if a pattern would match a message.
+    fn patternMatchesMessage(pattern: RedactionPattern, message: []const u8) bool {
+        return switch (pattern.pattern_type) {
+            .contains => std.mem.indexOf(u8, message, pattern.pattern) != null,
+            .prefix => std.mem.startsWith(u8, message, pattern.pattern),
+            .suffix => std.mem.endsWith(u8, message, pattern.pattern),
+            .exact => std.mem.eql(u8, message, pattern.pattern),
+            .regex => Utils.findRegexPattern(message, pattern.pattern) != null,
+        };
+    }
+
     /// Checks if a field should be redacted.
     ///
     /// Arguments:
@@ -594,6 +626,21 @@ pub const Redactor = struct {
     ///     The redaction type if the field should be redacted, null otherwise.
     pub fn getFieldRedaction(self: *const Redactor, field_name: []const u8) ?RedactionType {
         return self.fields.get(field_name);
+    }
+
+    /// Returns true when the provided field has a redaction rule.
+    pub fn hasFieldRule(self: *const Redactor, field_name: []const u8) bool {
+        return self.getFieldRedactionWithConfig(field_name) != null;
+    }
+
+    /// Returns true when at least one configured pattern would redact this message.
+    pub fn wouldRedact(self: *const Redactor, message: []const u8) bool {
+        for (self.patterns.items) |pattern| {
+            if (patternMatchesMessage(pattern, message)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// Returns the number of patterns.
@@ -648,6 +695,10 @@ pub const Redactor = struct {
     pub const field = addField;
     pub const sensitiveField = addField;
 
+    /// Alias for addFields
+    pub const addFieldsBatch = addFields;
+    pub const addSensitiveFields = addFields;
+
     /// Alias for redact
     pub const mask = redact;
     pub const sanitize = redact;
@@ -655,6 +706,9 @@ pub const Redactor = struct {
 
     /// Alias for redactField
     pub const maskField = redactField;
+
+    /// Alias for previewFieldRedaction
+    pub const previewField = previewFieldRedaction;
 
     /// Alias for getStats
     pub const statistics = getStats;
@@ -698,6 +752,13 @@ pub const Redactor = struct {
 
     /// Alias for getFieldRedaction
     pub const getFieldRule = getFieldRedaction;
+
+    /// Alias for hasFieldRule
+    pub const hasRuleForField = hasFieldRule;
+
+    /// Alias for wouldRedact
+    pub const shouldRedact = wouldRedact;
+    pub const needsRedaction = wouldRedact;
 
     /// Alias for patternCount
     pub const ruleCount = patternCount;
@@ -848,4 +909,36 @@ test "redactor pattern" {
 
     try std.testing.expect(std.mem.indexOf(u8, result, "secret") == null);
     try std.testing.expect(std.mem.indexOf(u8, result, "[REDACTED]") != null);
+}
+
+test "redactor batch fields and field rule checks" {
+    var redactor = Redactor.init(std.testing.allocator);
+    defer redactor.deinit();
+
+    const fields = [_][]const u8{ "password", "token", "api_key" };
+    const added = try redactor.addFields(fields[0..], .full);
+
+    try std.testing.expectEqual(@as(usize, 3), added);
+    try std.testing.expect(redactor.hasFieldRule("password"));
+    try std.testing.expect(redactor.hasFieldRule("TOKEN"));
+    try std.testing.expect(!redactor.hasFieldRule("non_sensitive"));
+}
+
+test "redactor preflight and preview helpers" {
+    var redactor = Redactor.init(std.testing.allocator);
+    defer redactor.deinit();
+
+    try redactor.addPattern("token_pattern", .contains, "token=", "token=[REDACTED]");
+    try redactor.addField("password", .full);
+
+    try std.testing.expect(redactor.wouldRedact("token=abc123"));
+    try std.testing.expect(!redactor.wouldRedact("safe message"));
+
+    const preview = try redactor.previewFieldRedaction("password", "my-secret");
+    defer std.testing.allocator.free(preview);
+    try std.testing.expect(!std.mem.eql(u8, preview, "my-secret"));
+
+    const passthrough = try redactor.previewFieldRedaction("username", "alice");
+    defer std.testing.allocator.free(passthrough);
+    try std.testing.expectEqualStrings("alice", passthrough);
 }

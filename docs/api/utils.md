@@ -154,6 +154,39 @@ Extracts time components from a millisecond timestamp.
 pub fn fromMilliTimestamp(timestamp: i64) TimeComponents
 ```
 
+### fromMilliTimestampLocal
+
+Extracts local-time components from a millisecond timestamp.
+
+```zig
+pub fn fromMilliTimestampLocal(timestamp: i64) TimeComponents
+```
+
+### localUtcOffsetMinutes
+
+Returns local UTC offset (in minutes) for a millisecond timestamp.
+The result is bounded to `Constants.TimeConstants.min_utc_offset_minutes` through `Constants.TimeConstants.max_utc_offset_minutes`.
+
+```zig
+pub fn localUtcOffsetMinutes(timestamp: i64) i16
+```
+
+### writeUtcOffset
+
+Writes a UTC offset in `+HH:MM`/`-HH:MM` form.
+
+```zig
+pub fn writeUtcOffset(writer: anytype, offset_minutes: i16) !void
+```
+
+### writeUtcOffsetCompact
+
+Writes a compact UTC offset in `+HHMM`/`-HHMM` form.
+
+```zig
+pub fn writeUtcOffsetCompact(writer: anytype, offset_minutes: i16) !void
+```
+
 ### nowComponents
 
 Gets current time components.
@@ -316,6 +349,75 @@ const ext = Utils.getCompressionExtension(CompressionAlgorithm.zstd); // ".zst"
 
 Note: Returns an empty string for `.none`.
 
+## Trace Context Utilities
+
+### TraceparentContext
+
+Parsed W3C trace context fields returned by `parseTraceparentHeader`.
+
+```zig
+pub const TraceparentContext = struct {
+    version: []const u8,
+    trace_id: []const u8,
+    span_id: []const u8,
+    flags: []const u8,
+    sampled: bool,
+};
+```
+
+### TraceparentError
+
+Errors returned by `formatTraceparentHeader` validation.
+
+```zig
+pub const TraceparentError = error{
+    InvalidTraceId,
+    InvalidSpanId,
+};
+```
+
+### parseTraceparentHeader
+
+Parses a W3C `traceparent` header.
+
+Expected format: `00-<32_hex_trace_id>-<16_hex_span_id>-<2_hex_flags>`.
+
+```zig
+pub fn parseTraceparentHeader(header: []const u8) ?TraceparentContext
+```
+
+Returns `null` for malformed headers, invalid hex values, or all-zero trace/span IDs.
+
+### formatTraceparentHeader
+
+Formats a W3C `traceparent` header string from validated IDs.
+
+```zig
+pub fn formatTraceparentHeader(
+    allocator: std.mem.Allocator,
+    trace_id: []const u8,
+    span_id: []const u8,
+    sampled: bool
+) ![]u8
+```
+
+Returns:
+
+- `TraceparentError.InvalidTraceId` when `trace_id` is invalid.
+- `TraceparentError.InvalidSpanId` when `span_id` is invalid.
+
+Example:
+
+```zig
+const traceparent = try Utils.formatTraceparentHeader(
+    allocator,
+    "4bf92f3577b34da6a3ce929d0e0e4736",
+    "00f067aa0ba902b7",
+    true,
+);
+defer allocator.free(traceparent);
+```
+
 ## Date Formatting
 
 ### formatDatePattern
@@ -331,7 +433,27 @@ pub fn formatDatePattern(
     day: u8,
     hour: u64,
     minute: u64,
-    second: u64
+    second: u64,
+    millis: u64
+) !void
+```
+
+### formatDatePatternWithOffset
+
+Formats a date/time pattern and enables timezone tokens (`ZZZ`, `ZZ`).
+
+```zig
+pub fn formatDatePatternWithOffset(
+    writer: anytype,
+    fmt: []const u8,
+    year: i32,
+    month: u8,
+    day: u8,
+    hour: u64,
+    minute: u64,
+    second: u64,
+    millis: u64,
+    timezone_offset_minutes: i16
 ) !void
 ```
 
@@ -341,11 +463,13 @@ pub fn formatDatePattern(
 |-------|------------------------|
 | `YYYY`| 4-digit year           |
 | `YY`  | 2-digit year           |
+| `ZZZ` | Timezone offset (+HH:MM) |
 | `MM`  | 2-digit month (01-12)  |
 | `DD`  | 2-digit day (01-31)    |
 | `HH`  | 2-digit hour (00-23)   |
 | `mm`  | 2-digit minute (00-59) |
 | `ss`  | 2-digit second (00-59) |
+| `ZZ`  | Timezone offset (+HHMM) |
 | `M`   | 1-2 digit month        |
 | `D`   | 1-2 digit day          |
 | `H`   | 1-2 digit hour         |
@@ -355,7 +479,15 @@ pub fn formatDatePattern(
 Formats a date/time to a buffer.
 
 ```zig
-pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64) ![]u8
+pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64) ![]u8
+```
+
+### formatDateToBufWithOffset
+
+Formats a date/time pattern to a buffer with timezone token support.
+
+```zig
+pub fn formatDateToBufWithOffset(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: i16) ![]u8
 ```
 
 ### formatIsoDate

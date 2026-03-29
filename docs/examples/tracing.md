@@ -31,7 +31,7 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 
 ## Trace Propagation (Recommended)
 
-In concurrent environments, use `withTrace()` to create lightweight logger handles with bound context.
+In concurrent environments, use request-scoped `DistributedLogger` handles (`withTraceparent(...)` or `withTrace(...)`) instead of mutating global context.
 
 ```zig
 const std = @import("std");
@@ -53,16 +53,20 @@ pub fn main() !void {
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    // Simulate Request Handling
-    const trace_id = "trace-uuid-v4";
-    const span_id = "span-001";
-    
+    // Simulate incoming traceparent from upstream service
+    const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
     // Create scoped logger for this request
-    const req_logger = logger.withTrace(trace_id, span_id);
-    
-    // Logs automatically include service name, trace_id, and span_id
+    var req_logger = try logger.withTraceparent(incoming);
+    req_logger = req_logger.inModule("http.request");
+
+    // Logs automatically include service metadata + trace context
     try req_logger.info("Processing request", @src());
     try req_logger.warn("Simulated latency", @src());
+
+    // Child span for nested operation
+    const db_logger = req_logger.child("7a085853722dc6d2").inModule("database");
+    try db_logger.debug("Executing SQL query", @src());
 }
 ```
 
@@ -125,26 +129,17 @@ try logger.info("Service ready", @src());
 logger.unbind("version");
 ```
 
-## Trace ID Propagation
+## W3C Trace Context Propagation
 
 When receiving requests from other services:
 
 ```zig
 pub fn handleRequest(req: Request, logger: *logly.Logger) !void {
-    // Extract trace ID from incoming request headers
-    const trace_id = req.getHeader("X-Trace-ID") orelse 
-                     try generateTraceId();
-    const parent_span = req.getHeader("X-Span-ID");
-    
-    // Set trace context
-    try logger.setTraceContext(trace_id, null);
-    
-    // Create new span for this service
-    var span = try logger.startSpan("handle-request");
-    defer span.end(null) catch {};
-    
-    // Process request
-    try logger.info("Request received", @src());
+    const traceparent = req.getHeader("traceparent") orelse return error.MissingTraceparent;
+
+    // Prefer request-scoped logger over global mutation
+    const req_logger = try logger.withTraceparent(traceparent);
+    try req_logger.info("Request received", @src());
     // ...
 }
 ```
@@ -152,20 +147,16 @@ pub fn handleRequest(req: Request, logger: *logly.Logger) !void {
 When calling other services:
 
 ```zig
-// Note: trace_id and span_id are internal fields on the logger
-// You can access them by extracting from the log record context
-// or pass them explicitly through your application
-
-pub fn callExternalService(trace_id: []const u8, span_id: []const u8) !void {
-    // Include trace headers in outgoing request
+pub fn callExternalService(logger: *logly.Logger, allocator: std.mem.Allocator) !void {
     var headers = std.StringHashMap([]const u8).init(allocator);
     defer headers.deinit();
-    
-    try headers.put("X-Trace-ID", trace_id);
-    try headers.put("X-Span-ID", span_id);
-    
-    // Make request with trace context
-    // ...
+
+    if (try logger.getTraceparentHeader(allocator)) |traceparent| {
+        defer allocator.free(traceparent);
+        try headers.put("traceparent", traceparent);
+    }
+
+    // Make request with propagated context
 }
 ```
 
@@ -174,7 +165,10 @@ pub fn callExternalService(trace_id: []const u8, span_id: []const u8) !void {
 ```zig
 var config = logly.Config.default();
 config.json = true;
-config.include_trace_id = true;
+
+try logger.setTraceContextFromTraceparent(
+    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+);
 
 // Output:
 // {

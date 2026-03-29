@@ -102,6 +102,13 @@ pub const Rotation = struct {
     /// Naming strategy for rotated files.
     pub const NamingStrategy = Config.RotationConfig.NamingStrategy;
 
+    /// Reason why a rotation should occur.
+    pub const RotationReason = enum {
+        interval,
+        size,
+        interval_and_size,
+    };
+
     /// Rotation statistics for monitoring.
     pub const RotationStats = struct {
         /// Total number of rotations performed.
@@ -389,32 +396,66 @@ pub const Rotation = struct {
         return "none";
     }
 
+    /// Computes rotation reason without taking locks.
+    fn computeRotationReason(self: *Rotation, file_ptr: *std.fs.File, now: i64) ?RotationReason {
+        var by_interval = false;
+        var by_size = false;
+
+        if (self.interval) |interval| {
+            by_interval = now - self.last_rotation >= interval.seconds();
+        }
+
+        if (self.size_limit) |limit| {
+            if (file_ptr.stat()) |stat| {
+                by_size = stat.size >= limit;
+            } else |_| {
+                // Ignore stat errors and retry on next check.
+            }
+        }
+
+        if (by_interval and by_size) return .interval_and_size;
+        if (by_interval) return .interval;
+        if (by_size) return .size;
+        return null;
+    }
+
+    /// Returns why rotation would occur for the current file state.
+    pub fn getRotationReason(self: *Rotation, file_ptr: *std.fs.File) ?RotationReason {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        return self.computeRotationReason(file_ptr, Utils.currentSeconds());
+    }
+
+    /// Returns true when rotation conditions are currently met.
+    pub fn shouldRotate(self: *Rotation, file_ptr: *std.fs.File) bool {
+        return self.getRotationReason(file_ptr) != null;
+    }
+
+    /// Returns remaining seconds until next time-based rotation.
+    ///
+    /// Returns null when interval rotation is disabled.
+    pub fn nextRotationInSeconds(self: *const Rotation) ?i64 {
+        const interval = self.interval orelse return null;
+        const elapsed = Utils.currentSeconds() - self.last_rotation;
+        const remaining = interval.seconds() - elapsed;
+        return if (remaining > 0) remaining else 0;
+    }
+
+    /// Returns the next rotated path without mutating state.
+    pub fn previewNextPath(self: *Rotation) ![]u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.generateRotatedPath();
+    }
+
     pub fn checkAndRotate(self: *Rotation, file_ptr: *std.fs.File) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var should_rotate = false;
         const now = Utils.currentSeconds();
 
-        // Check time-based rotation
-        if (self.interval) |interval| {
-            if (now - self.last_rotation >= interval.seconds()) {
-                should_rotate = true;
-            }
-        }
-
-        // Check size-based rotation
-        if (self.size_limit) |limit| {
-            if (file_ptr.stat()) |stat| {
-                if (stat.size >= limit) {
-                    should_rotate = true;
-                }
-            } else |_| {
-                // Ignore stat errors, retry later
-            }
-        }
-
-        if (should_rotate) {
+        if (self.computeRotationReason(file_ptr, now) != null) {
             // Perform rotation
             self.performRotation(file_ptr) catch |err| {
                 _ = self.stats.rotation_errors.fetchAdd(1, .monotonic);
@@ -475,6 +516,20 @@ pub const Rotation = struct {
 
     /// Alias for intervalName
     pub const getIntervalName = intervalName;
+
+    /// Alias for getRotationReason
+    pub const rotationReason = getRotationReason;
+    pub const getReason = getRotationReason;
+
+    /// Alias for shouldRotate
+    pub const shouldRotateNow = shouldRotate;
+
+    /// Alias for nextRotationInSeconds
+    pub const secondsUntilNextRotation = nextRotationInSeconds;
+
+    /// Alias for previewNextPath
+    pub const previewPath = previewNextPath;
+    pub const nextPath = previewNextPath;
 
     /// Alias for checkAndRotate
     pub const rotateIfNeeded = checkAndRotate;
@@ -1289,4 +1344,43 @@ test "rotation is enabled check" {
     var rot3 = try Rotation.init(allocator, "test.log", null, null, null);
     defer rot3.deinit();
     try std.testing.expect(!rot3.isEnabled());
+}
+
+test "rotation reason helpers and preview path" {
+    const allocator = std.testing.allocator;
+
+    const file_name = try std.fmt.allocPrint(allocator, "rotation_reason_{d}.log", .{Utils.currentMillis()});
+    defer allocator.free(file_name);
+    defer std.fs.cwd().deleteFile(file_name) catch {};
+
+    var file = try std.fs.cwd().createFile(file_name, .{ .read = true, .truncate = true });
+    defer file.close();
+    try file.writeAll("0123456789");
+    try file.seekTo(0);
+
+    var rot = try Rotation.init(allocator, file_name, null, 1, 3);
+    defer rot.deinit();
+
+    const reason = rot.getRotationReason(&file);
+    try std.testing.expect(reason != null);
+    try std.testing.expectEqual(Rotation.RotationReason.size, reason.?);
+    try std.testing.expect(rot.shouldRotate(&file));
+
+    const preview = try rot.previewNextPath();
+    defer allocator.free(preview);
+    try std.testing.expect(std.mem.indexOf(u8, preview, std.fs.path.basename(file_name)) != null);
+}
+
+test "rotation next rotation in seconds" {
+    const allocator = std.testing.allocator;
+
+    var rot = try Rotation.init(allocator, "test-next.log", "hourly", null, 7);
+    defer rot.deinit();
+
+    rot.last_rotation = Utils.currentSeconds() - 10;
+    const remaining = rot.nextRotationInSeconds();
+
+    try std.testing.expect(remaining != null);
+    try std.testing.expect(remaining.? >= 0);
+    try std.testing.expect(remaining.? <= @as(i64, Constants.TimeConstants.seconds_per_hour));
 }

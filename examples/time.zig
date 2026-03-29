@@ -41,12 +41,12 @@ pub fn main() !void {
     try logger.info("Date only", @src());
 
     // Example 7: ISO8601 format
-    config.time_format = "ISO8601";
+    config.time_format = logly.Config.TimeFormat.iso8601;
     logger.configure(config);
     try logger.info("ISO8601 format", @src());
 
     // Example 8: Unix timestamp
-    config.time_format = "unix";
+    config.time_format = logly.Config.TimeFormat.unix;
     logger.configure(config);
     try logger.info("Unix timestamp", @src());
 
@@ -54,4 +54,22 @@ pub fn main() !void {
     config.time_format = "DD/MM/YY - HH:mm";
     logger.configure(config);
     try logger.info("Custom separator", @src());
+
+    // Example 10: Local timezone with explicit offset token (+HH:MM)
+    config.timezone = .local;
+    config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+    logger.configure(config);
+    try logger.info("Local timezone offset (ZZZ)", @src());
+
+    // Example 11: Local timezone with compact offset token (+HHMM)
+    config.timezone = .local;
+    config.time_format = "YYYY-MM-DD HH:mm:ss ZZ";
+    logger.configure(config);
+    try logger.info("Local timezone offset compact (ZZ)", @src());
+
+    // Example 12: UTC timezone with explicit offset token
+    config.timezone = .utc;
+    config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+    logger.configure(config);
+    try logger.info("UTC timezone offset token", @src());
 }

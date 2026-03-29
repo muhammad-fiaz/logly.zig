@@ -64,11 +64,50 @@ Use compact log format. Default: `false`.
 
 #### `use_arena_allocator: bool`
 
-Enable arena allocator for the main logger instance. When enabled, the logger uses an arena allocator for creating log records, which can improve performance by reducing memory fragmentation and allocation overhead. Default: `false`.
+Enable arena allocator for the main logger instance. When enabled, the logger uses an arena allocator for temporary record/format allocations, which can improve performance by reducing allocation overhead. Default: `false`.
+
+```zig
+var config = logly.Config.default();
+config.use_arena_allocator = true;
+config.arena_reset_threshold = 64 * 1024;
+```
+
+Equivalent builder aliases:
+
+```zig
+var config = logly.Config.default().withArenaAllocation();
+// or
+config = config.withArenaAllocator();
+// or
+config = config.withArena();
+```
+
+All three builder names are behavior-equivalent and set `use_arena_allocator = true`.
+
+Difference from direct field assignment:
+- `config.use_arena_allocator = true` mutates an existing `config` value.
+- `config = config.withArenaAllocator()` (or aliases) returns a modified copy and requires reassignment.
+
+You can also use your own application/request arena backed by GPA independently of Logly's internal scratch arena:
+
+```zig
+const std = @import("std");
+
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+defer _ = gpa.deinit();
+
+var request_arena = std.heap.ArenaAllocator.init(gpa.allocator());
+defer request_arena.deinit();
+
+const tmp_alloc = request_arena.allocator();
+const buf = try tmp_alloc.alloc(u8, 512);
+_ = buf;
+_ = request_arena.reset(.retain_capacity);
+```
 
 #### `arena_reset_threshold: usize`
 
-Arena reset threshold in bytes. When arena reaches this size, it resets. Default: `64 * 1024`.
+Arena reset threshold in bytes. When approximate temporary arena usage reaches this value, the logger resets the arena before processing the next record. Default: `64 * 1024`.
 
 #### `logs_root_path: ?[]const u8`
 
@@ -207,7 +246,8 @@ Custom format string for log messages. Available placeholders:
 #### `time_format: []const u8`
 
 Time format string. Supported formats:
-- `"YYYY-MM-DD HH:mm:ss"` - Default human-readable format with milliseconds
+- `"YYYY-MM-DD HH:mm:ss.SSS"` - Default human-readable format with milliseconds
+- `"default"` - Alias that resolves to the default human-readable pattern
 - `"ISO8601"` - ISO 8601 format (e.g., `2025-12-04T06:39:53.091Z`)
 - `"RFC3339"` - RFC 3339 format (e.g., `2025-12-04T06:39:53+00:00`)
 - `"YYYY-MM-DD"` - Date only
@@ -215,12 +255,28 @@ Time format string. Supported formats:
 - `"HH:mm:ss.SSS"` - Time with milliseconds
 - `"unix"` - Unix timestamp in seconds
 - `"unix_ms"` - Unix timestamp in milliseconds
+- Custom timezone placeholders are also supported in pattern formats:
+    - `ZZZ` => `+HH:MM` (e.g. `+01:00`)
+    - `ZZ` => `+HHMM` (e.g. `+0100`)
+
+For production code, prefer centralized constants over raw string literals:
+
+```zig
+config.time_format = logly.Config.TimeFormat.iso8601;
+config.time_format = logly.Config.TimeFormat.default_pattern;
+```
+
+`ZZZ` and `ZZ` are important when using custom patterns in distributed systems because they preserve explicit timezone context for parsing, correlation, and incident timelines.
 
 Default: `"YYYY-MM-DD HH:mm:ss.SSS"`.
 
 #### `timezone: Timezone`
 
 Timezone for timestamps. Options: `.local`, `.utc`. Default: `.local`.
+
+Behavior details:
+- `.utc`: `ISO8601` ends with `Z`, `RFC3339` uses `+00:00`.
+- `.local`: uses process/system local timezone when available and emits `+/-HH:MM` offsets for `ISO8601`/`RFC3339`.
 
 #### `format_structure: FormatStructureConfig`
 
@@ -587,6 +643,8 @@ Enables scheduler with the provided configuration.
 ### `withArenaAllocation() Config`
 
 Enables arena allocator for internal temporary allocations to improve performance.
+
+Aliases: `withArenaAllocator()`, `withArena()`.
 
 ### `merge(other: Config) Config`
 
@@ -1050,6 +1108,17 @@ Returns a configuration with scheduler enabled.
 const config = logly.Config.default().withScheduler(.{
     .cleanup_max_age_days = 7,
 });
+```
+
+### `withArenaAllocation() Config`
+
+Returns a configuration with arena allocator support enabled for logger scratch allocations.
+
+Aliases: `withArenaAllocator()`, `withArena()`.
+
+```zig
+var config = logly.Config.default().withArenaAllocator();
+config.arena_reset_threshold = 128 * 1024;
 ```
 
 ### `merge(other) Config`

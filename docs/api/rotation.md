@@ -20,6 +20,10 @@ The `Rotation` module provides enterprise-grade log rotation capabilities, inclu
 | `applyConfig()` | `configure()`, `applyConfiguration()` | Apply configuration |
 | `isEnabled()` | `enabled()` | Check if enabled |
 | `intervalName()` | `getIntervalName()` | Get interval name |
+| `getRotationReason()` | `rotationReason()`, `getReason()` | Get current rotation trigger reason |
+| `shouldRotate()` | `shouldRotateNow()` | Check if conditions currently require rotation |
+| `nextRotationInSeconds()` | `secondsUntilNextRotation()` | Get remaining interval seconds |
+| `previewNextPath()` | `previewPath()`, `nextPath()` | Preview next rotated file path |
 | `checkAndRotate()` | `rotateIfNeeded()`, `maybeRotate()` | Check and rotate if needed |
 | `createRotatingSink()` | `rotatingSink()` | Create rotating sink |
 | `createSizeRotatingSink()` | `sizeSink()` | Create size rotating sink |
@@ -170,6 +174,24 @@ pub fn applyConfig(self: *Rotation, config: RotationConfig) !void
 try rot.applyConfig(global_config.rotation);
 ```
 
+### Rotation Decision Helpers
+
+#### `getRotationReason(self: *Rotation, file_ptr: *std.fs.File) ?RotationReason`
+
+Returns why rotation would occur right now (`interval`, `size`, or `interval_and_size`).
+
+#### `shouldRotate(self: *Rotation, file_ptr: *std.fs.File) bool`
+
+Returns true when any rotation condition is currently met.
+
+#### `nextRotationInSeconds(self: *const Rotation) ?i64`
+
+Returns remaining seconds until next interval rotation, or `null` if interval rotation is disabled.
+
+#### `previewNextPath(self: *Rotation) ![]u8`
+
+Returns the next rotated path without mutating internal state.
+
 ## Configuration Structs
 
 ### RotationConfig
@@ -246,6 +268,15 @@ Defines how rotated files are named.
 | `.iso_datetime` | `app.log.2023-01-01T12-00-00` | High precision. |
 | `.index` | `app.log.1`, `app.log.2` | Rolling log style. |
 | `.custom` | `app-2023-01-01.log` | Uses `naming_format`. |
+
+### RotationReason
+Explains which trigger caused rotation.
+
+| Value | Description |
+| :--- | :--- |
+| `.interval` | Time interval threshold reached. |
+| `.size` | File size threshold reached. |
+| `.interval_and_size` | Both interval and size thresholds reached. |
 
 ### Custom Format Placeholders
 

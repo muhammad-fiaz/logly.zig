@@ -17,7 +17,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| Current Version | 0.1.6 | 0.7.2 | 0.0.0 | Built-in |
+| Current Version | 0.1.7 | 0.7.2 | 0.0.0 | Built-in |
 | Min Zig Version | 0.15.0+ | 0.14, 0.15-dev | 0.11+ | Any |
 | API Style | User-friendly | Builder/Fluent | Pool/Fluent | Basic/Manual |
 | Structured Logging | ✅ Automatic | ✅ JSON/logfmt | ✅ JSON/logfmt | ❌ Manual |

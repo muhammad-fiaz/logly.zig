@@ -103,6 +103,25 @@ const json = try formatter.formatJsonWithAllocator(record, config, logger.scratc
 
 Writes a log record as JSON directly to a writer without intermediate allocation.
 
+### Timestamp Timezone Behavior
+
+Timestamp formatting behavior depends on `Config.timezone`:
+
+- `.utc`: `ISO8601` emits `Z`, and `RFC3339` emits `+00:00`.
+- `.local`: uses process/system local timezone when available and emits `+/-HH:MM` for `ISO8601` and `RFC3339`.
+
+For custom `time_format` patterns, timezone tokens are also available:
+- `ZZZ` => `+HH:MM`
+- `ZZ` => `+HHMM`
+
+`time_format = "default"` resolves to the canonical default pattern (`YYYY-MM-DD HH:mm:ss.SSS`).
+
+`unix` and `unix_ms` formats remain numeric and timezone-agnostic, including JSON output.
+
+Why `ZZZ` and `ZZ` are needed:
+- Custom date/time layouts are often required by legacy parsers and SIEM pipelines.
+- Including explicit offsets prevents ambiguous timestamps when logs are aggregated across timezones.
+
 #### `setTheme(theme: Theme) void`
 
 Sets a custom color theme for the formatter.

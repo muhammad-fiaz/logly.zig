@@ -283,6 +283,7 @@ pub const Formatter = struct {
         critical: []const u8 = Constants.Colors.LevelColors.critical,
         fatal: []const u8 = Constants.Colors.LevelColors.fatal,
 
+        /// Returns the color code configured for a specific log level.
         pub fn getColor(self: Theme, level: Level) []const u8 {
             return switch (level) {
                 .trace => self.trace,
@@ -856,36 +857,77 @@ pub const Formatter = struct {
         }
     }
 
+    fn normalizedTimeFormat(raw_time_format: []const u8) []const u8 {
+        if (std.mem.eql(u8, raw_time_format, Config.TimeFormat.default_alias)) {
+            return Config.TimeFormat.default_pattern;
+        }
+        return raw_time_format;
+    }
+
+    fn isUnixSecondsFormat(time_format: []const u8) bool {
+        return std.mem.eql(u8, time_format, Config.TimeFormat.unix);
+    }
+
+    fn isUnixMillisFormat(time_format: []const u8) bool {
+        return std.mem.eql(u8, time_format, Config.TimeFormat.unix_ms);
+    }
+
+    fn isNumericTimestampFormat(time_format: []const u8) bool {
+        return isUnixSecondsFormat(time_format) or isUnixMillisFormat(time_format);
+    }
+
+    /// Writes a timestamp according to configured format and timezone.
+    ///
+    /// Supports predefined formats (`ISO8601`, `RFC3339`, `unix`, `unix_ms`) and
+    /// custom patterns via `Utils.formatDatePatternWithOffset`.
     fn writeTimestamp(self: *Formatter, writer: anytype, timestamp_ms: i64, config: anytype) !void {
         _ = self;
 
+        const time_format = normalizedTimeFormat(config.time_format);
+
         // Handle special time formats
-        if (std.mem.eql(u8, config.time_format, "unix")) {
-            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(timestamp_ms, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))))));
+        if (isUnixSecondsFormat(time_format)) {
+            const unix_seconds = @divFloor(timestamp_ms, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+            try Utils.writeInt(writer, unix_seconds);
             return;
         }
-        if (std.mem.eql(u8, config.time_format, "unix_ms")) {
-            try Utils.writeInt(writer, @as(u64, @intCast(timestamp_ms)));
+        if (isUnixMillisFormat(time_format)) {
+            try Utils.writeInt(writer, timestamp_ms);
             return;
         }
 
-        const tc = Utils.fromMilliTimestamp(timestamp_ms);
+        const use_local_timezone = if (@hasField(@TypeOf(config), "timezone"))
+            config.timezone == .local
+        else
+            false;
+        const tc = if (use_local_timezone)
+            Utils.fromMilliTimestampLocal(timestamp_ms)
+        else
+            Utils.fromMilliTimestamp(timestamp_ms);
+        const utc_offset_minutes: i16 = if (use_local_timezone)
+            Utils.localUtcOffsetMinutes(timestamp_ms)
+        else
+            0;
         const abs_ts = if (timestamp_ms < 0) 0 else @as(u64, @intCast(timestamp_ms));
         const millis = abs_ts % Constants.TimeConstants.ms_per_second;
 
-        // ISO8601 format: 2025-12-04T06:39:53.091Z
-        if (std.mem.eql(u8, config.time_format, "ISO8601")) {
+        // ISO8601 format: 2025-12-04T06:39:53.091Z or 2025-12-04T07:39:53.091+01:00
+        if (std.mem.eql(u8, time_format, Config.TimeFormat.iso8601)) {
             try Utils.writeIsoDateTime(writer, tc);
             try writer.writeByte('.');
             try Utils.write3Digits(writer, millis);
-            try writer.writeByte('Z');
+            if (use_local_timezone) {
+                try Utils.writeUtcOffset(writer, utc_offset_minutes);
+            } else {
+                try writer.writeByte('Z');
+            }
             return;
         }
 
-        // RFC3339 format: 2025-12-04T06:39:53+00:00
-        if (std.mem.eql(u8, config.time_format, "RFC3339")) {
+        // RFC3339 format: 2025-12-04T06:39:53+00:00 or 2025-12-04T07:39:53+01:00
+        if (std.mem.eql(u8, time_format, Config.TimeFormat.rfc3339)) {
             try Utils.writeIsoDateTime(writer, tc);
-            try writer.writeAll("+00:00");
+            try Utils.writeUtcOffset(writer, utc_offset_minutes);
             return;
         }
 
@@ -897,7 +939,7 @@ pub const Formatter = struct {
         // mm = 2-digit minute
         // ss = 2-digit second
         // Custom format parsing via shared utility
-        try Utils.formatDatePattern(writer, config.time_format, tc.year, tc.month, tc.day, tc.hour, tc.minute, tc.second, millis);
+        try Utils.formatDatePatternWithOffset(writer, time_format, tc.year, tc.month, tc.day, tc.hour, tc.minute, tc.second, millis, utc_offset_minutes);
     }
 
     /// Formats a log record as JSON string.
@@ -977,8 +1019,14 @@ pub const Formatter = struct {
         try writer.writeAll(indent);
         try writer.writeAll("\"timestamp\"");
         try writer.writeAll(sep);
-        if (std.mem.eql(u8, config.time_format, "unix")) {
-            try Utils.writeInt(writer, @as(u64, @intCast(@divFloor(record.timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))))));
+        const time_format = normalizedTimeFormat(config.time_format);
+        if (isNumericTimestampFormat(time_format)) {
+            if (isUnixSecondsFormat(time_format)) {
+                const unix_seconds = @divFloor(record.timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+                try Utils.writeInt(writer, unix_seconds);
+            } else {
+                try Utils.writeInt(writer, record.timestamp);
+            }
         } else {
             try writer.writeAll("\"");
             try self.writeTimestamp(writer, record.timestamp, config);
@@ -1332,6 +1380,7 @@ pub const Formatter = struct {
     pub const resetStatistics = resetStats;
 };
 
+/// Fetches the current hostname using platform-specific APIs.
 fn fetchHostname(allocator: std.mem.Allocator) ![]const u8 {
     const builtin = @import("builtin");
     if (builtin.os.tag == .windows) {
@@ -1352,6 +1401,7 @@ fn fetchHostname(allocator: std.mem.Allocator) ![]const u8 {
     }
 }
 
+/// Fetches the current process ID in a cross-platform way.
 fn fetchPID() Constants.NativeUint {
     const builtin = @import("builtin");
     // Use std.posix where available for portability
@@ -1408,6 +1458,189 @@ pub const FormatterPresets = struct {
     pub const lightMode = light;
     pub const dayMode = light;
 };
+
+/// Formats an offset suffix for test assertions.
+fn formatOffsetSuffixForTest(buf: []u8, offset_minutes: i16) ![]const u8 {
+    var fbs = std.io.fixedBufferStream(buf);
+    try Utils.writeUtcOffset(fbs.writer(), offset_minutes);
+
+    return fbs.getWritten();
+}
+
+test "formatter ISO8601 UTC uses Z suffix" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "UTC test");
+    defer record.deinit();
+    record.timestamp = 1700000000000;
+
+    var config = Config{};
+    config.time_format = Config.TimeFormat.iso8601;
+    config.timezone = .utc;
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Z\"") != null);
+}
+
+test "formatter ISO8601 local uses local offset suffix" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "Local timezone test");
+    defer record.deinit();
+    record.timestamp = 1700000000000;
+
+    var config = Config{};
+    config.time_format = Config.TimeFormat.iso8601;
+    config.timezone = .local;
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+
+    const offset_minutes = Utils.localUtcOffsetMinutes(record.timestamp);
+    var expected_offset_buf: [6]u8 = undefined;
+    const expected_offset = try formatOffsetSuffixForTest(&expected_offset_buf, offset_minutes);
+
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_offset) != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Z\"") == null);
+}
+
+test "formatter RFC3339 UTC uses +00:00 suffix" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "RFC3339 UTC test");
+    defer record.deinit();
+    record.timestamp = 1700000000000;
+
+    var config = Config{};
+    config.time_format = Config.TimeFormat.rfc3339;
+    config.timezone = .utc;
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "+00:00\"") != null);
+}
+
+test "formatter RFC3339 local uses local offset suffix" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "RFC3339 local test");
+    defer record.deinit();
+    record.timestamp = 1700000000000;
+
+    var config = Config{};
+    config.time_format = Config.TimeFormat.rfc3339;
+    config.timezone = .local;
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+
+    const offset_minutes = Utils.localUtcOffsetMinutes(record.timestamp);
+    var expected_offset_buf: [6]u8 = undefined;
+    const expected_offset = try formatOffsetSuffixForTest(&expected_offset_buf, offset_minutes);
+
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_offset) != null);
+}
+
+test "formatter unix and unix_ms remain numeric" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "Unix format test");
+    defer record.deinit();
+    record.timestamp = 1700000000123;
+
+    var unix_config = Config{};
+    unix_config.time_format = Config.TimeFormat.unix;
+    unix_config.timezone = .local;
+
+    var unix_buf: std.ArrayList(u8) = .{};
+    defer unix_buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(unix_buf.writer(allocator), &record, unix_config);
+    try std.testing.expect(std.mem.indexOf(u8, unix_buf.items, "\"timestamp\":1700000000") != null);
+
+    var unix_ms_config = Config{};
+    unix_ms_config.time_format = Config.TimeFormat.unix_ms;
+    unix_ms_config.timezone = .local;
+
+    var unix_ms_buf: std.ArrayList(u8) = .{};
+    defer unix_ms_buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(unix_ms_buf.writer(allocator), &record, unix_ms_config);
+    try std.testing.expect(std.mem.indexOf(u8, unix_ms_buf.items, "\"timestamp\":1700000000123") != null);
+    try std.testing.expect(std.mem.indexOf(u8, unix_ms_buf.items, "\"timestamp\":\"1700000000123\"") == null);
+}
+
+test "formatter default time format alias maps to configured default pattern" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "Default alias test");
+    defer record.deinit();
+    record.timestamp = 1700000000123;
+
+    var config = Config{};
+    config.timezone = .utc;
+    config.time_format = Config.TimeFormat.default_alias;
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\"timestamp\":\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "default") == null);
+}
+
+test "formatter custom pattern supports timezone tokens" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "Timezone token test");
+    defer record.deinit();
+    record.timestamp = 1700000000000;
+
+    var config = Config{};
+    config.timezone = .local;
+    config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ ZZ";
+
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+
+    const offset_minutes = Utils.localUtcOffsetMinutes(record.timestamp);
+    var expected_colon_buf: [6]u8 = undefined;
+    const expected_colon = try formatOffsetSuffixForTest(&expected_colon_buf, offset_minutes);
+
+    var expected_compact_buf: [5]u8 = undefined;
+    var compact_fbs = std.io.fixedBufferStream(&expected_compact_buf);
+    try Utils.writeUtcOffsetCompact(compact_fbs.writer(), offset_minutes);
+    const expected_compact = compact_fbs.getWritten();
+
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_colon) != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_compact) != null);
+}
 
 test "formatter plain text" {
     const allocator = std.testing.allocator;

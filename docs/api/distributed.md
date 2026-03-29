@@ -105,3 +105,24 @@ config.distributed = .{
     .span_header = "b3-spanid",
 };
 ```
+
+## W3C Trace Context Interop
+
+`DistributedConfig` controls service metadata and optional custom headers. For standards-based propagation, use the logger's W3C helpers:
+
+```zig
+const incoming = request.getHeader("traceparent") orelse "";
+const req_logger = try logger.withTraceparent(incoming);
+
+// Nested operation
+const child = req_logger.child("7a085853722dc6d2").inModule("database.query");
+try child.info("Executing query", @src());
+
+// Forward to downstream call
+if (try logger.getTraceparentHeader(allocator)) |traceparent| {
+  defer allocator.free(traceparent);
+  try outbound_headers.put("traceparent", traceparent);
+}
+```
+
+`withTraceparent(...)` and `setTraceContextFromTraceparent(...)` return `LoggerError.InvalidTraceparent` for malformed headers.

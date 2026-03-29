@@ -1146,29 +1146,17 @@ pub const Telemetry = struct {
 
     /// Generate W3C traceparent header value
     pub fn getTraceparentHeader(self: *Telemetry, span: *const Span) ![]const u8 {
-        // Format: version-trace_id-span_id-flags
-        // Example: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
-        var buf: [128]u8 = undefined;
-        const result = try std.fmt.bufPrint(&buf, "00-{s}-{s}-01", .{ span.trace_id, span.span_id });
-        return try self.allocator.dupe(u8, result);
+        return utils.formatTraceparentHeader(self.allocator, span.trace_id, span.span_id, true);
     }
 
     /// Parse W3C traceparent header and extract trace context
     pub fn parseTraceparentHeader(header: []const u8) ?TraceContext {
-        // Format: version-trace_id-span_id-flags
-        var parts = std.mem.splitScalar(u8, header, '-');
-
-        const version = parts.next() orelse return null;
-        if (!std.mem.eql(u8, version, "00")) return null;
-
-        const trace_id = parts.next() orelse return null;
-        const span_id = parts.next() orelse return null;
-        const flags = parts.next() orelse return null;
+        const parsed = utils.parseTraceparentHeader(header) orelse return null;
 
         return TraceContext{
-            .trace_id = trace_id,
-            .span_id = span_id,
-            .sampled = flags.len > 0 and flags[flags.len - 1] == '1',
+            .trace_id = parsed.trace_id,
+            .span_id = parsed.span_id,
+            .sampled = parsed.sampled,
         };
     }
 

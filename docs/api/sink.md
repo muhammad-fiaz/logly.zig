@@ -124,6 +124,19 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 |-------|------|---------|-------------|
 | `on_error` | `ErrorBehavior` | `.log_stderr` | Error handling behavior: `.silent`, `.log_stderr`, `.disable_sink`, `.propagate` |
 
+#### ErrorBehavior semantics
+
+- Applied across direct writes and buffered flush paths (`writeRaw`, `flush`, `flushNow`).
+- `.silent`: increments write error stats and suppresses output.
+- `.log_stderr`: increments write error stats and emits a compact sink error line to stderr.
+- `.disable_sink`: disables the sink after an error and triggers `onStateChange(false)` callback when configured.
+- `.propagate`: returns the original write/flush error to the caller.
+
+For TCP sinks, reconnect attempts use centralized retry defaults:
+
+- `Constants.TimeDefaults.max_retries`
+- `Constants.TimeDefaults.retry_delay_ms`
+
 ### Advanced Options
 
 | Field | Type | Default | Description |
@@ -211,9 +224,23 @@ Writes a log record using an optional scratch allocator for formatting.
 try sink.writeWithAllocator(record, config, logger.scratchAllocator());
 ```
 
+### `writeRaw(data: []const u8) !void`
+
+Writes preformatted data directly to the sink, bypassing record formatting.
+
+- Appends a newline for file/console/network raw writes.
+- Updates `SinkStats` and `on_write` callback on success.
+- Applies `on_error` behavior consistently on failures.
+
 ### `flush() !void`
 
-Flushes the sink buffer to ensure all data is written.
+Flushes buffered sink data to its destination.
+
+- Returns immediately when buffer is empty.
+- Uses internal buffered record accounting so stats reflect batch flushes accurately.
+- On success updates `SinkStats` (`total_written`, `bytes_written`, `flush_count`).
+- Invokes `on_write(record_count, bytes)` and `on_flush(bytes, duration_ns)` callbacks.
+- On failure increments `write_errors` and applies configured `on_error` behavior.
 
 ### `isAsyncEnabled() bool`
 
@@ -230,6 +257,8 @@ Disables async writing for this sink, forcing immediate synchronous writes and f
 ### `flushNow() !void`
 
 Manually flushes the sink buffer immediately, regardless of async settings.
+
+Use this in batch checkpoints when async buffering is enabled but immediate durability is required.
 
 ## Examples
 
@@ -295,6 +324,26 @@ _ = try logger.add(.{
     .async_write = true,
     .buffer_size = 65536, // 64KB buffer
 });
+```
+
+### Manual Flush Control
+
+```zig
+var sink = try logly.Sink.init(allocator, .{
+    .path = "logs/batch.log",
+    .async_write = true,
+    .on_error = .propagate,
+});
+defer sink.deinit();
+
+try sink.writeRaw("batch line 1");
+try sink.writeRaw("batch line 2");
+
+// Explicit durability checkpoint
+try sink.flushNow();
+
+const stats = sink.getStats();
+std.debug.print("flushed records: {}\n", .{stats.getTotalWritten()});
 ```
 
 ### Multiple Sinks with Different Levels

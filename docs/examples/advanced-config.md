@@ -29,10 +29,11 @@ const AsyncConfig = logly.AsyncConfig;
 
 // Build comprehensive config using helper methods
 var config = logly.Config.default()
-    .withThreadPool(.{ .worker_count = 4 })
-    .withScheduler(.{ .max_tasks = 256 })
-    .withCompression(.{ .level = 6 })
-    .withAsync(.{ .buffer_size = 4096 });
+  .withThreadPool(.{ .enabled = true, .thread_count = 4 })
+  .withScheduler(.{ .enabled = true, .cleanup_max_age_days = 7 })
+  .withCompression(.{ .enabled = true, .level = .default })
+  .withAsync(.{ .enabled = true, .buffer_size = 4096 })
+  .withArenaAllocator();
 ```
 
 ## Code Example
@@ -61,8 +62,10 @@ pub fn main() !void {
     // Available placeholders:
     // {time}, {level}, {message}, {module}, {function}, {file}, {line}, {trace_id}, {span_id}
     config.log_format = "{time} | {level} | {message}";
-    config.time_format = "YYYY-MM-DD HH:mm:ss";
+    config.time_format = logly.Config.TimeFormat.default_pattern;
     config.timezone = .utc;
+    config.use_arena_allocator = true;
+    config.arena_reset_threshold = 64 * 1024;
     
     logger.configure(config);
     
@@ -72,7 +75,7 @@ pub fn main() !void {
     // ============================================
     // SECTION 2: Unix Timestamp Format
     // ============================================
-    config.time_format = "unix";
+    config.time_format = logly.Config.TimeFormat.unix;
     logger.configure(config);
     
     try logger.info("Now using Unix timestamp", @src());
@@ -80,7 +83,7 @@ pub fn main() !void {
     // ============================================
     // SECTION 3: Clickable File Links
     // ============================================
-    config.time_format = "YYYY-MM-DD HH:mm:ss";
+    config.time_format = logly.Config.TimeFormat.default_pattern;
     config.show_filename = true;
     config.show_lineno = true;
     config.log_format = null;  // Use default format to show file:line

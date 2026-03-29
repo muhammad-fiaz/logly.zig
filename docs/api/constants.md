@@ -19,46 +19,20 @@ The `Constants` module provides architecture-dependent types and default configu
 Cross-platform atomic integer types ensuring compatibility between 32-bit and 64-bit architectures.
 
 ```zig
-/// Architecture-dependent unsigned atomic integer type (u64 on 64-bit, u32 on 32-bit)
-pub const AtomicUnsigned = switch (builtin.target.cpu.arch) {
-    .x86_64 => u64,
-    .aarch64 => u64,
-    .riscv64 => u64,
-    .powerpc64 => u64,
-    .x86 => u32,
-    .arm => u32,
-    else => u32,
-};
+/// Architecture-dependent unsigned atomic integer type
+pub const AtomicUnsigned = std.meta.Int(.unsigned, @bitSizeOf(usize));
 
-/// Architecture-dependent signed atomic integer type (i64 on 64-bit, i32 on 32-bit)
-pub const AtomicSigned = switch (builtin.target.cpu.arch) {
-    .x86_64 => i64,
-    .aarch64 => i64,
-    .riscv64 => i64,
-    .powerpc64 => i64,
-    .x86 => i32,
-    .arm => i32,
-    else => i32,
-};
+/// Architecture-dependent signed atomic integer type
+pub const AtomicSigned = std.meta.Int(.signed, @bitSizeOf(usize));
 
 /// Native pointer-sized unsigned integer for the target architecture
-pub const NativeUint = switch (builtin.target.cpu.arch) {
-    .x86_64 => u64,
-    .aarch64 => u64,
-    .riscv64 => u64,
-    .powerpc64 => u64,
-    else => u32,
-};
+pub const NativeUint = usize;
 
 /// Native pointer-sized signed integer for the target architecture
-pub const NativeInt = switch (builtin.target.cpu.arch) {
-    .x86_64 => i64,
-    .aarch64 => i64,
-    .riscv64 => i64,
-    .powerpc64 => i64,
-    else => i32,
-};
+pub const NativeInt = isize;
 ```
+
+This pointer-width-driven approach keeps behavior correct on 32-bit and 64-bit targets across Windows, Linux, macOS, and freestanding toolchains, including `x86`, `x86_64`, and `aarch64`.
 
 ## Buffer Sizes
 
