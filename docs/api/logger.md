@@ -103,11 +103,11 @@ Initializes a new `Logger` instance with a specific configuration preset.
 
 `Logger.init(...)` and `Logger.initWithConfig(...)` accept any allocator implementing `std.mem.Allocator`.
 
-- Use `std.heap.GeneralPurposeAllocator` for robust general-purpose ownership and leak detection.
+- Use `std.heap.DebugAllocator` for robust general-purpose ownership and leak detection.
 - Enable arena scratch allocation with `Config.withArenaAllocation()` (aliases: `withArenaAllocator()`, `withArena()`) for high-throughput temporary allocations.
 
 ```zig
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
 var config = logly.Config.production().withArenaAllocator();

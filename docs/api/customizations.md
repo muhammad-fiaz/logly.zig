@@ -80,7 +80,7 @@ Per-level ANSI color code customization with theme presets and individual overri
 
 **Type:** `Config.LevelColorConfig`
 
-### LevelColorConfig (v0.1.5)
+### LevelColorConfig (v0.1.8)
 
 ```zig
 pub const LevelColorConfig = struct {

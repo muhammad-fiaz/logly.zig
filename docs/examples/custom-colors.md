@@ -32,7 +32,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -78,7 +78,7 @@ pub fn main() !void {
 | FAIL     | 35        | Magenta         |
 | CRITICAL | 91        | Bright Red      |
 
-## Color Variants (v0.1.5)
+## Color Variants (v0.1.8)
 
 Each level now supports multiple color variants:
 

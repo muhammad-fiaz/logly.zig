@@ -227,11 +227,11 @@ Explicitly deny a specific module.
 
 #### `allowRegex(regex: []const u8) !void`
  
- Allow messages matching a regex-like pattern. Uses the improved regex engine (v0.1.5).
+ Allow messages matching a regex-like pattern. Uses the improved regex engine (v0.1.8).
  
  #### `denyRegex(regex: []const u8) !void`
  
- Deny messages matching a regex-like pattern. Uses the improved regex engine (v0.1.5).
+ Deny messages matching a regex-like pattern. Uses the improved regex engine (v0.1.8).
 
 #### `addContextMatch(key: []const u8, pattern: []const u8, action: Action) !void`
 

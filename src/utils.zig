@@ -21,6 +21,60 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Constants = @import("constants.zig");
+var threaded = std.Io.Threaded.init_single_threaded;
+
+pub fn io() std.Io {
+    return threaded.io();
+}
+
+/// Adapts an unmanaged `std.ArrayList(u8)` to the Zig 0.16 `std.Io.Writer` interface.
+pub const ArrayListWriter = struct {
+    writer: std.Io.Writer,
+    list: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+
+    const vtable: std.Io.Writer.VTable = .{ .drain = drain };
+
+    pub fn init(list: *std.ArrayList(u8), allocator: std.mem.Allocator) ArrayListWriter {
+        return .{
+            .writer = .{
+                .vtable = &vtable,
+                .buffer = &.{},
+            },
+            .list = list,
+            .allocator = allocator,
+        };
+    }
+
+    fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        const self: *ArrayListWriter = @fieldParentPtr("writer", w);
+        var written: usize = 0;
+        for (data) |bytes| {
+            self.list.appendSlice(self.allocator, bytes) catch return error.WriteFailed;
+            written += bytes.len;
+        }
+        if (splat == 0) {
+            const pattern = data[data.len - 1];
+            self.list.shrinkRetainingCapacity(self.list.items.len - pattern.len);
+            written -= pattern.len;
+        } else {
+            const pattern = data[data.len - 1];
+            for (1..splat) |_| {
+                self.list.appendSlice(self.allocator, pattern) catch return error.WriteFailed;
+                written += pattern.len;
+            }
+        }
+        return written;
+    }
+};
+
+fn nowReal() std.Io.Timestamp {
+    return std.Io.Clock.real.now(io());
+}
+
+fn nowMonotonic() std.Io.Timestamp {
+    return std.Io.Clock.awake.now(io());
+}
 
 /// Parses a size string (e.g., "10MB", "5GB") into bytes.
 /// Supports B, KB, MB, GB, TB (case insensitive).
@@ -80,10 +134,10 @@ pub fn writeSize(writer: anytype, bytes: u64) !void {
 /// Formats a byte size into a human-readable string.
 /// Uses the most appropriate unit (B, KB, MB, GB, TB).
 pub fn formatSize(allocator: std.mem.Allocator, bytes: u64) ![]u8 {
-    var list = std.ArrayList(u8).empty;
-    errdefer list.deinit(allocator);
-    try writeSize(list.writer(allocator), bytes);
-    return list.toOwnedSlice(allocator);
+    var writer = std.Io.Writer.Allocating.init(allocator);
+    errdefer writer.deinit();
+    try writeSize(&writer.writer, bytes);
+    return writer.toOwnedSlice();
 }
 
 /// Parses a duration string (e.g., "30s", "5m", "2h") into milliseconds.
@@ -142,10 +196,10 @@ pub fn writeDuration(writer: anytype, ms: i64) !void {
 
 /// Formats a duration in milliseconds into a human-readable string.
 pub fn formatDuration(allocator: std.mem.Allocator, ms: i64) ![]u8 {
-    var list = std.ArrayList(u8).empty;
-    errdefer list.deinit(allocator);
-    try writeDuration(list.writer(allocator), ms);
-    return list.toOwnedSlice(allocator);
+    var writer = std.Io.Writer.Allocating.init(allocator);
+    errdefer writer.deinit();
+    try writeDuration(&writer.writer, ms);
+    return writer.toOwnedSlice();
 }
 
 /// Time components extracted from an epoch timestamp.
@@ -309,22 +363,33 @@ pub fn writeUtcOffsetCompact(writer: anytype, offset_minutes: i16) !void {
 
 /// Gets current time components.
 pub fn nowComponents() TimeComponents {
-    return fromMilliTimestamp(std.time.milliTimestamp());
+    return fromMilliTimestamp(currentMillis());
 }
 
 /// Returns current Unix timestamp in seconds.
 pub fn currentSeconds() i64 {
-    return std.time.timestamp();
+    return nowReal().toSeconds();
 }
 
 /// Returns current timestamp in milliseconds.
 pub fn currentMillis() i64 {
-    return std.time.milliTimestamp();
+    return nowReal().toMilliseconds();
 }
 
 /// Returns current timestamp in nanoseconds.
 pub fn currentNanos() i128 {
-    return std.time.nanoTimestamp();
+    return @as(i128, nowMonotonic().toNanoseconds());
+}
+
+/// Sleeps for the specified duration in nanoseconds.
+pub fn sleepNs(duration_ns: u64) void {
+    const duration = std.Io.Duration.fromNanoseconds(@as(i96, @intCast(duration_ns)));
+    _ = std.Io.sleep(io(), duration, .awake) catch {};
+}
+
+/// Sleeps for the specified duration in milliseconds.
+pub fn sleepMs(duration_ms: u64) void {
+    sleepNs(duration_ms * Constants.TimeConstants.ns_per_ms);
 }
 
 /// Checks if two timestamps are on the same day.
@@ -355,7 +420,7 @@ pub fn startOfHour(timestamp: i64) i64 {
 
 /// Calculates elapsed time in milliseconds since start_time.
 pub fn elapsedMs(start_time: i64) u64 {
-    const now_time = std.time.milliTimestamp();
+    const now_time = currentMillis();
     if (now_time < start_time) return 0;
     return @intCast(now_time - start_time);
 }
@@ -456,16 +521,16 @@ fn formatDatePatternInternal(writer: anytype, fmt: []const u8, year: i32, month:
 
 /// Formats a date/time to a caller-provided buffer using a pattern.
 pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64) ![]u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try formatDatePattern(fbs.writer(), fmt, year, month, day, hour, minute, second, millis);
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try formatDatePattern(&writer, fmt, year, month, day, hour, minute, second, millis);
+    return buf[0..writer.end];
 }
 
 /// Formats a date/time to a caller-provided buffer with timezone token support.
 pub fn formatDateToBufWithOffset(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: i16) ![]u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try formatDatePatternWithOffset(fbs.writer(), fmt, year, month, day, hour, minute, second, millis, timezone_offset_minutes);
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try formatDatePatternWithOffset(&writer, fmt, year, month, day, hour, minute, second, millis, timezone_offset_minutes);
+    return buf[0..writer.end];
 }
 
 /// Writes an ISO 8601 date (YYYY-MM-DD) to the writer.
@@ -479,9 +544,9 @@ pub fn writeIsoDate(writer: anytype, tc: TimeComponents) !void {
 
 /// Formats an ISO 8601 date string (YYYY-MM-DD) to buffer.
 pub fn formatIsoDate(buf: []u8, tc: TimeComponents) ![]u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try writeIsoDate(fbs.writer(), tc);
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try writeIsoDate(&writer, tc);
+    return buf[0..writer.end];
 }
 
 /// Writes an ISO 8601 time (HH:MM:SS) to the writer.
@@ -495,9 +560,9 @@ pub fn writeIsoTime(writer: anytype, tc: TimeComponents) !void {
 
 /// Formats an ISO 8601 time string (HH:MM:SS) to buffer.
 pub fn formatIsoTime(buf: []u8, tc: TimeComponents) ![]u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try writeIsoTime(fbs.writer(), tc);
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try writeIsoTime(&writer, tc);
+    return buf[0..writer.end];
 }
 
 /// Writes an ISO 8601 datetime (YYYY-MM-DDTHH:MM:SS) to the writer.
@@ -509,9 +574,9 @@ pub fn writeIsoDateTime(writer: anytype, tc: TimeComponents) !void {
 
 /// Formats an ISO 8601 datetime string (YYYY-MM-DDTHH:MM:SS) to buffer.
 pub fn formatIsoDateTime(buf: []u8, tc: TimeComponents) ![]u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try writeIsoDateTime(fbs.writer(), tc);
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try writeIsoDateTime(&writer, tc);
+    return buf[0..writer.end];
 }
 
 /// Writes a filename-safe datetime (YYYY-MM-DD_HH-MM-SS) to the writer.
@@ -531,9 +596,9 @@ pub fn writeFilenameSafe(writer: anytype, tc: TimeComponents) !void {
 
 /// Formats a filename-safe datetime string (YYYY-MM-DD_HH-MM-SS) to buffer.
 pub fn formatFilenameSafe(buf: []u8, tc: TimeComponents) ![]u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try writeFilenameSafe(fbs.writer(), tc);
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try writeFilenameSafe(&writer, tc);
+    return buf[0..writer.end];
 }
 
 /// Clamps a value between min and max bounds.
@@ -574,7 +639,7 @@ pub const formatToBuf = formatDateToBuf;
 /// Example:
 /// ```zig
 /// var buf: [256]u8 = undefined;
-/// var fbs = std.io.fixedBufferStream(&buf);
+/// var writer = std.Io.Writer.fixed(&buf);
 /// try escapeJsonString(fbs.writer(), "Hello\nWorld");
 /// // Result: Hello\nWorld (with escaped newline)
 /// ```
@@ -610,9 +675,9 @@ pub fn escapeJsonString(writer: anytype, s: []const u8) !void {
 /// Returns:
 ///     Slice of written content
 pub fn escapeJsonStringToBuf(buf: []u8, s: []const u8) ![]u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try escapeJsonString(fbs.writer(), s);
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try escapeJsonString(&writer, s);
+    return buf[0..writer.end];
 }
 
 /// Calculates a rate as a floating-point ratio (0.0 - 1.0).
@@ -681,18 +746,18 @@ pub fn calculateThroughputMs(count: u64, elapsed_ms: i64) f64 {
 
 test "escapeJsonString" {
     var buf: [256]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
+    var writer = std.Io.Writer.fixed(&buf);
 
-    try escapeJsonString(fbs.writer(), "Hello\"World");
-    try std.testing.expectEqualStrings("Hello\\\"World", fbs.getWritten());
+    try escapeJsonString(&writer, "Hello\"World");
+    try std.testing.expectEqualStrings("Hello\\\"World", buf[0..writer.end]);
 
-    fbs.reset();
-    try escapeJsonString(fbs.writer(), "Line1\nLine2");
-    try std.testing.expectEqualStrings("Line1\\nLine2", fbs.getWritten());
+    writer.end = 0;
+    try escapeJsonString(&writer, "Line1\nLine2");
+    try std.testing.expectEqualStrings("Line1\\nLine2", buf[0..writer.end]);
 
-    fbs.reset();
-    try escapeJsonString(fbs.writer(), "Tab\there");
-    try std.testing.expectEqualStrings("Tab\\there", fbs.getWritten());
+    writer.end = 0;
+    try escapeJsonString(&writer, "Tab\there");
+    try std.testing.expectEqualStrings("Tab\\there", buf[0..writer.end]);
 }
 
 test "calculateRate" {
@@ -876,7 +941,7 @@ pub fn writeInt(writer: anytype, value: anytype) !void {
 /// Allocator is required to allocate the string.
 pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
     var bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&bytes);
+    io().random(&bytes);
     const hex_chars = "0123456789abcdef";
     var result = try allocator.alloc(u8, 32);
     for (bytes, 0..) |b, i| {
@@ -890,7 +955,7 @@ pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
 /// Allocator is required to allocate the string.
 pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
     var bytes: [8]u8 = undefined;
-    std.crypto.random.bytes(&bytes);
+    io().random(&bytes);
     const hex_chars = "0123456789abcdef";
     var result = try allocator.alloc(u8, 16);
     for (bytes, 0..) |b, i| {
@@ -979,7 +1044,9 @@ pub fn formatTraceparentHeader(allocator: std.mem.Allocator, trace_id: []const u
 pub fn shouldSample(rate: f64) bool {
     if (rate >= 1.0) return true;
     if (rate <= 0.0) return false;
-    return std.crypto.random.float(f64) < rate;
+    const rng_impl: std.Random.IoSource = .{ .io = io() };
+    const rng = rng_impl.interface();
+    return rng.float(f64) < rate;
 }
 
 test "generateTraceId" {
@@ -1139,7 +1206,7 @@ pub fn calculateRecordsPerSecond(records: u64, elapsed_ms: i64) f64 {
 ///
 /// Performance: O(1)
 pub fn durationSinceNs(start_time: i128) u64 {
-    const now = std.time.nanoTimestamp();
+    const now = currentNanos();
     if (now < start_time) return 0;
     return @intCast(@max(0, now - start_time));
 }
@@ -1427,7 +1494,7 @@ pub fn lzmaHash(data: []const u8, len: usize) u14 {
 }
 
 test "durationSinceNs" {
-    const start = std.time.nanoTimestamp();
+    const start = currentNanos();
     // Simple test - just verify duration is non-negative without sleep
     const duration = durationSinceNs(start);
     // Duration should be very small (microseconds to milliseconds) since we just started

@@ -48,7 +48,7 @@ pub const Compression = struct {
     /// Compression statistics for monitoring.
     stats: CompressionStats,
     /// Mutex for thread-safe operations.
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
 
     /// Callback invoked before compression starts.
     /// Parameters: (file_path: []const u8, uncompressed_size: u64)
@@ -642,8 +642,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(1)
     pub fn setCompressionStartCallback(self: *Compression, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_compression_start = callback;
     }
 
@@ -655,8 +655,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(1)
     pub fn setCompressionCompleteCallback(self: *Compression, callback: *const fn ([]const u8, []const u8, u64, u64, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_compression_complete = callback;
     }
 
@@ -668,8 +668,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(1)
     pub fn setCompressionErrorCallback(self: *Compression, callback: *const fn ([]const u8, anyerror) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_compression_error = callback;
     }
 
@@ -681,8 +681,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(1)
     pub fn setDecompressionCompleteCallback(self: *Compression, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_decompression_complete = callback;
     }
 
@@ -694,8 +694,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(1)
     pub fn setArchiveDeletedCallback(self: *Compression, callback: *const fn ([]const u8) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_archive_deleted = callback;
     }
 
@@ -735,8 +735,8 @@ pub const Compression = struct {
             _ = self.stats.total_compression_time_ns.fetchAdd(@truncate(elapsed), .monotonic);
         }
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.config.algorithm == .none or data.len == 0) {
             const copy = try alloc.dupe(u8, data);
@@ -816,7 +816,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(N) memory and time.
     pub fn compressStream(self: *Compression, reader: anytype, writer: anytype) !void {
-        const content = try reader.readAllAlloc(self.allocator, std.math.maxInt(usize));
+        var input = reader;
+        const content = try input.allocRemaining(self.allocator, .unlimited);
         defer self.allocator.free(content);
 
         const compressed = try self.compress(content);
@@ -836,7 +837,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(N) memory and time.
     pub fn decompressStream(self: *Compression, reader: anytype, writer: anytype) !void {
-        const content = try reader.readAllAlloc(self.allocator, std.math.maxInt(usize));
+        var input = reader;
+        const content = try input.allocRemaining(self.allocator, .unlimited);
         defer self.allocator.free(content);
 
         const decompressed = try self.decompress(content);
@@ -1022,7 +1024,7 @@ pub const Compression = struct {
     }
 
     fn compressTarGzWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
-        var tar_buf = std.io.Writer.Allocating.init(alloc);
+        var tar_buf = std.Io.Writer.Allocating.init(alloc);
         defer tar_buf.deinit();
 
         var tar_writer: std.tar.Writer = .{ .underlying_writer = &tar_buf.writer };
@@ -1491,7 +1493,7 @@ pub const Compression = struct {
         const tar_data = try self.decompressDeflateNative(data, 0, 0);
         defer alloc.free(tar_data);
 
-        var tar_reader = std.io.Reader.fixed(tar_data);
+        var tar_reader = std.Io.Reader.fixed(tar_data);
 
         const file_name_buf = try alloc.alloc(u8, std.fs.max_path_bytes);
         defer alloc.free(file_name_buf);
@@ -1519,27 +1521,26 @@ pub const Compression = struct {
     /// v0.1.6+
     fn decompressZipWithAllocator(self: *Compression, data: []const u8, original_size: usize, alloc: std.mem.Allocator) ![]u8 {
         _ = alloc;
-        var stream = std.io.fixedBufferStream(data);
-        var reader = stream.reader();
+        var stream = std.Io.Reader.fixed(data);
 
         // Check Local File Header signature
-        const sig = try reader.readInt(u32, .little);
+        const sig = try stream.takeInt(u32, .little);
         if (sig != 0x04034b50) return error.InvalidZipArchive;
 
-        _ = try reader.readInt(u16, .little); // Version needed
-        _ = try reader.readInt(u16, .little); // Flags
-        const compression_method = try reader.readInt(u16, .little);
-        _ = try reader.readInt(u16, .little); // Mod time
-        _ = try reader.readInt(u16, .little); // Mod date
-        _ = try reader.readInt(u32, .little); // CRC32
-        const compressed_size = try reader.readInt(u32, .little);
-        const uncompressed_size = try reader.readInt(u32, .little);
-        const filename_len = try reader.readInt(u16, .little);
-        const extra_len = try reader.readInt(u16, .little);
+        _ = try stream.takeInt(u16, .little); // Version needed
+        _ = try stream.takeInt(u16, .little); // Flags
+        const compression_method = try stream.takeInt(u16, .little);
+        _ = try stream.takeInt(u16, .little); // Mod time
+        _ = try stream.takeInt(u16, .little); // Mod date
+        _ = try stream.takeInt(u32, .little); // CRC32
+        const compressed_size = try stream.takeInt(u32, .little);
+        const uncompressed_size = try stream.takeInt(u32, .little);
+        const filename_len = try stream.takeInt(u16, .little);
+        const extra_len = try stream.takeInt(u16, .little);
 
-        try stream.seekBy(@intCast(filename_len + extra_len));
+        try stream.discardAll(@intCast(filename_len + extra_len));
 
-        const content_compressed = data[stream.pos..][0..compressed_size];
+        const content_compressed = data[stream.seek..][0..compressed_size];
 
         if (compression_method == 0) {
             // Store (no compression)
@@ -1557,16 +1558,15 @@ pub const Compression = struct {
     /// v0.1.6+
     fn decompressLzmaWithAllocator(self: *Compression, data: []const u8, original_size: usize, alloc: std.mem.Allocator) ![]u8 {
         _ = self;
-        var stream = std.io.fixedBufferStream(data);
-        var reader = stream.reader();
+        var stream = std.Io.Reader.fixed(data);
 
         // Header: [properties:1][dict_size:4][uncompressed_size:8]
         if (data.len < 13) return error.InvalidLzmaHeader;
 
-        _ = try reader.readByte(); // properties
-        const dict_size = try reader.readInt(u32, .little);
+        _ = try stream.takeByte(); // properties
+        const dict_size = try stream.takeInt(u32, .little);
         _ = dict_size;
-        const uncompressed_len = try reader.readInt(u64, .little);
+        const uncompressed_len = try stream.takeInt(u64, .little);
 
         if (uncompressed_len > std.math.maxInt(usize)) return error.OutputTooLarge;
         // Use passed original_size if header size is 0 (unknown) or matches max u64 (unknown marker)
@@ -1575,8 +1575,8 @@ pub const Compression = struct {
         var result = try std.ArrayList(u8).initCapacity(alloc, output_size);
         errdefer result.deinit(alloc);
 
-        while (stream.pos < data.len) {
-            const byte = try reader.readByte();
+        while (stream.seek < data.len) {
+            const byte = try stream.takeByte();
 
             if (byte == 0x00) {
                 // End marker
@@ -1585,30 +1585,30 @@ pub const Compression = struct {
                 // Literal run
                 var lit_len: usize = 0;
                 if (byte == 0xFF) {
-                    lit_len = try reader.readInt(u16, .little);
+                    lit_len = try stream.takeInt(u16, .little);
                 } else {
                     lit_len = byte & 0x7F;
                 }
 
-                if (stream.pos + lit_len > data.len) return error.InvalidData;
-                const literals = data[stream.pos..][0..lit_len];
-                try stream.seekBy(@intCast(lit_len));
+                if (stream.seek + lit_len > data.len) return error.InvalidData;
+                const literals = data[stream.seek..][0..lit_len];
+                try stream.discardAll(@intCast(lit_len));
                 try result.appendSlice(alloc, literals);
             } else {
                 // Match
                 if ((byte & 0x40) == 0) {
                     // Short match
                     const len = @as(usize, byte & 0x0F) + 2;
-                    const offset = @as(usize, try reader.readByte());
+                    const offset = @as(usize, try stream.takeByte());
 
                     try copyMatch(&result, alloc, offset, len);
                 } else {
                     // Long match
                     var len = @as(usize, byte & 0x0F) + 2;
-                    const offset = try reader.readInt(u16, .little);
+                    const offset = try stream.takeInt(u16, .little);
 
                     if (len == 17) {
-                        len += @as(usize, try reader.readByte());
+                        len += @as(usize, try stream.takeByte());
                     }
 
                     try copyMatch(&result, alloc, offset, len);
@@ -1638,24 +1638,23 @@ pub const Compression = struct {
         // Control 0x02 = LZMA chunk
         if (data.len < 1) return error.InvalidData;
 
-        var stream = std.io.fixedBufferStream(data);
-        var reader = stream.reader();
+        var stream = std.Io.Reader.fixed(data);
         var result = try std.ArrayList(u8).initCapacity(alloc, original_size);
         errdefer result.deinit(alloc);
 
-        while (stream.pos < data.len) {
-            const control = try reader.readByte();
+        while (stream.seek < data.len) {
+            const control = try stream.takeByte();
             if (control == 0x00) break; // End marker
 
             if (control == 0x02) {
                 // LZMA chunk
-                const unpacked_size = @as(usize, try reader.readInt(u16, .little)) + 1;
-                const packed_size = @as(usize, try reader.readInt(u16, .little)) + 1;
+                const unpacked_size = @as(usize, try stream.takeInt(u16, .little)) + 1;
+                const packed_size = @as(usize, try stream.takeInt(u16, .little)) + 1;
 
-                if (stream.pos + packed_size > data.len) return error.InvalidData;
+                if (stream.seek + packed_size > data.len) return error.InvalidData;
 
-                const chunk_data = data[stream.pos..][0..packed_size];
-                try stream.seekBy(@intCast(packed_size));
+                const chunk_data = data[stream.seek..][0..packed_size];
+                try stream.discardAll(@intCast(packed_size));
 
                 const chunk_decompressed = try self.decompressLzmaWithAllocator(chunk_data, unpacked_size, alloc);
                 defer alloc.free(chunk_decompressed);
@@ -1671,31 +1670,30 @@ pub const Compression = struct {
     /// XZ decompression.
     /// v0.1.6+
     fn decompressXzWithAllocator(self: *Compression, data: []const u8, original_size: usize, alloc: std.mem.Allocator) ![]u8 {
-        var stream = std.io.fixedBufferStream(data);
-        var reader = stream.reader();
+        var stream = std.Io.Reader.fixed(data);
 
         // Check magic
         if (data.len < 12) return error.InvalidData;
         const magic = data[0..6];
-        try stream.seekBy(6);
+        try stream.discardAll(6);
 
         if (!std.mem.eql(u8, magic, Constants.CompressionConstants.Magic.xz)) return error.InvalidMagic;
 
         // Skip Stream Header flags (2 bytes) + CRC (4 bytes)
-        try stream.seekBy(6);
+        try stream.discardAll(6);
 
         // Read Block Header Size
-        const header_size_encoded = try reader.readByte();
+        const header_size_encoded = try stream.takeByte();
         if (header_size_encoded == 0) return error.InvalidData;
 
         const header_size = (@as(usize, header_size_encoded) + 1) * 4;
 
         // Skip Block Header details (flags, filters, etc.)
         // We already read 1 byte (encoded size), so skip header_size - 1
-        try stream.seekBy(@intCast(header_size - 1));
+        try stream.discardAll(@intCast(header_size - 1));
 
         // Decompress LZMA2 data block
-        const decompressed = try self.decompressLzma2WithAllocator(data[stream.pos..], original_size, alloc);
+        const decompressed = try self.decompressLzma2WithAllocator(data[stream.seek..], original_size, alloc);
 
         return decompressed;
     }
@@ -1707,11 +1705,10 @@ pub const Compression = struct {
         var result = try std.ArrayList(u8).initCapacity(alloc, original_size);
         errdefer result.deinit(alloc);
 
-        var stream = std.io.fixedBufferStream(data);
-        var reader = stream.reader();
+        var stream = std.Io.Reader.fixed(data);
 
-        while (stream.pos < data.len) {
-            const token = try reader.readByte();
+        while (stream.seek < data.len) {
+            const token = try stream.takeByte();
 
             // Token: high 4 = literal len, low 4 = match len
             var lit_len: usize = @intCast((token >> 4) & 0x0F);
@@ -1720,27 +1717,27 @@ pub const Compression = struct {
             // Read extended literal length
             if (lit_len == 15) {
                 while (true) {
-                    const byte = try reader.readByte();
+                    const byte = try stream.takeByte();
                     lit_len += byte;
                     if (byte != 255) break;
                 }
             }
 
             // Copy literals
-            if (stream.pos + lit_len > data.len) return error.InvalidData;
-            const literals = data[stream.pos..][0..lit_len];
-            try stream.seekBy(@intCast(lit_len));
+            if (stream.seek + lit_len > data.len) return error.InvalidData;
+            const literals = data[stream.seek..][0..lit_len];
+            try stream.discardAll(@intCast(lit_len));
             try result.appendSlice(alloc, literals);
 
-            if (stream.pos >= data.len) break; // End of stream
+            if (stream.seek >= data.len) break; // End of stream
 
             // Read Offset
-            const offset = try reader.readInt(u16, .little);
+            const offset = try stream.takeInt(u16, .little);
 
             // Read extended match length
             if (ml == 15) {
                 while (true) {
-                    const byte = try reader.readByte();
+                    const byte = try stream.takeByte();
                     ml += byte;
                     if (byte != 255) break;
                 }
@@ -1826,8 +1823,8 @@ pub const Compression = struct {
             _ = self.stats.total_decompression_time_ns.fetchAdd(@truncate(elapsed), .monotonic);
         }
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         // Minimum header size: magic(4) + size(4) + checksum(4) = 12
         if (data.len < 12) return error.InvalidData;
@@ -1970,8 +1967,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(N) where N is the file size (I/O bound).
     pub fn compressFile(self: *Compression, input_path: []const u8, output_path: ?[]const u8) !CompressionResult {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const out_path = if (output_path) |p| p else blk: {
             break :blk try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ input_path, self.config.extension });
@@ -1980,7 +1977,7 @@ pub const Compression = struct {
         defer if (should_free_path) self.allocator.free(out_path);
 
         // Get original file size
-        const input_file = std.fs.cwd().openFile(input_path, .{}) catch |err| {
+        const input_file = std.Io.Dir.cwd().openFile(Utils.io(), input_path, .{}) catch |err| {
             _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
             return .{
                 .success = false,
@@ -1990,9 +1987,9 @@ pub const Compression = struct {
                 .error_message = @errorName(err),
             };
         };
-        defer input_file.close();
+        defer input_file.close(Utils.io());
 
-        const stat = try input_file.stat();
+        const stat = try input_file.stat(Utils.io());
         const original_size = stat.size;
 
         // Invoke start callback if registered
@@ -2001,13 +1998,15 @@ pub const Compression = struct {
         }
 
         // Read file content
-        const content = try input_file.readToEndAlloc(self.allocator, std.math.maxInt(usize));
+        var read_buffer: [Constants.BufferSizes.compression]u8 = undefined;
+        var file_reader = input_file.reader(Utils.io(), &read_buffer);
+        const content = try file_reader.interface.allocRemaining(self.allocator, .unlimited);
         defer self.allocator.free(content);
 
         // Compress content
-        self.mutex.unlock(); // Unlock for nested call
+        self.mutex.unlock(Utils.io()); // Unlock for nested call
         const compressed = self.compress(content) catch |err| {
-            self.mutex.lock();
+            self.mutex.lockUncancelable(Utils.io());
             _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
             return .{
                 .success = false,
@@ -2017,12 +2016,12 @@ pub const Compression = struct {
                 .error_message = @errorName(err),
             };
         };
-        self.mutex.lock();
+        self.mutex.lockUncancelable(Utils.io());
         defer self.allocator.free(compressed);
 
         // Create parent directory if needed
         if (std.fs.path.dirname(out_path)) |dirname| {
-            std.fs.cwd().makePath(dirname) catch |err| {
+            std.Io.Dir.cwd().createDirPath(Utils.io(), dirname) catch |err| {
                 _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
                 return .{
                     .success = false,
@@ -2035,7 +2034,7 @@ pub const Compression = struct {
         }
 
         // Write compressed file
-        const output_file = std.fs.cwd().createFile(out_path, .{}) catch |err| {
+        const output_file = std.Io.Dir.cwd().createFile(Utils.io(), out_path, .{}) catch |err| {
             _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
             return .{
                 .success = false,
@@ -2045,13 +2044,13 @@ pub const Compression = struct {
                 .error_message = @errorName(err),
             };
         };
-        defer output_file.close();
+        defer output_file.close(Utils.io());
 
-        try output_file.writeAll(compressed);
+        try output_file.writeStreamingAll(Utils.io(), compressed);
 
         // Delete original if configured
         if (!self.config.keep_original) {
-            std.fs.cwd().deleteFile(input_path) catch {};
+            std.Io.Dir.cwd().deleteFile(Utils.io(), input_path) catch {};
         }
 
         _ = self.stats.files_compressed.fetchAdd(1, .monotonic);
@@ -2084,8 +2083,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(N) where N is the file size (I/O bound).
     pub fn decompressFile(self: *Compression, input_path: []const u8, output_path: ?[]const u8) !bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const out_path = if (output_path) |p| p else blk: {
             // Remove extension
@@ -2096,23 +2095,25 @@ pub const Compression = struct {
         };
 
         // Read compressed file
-        const input_file = try std.fs.cwd().openFile(input_path, .{});
-        defer input_file.close();
+        const input_file = try std.Io.Dir.cwd().openFile(Utils.io(), input_path, .{});
+        defer input_file.close(Utils.io());
 
-        const content = try input_file.readToEndAlloc(self.allocator, std.math.maxInt(usize));
+        var read_buffer: [Constants.BufferSizes.compression]u8 = undefined;
+        var file_reader = input_file.reader(Utils.io(), &read_buffer);
+        const content = try file_reader.interface.allocRemaining(self.allocator, .unlimited);
         defer self.allocator.free(content);
 
         // Decompress
-        self.mutex.unlock();
+        self.mutex.unlock(Utils.io());
         const decompressed = try self.decompress(content);
-        self.mutex.lock();
+        self.mutex.lockUncancelable(Utils.io());
         defer self.allocator.free(decompressed);
 
         // Write decompressed file
-        const output_file = try std.fs.cwd().createFile(out_path, .{});
-        defer output_file.close();
+        const output_file = try std.Io.Dir.cwd().createFile(Utils.io(), out_path, .{});
+        defer output_file.close(Utils.io());
 
-        try output_file.writeAll(decompressed);
+        try output_file.writeStreamingAll(Utils.io(), decompressed);
 
         return true;
     }
@@ -2129,13 +2130,13 @@ pub const Compression = struct {
     /// Returns:
     ///     - Number of files successfully compressed.
     pub fn compressDirectory(self: *Compression, dir_path: []const u8) !u64 {
-        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
-        defer dir.close();
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close(Utils.io());
 
         var iterator = dir.iterate();
         var count: u64 = 0;
 
-        while (try iterator.next()) |entry| {
+        while (try iterator.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
 
             const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
@@ -2175,10 +2176,10 @@ pub const Compression = struct {
         if (std.mem.endsWith(u8, file_path, ".zst")) return false;
 
         if (self.config.mode == .on_size_threshold) {
-            const file = std.fs.cwd().openFile(file_path, .{}) catch return false;
-            defer file.close();
+            const file = std.Io.Dir.cwd().openFile(Utils.io(), file_path, .{}) catch return false;
+            defer file.close(Utils.io());
 
-            const stat = file.stat() catch return false;
+            const stat = file.stat(Utils.io()) catch return false;
             return stat.size >= self.config.size_threshold;
         }
 
@@ -2205,8 +2206,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(1)
     pub fn resetStats(self: *Compression) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.stats.reset();
     }
 
@@ -2219,8 +2220,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(1)
     pub fn configure(self: *Compression, config: CompressionConfig) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config = config;
     }
 
@@ -2365,13 +2366,13 @@ pub const Compression = struct {
     /// Returns:
     ///     Number of files successfully compressed.
     pub fn compressPattern(self: *Compression, dir_path: []const u8, pattern: []const u8) !u64 {
-        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
-        defer dir.close();
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close(Utils.io());
 
         var iterator = dir.iterate();
         var count: u64 = 0;
 
-        while (try iterator.next()) |entry| {
+        while (try iterator.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
 
             if (matchGlob(entry.name, pattern)) {
@@ -2403,8 +2404,8 @@ pub const Compression = struct {
     /// Returns:
     ///     Number of files successfully compressed.
     pub fn compressOldest(self: *Compression, dir_path: []const u8, count: usize) !u64 {
-        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
-        defer dir.close();
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close(Utils.io());
 
         // Collect file info
         var files = std.ArrayList(FileEntry).init(self.allocator);
@@ -2416,7 +2417,7 @@ pub const Compression = struct {
         }
 
         var iterator = dir.iterate();
-        while (try iterator.next()) |entry| {
+        while (try iterator.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
 
             const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
@@ -2424,10 +2425,10 @@ pub const Compression = struct {
 
             if (!self.shouldCompress(file_path)) continue;
 
-            const file = std.fs.cwd().openFile(file_path, .{}) catch continue;
-            defer file.close();
+            const file = std.Io.Dir.cwd().openFile(Utils.io(), file_path, .{}) catch continue;
+            defer file.close(Utils.io());
 
-            const stat = file.stat() catch continue;
+            const stat = file.stat(Utils.io()) catch continue;
             try files.append(.{
                 .name = try self.allocator.dupe(u8, entry.name),
                 .mtime = stat.mtime,
@@ -2490,13 +2491,13 @@ pub const Compression = struct {
     /// Returns:
     ///     Number of files successfully compressed.
     pub fn compressLargerThan(self: *Compression, dir_path: []const u8, min_size: u64) !u64 {
-        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return 0;
-        defer dir.close();
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return 0;
+        defer dir.close(Utils.io());
 
         var iterator = dir.iterate();
         var count: u64 = 0;
 
-        while (try iterator.next()) |entry| {
+        while (try iterator.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
 
             const file_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
@@ -2504,10 +2505,10 @@ pub const Compression = struct {
 
             if (!self.shouldCompress(file_path)) continue;
 
-            const file = std.fs.cwd().openFile(file_path, .{}) catch continue;
-            defer file.close();
+            const file = std.Io.Dir.cwd().openFile(Utils.io(), file_path, .{}) catch continue;
+            defer file.close(Utils.io());
 
-            const stat = file.stat() catch continue;
+            const stat = file.stat(Utils.io()) catch continue;
             if (stat.size < min_size) continue;
 
             const result = self.compressFile(file_path, null) catch continue;
@@ -2776,22 +2777,22 @@ test "streaming compression" {
 
     const data = "Streaming test data" ** 10;
 
-    var in_stream = std.io.fixedBufferStream(data);
-    var out_buffer: std.ArrayList(u8) = .empty; // Use .empty for Unmanaged-style ArrayList
-    defer out_buffer.deinit(allocator);
+    const reader: std.Io.Reader = .fixed(data);
+    var out_buffer = std.Io.Writer.Allocating.init(allocator);
+    defer out_buffer.deinit();
 
-    try comp.compressStream(in_stream.reader(), out_buffer.writer(allocator));
+    try comp.compressStream(reader, &out_buffer.writer);
 
-    try std.testing.expect(out_buffer.items.len > 0);
+    try std.testing.expect(out_buffer.written().len > 0);
 
     // Verify roundtrip
-    var decomp_in_stream = std.io.fixedBufferStream(out_buffer.items);
-    var decomp_out_buffer: std.ArrayList(u8) = .empty;
-    defer decomp_out_buffer.deinit(allocator);
+    const decomp_in_stream = std.Io.Reader.fixed(out_buffer.written());
+    var decomp_out_buffer = std.Io.Writer.Allocating.init(allocator);
+    defer decomp_out_buffer.deinit();
 
-    try comp.decompressStream(decomp_in_stream.reader(), decomp_out_buffer.writer(allocator));
+    try comp.decompressStream(decomp_in_stream, &decomp_out_buffer.writer);
 
-    try std.testing.expectEqualStrings(data, decomp_out_buffer.items);
+    try std.testing.expectEqualStrings(data, decomp_out_buffer.written());
 }
 
 test "gzip algorithm" {
@@ -2824,14 +2825,14 @@ test "file compression with auto-directory creation" {
     const output_file = "test_output_compression/nested/dirs/output.log.gz";
 
     // Clean up before test
-    std.fs.cwd().deleteTree(test_dir) catch {};
-    defer std.fs.cwd().deleteTree(test_dir) catch {};
+    std.Io.Dir.cwd().deleteTree(Utils.io(), test_dir) catch {};
+    defer std.Io.Dir.cwd().deleteTree(Utils.io(), test_dir) catch {};
 
     // Create a dummy source file
-    const file = try std.fs.cwd().createFile(test_file, .{});
-    try file.writeAll("Test content for compression");
-    file.close();
-    defer std.fs.cwd().deleteFile(test_file) catch {};
+    const file = try std.Io.Dir.cwd().createFile(Utils.io(), test_file, .{});
+    try file.writeStreamingAll(Utils.io(), "Test content for compression");
+    file.close(Utils.io());
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), test_file) catch {};
 
     // Compress with deep path that doesn't exist yet
     const result = try comp.compressFile(test_file, output_file);
@@ -2843,7 +2844,7 @@ test "file compression with auto-directory creation" {
     }
 
     // Verify directory was created
-    const stat = try std.fs.cwd().statFile(output_file);
+    const stat = try std.Io.Dir.cwd().statFile(Utils.io(), output_file, .{});
     try std.testing.expect(stat.size > 0);
 }
 
@@ -2855,18 +2856,18 @@ test "directory compression" {
     const test_dir = "test_batch_compression";
 
     // Setup test directory
-    std.fs.cwd().deleteTree(test_dir) catch {};
-    try std.fs.cwd().makePath(test_dir);
-    defer std.fs.cwd().deleteTree(test_dir) catch {};
+    std.Io.Dir.cwd().deleteTree(Utils.io(), test_dir) catch {};
+    try std.Io.Dir.cwd().createDirPath(Utils.io(), test_dir);
+    defer std.Io.Dir.cwd().deleteTree(Utils.io(), test_dir) catch {};
 
     // Create multiple log files
     const files = [_][]const u8{ "log1.log", "log2.log", "skip.txt" };
     for (files) |fname| {
         const p = try std.fs.path.join(allocator, &[_][]const u8{ test_dir, fname });
         defer allocator.free(p);
-        const f = try std.fs.cwd().createFile(p, .{});
-        try f.writeAll("Log data content");
-        f.close();
+        const f = try std.Io.Dir.cwd().createFile(Utils.io(), p, .{});
+        try f.writeStreamingAll(Utils.io(), "Log data content");
+        f.close(Utils.io());
     }
 
     // configure to only compress .log files if we were filtering extensions,
@@ -2879,12 +2880,12 @@ test "directory compression" {
     try std.testing.expectEqual(@as(u64, 3), compressed_count);
 
     // Verify .gz files exist
-    var dir = try std.fs.cwd().openDir(test_dir, .{ .iterate = true });
-    defer dir.close();
+    var dir = try std.Io.Dir.cwd().openDir(Utils.io(), test_dir, .{ .iterate = true });
+    defer dir.close(Utils.io());
 
     var count: usize = 0;
     var it = dir.iterate();
-    while (try it.next()) |entry| {
+    while (try it.next(Utils.io())) |entry| {
         if (std.mem.endsWith(u8, entry.name, ".gz")) {
             count += 1;
         }

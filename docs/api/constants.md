@@ -309,7 +309,7 @@ pub const RulesConstants = struct {
 
     /// Unicode prefixes for each message category
     pub const Prefixes = struct {
-        pub const cause: []const u8 = "⦿ cause:";
+       pub const cause: []const u8 = "⦿ cause:";
         pub const fix: []const u8 = "✦ fix:";
         pub const suggest: []const u8 = "→ suggest:";
         pub const action: []const u8 = "▸ action:";
@@ -614,7 +614,7 @@ pub const SinkDefaults = struct {
 };
 ```
 
-## Colors Constants (v0.1.5)
+## Colors Constants (v0.1.8)
 
 Comprehensive color system with ANSI codes, 256-color, and RGB support.
 

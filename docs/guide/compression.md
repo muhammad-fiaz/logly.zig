@@ -31,7 +31,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -109,7 +109,7 @@ const zstd_best_cfg = CompressionConfig.zstdBest();   // Best zstd ratio
 const zstd_prod_cfg = CompressionConfig.zstdProduction(); // Production zstd
 const zstd_custom = CompressionConfig.zstdWithLevel(12); // Custom level
 
-// v0.1.6+ algorithms
+// v0.1.8+ algorithms
 const lzma_cfg = CompressionConfig.lzma();            // LZMA
 const xz_cfg = CompressionConfig.xz();                // XZ
 const lz4_cfg = CompressionConfig.lz4();              // LZ4
@@ -122,7 +122,7 @@ const size_cfg = CompressionConfig.onSize(5 * 1024 * 1024);
 // Use with Config
 var config = logly.Config.default().withCompression(prod_cfg);
 
-// Or use zstd for best performance (v0.1.5+)
+// Or use zstd for best performance (v0.1.8+)
 var zstd_config = logly.Config.default().withZstdCompression();
 ```
 
@@ -147,7 +147,7 @@ var comp15 = logly.Compression.zstdFast(allocator);          // Fast zstd
 var comp16 = logly.Compression.zstdBest(allocator);          // Best zstd ratio
 var comp17 = logly.Compression.zstdProduction(allocator);    // Production zstd
 
-// v0.1.6+ factory methods
+// v0.1.8+ factory methods
 var lzma_comp = logly.Compression.lzmaCompression(allocator);
 var xz_comp = logly.Compression.xzCompression(allocator);
 var lz4_comp = logly.Compression.lz4Compression(allocator);
@@ -158,7 +158,7 @@ defer comp1.deinit();
 // ... defer for others
 ```
 
-## Zstd Compression (v0.1.5+)
+## Zstd Compression (v0.1.8+)
 
 Zstandard (zstd) is a high-performance compression algorithm that provides excellent compression ratios with very fast decompression. It's ideal for log files, especially in production environments.
 
@@ -198,7 +198,7 @@ var config4 = logly.Config.default().withZstdProductionCompression(); // Backgro
 ### Direct Zstd Compression
 
 ```zig
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 const allocator = gpa.allocator();
 
@@ -234,9 +234,9 @@ const files_compressed = try compressor.compressDirectory("logs/archive/");
 std.debug.print("Compressed {d} files\n", .{files_compressed});
 ```
 
-## New Compression Algorithms (v0.1.6+)
+## New Compression Algorithms (v0.1.8+)
 
-v0.1.6 introduces full compression and decompression support for six additional algorithms, providing flexibility for different use cases.
+v0.1.8 introduces full compression and decompression support for six additional algorithms, providing flexibility for different use cases.
 
 ### Algorithm Overview
 
@@ -347,11 +347,11 @@ Customize compressed file names, locations, and archive structure:
 
 | Option | Description | Example |
 |--------|-------------|---------|
-| `file_prefix` | Prefix for file names | `"archive_"` → `archive_app.log.gz` |
-| `file_suffix` | Suffix before extension | `"_old"` → `app_old.log.gz` |
+| `file_prefix` | Prefix for file names | `"archive_"` â†’ `archive_app.log.gz` |
+| `file_suffix` | Suffix before extension | `"_old"` â†’ `app_old.log.gz` |
 | `archive_root_dir` | Centralized archive location | `"logs/archive"` |
 | `create_date_subdirs` | Create YYYY/MM/DD structure | `logs/archive/2026/01/09/` |
-| `preserve_dir_structure` | Keep original folder structure | Original: `src/logs/` → `archive/src/logs/` |
+| `preserve_dir_structure` | Keep original folder structure | Original: `src/logs/` â†’ `archive/src/logs/` |
 | `naming_pattern` | Custom naming with placeholders | `"{base}_{date}{ext}"` |
 
 ### Naming Pattern Placeholders
@@ -586,14 +586,20 @@ Use `compressStream` when you need fine-grained control, such as using existing 
 
 ```zig
 // 1. Manually create/open files
-var out_file = try std.fs.cwd().createFile("custom_output.gz", .{});
-defer out_file.close();
+const io = logly.Utils.io();
+var out_file = try std.Io.Dir.cwd().createFile(io, "custom_output.gz", .{});
+defer out_file.close(io);
 
-var in_file = try std.fs.cwd().openFile("input.log", .{});
-defer in_file.close();
+var in_file = try std.Io.Dir.cwd().openFile(io, "input.log", .{});
+defer in_file.close(io);
 
 // 2. Stream compression
-try compression.compressStream(in_file.reader(), out_file.writer());
+var in_buffer: [4096]u8 = undefined;
+var out_buffer: [4096]u8 = undefined;
+var input_reader = in_file.reader(io, &in_buffer);
+var output_writer = out_file.writer(io, &out_buffer);
+try compression.compressStream(&input_reader.interface, &output_writer.interface);
+try output_writer.interface.flush();
 ```
 
 ## Compression Modes
@@ -658,20 +664,24 @@ var stream_comp = logly.Compression.init(allocator);
 defer stream_comp.deinit();
 
 // 1. Create the output file (compressed destination)
-var file = try std.fs.cwd().createFile("data.gz", .{});
-defer file.close();
+const io = logly.Utils.io();
+var file = try std.Io.Dir.cwd().createFile(io, "data.gz", .{});
+defer file.close(io);
 
 // 2. Prepare input stream (e.g., from a network socket or another file)
 // Here we use a fixed buffer for demonstration
 const data = "Log data to be streamed..." ** 100;
-var input_stream = std.io.fixedBufferStream(data);
+var input_stream = std.Io.Reader.fixed(data);
 
 // 3. Compress directly to the file
 // The data flows: input_stream -> compressor -> file
-try stream_comp.compressStream(input_stream.reader(), file.writer());
+var file_buffer: [4096]u8 = undefined;
+var file_writer = file.writer(io, &file_buffer);
+try stream_comp.compressStream(&input_stream, &file_writer.interface);
+try file_writer.interface.flush();
 
 // 4. Verify file creation
-const stat = try file.stat();
+const stat = try std.Io.Dir.cwd().statFile(io, "data.gz");
 std.debug.print("Created data.gz: {d} bytes\n", .{stat.size});
 ```
 
@@ -1076,7 +1086,7 @@ fn onCompressionError(path: []const u8, err: anyerror) void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -1143,9 +1153,9 @@ for (strategies) |strategy| {
     });
     defer compression.deinit();
 
-    const start = std.time.nanoTimestamp();
+    const start = logly.Utils.currentNanos();
     const compressed = try compression.compress(test_data);
-    const elapsed = std.time.nanoTimestamp() - start;
+    const elapsed = logly.Utils.currentNanos() - start;
     defer allocator.free(compressed);
 
     const ratio = @as(f64, @floatFromInt(test_data.len)) / 

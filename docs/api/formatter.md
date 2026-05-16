@@ -182,7 +182,7 @@ Statistics for formatter performance.
 | `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate throughput (bytes per second) |
 
 ::: tip Precise Byte Tracking
-As of v0.1.5, `total_bytes_formatted` captures the exact length of each formatted message, replacing previous estimations.
+As of v0.1.8, `total_bytes_formatted` captures the exact length of each formatted message, replacing previous estimations.
 :::
 
 #### Reset
@@ -233,13 +233,13 @@ The `Theme` struct defines custom ANSI color codes for each log level.
 | `trace` | `[]const u8` | `"36"` (Cyan) | Color for TRACE level |
 | `debug` | `[]const u8` | `"34"` (Blue) | Color for DEBUG level |
 | `info` | `[]const u8` | `"37"` (White) | Color for INFO level |
-| `notice` | `[]const u8` | `"96"` (Bright Cyan) | Color for NOTICE level (v0.1.5) |
+| `notice` | `[]const u8` | `"96"` (Bright Cyan) | Color for NOTICE level (v0.1.8) |
 | `success` | `[]const u8` | `"32"` (Green) | Color for SUCCESS level |
 | `warning` | `[]const u8` | `"33"` (Yellow) | Color for WARNING level |
 | `err` | `[]const u8` | `"31"` (Red) | Color for ERROR level |
 | `fail` | `[]const u8` | `"35"` (Magenta) | Color for FAIL level |
 | `critical` | `[]const u8` | `"91"` (Bright Red) | Color for CRITICAL level |
-| `fatal` | `[]const u8` | `"91;1"` (Bright Red Bold) | Color for FATAL level (v0.1.5) |
+| `fatal` | `[]const u8` | `"91;1"` (Bright Red Bold) | Color for FATAL level (v0.1.8) |
 
 ### Basic Usage
 
@@ -252,7 +252,7 @@ theme.err = "1;31"; // Change ERROR to Bold Red
 logger.sinks.items[0].formatter.setTheme(theme);
 ```
 
-### Theme Presets (v0.1.5)
+### Theme Presets (v0.1.8)
 
 ```zig
 const Theme = logly.Formatter.Theme;
@@ -261,7 +261,7 @@ const Theme = logly.Formatter.Theme;
 const default_theme = Theme{};              // Standard colors
 const bright = Theme.bright();              // Bold/bright colors
 const dim = Theme.dim();                    // Dim colors
-const underlined = Theme.underlined();      // Underlined colors (v0.1.5)
+const underlined = Theme.underlined();      // Underlined colors (v0.1.8)
 const minimal = Theme.minimal();            // Subtle grays
 const neon = Theme.neon();                  // Vivid 256-colors
 const pastel = Theme.pastel();              // Soft colors
@@ -287,7 +287,7 @@ formatter.setTheme(Theme.neon());
 | `dark()` | 38;5;37 | 38;5;33 | 38;5;245 | 38;5;34 | 38;5;214 | 38;5;160 | 38;5;196 |
 | `light()` | 38;5;30 | 38;5;27 | 38;5;238 | 38;5;28 | 38;5;172 | 38;5;124 | 38;5;160 |
 
-### Custom RGB Theme (v0.1.5)
+### Custom RGB Theme (v0.1.8)
 
 ```zig
 // Create a theme from RGB values
@@ -302,7 +302,7 @@ const custom = Theme.fromRgb(
 );
 ```
 
-## ColorStyle (v0.1.5)
+## ColorStyle (v0.1.8)
 
 The `ColorStyle` enum controls which color variant to use:
 

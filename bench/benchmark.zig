@@ -102,6 +102,7 @@ fn runBenchmark(
     notes: []const u8,
     category: []const u8,
 ) BenchmarkResult {
+    const io = logly.Utils.io();
     var min_latency: u64 = std.math.maxInt(u64);
     var max_latency: u64 = 0;
 
@@ -110,30 +111,18 @@ fn runBenchmark(
         benchFn(context) catch {};
     }
 
-    // Actual benchmark
-    var timer = std.time.Timer.start() catch return BenchmarkResult{
-        .name = name,
-        .iterations = 0,
-        .total_time_ns = 0,
-        .ops_per_sec = 0,
-        .avg_latency_ns = 0,
-        .min_latency_ns = 0,
-        .max_latency_ns = 0,
-        .notes = notes,
-        .category = category,
-    };
-
+    const timer_start = std.Io.Clock.awake.now(io);
     for (0..BENCHMARK_ITERATIONS) |_| {
-        const iter_start = timer.read();
+        const iter_start = std.Io.Clock.awake.now(io);
         benchFn(context) catch {};
-        const iter_end = timer.read();
+        const iter_end = std.Io.Clock.awake.now(io);
 
-        const latency = iter_end - iter_start;
+        const latency = @as(u64, @intCast(iter_end.nanoseconds - iter_start.nanoseconds));
         if (latency < min_latency) min_latency = latency;
         if (latency > max_latency) max_latency = latency;
     }
 
-    const total_time_ns = timer.read();
+    const total_time_ns = @as(u64, @intCast(std.Io.Clock.awake.now(io).nanoseconds - timer_start.nanoseconds));
     const ops_per_sec = @as(f64, @floatFromInt(BENCHMARK_ITERATIONS)) / (@as(f64, @floatFromInt(total_time_ns)) / 1_000_000_000.0);
     const avg_latency_ns = @as(f64, @floatFromInt(total_time_ns)) / @as(f64, @floatFromInt(BENCHMARK_ITERATIONS));
 
@@ -262,6 +251,7 @@ fn runMultiThreadBenchmark(
     allocator: std.mem.Allocator,
     comptime workerFn: fn (*const BenchContext) void,
 ) BenchmarkResult {
+    const io = logly.Utils.io();
     const ctx = BenchContext{ .logger = logger, .allocator = allocator };
 
     // Warmup
@@ -269,17 +259,7 @@ fn runMultiThreadBenchmark(
         logger.info("Warmup message", null) catch {};
     }
 
-    var timer = std.time.Timer.start() catch return BenchmarkResult{
-        .name = name,
-        .iterations = 0,
-        .total_time_ns = 0,
-        .ops_per_sec = 0,
-        .avg_latency_ns = 0,
-        .min_latency_ns = 0,
-        .max_latency_ns = 0,
-        .notes = notes,
-        .category = category,
-    };
+    const timer_start = std.Io.Clock.awake.now(io);
 
     // Spawn threads
     var threads: [16]?std.Thread = [_]?std.Thread{null} ** 16;
@@ -296,7 +276,7 @@ fn runMultiThreadBenchmark(
         }
     }
 
-    const total_time_ns = timer.read();
+    const total_time_ns = @as(u64, @intCast(std.Io.Clock.awake.now(io).nanoseconds - timer_start.nanoseconds));
     const total_ops = MT_BENCHMARK_ITERATIONS * actual_threads;
     const ops_per_sec = @as(f64, @floatFromInt(total_ops)) / (@as(f64, @floatFromInt(total_time_ns)) / 1_000_000_000.0);
     const avg_latency_ns = @as(f64, @floatFromInt(total_time_ns)) / @as(f64, @floatFromInt(total_ops));
@@ -315,7 +295,7 @@ fn runMultiThreadBenchmark(
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -1482,11 +1462,12 @@ pub fn main() !void {
     std.debug.print("[OK] Benchmarks completed successfully!\n\n", .{});
 
     // Write final Markdown report
-    const md_file = std.fs.cwd().createFile("benchmark-results.md", .{}) catch |err| {
+    const io = logly.Utils.io();
+    const md_file = std.Io.Dir.cwd().createFile(io, "benchmark-results.md", .{}) catch |err| {
         std.debug.print("Warning: Could not create benchmark-results.md: {}\n", .{err});
         return;
     };
-    defer md_file.close();
+    defer md_file.close(io);
 
     const md_header =
         \\#### 📊 LOGLY.ZIG BENCHMARK RESULTS
@@ -1509,7 +1490,7 @@ pub fn main() !void {
         BENCHMARK_ITERATIONS,
         MT_BENCHMARK_ITERATIONS,
     }) catch "";
-    try md_file.writeAll(header);
+    try md_file.writeStreamingAll(io, header);
 
     // Write categorized tables
     for (BenchmarkResult.categories) |cat| {
@@ -1532,7 +1513,7 @@ pub fn main() !void {
             \\
         , .{cat}) catch continue;
         defer allocator.free(cat_md);
-        try md_file.writeAll(cat_md);
+        try md_file.writeStreamingAll(io, cat_md);
 
         for (results.items) |r| {
             if (std.mem.eql(u8, r.category, cat)) {
@@ -1543,15 +1524,15 @@ pub fn main() !void {
                     r.avg_latency_ns,
                     r.notes,
                 }) catch continue;
-                try md_file.writeAll(line);
+                try md_file.writeStreamingAll(io, line);
             }
         }
-        try md_file.writeAll("</details>\n");
+        try md_file.writeStreamingAll(io, "</details>\n");
     }
 
     // Write summary to Markdown
     if (count > 0) {
-        try md_file.writeAll("\n### 📈 Benchmark Summary\n\n");
+        try md_file.writeStreamingAll(io, "\n### 📈 Benchmark Summary\n\n");
         var summary_buf: [1024]u8 = undefined;
         const summary = std.fmt.bufPrint(&summary_buf,
             \\- **Total benchmarks run:** {d}
@@ -1561,8 +1542,8 @@ pub fn main() !void {
             \\- **Average latency:** {d:.0} ns
             \\
         , .{ count, avg_ops, max_ops, max_name, min_ops, min_name, avg_latency }) catch "";
-        try md_file.writeAll(summary);
+        try md_file.writeStreamingAll(io, summary);
     }
 
-    try md_file.writeAll("\n---\n");
+    try md_file.writeStreamingAll(io, "\n---\n");
 }

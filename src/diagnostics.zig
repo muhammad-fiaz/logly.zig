@@ -27,6 +27,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// Windows kernel32 API bindings for system diagnostics.
 /// Provides access to memory status and drive enumeration functions.
@@ -221,11 +222,14 @@ fn getWindowsMemory() ?struct { total: u64, avail: u64 } {
 }
 
 fn getLinuxMemory() ?struct { total: u64, avail: u64 } {
-    const file = std.fs.openFileAbsolute("/proc/meminfo", .{}) catch return null;
-    defer file.close();
+    const io = Utils.io();
+    const file = std.Io.Dir.openFileAbsolute(io, "/proc/meminfo", .{}) catch return null;
+    defer file.close(io);
 
     var buf: [Constants.BufferSizes.file_read]u8 = undefined;
-    const len = file.readAll(&buf) catch return null;
+    var file_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &file_buffer);
+    const len = reader.interface.readSliceShort(&buf) catch return null;
     const content = buf[0..len];
 
     var total: u64 = 0;
@@ -266,11 +270,14 @@ fn getMacMemory() ?struct { total: u64, avail: u64 } {
 }
 
 fn collectLinuxDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveInfo)) !void {
-    const file = std.fs.openFileAbsolute("/proc/mounts", .{}) catch return;
-    defer file.close();
+    const io = Utils.io();
+    const file = std.Io.Dir.openFileAbsolute(io, "/proc/mounts", .{}) catch return;
+    defer file.close(io);
 
     var buf: [Constants.BufferSizes.file_read_large]u8 = undefined;
-    const len = file.readAll(&buf) catch return;
+    var file_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &file_buffer);
+    const len = reader.interface.readSliceShort(&buf) catch return;
     const content = buf[0..len];
 
     var lines = std.mem.tokenizeAny(u8, content, "\n");

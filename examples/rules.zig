@@ -4,7 +4,7 @@ const logly = @import("logly");
 /// Logly Rules System Demo
 /// Demonstrates compiler-style guided diagnostics for log messages.
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -163,7 +163,8 @@ pub fn main() !void {
     var json_buf: std.ArrayList(u8) = .empty;
     defer json_buf.deinit(allocator);
 
-    try rules.formatMessagesJson(&json_messages, json_buf.writer(allocator), true);
+    var json_writer = logly.Utils.ArrayListWriter.init(&json_buf, allocator);
+    try rules.formatMessagesJson(&json_messages, &json_writer.writer, true);
     std.debug.print("{s}\n\n", .{json_buf.items});
 
     std.debug.print("=== Cleanup ===\n\n", .{});

@@ -4,21 +4,22 @@ const logly = @import("logly");
 const Compression = logly.Compression;
 const CompressionPresets = logly.CompressionPresets;
 
-/// Comprehensive compression demo for Logly v0.1.6
+/// Comprehensive compression demo for Logly v0.1.8
 /// Demonstrates all compression algorithms: deflate, gzip, zlib, zstd, lzma, lzma2, xz, zip, tar.gz, lz4
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     std.debug.print("\n", .{});
     std.debug.print("=" ** 70 ++ "\n", .{});
-    std.debug.print("  Logly Compression Demo v0.1.6\n", .{});
+    std.debug.print("  Logly Compression Demo v0.1.8\n", .{});
     std.debug.print("  All Compression Algorithms: deflate, gzip, zstd, lzma, xz, zip, tar.gz, lz4\n", .{});
     std.debug.print("=" ** 70 ++ "\n\n", .{});
 
     const log_dir = "logs";
-    std.fs.cwd().makePath(log_dir) catch {};
+    const io = logly.Utils.io();
+    std.Io.Dir.cwd().createDirPath(io, log_dir) catch {};
 
     // Create sample log data
     const sample_log =
@@ -82,7 +83,7 @@ pub fn main() !void {
     // =========================================================================
     // Test 3: ZSTD
     // =========================================================================
-    std.debug.print("Test 3: ZSTD Compression (v0.1.5+)\n", .{});
+    std.debug.print("Test 3: ZSTD Compression (v0.1.8+)\n", .{});
     std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.zstdCompression(allocator);
@@ -102,9 +103,9 @@ pub fn main() !void {
     }
 
     // =========================================================================
-    // Test 4: LZMA (v0.1.6+)
+    // Test 4: LZMA (v0.1.8+)
     // =========================================================================
-    std.debug.print("Test 4: LZMA Compression (v0.1.6+)\n", .{});
+    std.debug.print("Test 4: LZMA Compression (v0.1.8+)\n", .{});
     std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.lzmaCompression(allocator);
@@ -124,9 +125,9 @@ pub fn main() !void {
     }
 
     // =========================================================================
-    // Test 5: LZMA2 (v0.1.6+)
+    // Test 5: LZMA2 (v0.1.8+)
     // =========================================================================
-    std.debug.print("Test 5: LZMA2 Compression (v0.1.6+)\n", .{});
+    std.debug.print("Test 5: LZMA2 Compression (v0.1.8+)\n", .{});
     std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.lzma2Compression(allocator);
@@ -146,9 +147,9 @@ pub fn main() !void {
     }
 
     // =========================================================================
-    // Test 6: XZ (v0.1.6+)
+    // Test 6: XZ (v0.1.8+)
     // =========================================================================
-    std.debug.print("Test 6: XZ Compression (v0.1.6+)\n", .{});
+    std.debug.print("Test 6: XZ Compression (v0.1.8+)\n", .{});
     std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.xzCompression(allocator);
@@ -168,9 +169,9 @@ pub fn main() !void {
     }
 
     // =========================================================================
-    // Test 7: ZIP (v0.1.6+)
+    // Test 7: ZIP (v0.1.8+)
     // =========================================================================
-    std.debug.print("Test 7: ZIP Compression (v0.1.6+)\n", .{});
+    std.debug.print("Test 7: ZIP Compression (v0.1.8+)\n", .{});
     std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.zipCompression(allocator);
@@ -190,9 +191,9 @@ pub fn main() !void {
     }
 
     // =========================================================================
-    // Test 8: TAR.GZ (v0.1.6+)
+    // Test 8: TAR.GZ (v0.1.8+)
     // =========================================================================
-    std.debug.print("Test 8: TAR.GZ Compression (v0.1.6+)\n", .{});
+    std.debug.print("Test 8: TAR.GZ Compression (v0.1.8+)\n", .{});
     std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.tarGzCompression(allocator);
@@ -212,9 +213,9 @@ pub fn main() !void {
     }
 
     // =========================================================================
-    // Test 9: LZ4 (v0.1.6+)
+    // Test 9: LZ4 (v0.1.8+)
     // =========================================================================
-    std.debug.print("Test 9: LZ4 Compression (v0.1.6+)\n", .{});
+    std.debug.print("Test 9: LZ4 Compression (v0.1.8+)\n", .{});
     std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.lz4Compression(allocator);
@@ -242,9 +243,9 @@ pub fn main() !void {
     // Create log file
     const log_file_path = log_dir ++ "/app.log";
     {
-        const f = try std.fs.cwd().createFile(log_file_path, .{});
-        defer f.close();
-        try f.writeAll(sample_log);
+        const f = try std.Io.Dir.cwd().createFile(io, log_file_path, .{});
+        defer f.close(io);
+        try f.writeStreamingAll(io, sample_log);
     }
     std.debug.print("  Created: {s} ({} bytes)\n", .{ log_file_path, sample_log.len });
 
@@ -262,9 +263,9 @@ pub fn main() !void {
     for (algorithms) |algo| {
         // Re-create log file for each algorithm since some might delete it
         {
-            const f = try std.fs.cwd().createFile(log_file_path, .{});
-            try f.writeAll(sample_log);
-            f.close();
+            const f = try std.Io.Dir.cwd().createFile(io, log_file_path, .{});
+            defer f.close(io);
+            try f.writeStreamingAll(io, sample_log);
         }
 
         var comp = algo.factory(allocator);

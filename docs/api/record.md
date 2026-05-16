@@ -160,9 +160,9 @@ pub const ErrorInfo = struct {
 Duration of the operation in nanoseconds. Useful for performance logging. Default: `null`.
 
 ```zig
-const start = std.time.nanoTimestamp();
+const start = logly.Utils.currentNanos();
 // ... operation ...
-record.duration_ns = @as(u64, @intCast(std.time.nanoTimestamp() - start));
+record.duration_ns = @as(u64, @intCast(logly.Utils.currentNanos() - start));
 ```
 
 ## Context

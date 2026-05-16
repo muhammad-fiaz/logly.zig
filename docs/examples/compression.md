@@ -12,7 +12,7 @@ head:
 
 # Compression Example
 
-This example demonstrates log compression features in Logly, including GZIP, ZSTD (v0.1.5+), LZMA, XZ, TAR.GZ, ZIP, LZ4, and the Streaming API.
+This example demonstrates log compression features in Logly, including GZIP, ZSTD (v0.1.8+), LZMA, XZ, TAR.GZ, ZIP, LZ4, and the Streaming API.
 
 ## Source Code
 
@@ -26,7 +26,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -49,7 +49,7 @@ pub fn main() !void {
     const decompressed = try comp.decompress(compressed);
     defer allocator.free(decompressed);
     std.debug.print("   Decompressed size: {d} bytes\n", .{decompressed.len});
-    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, test_data, decompressed)) "✓ Verified" else "✗ Failed"});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, test_data, decompressed)) "âœ“ Verified" else "âœ— Failed"});
 
     // Example 2: Compression presets
     std.debug.print("2. Compression Presets\n", .{});
@@ -71,8 +71,8 @@ pub fn main() !void {
 
     std.debug.print("   GZIP compressed size: {d} bytes\n\n", .{gzip_compressed.len});
 
-    // Example 7: Zstd Compression (v0.1.5+)
-    std.debug.print("7. Zstd Compression (v0.1.5+)\n", .{});
+    // Example 7: Zstd Compression (v0.1.8+)
+    std.debug.print("7. Zstd Compression (v0.1.8+)\n", .{});
     std.debug.print("   ---------------------------\n", .{});
 
     var zstd_comp = logly.Compression.zstdCompression(allocator);
@@ -88,7 +88,7 @@ pub fn main() !void {
     const zstd_decompressed = try zstd_comp.decompress(zstd_compressed);
     defer allocator.free(zstd_decompressed);
     std.debug.print("   Zstd decompressed: {d} bytes\n", .{zstd_decompressed.len});
-    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, zstd_data, zstd_decompressed)) "✓ Verified" else "✗ Failed"});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, zstd_data, zstd_decompressed)) "âœ“ Verified" else "âœ— Failed"});
 
     // Example 8: Streaming Compression
     std.debug.print("8. Streaming Compression\n", .{});
@@ -98,11 +98,12 @@ pub fn main() !void {
     defer stream_comp.deinit();
 
     const stream_data = "Data to be compressed via stream" ** 5;
-    var input_stream = std.io.fixedBufferStream(stream_data);
+    var input_stream = std.Io.Reader.fixed(stream_data);
     var output_buffer: std.ArrayList(u8) = .empty;
     defer output_buffer.deinit(allocator);
 
-    try stream_comp.compressStream(input_stream.reader(), output_buffer.writer(allocator));
+    var output_writer = logly.Utils.ArrayListWriter.init(&output_buffer, allocator);
+    try stream_comp.compressStream(&input_stream, &output_writer.writer);
     std.debug.print("   Stream compressed size: {d} bytes\n", .{output_buffer.items.len});
 
     // Example 9: Directory Compression
@@ -128,7 +129,7 @@ zig build run-compression
    Original data size: 470 bytes
    Compressed size: 77 bytes
    Decompressed size: 470 bytes
-   Data integrity: ✓ Verified
+   Data integrity: âœ“ Verified
 
 ...
 
@@ -139,7 +140,7 @@ zig build run-compression
 7. Streaming Compression
    ---------------------
    Stream compressed size: 57 bytes
-   Stream decompressed verified: ✓ Yes
+   Stream decompressed verified: âœ“ Yes
 
 8. Directory Compression
    ---------------------
@@ -208,7 +209,7 @@ config.rotation = .{
 };
 ```
 
-## New Algorithms (v0.1.6+)
+## New Algorithms (v0.1.8+)
 
 ### LZMA/XZ Compression
 

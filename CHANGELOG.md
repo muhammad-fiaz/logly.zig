@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Documentation for versions below 0.1.2 is not available. Please refer to commit history or pull requests for those versions.
 
+## [0.1.8] - Zig 0.16.0 Compatibility
+
+### Changed
+
+- Migrated the project to Zig 0.16.0 and updated package metadata to require `minimum_zig_version = "0.16.0"`.
+- Updated the public package version to `0.1.8`.
+- Migrated standard library I/O usage to the Zig 0.16 `std.Io` APIs across file, network, terminal, stream, and writer paths.
+- Updated allocator examples and documentation to use Zig 0.16-compatible `std.heap.DebugAllocator`.
+
+### Fixed
+
+- Fixed build system compatibility with Zig 0.16 package/dependency handling.
+- Fixed examples that used removed or deprecated writer, filesystem, file-close, and stream APIs.
+- Fixed Windows terminal ANSI enablement to use the cross-platform `std.Io.File.enableAnsiEscapeCodes` API.
+- Fixed stack trace ownership so captured trace buffers are deinitialized safely under Zig 0.16.
+- Fixed thread synchronization calls for Zig 0.16 `std.Io` lock APIs.
+
+### Documentation
+
+- Updated README installation, build, test, and usage snippets for Zig 0.16.0.
+- Updated API and guide documentation for `std.Io.Reader`, `std.Io.Writer`, `std.Io.File`, `std.Io.Dir`, and `std.Io.net` usage.
+- Updated all documented example snippets to avoid Zig 0.15-era filesystem, networking, and writer APIs.
+
+### Validation
+
+- Verified `zig build`.
+- Verified `zig build test`.
+- Verified `zig build run-all-examples`.
+
 ## [0.1.7]
 
 ### Added
@@ -30,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Allocator Ergonomics Improvements**:
   - Added `Config.withArenaAllocator()` and `Config.withArena()` aliases for clearer arena configuration in production code.
   - Refactored logger initialization paths to reuse shared setup internals and improve consistency.
-  - Added explicit test coverage for `Logger` initialization with `GeneralPurposeAllocator`.
+  - Added explicit test coverage for `Logger` initialization with the general-purpose debug allocator.
   - Added allocator strategy example (`examples/allocator_strategies.zig`) and matching docs page (`docs/examples/allocator-strategies.md`).
 - **Metrics Observability Extensions**:
   - Added latency percentile helpers: `latencyPercentileNs(...)` and `latencyPercentileMs(...)`.
@@ -96,7 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added formatter regression coverage for `Config.TimeFormat.default_alias` and strict numeric `unix_ms` JSON output.
 - Added logger tests for traceparent parsing/propagation helper methods and distributed logger child/module helpers.
 - Added sink tests for flush stats correctness, error behavior (`disable_sink` / `propagate`), and manual `flushNow()` flow.
-- Added logger tests validating arena threshold reset behavior and `GeneralPurposeAllocator` compatibility.
+- Added logger tests validating arena threshold reset behavior and debug allocator compatibility.
 - Added regression tests for new metrics percentile/summary helpers and sink aggregate helpers.
 - Added regression tests for async in-flight stats and queue drain/utilization helpers.
 - Added regression tests for thread pool queue capacity/load helpers and timeout waits.

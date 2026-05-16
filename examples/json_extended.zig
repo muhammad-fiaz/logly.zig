@@ -5,7 +5,7 @@ pub fn main() !void {
     // Enable ANSI colors on Windows
     _ = logly.Terminal.enableAnsiColors();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

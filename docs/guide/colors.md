@@ -154,7 +154,7 @@ const logly = @import("logly");
 pub fn main() !void {
     _ = logly.Terminal.enableAnsiColors();
     
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     const allocator = gpa.allocator();
     
     const logger = try logly.Logger.init(allocator);
@@ -176,7 +176,7 @@ pub fn main() !void {
 }
 ```
 
-## Enhanced Color Options (v0.1.5)
+## Enhanced Color Options (v0.1.8)
 
 ### Level Color Variants
 
@@ -225,7 +225,7 @@ const reverse = Colors.Style.reverse;  // "7"
 
 ### Theme Presets
 
-Logly v0.1.5 includes multiple color theme presets:
+Logly v0.1.8 includes multiple color theme presets:
 
 ```zig
 const Formatter = logly.Formatter;
@@ -234,7 +234,7 @@ const Formatter = logly.Formatter;
 const default_theme = Formatter.Theme{};           // Standard colors
 const bright_theme = Formatter.Theme.bright();     // Bold/bright colors
 const dim_theme = Formatter.Theme.dim();           // Dim colors
-const underlined_theme = Formatter.Theme.underlined(); // Underlined colors (v0.1.5)
+const underlined_theme = Formatter.Theme.underlined(); // Underlined colors (v0.1.8)
 const minimal_theme = Formatter.Theme.minimal();   // Subtle grays
 const neon_theme = Formatter.Theme.neon();         // Vivid 256-colors
 const pastel_theme = Formatter.Theme.pastel();     // Soft colors
@@ -436,7 +436,7 @@ pub fn main() !void {
     // Enable Windows ANSI support
     _ = logly.Terminal.enableAnsiColors();
     
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     

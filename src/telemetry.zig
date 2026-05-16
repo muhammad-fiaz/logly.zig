@@ -57,6 +57,7 @@
 
 const std = @import("std");
 const utils = @import("utils.zig");
+const Utils = utils;
 const config_module = @import("config.zig");
 const Network = @import("network.zig");
 const Constants = @import("constants.zig");
@@ -287,7 +288,7 @@ pub const Telemetry = struct {
     sampler: TelemetrySampler,
 
     // Thread safety
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
 
     // Statistics
     total_spans_created: u64 = 0,
@@ -304,8 +305,8 @@ pub const Telemetry = struct {
     on_error: ?*const fn ([]const u8) void,
 
     // Network connection for network export mode
-    network_socket: ?std.posix.socket_t = null,
-    network_address: ?std.net.Address = null,
+    network_socket: ?std.Io.net.Socket = null,
+    network_address: ?std.Io.net.IpAddress = null,
 
     // Batch buffer for batch export mode
     batch_buffer: std.ArrayList(u8),
@@ -365,12 +366,12 @@ pub const Telemetry = struct {
     pub fn deinit(self: *Telemetry) void {
         // Close network socket if open
         if (self.network_socket) |socket| {
-            std.posix.close(socket);
+            socket.close(Utils.io());
             self.network_socket = null;
         }
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         // Free all active spans
         for (self.spans.items) |*span| {
@@ -403,8 +404,8 @@ pub const Telemetry = struct {
     pub fn startSpan(self: *Telemetry, name: []const u8, opts: SpanOptions) !Span {
         if (!self.enabled) return Span.empty(self.allocator);
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         // Generate IDs using utils
         const span_id = try utils.generateSpanId(self.allocator);
@@ -447,8 +448,8 @@ pub const Telemetry = struct {
     pub fn endSpan(self: *Telemetry, span: *Span) !void {
         if (!self.enabled or span.isEmpty()) return;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         span.end_time = utils.currentNanos();
 
@@ -512,8 +513,8 @@ pub const Telemetry = struct {
     pub fn recordMetric(self: *Telemetry, name: []const u8, value: f64, opts: MetricOptions) !void {
         if (!self.enabled) return;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         // Store metric in ArrayList
         try self.metrics.append(self.allocator, .{
@@ -602,7 +603,8 @@ pub const Telemetry = struct {
     /// Compatible with OpenTelemetry Collector and OTLP-compatible backends
     fn exportToOtlp(self: *Telemetry) !void {
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         try self.writeOtlpSpans(writer);
 
@@ -611,11 +613,14 @@ pub const Telemetry = struct {
             try Network.sendUdp(self.network_socket.?, self.network_address.?, self.batch_buffer.items);
             self.exporter_stats.recordNetworkExport();
         } else if (self.config.exporter_file_path) |path| {
-            const file = try std.fs.cwd().createFile(path, .{ .truncate = false });
-            defer file.close();
-            try file.seekFromEnd(0);
-            try file.writeAll(self.batch_buffer.items);
-            try file.writeAll("\n");
+            const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .truncate = false });
+            defer file.close(Utils.io());
+            var file_buffer: [Constants.BufferSizes.telemetry]u8 = undefined;
+            var file_writer = file.writer(Utils.io(), &file_buffer);
+            try file_writer.seekTo(try file.length(Utils.io()));
+            try file_writer.interface.writeAll(self.batch_buffer.items);
+            try file_writer.interface.writeAll("\n");
+            try file_writer.interface.flush();
         }
 
         self.exporter_stats.recordExport(self.completed_spans.items.len, self.batch_buffer.items.len);
@@ -722,11 +727,11 @@ pub const Telemetry = struct {
             },
             .integer => |i| {
                 try writer.writeAll("\"intValue\":");
-                try std.fmt.format(writer, "{d}", .{i});
+                try writer.print( "{d}", .{i});
             },
             .float => |f| {
                 try writer.writeAll("\"doubleValue\":");
-                try std.fmt.format(writer, "{d:.6}", .{f});
+                try writer.print( "{d:.6}", .{f});
             },
             .boolean => |b| {
                 try writer.writeAll("\"boolValue\":");
@@ -749,7 +754,8 @@ pub const Telemetry = struct {
     /// Export to Jaeger (Thrift JSON format)
     fn exportToJaeger(self: *Telemetry) !void {
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         try writer.writeAll("{\"data\":[{\"traceID\":\"");
         if (self.completed_spans.items.len > 0) {
@@ -792,7 +798,8 @@ pub const Telemetry = struct {
     /// Export to Zipkin format
     fn exportToZipkin(self: *Telemetry) !void {
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         try writer.writeByte('[');
         for (self.completed_spans.items, 0..) |span, i| {
@@ -828,7 +835,8 @@ pub const Telemetry = struct {
     /// Export to Datadog APM format
     fn exportToDatadog(self: *Telemetry) !void {
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         try writer.writeAll("[[");
         for (self.completed_spans.items, 0..) |span, i| {
@@ -870,7 +878,8 @@ pub const Telemetry = struct {
     /// Export to Google Analytics 4 Measurement Protocol
     fn exportToGoogleAnalytics(self: *Telemetry) !void {
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         try writer.writeAll("{\"client_id\":\"logly_");
         if (self.completed_spans.items.len > 0) {
@@ -909,7 +918,8 @@ pub const Telemetry = struct {
     /// Export to AWS X-Ray format
     fn exportToAwsXray(self: *Telemetry) !void {
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         for (self.completed_spans.items, 0..) |span, i| {
             if (i > 0) try writer.writeByte('\n');
@@ -933,12 +943,12 @@ pub const Telemetry = struct {
         try writer.writeAll("\",\"start_time\":");
         const ns_per_sec_f = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
         const start_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.start_time))) / ns_per_sec_f;
-        try std.fmt.format(writer, "{d:.6}", .{start_s});
+        try writer.print( "{d:.6}", .{start_s});
         if (span.end_time > 0) {
             try writer.writeAll(",\"end_time\":");
             const ns_per_sec_end_f = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
             const end_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.end_time))) / ns_per_sec_end_f;
-            try std.fmt.format(writer, "{d:.6}", .{end_s});
+            try writer.print( "{d:.6}", .{end_s});
         }
         try writer.writeAll(",\"origin\":\"");
         try writer.writeAll(self.resource.service_name orelse "unknown");
@@ -948,7 +958,8 @@ pub const Telemetry = struct {
     /// Export to Azure Application Insights format
     fn exportToAzure(self: *Telemetry) !void {
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         try writer.writeByte('[');
         for (self.completed_spans.items, 0..) |span, i| {
@@ -967,7 +978,7 @@ pub const Telemetry = struct {
         // Write ISO 8601 timestamp
         const timestamp_ns = utils.safeToUnsigned(u64, span.start_time);
         const timestamp_s = timestamp_ns / Constants.TimeConstants.ns_per_second;
-        try std.fmt.format(writer, "{d}", .{timestamp_s});
+        try writer.print( "{d}", .{timestamp_s});
         try writer.writeAll("\",\"data\":{\"baseType\":\"RequestData\",\"baseData\":{");
         try writer.writeAll("\"id\":\"");
         try writer.writeAll(span.span_id);
@@ -982,7 +993,7 @@ pub const Telemetry = struct {
             const minutes = (duration_ms % 3_600_000) / 60_000;
             const seconds = (duration_ms % 60_000) / 1_000;
             const ms = duration_ms % 1_000;
-            try std.fmt.format(writer, "{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{ hours, minutes, seconds, ms });
+            try writer.print( "{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{ hours, minutes, seconds, ms });
             try writer.writeByte('"');
         }
         try writer.writeAll("}},\"iKey\":\"");
@@ -1003,20 +1014,22 @@ pub const Telemetry = struct {
     fn exportToFile(self: *Telemetry) !void {
         const path = self.config.exporter_file_path orelse return;
 
-        const file = try std.fs.cwd().createFile(path, .{ .truncate = false });
-        defer file.close();
-
-        // Seek to end for append
-        try file.seekFromEnd(0);
+        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .truncate = false });
+        defer file.close(Utils.io());
 
         // Write each span as a JSON line
+        var file_buffer: [Constants.BufferSizes.telemetry]u8 = undefined;
+        var file_writer = file.writer(Utils.io(), &file_buffer);
+        try file_writer.seekTo(try file.length(Utils.io()));
         for (self.completed_spans.items) |span| {
             self.batch_buffer.clearRetainingCapacity();
-            const writer = self.batch_buffer.writer(self.allocator);
+            var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+            const writer = &batch_writer.writer;
             try self.writeSpanJson(writer, span);
             try writer.writeByte('\n');
-            try file.writeAll(self.batch_buffer.items);
+            try file_writer.interface.writeAll(self.batch_buffer.items);
         }
+        try file_writer.interface.flush();
     }
 
     /// Export spans to network (TCP/UDP) using Network module
@@ -1025,7 +1038,8 @@ pub const Telemetry = struct {
 
         // Build JSON batch
         self.batch_buffer.clearRetainingCapacity();
-        const writer = self.batch_buffer.writer(self.allocator);
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
 
         try writer.writeAll("{\"spans\":[");
         for (self.completed_spans.items, 0..) |span, i| {
@@ -1084,7 +1098,7 @@ pub const Telemetry = struct {
                         try writer.writeByte('"');
                     },
                     .integer => |i| try utils.writeInt(writer, i),
-                    .float => |f| try std.fmt.format(writer, "{d:.6}", .{f}),
+                    .float => |f| try writer.print( "{d:.6}", .{f}),
                     .boolean => |b| try writer.writeAll(if (b) "true" else "false"),
                     .string_array => |arr| {
                         try writer.writeByte('[');
@@ -1109,8 +1123,8 @@ pub const Telemetry = struct {
     pub fn exportSpans(self: *Telemetry) !void {
         if (!self.enabled) return;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         try self.exportSpansInternal();
     }
@@ -1119,8 +1133,8 @@ pub const Telemetry = struct {
     pub fn exportMetrics(self: *Telemetry) !void {
         if (!self.enabled) return;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         // Clear metrics after export
         for (self.metrics.items) |metric| {
@@ -1138,29 +1152,29 @@ pub const Telemetry = struct {
 
     /// Returns the number of active spans
     pub fn getActiveSpanCount(self: *Telemetry) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
         return self.active_span_count;
     }
 
     /// Returns the number of completed spans awaiting export
     pub fn getCompletedSpanCount(self: *Telemetry) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
         return self.completed_span_count;
     }
 
     /// Returns the current metric count
     pub fn getMetricCount(self: *Telemetry) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
         return self.metric_count;
     }
 
     /// Returns telemetry statistics
     pub fn getStats(self: *Telemetry) TelemetryStats {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
         return .{
             .total_spans_created = self.total_spans_created,
             .total_spans_exported = self.total_spans_exported,
@@ -1193,8 +1207,8 @@ pub const Telemetry = struct {
 
     /// Enable/disable telemetry at runtime
     pub fn setEnabled(self: *Telemetry, enabled: bool) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
         self.enabled = enabled;
     }
 
@@ -1205,8 +1219,8 @@ pub const Telemetry = struct {
 
     /// Updates telemetry sampling strategy and effective sampling rate.
     pub fn setSampling(self: *Telemetry, strategy: TelemetryConfig.SamplingStrategy, sampling_rate: f64) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         const clamped_rate = clampSamplingRate(sampling_rate);
 
@@ -1220,8 +1234,8 @@ pub const Telemetry = struct {
 
     /// Returns current telemetry sampling configuration.
     pub fn getSampling(self: *Telemetry) SamplingSnapshot {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         return .{
             .strategy = self.config.sampling_strategy,
@@ -1231,8 +1245,8 @@ pub const Telemetry = struct {
 
     /// Sets context propagation header names at runtime.
     pub fn setContextHeaders(self: *Telemetry, trace_header: []const u8, baggage_header: []const u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         self.config.trace_header = trace_header;
         self.config.baggage_header = baggage_header;
@@ -1240,8 +1254,8 @@ pub const Telemetry = struct {
 
     /// Returns currently configured context propagation headers.
     pub fn getContextHeaders(self: *Telemetry) ContextHeaders {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         return .{
             .trace_header = self.config.trace_header,
@@ -1251,16 +1265,16 @@ pub const Telemetry = struct {
 
     /// Returns true when spans or metrics are waiting to be exported.
     pub fn hasPendingData(self: *Telemetry) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         return self.completed_span_count > 0 or self.metric_count > 0;
     }
 
     /// Returns total number of pending spans + metrics.
     pub fn pendingItemCount(self: *Telemetry) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         return self.completed_span_count + self.metric_count;
     }
@@ -1277,15 +1291,15 @@ pub const Telemetry = struct {
 
     /// Update resource configuration at runtime
     pub fn setResource(self: *Telemetry, resource: Resource) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
         self.resource = resource;
     }
 
     /// Reset all statistics counters
     pub fn resetStats(self: *Telemetry) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
         self.total_spans_created = 0;
         self.total_spans_exported = 0;
         self.total_metrics_recorded = 0;
@@ -1294,8 +1308,8 @@ pub const Telemetry = struct {
 
     /// Get span by trace_id (for distributed trace continuation)
     pub fn findSpanByTraceId(self: *Telemetry, trace_id: []const u8) ?*const Span {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
 
         for (self.spans.items) |*span| {
             if (std.mem.eql(u8, span.trace_id, trace_id)) {
@@ -1706,8 +1720,9 @@ pub const Baggage = struct {
 
     /// Format as W3C baggage header value
     pub fn toHeaderValue(self: *Baggage, allocator: std.mem.Allocator) ![]const u8 {
-        var result = std.ArrayList(u8).initCapacity(allocator, Constants.TelemetryDefaults.header_initial_capacity) catch return "";
-        const writer = result.writer(allocator);
+        var result = std.Io.Writer.Allocating.initCapacity(allocator, Constants.TelemetryDefaults.header_initial_capacity) catch return "";
+        errdefer result.deinit();
+        const writer = &result.writer;
 
         var it = self.items.iterator();
         var first = true;
@@ -1719,7 +1734,7 @@ pub const Baggage = struct {
             first = false;
         }
 
-        return result.toOwnedSlice(allocator);
+        return result.toOwnedSlice();
     }
 
     /// Parse W3C baggage header value
@@ -2136,7 +2151,7 @@ test "Span duration helpers" {
     defer span.deinit();
 
     // Small delay
-    std.Thread.sleep(1_000_000); // 1ms
+    Utils.io().sleep(.fromMilliseconds(1), .awake) catch {}; // 1ms
 
     span.end();
 

@@ -273,7 +273,7 @@ gtag('config', '${GA_ID}');`,
           priceCurrency: "USD",
         },
         downloadUrl: "https://github.com/muhammad-fiaz/logly.zig",
-        softwareVersion: "0.1.7",
+        softwareVersion: "0.1.8",
         license: "https://opensource.org/licenses/MIT",
       });
     } else {
@@ -360,10 +360,10 @@ gtag('config', '${GA_ID}');`,
         items: [
           {
             text: "💖 Sponsor",
-            link: "https://github.com/sponsors/muhammad-fiaz",
+                        link: "https://github.com/sponsors/muhammad-fiaz",
           },
           { text: "☕ Donate", link: "https://pay.muhammadfiaz.com" },
-        ],
+                ],
       },
       { text: "GitHub", link: "https://github.com/muhammad-fiaz/logly.zig" },
     ],
@@ -513,7 +513,7 @@ gtag('config', '${GA_ID}');`,
     footer: {
       message: "Released under the MIT License.",
       copyright: `Copyright © 2025-${new Date().getFullYear()} Muhammad Fiaz`,
-    },
+        },
 
     search: {
       provider: "local",

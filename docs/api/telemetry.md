@@ -13,7 +13,7 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 - **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span and metric export
 - **Export Modes**: Synchronous, async buffered, batch, and network export modes
 - **Span Processor Semantics**: `span_processor_type` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
-- **Note (v0.1.6)**: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor semantics; telemetry now builds cleanly across targets.
+- **Note (v0.1.8)**: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor semantics; telemetry now builds cleanly across targets.
 - **Exporter Statistics**: Real-time monitoring of export performance with atomic counters
 - **Resource Detection**: Automatic detection of service metadata and resource attributes
 - **Sampling Strategies**: Four sampling algorithms (always_on, always_off, trace_id_ratio, parent_based)
@@ -75,8 +75,8 @@ pub const Telemetry = struct {
     on_span_end: ?*const fn ([]const u8, u64) void,
     on_metric_recorded: ?*const fn ([]const u8, f64) void,
     on_error: ?*const fn ([]const u8) void,
-    network_socket: ?std.posix.socket_t,
-    network_address: ?std.net.Address,
+    network_socket: ?std.Io.net.Socket,
+    network_address: ?std.Io.net.IpAddress,
     batch_buffer: std.ArrayList(u8),
     last_batch_export: i64,
     
@@ -1416,7 +1416,7 @@ Common errors:
 
 ## Compatibility
 
-- Zig: 0.15.2+
+- Zig: 0.16.0+
 - OpenTelemetry: Specification 1.0+
 - Platforms: Linux, macOS, Windows (x86_64, aarch64, x86)
 

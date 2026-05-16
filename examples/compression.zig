@@ -2,7 +2,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -115,8 +115,8 @@ pub fn main() !void {
 
     std.debug.print("   GZIP compressed size: {d} bytes\n\n", .{gzip_compressed.len});
 
-    // Example 7: Zstd Compression (v0.1.5+)
-    std.debug.print("7. Zstd Compression (v0.1.5+)\n", .{});
+    // Example 7: Zstd Compression (v0.1.8+)
+    std.debug.print("7. Zstd Compression (v0.1.8+)\n", .{});
     std.debug.print("   ---------------------------\n", .{});
 
     var zstd_comp = logly.Compression.zstdCompression(allocator);
@@ -142,8 +142,8 @@ pub fn main() !void {
     std.debug.print("     - zstdProduction(): Background + checksums\n", .{});
     std.debug.print("     - zstdWithLevel(N): Custom level (1-22)\n\n", .{});
 
-    // Example 8: Zstd Custom Levels (v0.1.5+)
-    std.debug.print("8. Zstd Custom Levels (v0.1.5+)\n", .{});
+    // Example 8: Zstd Custom Levels (v0.1.8+)
+    std.debug.print("8. Zstd Custom Levels (v0.1.8+)\n", .{});
     std.debug.print("   ----------------------------\n", .{});
 
     // Test custom zstd level 15
@@ -168,8 +168,8 @@ pub fn main() !void {
     std.debug.print("     Level 19 (best):    Best ratio, slowest\n", .{});
     std.debug.print("     Level 22 (ultra):   Maximum compression\n\n", .{});
 
-    // Example 9: Zstd Config Presets (v0.1.5+)
-    std.debug.print("9. Zstd Config Presets (v0.1.5+)\n", .{});
+    // Example 9: Zstd Config Presets (v0.1.8+)
+    std.debug.print("9. Zstd Config Presets (v0.1.8+)\n", .{});
     std.debug.print("   -----------------------------\n", .{});
 
     const zstd_config = logly.Config.CompressionConfig.zstd();
@@ -184,8 +184,8 @@ pub fn main() !void {
     std.debug.print("     Background: {s}\n", .{if (zstd_prod.background) "enabled" else "disabled"});
     std.debug.print("     Keep original: {s}\n\n", .{if (zstd_prod.keep_original) "yes" else "no"});
 
-    // Example 10: Compression Aliases (v0.1.5+)
-    std.debug.print("10. Compression Aliases (v0.1.5+)\n", .{});
+    // Example 10: Compression Aliases (v0.1.8+)
+    std.debug.print("10. Compression Aliases (v0.1.8+)\n", .{});
     std.debug.print("    ------------------------------\n", .{});
 
     var alias_comp = logly.Compression.create(allocator); // Alias for init()
@@ -221,18 +221,20 @@ pub fn main() !void {
     defer stream_comp.deinit();
 
     const stream_data = "Data to be compressed via stream" ** 5;
-    var input_stream = std.io.fixedBufferStream(stream_data);
+    var input_reader = std.Io.Reader.fixed(stream_data);
     var output_buffer: std.ArrayList(u8) = .empty;
     defer output_buffer.deinit(allocator);
 
-    try stream_comp.compressStream(input_stream.reader(), output_buffer.writer(allocator));
+    var output_writer = logly.Utils.ArrayListWriter.init(&output_buffer, allocator);
+    try stream_comp.compressStream(&input_reader, &output_writer.writer);
     std.debug.print("    Stream compressed size: {d} bytes\n", .{output_buffer.items.len});
 
-    var decomp_input = std.io.fixedBufferStream(output_buffer.items);
+    var decomp_input = std.Io.Reader.fixed(output_buffer.items);
     var decomp_output: std.ArrayList(u8) = .empty;
     defer decomp_output.deinit(allocator);
 
-    try stream_comp.decompressStream(decomp_input.reader(), decomp_output.writer(allocator));
+    var decomp_writer = logly.Utils.ArrayListWriter.init(&decomp_output, allocator);
+    try stream_comp.decompressStream(&decomp_input, &decomp_writer.writer);
     std.debug.print("    Stream decompressed verified: {s}\n\n", .{if (std.mem.eql(u8, stream_data, decomp_output.items)) "✓ Yes" else "✗ No"});
 
     // Example 12: Directory Compression
@@ -241,19 +243,20 @@ pub fn main() !void {
 
     // Create dummy logs for directory compression test
     const test_dir = "logs_test_batch";
-    std.fs.cwd().makePath(test_dir) catch {};
+    const io = logly.Utils.io();
+    std.Io.Dir.cwd().createDirPath(io, test_dir) catch {};
     // defer {
     //    // Cleanup compressed files
     //    std.fs.cwd().deleteTree(test_dir) catch {};
     // }
 
-    const log1 = try std.fs.cwd().createFile(test_dir ++ "/app.log", .{});
-    try log1.writeAll("Application log data 1");
-    log1.close();
+    const log1 = try std.Io.Dir.cwd().createFile(io, test_dir ++ "/app.log", .{});
+    defer log1.close(io);
+    try log1.writeStreamingAll(io, "Application log data 1");
 
-    const log2 = try std.fs.cwd().createFile(test_dir ++ "/error.log", .{});
-    try log2.writeAll("Error log data 2");
-    log2.close();
+    const log2 = try std.Io.Dir.cwd().createFile(io, test_dir ++ "/error.log", .{});
+    defer log2.close(io);
+    try log2.writeStreamingAll(io, "Error log data 2");
 
     var batch_comp = logly.Compression.init(allocator);
     defer batch_comp.deinit();
@@ -261,11 +264,11 @@ pub fn main() !void {
     const files_processed = try batch_comp.compressDirectory(test_dir);
     std.debug.print("    Batch compressed {d} files in '{s}'\n\n", .{ files_processed, test_dir });
 
-    // Example 13: v0.1.6 New Algorithms
-    std.debug.print("13. New Algorithms (v0.1.6+)\n", .{});
+    // Example 13: v0.1.8 New Algorithms
+    std.debug.print("13. New Algorithms (v0.1.8+)\n", .{});
     std.debug.print("    ------------------------\n", .{});
 
-    const algo_test_data = "Testing new v0.1.6 compression algorithms " ** 30;
+    const algo_test_data = "Testing new v0.1.8 compression algorithms " ** 30;
 
     // LZMA
     {
@@ -335,8 +338,8 @@ pub fn main() !void {
 
     std.debug.print("\n", .{});
 
-    // Example 14: Config Presets for v0.1.6 Algorithms
-    std.debug.print("14. Config Presets (v0.1.6+)\n", .{});
+    // Example 14: Config Presets for v0.1.8 Algorithms
+    std.debug.print("14. Config Presets (v0.1.8+)\n", .{});
     std.debug.print("    ------------------------\n", .{});
 
     const lzma_cfg = logly.Config.CompressionConfig.lzma();

@@ -2,7 +2,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -32,7 +32,7 @@ pub fn main() !void {
     std.debug.print("Logger initialized with update check enabled.\n", .{});
     std.debug.print("Waiting for background check (2 seconds)...\n", .{});
 
-    std.Thread.sleep(2 * std.time.ns_per_s);
+    logly.Utils.sleepMs(2000);
 
     std.debug.print("\n=== Update Check Example Complete ===\n", .{});
 }

@@ -160,15 +160,15 @@ pub const NetworkError = error{
 
 ## Functions
 
-### `connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.net.Stream`
+### `connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.Io.net.Stream`
 
 Connects to a TCP host specified by a URI string (e.g., "tcp://127.0.0.1:8080").
 
-### `createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { socket: std.posix.socket_t, address: std.net.Address }`
+### `createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { socket: std.Io.net.Socket, address: std.Io.net.IpAddress }`
 
 Creates a UDP socket connected to a host specified by a URI string (e.g., "udp://127.0.0.1:514").
 
-### `sendUdp(socket: std.posix.socket_t, address: std.net.Address, data: []const u8) !void`
+### `sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: []const u8) !void`
 
 Sends data via UDP socket.
 
@@ -230,20 +230,21 @@ const udp_sink = logly.SinkConfig{
 ```zig
 const logly = @import("logly");
 const Network = logly.Network;
+const io = logly.Utils.io();
 
 // Connect to TCP server
 const stream = try Network.connectTcp(allocator, "tcp://localhost:8080");
-defer stream.close();
+defer stream.close(io);
 
 // Create UDP socket for Syslog
 const udp = try Network.createUdpSocket(allocator, "udp://localhost:514");
-defer std.posix.close(udp.socket);
+defer udp.socket.close(io);
 
 // Send UDP data
 try Network.sendUdp(udp.socket, udp.address, "Hello Syslog");
 
 // Fetch JSON from URL
-const json = try Network.fetchJson(allocator, "https://api.example.com/config", &.{}));
+const json = try Network.fetchJson(allocator, "https://api.example.com/config", &.{});
 defer json.deinit();
 
 // Format Syslog message

@@ -156,7 +156,7 @@ pub const Sampler = struct {
     /// Internal state (counters, RNG, window tracking).
     state: SamplerState,
     /// Mutex for thread-safe operations.
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
 
     /// Callback invoked when a record passes sampling.
     /// Parameters: (sample_rate: f64)
@@ -361,13 +361,13 @@ pub const Sampler = struct {
         var rate_exceeded_info: ?RateExceededInfo = null;
         var adjustment_info: ?AdjustmentInfo = null;
 
-        self.mutex.lock();
+        self.mutex.lockUncancelable(Utils.io());
         const sample_decision = self.evaluateSampleDecisionLocked(
             Utils.currentMillis(),
             &rate_exceeded_info,
             &adjustment_info,
         );
-        self.mutex.unlock();
+        self.mutex.unlock(Utils.io());
 
         if (adjustment_info) |info| {
             if (self.on_rate_adjustment) |cb| cb(info.old, info.new, "throughput adjustment");
@@ -403,8 +403,8 @@ pub const Sampler = struct {
 
     /// Updates strategy at runtime and resets strategy-specific counters.
     pub fn setStrategy(self: *Sampler, strategy: Strategy) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         self.strategy = strategy;
         self.resetStateForStrategy();
@@ -447,9 +447,9 @@ pub const Sampler = struct {
             .max_sample_rate = bounded_max,
         } });
 
-        self.mutex.lock();
+        self.mutex.lockUncancelable(Utils.io());
         self.state.current_rate = bounded_max;
-        self.mutex.unlock();
+        self.mutex.unlock(Utils.io());
     }
 
     /// Disables filtering and allows all records through.
@@ -459,8 +459,8 @@ pub const Sampler = struct {
 
     /// Returns remaining quota in current rate-limit window, if applicable.
     pub fn remainingWindowQuota(self: *Sampler) ?u32 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return switch (self.strategy) {
             .rate_limit => |config| {
@@ -473,8 +473,8 @@ pub const Sampler = struct {
 
     /// Returns milliseconds until rate-limit window reset, if applicable.
     pub fn windowResetInMs(self: *Sampler) ?u64 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return switch (self.strategy) {
             .rate_limit => |config| {
@@ -498,8 +498,8 @@ pub const Sampler = struct {
 
     /// Resets the sampler state.
     pub fn reset(self: *Sampler) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         self.state = SamplerState.init();
     }
@@ -509,8 +509,8 @@ pub const Sampler = struct {
 
     /// Returns the current sampling rate (for adaptive sampling).
     pub fn getCurrentRate(self: *Sampler) f64 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return switch (self.strategy) {
             .none => 1.0,
@@ -801,7 +801,7 @@ test "sampler adaptive" {
     }
 
     // Wait for adjustment interval
-    std.Thread.sleep(60 * Constants.TimeConstants.ns_per_ms);
+    Utils.sleepMs(60);
 
     // One more sample to trigger adjustment
     _ = sampler.shouldSample();

@@ -51,9 +51,9 @@ pub const Scheduler = struct {
     /// Background worker thread for task execution.
     worker_thread: ?std.Thread = null,
     /// Mutex for thread-safe access to tasks.
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
     /// Condition variable for worker thread signaling.
-    condition: std.Thread.Condition = .{},
+    condition: std.Io.Condition = .init,
     /// Scheduler statistics (tasks executed, failed, etc.).
     stats: SchedulerStats,
     /// Compression utility for compression tasks.
@@ -557,13 +557,13 @@ pub const Scheduler = struct {
         var status = HealthStatus{};
 
         // Check if we can write to current directory
-        const test_file = std.fs.cwd().createFile(".health_check_temp", .{}) catch {
+        const test_file = std.Io.Dir.cwd().createFile(Utils.io(), ".health_check_temp", .{}) catch {
             status.healthy = false;
             status.message = "Cannot write to disk";
             return status;
         };
-        test_file.close();
-        std.fs.cwd().deleteFile(".health_check_temp") catch {};
+        test_file.close(Utils.io());
+        std.Io.Dir.cwd().deleteFile(Utils.io(), ".health_check_temp") catch {};
 
         return status;
     }
@@ -585,8 +585,8 @@ pub const Scheduler = struct {
         schedule: Schedule,
         config: ScheduledTask.TaskConfig,
     ) !usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const owned_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(owned_name);
@@ -621,8 +621,8 @@ pub const Scheduler = struct {
 
     /// Configures priority for a specific task.
     pub fn setTaskPriority(self: *Scheduler, index: usize, priority: ScheduledTask.Priority) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         if (index < self.tasks.items.len) {
             self.tasks.items[index].priority = priority;
         }
@@ -633,8 +633,8 @@ pub const Scheduler = struct {
 
     /// Configures retry policy for a specific task.
     pub fn setTaskRetryPolicy(self: *Scheduler, index: usize, policy: ScheduledTask.RetryPolicy) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         if (index < self.tasks.items.len) {
             self.tasks.items[index].retry_policy = policy;
             self.tasks.items[index].retries_remaining = policy.max_retries;
@@ -646,8 +646,8 @@ pub const Scheduler = struct {
 
     /// Sets a dependency for a task.
     pub fn setTaskDependency(self: *Scheduler, index: usize, dependency_name: []const u8) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         if (index < self.tasks.items.len) {
             if (self.tasks.items[index].depends_on) |p| self.allocator.free(p);
             self.tasks.items[index].depends_on = try self.allocator.dupe(u8, dependency_name);
@@ -704,8 +704,8 @@ pub const Scheduler = struct {
         schedule: Schedule,
         callback: *const fn (*ScheduledTask) anyerror!void,
     ) !usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const owned_name = try self.allocator.dupe(u8, name);
         const now = Utils.currentMillis();
@@ -727,8 +727,8 @@ pub const Scheduler = struct {
 
     /// Enables or disables a task.
     pub fn setTaskEnabled(self: *Scheduler, index: usize, enabled: bool) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         if (index < self.tasks.items.len) {
             self.tasks.items[index].enabled = enabled;
         }
@@ -739,8 +739,8 @@ pub const Scheduler = struct {
 
     /// Removes a task by index.
     pub fn removeTask(self: *Scheduler, index: usize) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         if (index < self.tasks.items.len) {
             const task = self.tasks.orderedRemove(index);
             self.allocator.free(task.name);
@@ -755,8 +755,8 @@ pub const Scheduler = struct {
 
     /// Finds a task index by name.
     pub fn taskIndexByName(self: *Scheduler, name: []const u8) ?usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.tasks.items, 0..) |task, i| {
             if (std.mem.eql(u8, task.name, name)) return i;
@@ -766,8 +766,8 @@ pub const Scheduler = struct {
 
     /// Returns task snapshot by index.
     pub fn getTaskSnapshot(self: *Scheduler, index: usize) ?TaskSnapshot {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (index >= self.tasks.items.len) return null;
         const task = self.tasks.items[index];
@@ -786,8 +786,8 @@ pub const Scheduler = struct {
 
     /// Returns task snapshot by name.
     pub fn getTaskSnapshotByName(self: *Scheduler, name: []const u8) ?TaskSnapshot {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.tasks.items) |task| {
             if (std.mem.eql(u8, task.name, name)) {
@@ -816,8 +816,8 @@ pub const Scheduler = struct {
     ///
     /// Returns true when task exists and was updated.
     pub fn setTaskEnabledByName(self: *Scheduler, name: []const u8, enabled: bool) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.tasks.items) |*task| {
             if (std.mem.eql(u8, task.name, name)) {
@@ -833,8 +833,8 @@ pub const Scheduler = struct {
     ///
     /// Returns true when a task was removed.
     pub fn removeTaskByName(self: *Scheduler, name: []const u8) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.tasks.items, 0..) |task, i| {
             if (std.mem.eql(u8, task.name, name)) {
@@ -852,8 +852,8 @@ pub const Scheduler = struct {
 
     /// Returns enabled task count.
     pub fn enabledTaskCount(self: *Scheduler) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var enabled_total: usize = 0;
         for (self.tasks.items) |task| {
@@ -864,8 +864,8 @@ pub const Scheduler = struct {
 
     /// Returns running task count.
     pub fn runningTaskCount(self: *Scheduler) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var running_total: usize = 0;
         for (self.tasks.items) |task| {
@@ -876,8 +876,8 @@ pub const Scheduler = struct {
 
     /// Returns milliseconds until task next run.
     pub fn nextRunInMs(self: *Scheduler, index: usize) ?i64 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (index >= self.tasks.items.len) return null;
         const delta = self.tasks.items[index].next_run - Utils.currentMillis();
@@ -886,8 +886,8 @@ pub const Scheduler = struct {
 
     /// Returns milliseconds until task next run by task name.
     pub fn nextRunInMsByName(self: *Scheduler, name: []const u8) ?i64 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.tasks.items) |task| {
             if (std.mem.eql(u8, task.name, name)) {
@@ -901,8 +901,8 @@ pub const Scheduler = struct {
 
     /// Updates schedule for a task and recalculates next run.
     pub fn setTaskSchedule(self: *Scheduler, index: usize, schedule: Schedule) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (index >= self.tasks.items.len) return false;
 
@@ -913,8 +913,8 @@ pub const Scheduler = struct {
 
     /// Forces a task to become runnable on next scheduler pass.
     pub fn rescheduleNow(self: *Scheduler, index: usize) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (index >= self.tasks.items.len) return false;
 
@@ -925,8 +925,8 @@ pub const Scheduler = struct {
 
     /// Sets the callback for task started events.
     pub fn setTaskStartedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_task_started = callback;
     }
 
@@ -935,8 +935,8 @@ pub const Scheduler = struct {
 
     /// Sets the callback for task completed events.
     pub fn setTaskCompletedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_task_completed = callback;
     }
 
@@ -945,8 +945,8 @@ pub const Scheduler = struct {
 
     /// Sets the callback for task error events.
     pub fn setTaskErrorCallback(self: *Scheduler, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_task_error = callback;
     }
 
@@ -955,8 +955,8 @@ pub const Scheduler = struct {
 
     /// Sets the callback for schedule tick events.
     pub fn setScheduleTickCallback(self: *Scheduler, callback: *const fn (u32, u32) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_schedule_tick = callback;
     }
 
@@ -965,8 +965,8 @@ pub const Scheduler = struct {
 
     /// Sets the callback for health check events.
     pub fn setHealthCheckCallback(self: *Scheduler, callback: *const fn (*const HealthStatus) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_health_check = callback;
     }
 
@@ -990,7 +990,7 @@ pub const Scheduler = struct {
         if (!self.running.load(.acquire)) return;
 
         self.running.store(false, .release);
-        self.condition.broadcast();
+        self.condition.broadcast(Utils.io());
 
         // Join the worker loop thread
         if (self.worker_thread) |thread| {
@@ -1002,24 +1002,24 @@ pub const Scheduler = struct {
         var wait_loops: u8 = 0;
         while (wait_loops < 50) : (wait_loops += 1) { // 5 second max wait
             var any_running = false;
-            self.mutex.lock();
+            self.mutex.lockUncancelable(Utils.io());
             for (self.tasks.items) |task| {
                 if (task.running) {
                     any_running = true;
                     break;
                 }
             }
-            self.mutex.unlock();
+            self.mutex.unlock(Utils.io());
 
             if (!any_running) break;
-            std.Thread.sleep(100 * Constants.TimeConstants.ns_per_ms);
+            Utils.sleepMs(100);
         }
     }
 
     /// Runs a task immediately regardless of schedule.
     pub fn runNow(self: *Scheduler, index: usize) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (index >= self.tasks.items.len) return;
         try self.executeTask(&self.tasks.items[index]);
@@ -1070,8 +1070,8 @@ pub const Scheduler = struct {
 
     /// Returns number of tasks currently ready to run.
     pub fn readyTaskCount(self: *Scheduler) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const now = Utils.currentMillis();
         var ready_total: usize = 0;
@@ -1087,7 +1087,7 @@ pub const Scheduler = struct {
         var ready_count: u32 = 0;
         var total_count: u32 = 0;
 
-        self.mutex.lock();
+        self.mutex.lockUncancelable(Utils.io());
         const precheck_now = Utils.currentMillis();
         total_count = @as(u32, @intCast(@min(self.tasks.items.len, std.math.maxInt(u32))));
         for (self.tasks.items) |task| {
@@ -1096,12 +1096,12 @@ pub const Scheduler = struct {
             }
         }
         tick_cb = self.on_schedule_tick;
-        self.mutex.unlock();
+        self.mutex.unlock(Utils.io());
 
         if (tick_cb) |cb| cb(ready_count, total_count);
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const now = Utils.currentMillis();
         for (self.tasks.items, 0..) |*task, i| {
@@ -1155,8 +1155,8 @@ pub const Scheduler = struct {
     pub const pending = runPending;
 
     fn handleTaskError(self: *Scheduler, index: usize, err: anyerror) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         self.handleTaskErrorLocked(index, err);
     }
@@ -1184,18 +1184,18 @@ pub const Scheduler = struct {
     }
 
     fn runTaskByIndex(self: *Scheduler, index: usize) !void {
-        self.mutex.lock();
+        self.mutex.lockUncancelable(Utils.io());
         if (index >= self.tasks.items.len) {
-            self.mutex.unlock();
+            self.mutex.unlock(Utils.io());
             return;
         }
         const task = &self.tasks.items[index];
-        self.mutex.unlock();
+        self.mutex.unlock(Utils.io());
 
         defer {
-            self.mutex.lock();
+            self.mutex.lockUncancelable(Utils.io());
             task.running = false;
-            self.mutex.unlock();
+            self.mutex.unlock(Utils.io());
         }
 
         try self.executeTask(task);
@@ -1208,7 +1208,7 @@ pub const Scheduler = struct {
             // Check every 500ms for more responsive scheduling
             var i: usize = 0;
             while (i < 5 and self.running.load(.acquire)) : (i += 1) {
-                std.Thread.sleep(100 * Constants.TimeConstants.ns_per_ms);
+                Utils.sleepMs(100);
             }
         }
     }
@@ -1332,10 +1332,10 @@ pub const Scheduler = struct {
         const now = Utils.currentSeconds();
         const max_age = @as(i64, @intCast(config.max_age_seconds));
 
-        var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch {
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), path, .{ .iterate = true }) catch {
             return result;
         };
-        defer dir.close();
+        defer dir.close(Utils.io());
 
         // Collect file info for ranking
         var files: std.ArrayList(FileInfo) = .empty;
@@ -1348,7 +1348,7 @@ pub const Scheduler = struct {
 
         var iter = dir.iterate();
         var total_size: u64 = 0;
-        while (try iter.next()) |entry| {
+        while (try iter.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
 
             // Check file pattern
@@ -1357,14 +1357,14 @@ pub const Scheduler = struct {
             }
 
             // Get file stats
-            const file = dir.openFile(entry.name, .{}) catch continue;
-            const stat = file.stat() catch {
-                file.close();
+            const file = dir.openFile(Utils.io(), entry.name, .{}) catch continue;
+            const stat = file.stat(Utils.io()) catch {
+                file.close(Utils.io());
                 continue;
             };
-            file.close();
+            file.close(Utils.io());
 
-            const mtime: i64 = @intCast(@divFloor(stat.mtime, Constants.TimeConstants.ns_per_second));
+            const mtime = stat.mtime.toSeconds();
             const age = now - mtime;
 
             const name_copy = self.allocator.dupe(u8, entry.name) catch continue;
@@ -1426,7 +1426,7 @@ pub const Scheduler = struct {
                 }
 
                 // Default: Delete the file
-                dir.deleteFile(fi.name) catch {
+                dir.deleteFile(Utils.io(), fi.name) catch {
                     result.errors += 1;
                     continue;
                 };
@@ -1446,7 +1446,7 @@ pub const Scheduler = struct {
                     if (deleted_indices.isSet(i)) continue;
                     if (current_count <= max) break;
 
-                    dir.deleteFile(fi.name) catch {
+                    dir.deleteFile(Utils.io(), fi.name) catch {
                         result.errors += 1;
                         continue;
                     };
@@ -1467,7 +1467,7 @@ pub const Scheduler = struct {
                     if (deleted_indices.isSet(i)) continue;
                     if (total_size <= max_size) break;
 
-                    dir.deleteFile(fi.name) catch {
+                    dir.deleteFile(Utils.io(), fi.name) catch {
                         result.errors += 1;
                         continue;
                     };
@@ -1505,12 +1505,12 @@ pub const Scheduler = struct {
 
         if (!self.compression_initialized) return result;
 
-        var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch return result;
-        defer dir.close();
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), path, .{ .iterate = true }) catch return result;
+        defer dir.close(Utils.io());
 
         var iter = dir.iterate();
         const now = Utils.currentSeconds();
-        while (try iter.next()) |entry| {
+        while (try iter.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
 
             // Skip already compressed files
@@ -1523,13 +1523,13 @@ pub const Scheduler = struct {
 
             // Check age if min_age_seconds is set
             if (config.min_age_seconds > 0) {
-                const file = dir.openFile(entry.name, .{}) catch continue;
-                const stat = file.stat() catch {
-                    file.close();
+                const file = dir.openFile(Utils.io(), entry.name, .{}) catch continue;
+                const stat = file.stat(Utils.io()) catch {
+                    file.close(Utils.io());
                     continue;
                 };
-                file.close();
-                const mtime: i64 = @intCast(@divFloor(stat.mtime, Constants.TimeConstants.ns_per_second));
+                file.close(Utils.io());
+                const mtime = stat.mtime.toSeconds();
                 if (now - mtime < @as(i64, @intCast(config.min_age_seconds))) continue;
             }
 
@@ -2004,29 +2004,29 @@ test "scheduler maintenance task" {
     defer scheduler.deinit();
 
     const tmp_path = ".test_logs_maintenance";
-    std.fs.cwd().makeDir(tmp_path) catch {};
-    defer std.fs.cwd().deleteTree(tmp_path) catch {};
+    std.Io.Dir.cwd().createDir(Utils.io(), tmp_path, .default_dir) catch {};
+    defer std.Io.Dir.cwd().deleteTree(Utils.io(), tmp_path) catch {};
 
-    var dir = try std.fs.cwd().openDir(tmp_path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try std.Io.Dir.cwd().openDir(Utils.io(), tmp_path, .{ .iterate = true });
+    defer dir.close(Utils.io());
 
     // Create initial set of log files for testing limit enforcement
     var i: usize = 0;
     while (i < 10) : (i += 1) {
         const name = try std.fmt.allocPrint(allocator, "test_{d}.log", .{i});
         defer allocator.free(name);
-        const file = try dir.createFile(name, .{});
-        try file.writeAll("test content");
-        file.close();
+        const file = try dir.createFile(Utils.io(), name, .{});
+        try file.writeStreamingAll(Utils.io(), "test content");
+        file.close(Utils.io());
     }
 
     // Create additional files to test overflow handling
     while (i < 15) : (i += 1) {
         const name = try std.fmt.allocPrint(allocator, "new_{d}.log", .{i});
         defer allocator.free(name);
-        const file = try dir.createFile(name, .{});
-        try file.writeAll("new log content");
-        file.close();
+        const file = try dir.createFile(Utils.io(), name, .{});
+        try file.writeStreamingAll(Utils.io(), "new log content");
+        file.close(Utils.io());
     }
 
     // Verify max_files constraint enforcement
@@ -2041,16 +2041,16 @@ test "scheduler maintenance task" {
 
     var count: usize = 0;
     var iter = dir.iterate();
-    while (try iter.next()) |_| {
+    while (try iter.next(Utils.io())) |_| {
         count += 1;
     }
     try std.testing.expectEqual(@as(usize, 5), count);
 
     // Verify max_total_size constraint enforcement
     {
-        const file = try dir.createFile("large.log", .{});
-        try file.writeAll(&([_]u8{'A'} ** 1024));
-        file.close();
+        const file = try dir.createFile(Utils.io(), "large.log", .{});
+        try file.writeStreamingAll(Utils.io(), &([_]u8{'A'} ** 1024));
+        file.close(Utils.io());
     }
 
     config.max_files = null;

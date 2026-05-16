@@ -11,16 +11,17 @@ fn customMetricsTask(task: *Scheduler.ScheduledTask) anyerror!void {
 
 /// Demonstrates the scheduler with comprehensive task implementations and presets.
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     std.debug.print("\n", .{});
-    std.debug.print("Logly Scheduler Demo v0.1.5\n", .{});
+    std.debug.print("Logly Scheduler Demo v0.1.8\n", .{});
     std.debug.print("Automated Tasks with Compression Integration\n\n", .{});
 
     // Create logs directory for testing
-    std.fs.cwd().makePath("logs_scheduler_test") catch {};
+    const io = logly.Utils.io();
+    std.Io.Dir.cwd().createDirPath(io, "logs_scheduler_test") catch {};
 
     // Create some test log files
     std.debug.print("Creating Test Log Files\n", .{});
@@ -28,16 +29,16 @@ pub fn main() !void {
         const filename = try std.fmt.allocPrint(allocator, "logs_scheduler_test/app_{d}.log", .{i});
         defer allocator.free(filename);
 
-        const file = try std.fs.cwd().createFile(filename, .{});
-        defer file.close();
+        const file = try std.Io.Dir.cwd().createFile(io, filename, .{});
+        defer file.close(io);
 
         // Write some log content
-        const content = try std.fmt.allocPrint(allocator, "[{d}] Log entry {d}: Application running smoothly\n", .{ std.time.timestamp(), i });
+        const content = try std.fmt.allocPrint(allocator, "[{d}] Log entry {d}: Application running smoothly\n", .{ logly.Utils.currentSeconds(), i });
         defer allocator.free(content);
 
         // Write it multiple times to make the file larger
         for (0..100) |_| {
-            try file.writeAll(content);
+            try file.writeStreamingAll(io, content);
         }
 
         std.debug.print("  Created: {s} ({d} bytes)\n", .{ filename, content.len * 100 });
@@ -165,7 +166,7 @@ pub fn main() !void {
         const health = scheduler.getHealthStatus();
         std.debug.print("  Health: {s}\n", .{if (health.healthy) "OK" else "NOT OK"});
 
-        std.Thread.sleep(1 * std.time.ns_per_s);
+        logly.Utils.sleepMs(1000);
     }
 
     // Show final stats
@@ -182,15 +183,15 @@ pub fn main() !void {
 
     // Show remaining files in test directory
     std.debug.print("\nRemaining Test Files\n", .{});
-    var dir = std.fs.cwd().openDir("logs_scheduler_test", .{ .iterate = true }) catch {
+    var dir = std.Io.Dir.cwd().openDir(io, "logs_scheduler_test", .{ .iterate = true }) catch {
         std.debug.print("  (directory cleaned up or not accessible)\n", .{});
         return;
     };
-    defer dir.close();
+    defer dir.close(io);
 
     var file_count: usize = 0;
     var iter = dir.iterate();
-    while (try iter.next()) |entry| {
+    while (try iter.next(io)) |entry| {
         std.debug.print("  - {s}\n", .{entry.name});
         file_count += 1;
     }
@@ -200,7 +201,7 @@ pub fn main() !void {
 
     // Cleanup test directory
     std.debug.print("\nCleanup\n", .{});
-    std.fs.cwd().deleteTree("logs_scheduler_test") catch {};
+    std.Io.Dir.cwd().deleteTree(io, "logs_scheduler_test") catch {};
     std.debug.print("  Removed test directory\n", .{});
 
     std.debug.print("\nScheduler Demo Complete!\n", .{});

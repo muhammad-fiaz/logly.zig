@@ -37,7 +37,7 @@ pub const Rules = struct {
     allocator: std.mem.Allocator,
     rules: std.ArrayList(Rule),
     enabled: bool = false,
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
     stats: RulesStats = .{},
     config: RulesConfig = .{},
 
@@ -579,8 +579,8 @@ pub const Rules = struct {
 
     /// Sync configuration from global Config.
     pub fn syncWithGlobalConfig(self: *Rules, global_config: Config) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const rules_cfg = global_config.rules;
         self.enabled = rules_cfg.enabled;
@@ -635,14 +635,14 @@ pub const Rules = struct {
 
     // Configuration methods
     pub fn enable(self: *Rules) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.enabled = true;
     }
 
     pub fn disable(self: *Rules) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.enabled = false;
     }
 
@@ -651,8 +651,8 @@ pub const Rules = struct {
     }
 
     pub fn configure(self: *Rules, config: RulesConfig) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config = config;
 
         if (self.config.sort_by_severity) {
@@ -661,21 +661,21 @@ pub const Rules = struct {
     }
 
     pub fn setUnicode(self: *Rules, use_unicode: bool) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config.use_unicode = use_unicode;
     }
 
     pub fn setColors(self: *Rules, enable_colors: bool) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config.enable_colors = enable_colors;
     }
 
     /// Update configuration at runtime.
     pub fn setConfig(self: *Rules, new_config: RulesConfig) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config = new_config;
 
         if (self.config.sort_by_severity) {
@@ -690,38 +690,38 @@ pub const Rules = struct {
 
     // Callback setters
     pub fn setRuleMatchedCallback(self: *Rules, callback: *const fn (*const Rule, *const Record) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_rule_matched = callback;
     }
 
     pub fn setRuleEvaluatedCallback(self: *Rules, callback: *const fn (*const Rule, *const Record, bool) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_rule_evaluated = callback;
     }
 
     pub fn setMessagesAttachedCallback(self: *Rules, callback: *const fn (*const Record, usize) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_messages_attached = callback;
     }
 
     pub fn setEvaluationErrorCallback(self: *Rules, callback: *const fn ([]const u8) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_evaluation_error = callback;
     }
 
     pub fn setBeforeEvaluateCallback(self: *Rules, callback: *const fn (*const Record) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_before_evaluate = callback;
     }
 
     pub fn setAfterEvaluateCallback(self: *Rules, callback: *const fn (*const Record, usize) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_after_evaluate = callback;
     }
 
@@ -736,8 +736,8 @@ pub const Rules = struct {
     ///     error.RuleIdAlreadyExists if a rule with the same ID exists.
     ///     error.TooManyRules if the max rules limit is reached.
     pub fn add(self: *Rules, rule: Rule) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.rules.items.len >= self.config.max_rules) {
             return error.TooManyRules;
@@ -760,8 +760,8 @@ pub const Rules = struct {
     /// Adds a rule, updating it if a rule with the same ID already exists.
     /// Use this when you want to allow updates.
     pub fn addOrUpdate(self: *Rules, rule: Rule) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.rules.items.len >= self.config.max_rules) {
             return error.TooManyRules;
@@ -788,8 +788,8 @@ pub const Rules = struct {
     /// Enables or disables all registered rules.
     /// Returns number of rules updated.
     pub fn setAllEnabled(self: *Rules, enabled: bool) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var updated: usize = 0;
         for (self.rules.items) |*rule| {
@@ -804,8 +804,8 @@ pub const Rules = struct {
     /// Removes all rules matching a given name.
     /// Returns number of removed rules.
     pub fn removeByName(self: *Rules, name: []const u8) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var removed: usize = 0;
         var i = self.rules.items.len;
@@ -824,8 +824,8 @@ pub const Rules = struct {
 
     /// Returns count of enabled rules.
     pub fn enabledRuleCount(self: *Rules) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var enabled_total: usize = 0;
         for (self.rules.items) |rule| {
@@ -836,8 +836,8 @@ pub const Rules = struct {
 
     /// Returns count of disabled rules.
     pub fn disabledRuleCount(self: *Rules) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var disabled_total: usize = 0;
         for (self.rules.items) |rule| {
@@ -849,8 +849,8 @@ pub const Rules = struct {
     /// Returns true if at least one rule would match this record.
     /// This does not mutate once-only rule state.
     pub fn wouldMatchAny(self: *Rules, record: *const Record) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (!self.enabled or self.rules.items.len == 0) return false;
 
@@ -865,8 +865,8 @@ pub const Rules = struct {
     pub fn matchingRuleIdsWithAllocator(self: *Rules, record: *const Record, scratch_allocator: ?std.mem.Allocator) ?[]u32 {
         const alloc = scratch_allocator orelse self.allocator;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (!self.enabled or self.rules.items.len == 0) return null;
 
@@ -892,8 +892,8 @@ pub const Rules = struct {
     /// Returns how many rules would match this record.
     /// This does not mutate once-only rule state.
     pub fn matchingRuleCount(self: *Rules, record: *const Record) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (!self.enabled or self.rules.items.len == 0) return 0;
 
@@ -909,8 +909,8 @@ pub const Rules = struct {
     /// Returns the first rule ID that would match this record.
     /// This does not mutate once-only rule state.
     pub fn firstMatchingRuleId(self: *Rules, record: *const Record) ?u32 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (!self.enabled or self.rules.items.len == 0) return null;
 
@@ -924,8 +924,8 @@ pub const Rules = struct {
     ///
     /// Returns true when the rule exists and was updated.
     pub fn setRulePriority(self: *Rules, id: u32, priority: u8) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.rules.items) |*rule| {
             if (rule.id == id) {
@@ -944,8 +944,8 @@ pub const Rules = struct {
     ///
     /// Returns number of removed rules.
     pub fn removeDisabledRules(self: *Rules) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var removed: usize = 0;
         var i = self.rules.items.len;
@@ -962,15 +962,15 @@ pub const Rules = struct {
 
     /// Sorts rules by descending priority, then ascending rule ID.
     pub fn sortByPriority(self: *Rules) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.sortRulesByPriorityLocked();
     }
 
     /// Checks if a rule with the given ID exists.
     pub fn hasRule(self: *Rules, id: u32) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.rules.items) |rule| {
             if (rule.id == id) {
@@ -981,8 +981,8 @@ pub const Rules = struct {
     }
 
     pub fn remove(self: *Rules, id: u32) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.rules.items, 0..) |rule, i| {
             if (rule.id == id) {
@@ -994,8 +994,8 @@ pub const Rules = struct {
     }
 
     pub fn getById(self: *Rules, id: u32) ?*Rule {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.rules.items) |*rule| {
             if (rule.id == id) {
@@ -1006,8 +1006,8 @@ pub const Rules = struct {
     }
 
     pub fn enableRule(self: *Rules, id: u32) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.rules.items) |*rule| {
             if (rule.id == id) {
@@ -1018,8 +1018,8 @@ pub const Rules = struct {
     }
 
     pub fn disableRule(self: *Rules, id: u32) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.rules.items) |*rule| {
             if (rule.id == id) {
@@ -1030,8 +1030,8 @@ pub const Rules = struct {
     }
 
     pub fn clear(self: *Rules) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.rules.clearRetainingCapacity();
     }
 
@@ -1073,8 +1073,8 @@ pub const Rules = struct {
     }
 
     pub fn resetOnceFired(self: *Rules) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         for (self.rules.items) |*rule| {
             rule.resetFired();
@@ -1097,8 +1097,8 @@ pub const Rules = struct {
             return null;
         }
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.rules.items.len == 0) return null;
 
@@ -1643,13 +1643,13 @@ test "rules format messages" {
         .{ .category = .error_analysis, .message = "Test message" },
     };
 
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(std.testing.allocator);
+    var buf = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer buf.deinit();
 
-    try rules.formatMessages(&messages, buf.writer(std.testing.allocator), false);
+    try rules.formatMessages(&messages, &buf.writer, false);
 
-    try std.testing.expect(buf.items.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Test message") != null);
+    try std.testing.expect(buf.written().len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "Test message") != null);
 }
 
 test "rules message builders" {
@@ -1701,14 +1701,14 @@ test "rules json format" {
         .{ .category = .solution_suggestion, .message = "Fix it", .url = "https://example.com" },
     };
 
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(std.testing.allocator);
+    var buf = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer buf.deinit();
 
-    try rules.formatMessagesJson(&messages, buf.writer(std.testing.allocator), false);
+    try rules.formatMessagesJson(&messages, &buf.writer, false);
 
-    try std.testing.expect(buf.items.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "error_analysis") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "solution_suggestion") != null);
+    try std.testing.expect(buf.written().len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "error_analysis") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "solution_suggestion") != null);
 }
 
 test "rules duplicate id detection" {
@@ -1979,14 +1979,14 @@ test "rules formatting with config" {
         .{ .category = .solution_suggestion, .message = "Try this fix" },
     };
 
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(std.testing.allocator);
+    var buf = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer buf.deinit();
 
     // Test with colors enabled
-    try rules.formatMessages(&messages, buf.writer(std.testing.allocator), true);
-    try std.testing.expect(buf.items.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Error occurred") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Try this fix") != null);
+    try rules.formatMessages(&messages, &buf.writer, true);
+    try std.testing.expect(buf.written().len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "Error occurred") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "Try this fix") != null);
 }
 
 test "rules stats reset" {

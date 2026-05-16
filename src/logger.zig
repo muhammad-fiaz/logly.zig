@@ -154,7 +154,7 @@ pub const Logger = struct {
     /// Atomic log level for thread-safe level checking.
     atomic_level: std.atomic.Value(u8) = std.atomic.Value(u8).init(@intFromEnum(Level.info)),
     /// Read-write lock for thread-safe access.
-    mutex: std.Thread.RwLock = .{},
+    mutex: std.Io.RwLock = std.Io.RwLock.init,
     /// Legacy callback for log events.
     log_callback: ?*const fn (*const Record) anyerror!void = null,
     /// Custom color callback for level-based coloring.
@@ -424,8 +424,8 @@ pub const Logger = struct {
     /// Arguments:
     ///     config: The new configuration object.
     pub fn configure(self: *Logger, config: Config) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const has_arena = self.arena_state != null;
         const wants_arena = config.use_arena_allocator;
@@ -455,8 +455,8 @@ pub const Logger = struct {
     /// Arguments:
     ///     filter: The filter instance to use.
     pub fn setFilter(self: *Logger, filter: *Filter) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.filter = filter;
     }
 
@@ -468,8 +468,8 @@ pub const Logger = struct {
     /// Arguments:
     ///     sampler: The sampler instance to use.
     pub fn setSampler(self: *Logger, sampler: *Sampler) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.sampler = sampler;
     }
 
@@ -481,21 +481,21 @@ pub const Logger = struct {
     /// Arguments:
     ///     redactor: The redactor instance to use.
     pub fn setRedactor(self: *Logger, redactor: *Redactor) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.redactor = redactor;
     }
 
     pub fn setRules(self: *Logger, rules: *Rules) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.rules = rules;
     }
 
     /// Enables metrics collection.
     pub fn enableMetrics(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         if (self.metrics == null) {
             const m = self.allocator.create(Metrics) catch return;
             m.* = Metrics.init(self.allocator);
@@ -521,8 +521,8 @@ pub const Logger = struct {
     ///     span_id: The span identifier (optional).
     pub fn setTraceContext(self: *Logger, trace_id: []const u8, span_id: ?[]const u8) !void {
         {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(Utils.io());
+            defer self.mutex.unlock(Utils.io());
 
             if (self.trace_id) |t| self.allocator.free(t);
             self.trace_id = try self.allocator.dupe(u8, trace_id);
@@ -550,8 +550,8 @@ pub const Logger = struct {
     /// Arguments:
     ///     correlation_id: The correlation identifier.
     pub fn setCorrelationId(self: *Logger, correlation_id: []const u8) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.correlation_id) |c| self.allocator.free(c);
         self.correlation_id = try self.allocator.dupe(u8, correlation_id);
@@ -559,8 +559,8 @@ pub const Logger = struct {
 
     /// Clears the trace context.
     pub fn clearTraceContext(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.trace_id) |t| {
             self.allocator.free(t);
@@ -580,8 +580,8 @@ pub const Logger = struct {
     ///
     /// Returns `null` when trace or span context is missing.
     pub fn getTraceparentHeader(self: *Logger, allocator: std.mem.Allocator) !?[]u8 {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
 
         const trace_id = self.trace_id orelse return null;
         const span_id = self.span_id orelse return null;
@@ -600,9 +600,9 @@ pub const Logger = struct {
         const parent_span = self.span_id;
         const new_span = try Record.generateSpanId(self.allocator);
 
-        self.mutex.lock();
+        self.mutex.lockUncancelable(Utils.io());
         self.span_id = new_span;
-        self.mutex.unlock();
+        self.mutex.unlock(Utils.io());
 
         if (self.config.distributed.on_span_created) |callback| {
             callback(new_span, name);
@@ -626,8 +626,8 @@ pub const Logger = struct {
     ///
     /// Also available as: `logger.add(config)`
     pub fn addSink(self: *Logger, config: SinkConfig) !usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         // Handle logs_root_path: if set and config.path exists, prepend root to path
         var modified_config = config;
@@ -638,7 +638,7 @@ pub const Logger = struct {
             const file = config.path.?;
 
             // Auto-create root directory if it doesn't exist
-            std.fs.cwd().makePath(root) catch |e| {
+            std.Io.Dir.cwd().createDirPath(Utils.io(), root) catch |e| {
                 if (self.config.debug_mode) {
                     std.debug.print("warning: failed to auto-create logs root path '{s}': {}\n", .{ root, e });
                 }
@@ -671,8 +671,8 @@ pub const Logger = struct {
     /// Removes a sink by index.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn removeSink(self: *Logger, id: usize) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.async_logger != null) {
             // Async logger doesn't support removing sinks dynamically
@@ -694,8 +694,8 @@ pub const Logger = struct {
     /// Returns:
     ///     The number of sinks removed.
     pub fn removeAllSinks(self: *Logger) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.async_logger != null) {
             // Async logger doesn't support removing sinks dynamically
@@ -717,8 +717,8 @@ pub const Logger = struct {
     /// Enables a sink by index.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn enableSink(self: *Logger, id: usize) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (id < self.sinks.items.len) {
             self.sinks.items[id].enabled = true;
@@ -728,8 +728,8 @@ pub const Logger = struct {
     /// Disables a sink by index.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn disableSink(self: *Logger, id: usize) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (id < self.sinks.items.len) {
             self.sinks.items[id].enabled = false;
@@ -739,16 +739,16 @@ pub const Logger = struct {
     /// Returns the number of sinks.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn getSinkCount(self: *Logger) usize {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
         return self.sinks.items.len;
     }
 
     /// Enables async logging if an async logger is configured.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn enableAsync(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.async_logger) |al| {
             al.running.store(true, .monotonic);
@@ -758,8 +758,8 @@ pub const Logger = struct {
     /// Disables async logging if an async logger is configured.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn disableAsync(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.async_logger) |al| {
             al.running.store(false, .monotonic);
@@ -769,8 +769,8 @@ pub const Logger = struct {
     /// Checks if async logging is enabled and running.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn isAsyncEnabled(self: *Logger) bool {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
 
         if (self.async_logger) |al| {
             return al.running.load(.monotonic);
@@ -781,24 +781,24 @@ pub const Logger = struct {
     /// Enables auto-flush for all logging operations.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn enableAutoFlush(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config.auto_flush = true;
     }
 
     /// Disables auto-flush for all logging operations.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn disableAutoFlush(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config.auto_flush = false;
     }
 
     /// Checks if auto-flush is enabled.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn isAutoFlushEnabled(self: *Logger) bool {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
         return self.config.auto_flush;
     }
 
@@ -815,8 +815,8 @@ pub const Logger = struct {
     /// Returns:
     ///     A pointer to the Sink, or null if the index is out of bounds.
     pub fn getSink(self: *Logger, id: usize) ?*Sink {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
 
         if (id < self.sinks.items.len) {
             return self.sinks.items[id];
@@ -833,8 +833,8 @@ pub const Logger = struct {
     /// Returns:
     ///     The sink stats, or null if the index is out of bounds.
     pub fn getSinkStats(self: *Logger, id: usize) ?Sink.SinkStats {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
 
         if (id < self.sinks.items.len) {
             return self.sinks.items[id].stats;
@@ -845,8 +845,8 @@ pub const Logger = struct {
     /// Checks if a sink is enabled by index.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn isSinkEnabled(self: *Logger, id: usize) bool {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
 
         if (id < self.sinks.items.len) {
             return self.sinks.items[id].enabled;
@@ -855,8 +855,8 @@ pub const Logger = struct {
     }
 
     pub fn bind(self: *Logger, key: []const u8, value: std.json.Value) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.context.getPtr(key)) |v_ptr| {
             v_ptr.* = value;
@@ -867,8 +867,8 @@ pub const Logger = struct {
     }
 
     pub fn unbind(self: *Logger, key: []const u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.context.fetchRemove(key)) |kv| {
             self.allocator.free(kv.key);
@@ -876,8 +876,8 @@ pub const Logger = struct {
     }
 
     pub fn clearBindings(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var it = self.context.iterator();
         while (it.next()) |entry| {
@@ -897,8 +897,8 @@ pub const Logger = struct {
     /// Returns:
     ///     error.LevelAlreadyExists if level name already exists.
     pub fn addCustomLevel(self: *Logger, name: []const u8, priority: u8, color: []const u8) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.custom_levels.contains(name)) {
             return error.LevelAlreadyExists;
@@ -919,8 +919,8 @@ pub const Logger = struct {
     /// Updates an existing custom log level, or adds it if it doesn't exist.
     /// Use this when you want to allow updates.
     pub fn updateCustomLevel(self: *Logger, name: []const u8, priority: u8, color: []const u8) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.custom_levels.getPtr(name)) |level_ptr| {
             // Update existing level
@@ -945,21 +945,21 @@ pub const Logger = struct {
 
     /// Checks if a custom level with the given name exists.
     pub fn hasCustomLevel(self: *Logger, name: []const u8) bool {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
         return self.custom_levels.contains(name);
     }
 
     /// Returns the count of custom levels.
     pub fn getCustomLevelCount(self: *Logger) usize {
-        self.mutex.lockShared();
-        defer self.mutex.unlockShared();
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
         return self.custom_levels.count();
     }
 
     pub fn removeCustomLevel(self: *Logger, name: []const u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.custom_levels.fetchRemove(name)) |kv| {
             self.allocator.free(kv.value.name);
@@ -968,75 +968,75 @@ pub const Logger = struct {
     }
 
     pub fn setLogCallback(self: *Logger, callback: *const fn (*const Record) anyerror!void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.log_callback = callback;
     }
 
     pub fn setColorCallback(self: *Logger, callback: *const fn (Level, []const u8) []const u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.color_callback = callback;
     }
 
     /// Sets the callback for when a record is successfully logged.
     pub fn setLoggedCallback(self: *Logger, callback: *const fn (Level, []const u8, *const Record) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_record_logged = callback;
     }
 
     /// Sets the callback for when a record is filtered/dropped.
     pub fn setFilteredCallback(self: *Logger, callback: *const fn ([]const u8, *const Record) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_record_filtered = callback;
     }
 
     /// Sets the callback for when a sink encounters an error.
     pub fn setSinkErrorCallback(self: *Logger, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_sink_error = callback;
     }
 
     /// Sets the callback for logger initialization.
     pub fn setInitializedCallback(self: *Logger, callback: *const fn (*const LoggerStats) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_logger_initialized = callback;
     }
 
     /// Sets the callback for logger destruction.
     pub fn setDestroyedCallback(self: *Logger, callback: *const fn (*const LoggerStats) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_logger_destroyed = callback;
     }
 
     /// Returns logger statistics for monitoring and diagnostics.
     pub fn getStats(self: *Logger) LoggerStats {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return self.stats;
     }
 
     pub fn enable(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.enabled = true;
     }
 
     pub fn disable(self: *Logger) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.enabled = false;
     }
 
     pub fn flush(self: *Logger) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         try self.flushInternal();
     }
 
@@ -1050,8 +1050,8 @@ pub const Logger = struct {
     }
 
     pub fn setModuleLevel(self: *Logger, module: []const u8, level: Level) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.module_levels.getPtr(module)) |level_ptr| {
             level_ptr.* = level;
@@ -1062,8 +1062,8 @@ pub const Logger = struct {
     }
 
     pub fn getModuleLevel(self: *Logger, module: []const u8) ?Level {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         return self.module_levels.get(module);
     }
 
@@ -1110,10 +1110,10 @@ pub const Logger = struct {
         const logger = task_ctx.logger;
 
         // Snapshot sinks to avoid holding lock during write
-        logger.mutex.lock();
+        logger.mutex.lockUncancelable(Utils.io());
         var sinks_snapshot: std.ArrayList(*Sink) = .empty;
         sinks_snapshot.appendSlice(logger.allocator, logger.sinks.items) catch {};
-        logger.mutex.unlock();
+        logger.mutex.unlock(Utils.io());
         defer sinks_snapshot.deinit(logger.allocator);
 
         for (sinks_snapshot.items) |sink| {
@@ -1148,8 +1148,8 @@ pub const Logger = struct {
         // Optimization: Use Shared lock if arena is not used, allowing concurrent logging.
         // If arena is used, we must use exclusive lock because arena allocation modifies state.
         const use_arena = self.config.use_arena_allocator;
-        if (use_arena) self.mutex.lock() else self.mutex.lockShared();
-        defer if (use_arena) self.mutex.unlock() else self.mutex.unlockShared();
+        if (use_arena) self.mutex.lockUncancelable(Utils.io()) else self.mutex.lockSharedUncancelable(Utils.io());
+        defer if (use_arena) self.mutex.unlock(Utils.io()) else self.mutex.unlockShared(Utils.io());
 
         if (use_arena) {
             self.maybeResetArenaBeforeRecord();
@@ -1216,11 +1216,11 @@ pub const Logger = struct {
             if (allocator.create(std.builtin.StackTrace)) |st| {
                 // Allocate a larger buffer to be safe
                 if (allocator.alloc(usize, 64)) |addresses| {
+                    const captured = std.debug.captureCurrentStackTrace(.{}, addresses);
                     st.* = .{
                         .instruction_addresses = addresses,
-                        .index = 0,
+                        .index = captured.return_addresses.len,
                     };
-                    std.debug.captureStackTrace(null, st);
 
                     record.stack_trace = st;
                     record.owned_stack_trace = st;
@@ -1381,8 +1381,8 @@ pub const Logger = struct {
     pub fn logError(self: *Logger, message: []const u8, err_val: anyerror) !void {
         if (!self.enabled) return;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var record = Record.init(self.allocator, .err, message);
         defer record.deinit();
@@ -1411,7 +1411,7 @@ pub const Logger = struct {
     /// Arguments:
     ///     level: The log level.
     ///     message: The log message.
-    ///     start_time: The start timestamp from std.time.nanoTimestamp().
+    ///     start_time: The start timestamp from Utils.currentNanos().
     ///
     /// Returns:
     ///     The duration in nanoseconds.
@@ -1421,8 +1421,8 @@ pub const Logger = struct {
 
         if (!self.enabled) return duration;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         var record = Record.init(self.allocator, level, message);
         defer record.deinit();
@@ -1462,10 +1462,10 @@ pub const Logger = struct {
         defer diag.deinit(alloc);
 
         // Build message using default structure (ASCII-safe)
-        var msg = std.ArrayList(u8){};
-        defer msg.deinit(alloc);
+        var msg = std.Io.Writer.Allocating.init(alloc);
+        defer msg.deinit();
 
-        var w = msg.writer(alloc);
+        const w = &msg.writer;
         try w.print(
             "[DIAGNOSTICS] os={s} arch={s} cpu={s} cores={d}",
             .{ diag.os_tag, diag.arch, diag.cpu_model, diag.logical_cores },
@@ -1488,10 +1488,10 @@ pub const Logger = struct {
         }
 
         // Log with context data for structured formatting support
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
-        var record = Record.init(self.scratchAllocator(), .info, msg.items);
+        var record = Record.init(self.scratchAllocator(), .info, msg.written());
         defer record.deinit();
 
         if (src) |s| {
@@ -1613,8 +1613,8 @@ pub const Logger = struct {
     ) !void {
         if (!self.enabled) return;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         // Check level filtering
         var effective_min_level = self.config.level;
@@ -1884,8 +1884,8 @@ pub const SpanContext = struct {
             _ = try self.logger.logTimed(.debug, msg, self.start_time);
         }
 
-        self.logger.mutex.lock();
-        defer self.logger.mutex.unlock();
+        self.logger.mutex.lockUncancelable(Utils.io());
+        defer self.logger.mutex.unlock(Utils.io());
 
         if (self.logger.span_id) |current| {
             self.logger.allocator.free(current);
@@ -1897,8 +1897,8 @@ pub const SpanContext = struct {
 
     /// Ends the span without logging.
     pub fn endSilent(self: *SpanContext) void {
-        self.logger.mutex.lock();
-        defer self.logger.mutex.unlock();
+        self.logger.mutex.lockUncancelable(Utils.io());
+        defer self.logger.mutex.unlock(Utils.io());
 
         if (self.logger.span_id) |current| {
             self.logger.allocator.free(current);
@@ -2401,7 +2401,7 @@ test "distributed logger child and module helpers" {
 }
 
 test "logger supports GeneralPurposeAllocator" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     var config = Config.default();

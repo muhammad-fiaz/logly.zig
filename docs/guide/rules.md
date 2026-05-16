@@ -440,7 +440,8 @@ Export rule messages as JSON:
 var buf: std.ArrayList(u8) = .empty;
 defer buf.deinit(allocator);
 
-try rules.formatMessagesJson(&messages, buf.writer(allocator), true);  // pretty=true
+var writer = logly.Utils.ArrayListWriter.init(&buf, allocator);
+try rules.formatMessagesJson(&messages, &writer.writer, true);  // pretty=true
 std.debug.print("{s}\n", .{buf.items});
 ```
 

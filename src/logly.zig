@@ -21,7 +21,7 @@
 //! const logly = @import("logly");
 //!
 //! pub fn main() !void {
-//!     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//!     var gpa = std.heap.DebugAllocator(.{}){};
 //!     defer _ = gpa.deinit();
 //!     const allocator = gpa.allocator();
 //!
@@ -353,35 +353,8 @@ pub const Terminal = struct {
         const builtin = @import("builtin");
         if (builtin.os.tag != .windows) return true;
 
-        const windows = std.os.windows;
-        const kernel32 = windows.kernel32;
-
-        const stdout_handle = kernel32.GetStdHandle(windows.STD_OUTPUT_HANDLE);
-        if (stdout_handle == windows.INVALID_HANDLE_VALUE) return false;
-
-        const handle = stdout_handle orelse return false;
-
-        var mode: windows.DWORD = 0;
-        if (kernel32.GetConsoleMode(handle, &mode) == 0) {
-            return false;
-        }
-
-        const ENABLE_VIRTUAL_TERMINAL_PROCESSING: windows.DWORD = 0x0004;
-        const new_mode = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-        if (kernel32.SetConsoleMode(handle, new_mode) == 0) {
-            return false;
-        }
-
-        // Enable for stderr as well
-        const stderr_handle = kernel32.GetStdHandle(windows.STD_ERROR_HANDLE);
-        if (stderr_handle != windows.INVALID_HANDLE_VALUE) {
-            if (stderr_handle) |stderr| {
-                var stderr_mode: windows.DWORD = 0;
-                if (kernel32.GetConsoleMode(stderr, &stderr_mode) != 0) {
-                    _ = kernel32.SetConsoleMode(stderr, stderr_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-                }
-            }
-        }
+        std.Io.File.stdout().enableAnsiEscapeCodes(Utils.io()) catch return false;
+        std.Io.File.stderr().enableAnsiEscapeCodes(Utils.io()) catch {};
 
         return true;
     }

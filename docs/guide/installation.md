@@ -13,18 +13,26 @@ This guide covers all available methods to install Logly.zig in your project.
 
 ## Prerequisites
 
-- **Zig 0.15.0** or higher
+- **Zig 0.15.0** or **Zig 0.16.0** or higher
 - Basic familiarity with Zig
 
 ## Method 1: Using Zig Fetch (Recommended)
 
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
+**For Zig 0.16.0+ (Latest stable `0.1.8`):**
+
+```bash
+    zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
+```
+
+**For Zig 0.15.0 (Use `0.1.7`):**
+
 ```bash
     zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
 ```
 
-**Or for Nightly/PreRelease:**
+**For Nightly/PreRelease:**
 
 ```bash
 zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
@@ -38,6 +46,23 @@ This command automatically:
 ## Method 2: Manual Installation
 
 If you prefer manual installation, add to your `build.zig.zon`:
+
+**For Zig 0.16.0+:**
+
+```zig
+.{
+    .name = "my-project",
+    .version = "0.1.0",
+    .dependencies = .{
+        .logly = .{
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz",
+            .hash = "1220...", // Run: zig fetch <url> to get this hash
+        },
+    },
+}
+```
+
+**For Zig 0.15.0:**
 
 ```zig
 .{
@@ -54,6 +79,12 @@ If you prefer manual installation, add to your `build.zig.zon`:
 
 To get the hash manually, run:
 
+**For Zig 0.16.0+:**
+```bash
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
+```
+
+**For Zig 0.15.0:**
 ```bash
 zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
 ```
@@ -136,7 +167,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -193,7 +224,7 @@ error: hash mismatch
 Update the hash in your `build.zig.zon` by running:
 
 ```bash
-zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
 ```
 
 ### Module Not Found
