@@ -17,64 +17,64 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| Current Version | 0.1.7 | 0.7.2 | 0.0.0 | Built-in |
-| Min Zig Version | 0.15.0+ | 0.14, 0.15-dev | 0.11+ | Any |
+| Current Version | 0.1.8 | 0.7.2 | 0.0.0 | Built-in |
+| Min Zig Version | 0.16.0+ | 0.14, 0.15-dev | 0.11+ | Any |
 | API Style | User-friendly | Builder/Fluent | Pool/Fluent | Basic/Manual |
-| Structured Logging | ✅ Automatic | ✅ JSON/logfmt | ✅ JSON/logfmt | ❌ Manual |
-| File Formats (.json, .txt, .log) | ✅ Automatic | ✅ | ✅ | ❌ |
-| Async Logging | ✅ Automatic (ring buffer, workers) | ⚠ Basic | ❌ | ❌ |
-| Thread Safety | ✅ Automatic | ⚠ Partial | ⚠ Pool-only | ✅ Basic |
-| Single/Multi-Thread Support | ✅ | ❌ | ❌ | ✅ Manual |
-| Multiple Sinks | ✅ Automatic | ✅ | ⚠ Limited | ❌ |
-| File Logging | ✅ Automatic | ✅ | ✅ | ❌ Manual |
-| File Rotation | ✅ Automatic (Time + Size) | ✅ Size | ❌ | ❌ |
-| Retention Policy | ✅ Automatic | ❌ | ❌ | ❌ |
-| Compression | ✅ Automatic (gzip/zlib/deflate/zstd, lzma, lzma2, xz, tar.gz, zip, lz4) | ❌ | ❌ | ❌ |
-| Zstd Compression (v0.1.5+) | ✅ Levels 1-22, presets, batch ops | ❌ | ❌ | ❌ |
-| Rotation Presets (v0.1.5+) | ✅ 25+ presets (time/size/hybrid/production) | ❌ | ❌ | ❌ |
-| Performance Defaults (v0.1.6+) | ✅ Optimized auto_flush/callbacks defaults | ❌ | ❌ | ❌ |
-| Network Logging | ✅ Automatic (TCP/UDP) | ❌ | ❌ | ❌ |
-| Stack Traces | ✅ Automatic | ❌ | ❌ | ❌ Manual |
-| Redaction (PII) | ✅ Automatic | ❌ | ❌ | ❌ |
-| Sampling/Rate Limit | ✅ Automatic | ❌ | ❌ | ❌ |
-| Distributed Tracing | ✅ Automatic (Trace/Span/Correlation IDs) + Callbacks | ⚠ Context only | ❌ | ❌ |
-| OpenTelemetry (v0.1.4+) | ✅ Full OTLP/Jaeger/Zipkin/Datadog/AWS/Azure | ❌ | ❌ | ❌ |
-| Metrics | ✅ Automatic | ❌ | ⚠ Prometheus | ❌ |
-| System Diagnostics | ✅ Automatic | ❌ | ❌ | ❌ |
-| Filtering | ✅ Automatic | ❌ | ❌ | ✅ Manual |
-| Scheduled Cleaning | ✅ Automatic | ❌ | ❌ | ❌ |
-| Dynamic Path | ✅ Automatic | ❌ | ❌ | ❌ |
-| Module-level Config | ✅ | ❌ | ❌ | ✅ Manual |
-| Custom Log Levels | ✅ | ❌ | ❌ | ❌ |
-| Rules System (v0.1.0+) | ✅ Template-triggered messages | ❌ | ❌ | ❌ |
-| Bare-Metal Support | ✅ | ❌ | ❌ | ✅ |
-| Prebuilt Libraries | ✅ | ❌ | ❌ | ✅ |
-| Documentation Site | ✅ | ❌ | ❌ | ✅ |
-| Auto-Update Checker | ✅ | ❌ | ❌ | ❌ |
-| CI/CodeQL | ✅ | ⚠ | ❌ | ✅ |
+| Structured Logging | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ JSON/logfmt | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ JSON/logfmt | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual |
+| File Formats (.json, .txt, .log) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Async Logging | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic (ring buffer, workers) | ÃƒÂ¢Ã…Â¡Ã‚Â  Basic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Thread Safety | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã…Â¡Ã‚Â  Partial | ÃƒÂ¢Ã…Â¡Ã‚Â  Pool-only | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Basic |
+| Single/Multi-Thread Support | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Manual |
+| Multiple Sinks | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã…Â¡Ã‚Â  Limited | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| File Logging | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual |
+| File Rotation | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic (Time + Size) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Size | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Retention Policy | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Compression | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic (gzip/zlib/deflate/zstd, lzma, lzma2, xz, tar.gz, zip, lz4) | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Zstd Compression (v0.1.8+) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Levels 1-22, presets, batch ops | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Rotation Presets (v0.1.8+) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ 25+ presets (time/size/hybrid/production) | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Performance Defaults (v0.1.8+) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Optimized auto_flush/callbacks defaults | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Network Logging | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic (TCP/UDP) | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Stack Traces | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual |
+| Redaction (PII) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Sampling/Rate Limit | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Distributed Tracing | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic (Trace/Span/Correlation IDs) + Callbacks | ÃƒÂ¢Ã…Â¡Ã‚Â  Context only | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| OpenTelemetry (v0.1.4+) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Full OTLP/Jaeger/Zipkin/Datadog/AWS/Azure | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Metrics | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…Â¡Ã‚Â  Prometheus | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| System Diagnostics | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Filtering | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Manual |
+| Scheduled Cleaning | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Dynamic Path | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Module-level Config | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Manual |
+| Custom Log Levels | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Rules System (v0.1.0+) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Template-triggered messages | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Bare-Metal Support | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ |
+| Prebuilt Libraries | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ |
+| Documentation Site | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ |
+| Auto-Update Checker | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| CI/CodeQL | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ | ÃƒÂ¢Ã…Â¡Ã‚Â  | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ |
 | License | MIT | MIT | MIT | MIT |
 
 ### Standard Library Comparison (Automatic vs Manual)
 
 | Feature | logly.zig | std.log | Notes |
 |:--------|:----------|:--------|:------|
-| Log Levels | ✅ 10 levels (trace → fatal) | 4 levels (debug, info, warn, err) | logly.zig has more granularity |
-| Custom Levels | ✅ Automatic | ❌ | Define your own levels |
-| Colored Output | ✅ Automatic | ❌ | Cross-platform ANSI colors |
-| JSON Output | ✅ Automatic | ❌ Manual | Built-in JSON formatter |
-| File Output | ✅ Automatic | ❌ Manual (stderr only) | Must implement manually for std.log |
-| Async Logging | ✅ Automatic | ❌ Manual | Ring buffer with workers |
-| Context Binding | ✅ Automatic | ❌ Manual | Persistent fields across logs |
-| Formatted Logging | ✅ Automatic templates | ✅ Manual format strings | std.log uses basic printf-style |
-| Thread Safety | ✅ Automatic (advanced) | ✅ Basic | logly.zig has lock-free options |
-| Performance Tuning | ✅ Automatic presets | ❌ Manual | Production/development presets |
-| File Rotation | ✅ Automatic | ❌ Manual | Time + size based rotation |
-| Compression | ✅ Automatic | ❌ Manual | gzip/zlib/zstd support |
-| Network Logging | ✅ Automatic | ❌ Manual | TCP/UDP sinks |
-| Redaction | ✅ Automatic | ❌ Manual | PII masking built-in |
-| Metrics | ✅ Automatic | ❌ Manual | Built-in counters and stats |
-| Distributed Tracing | ✅ Automatic | ❌ Manual | Trace/span/correlation IDs |
-| Rules System | ✅ Automatic triggers | ❌ | Template-based diagnostic messages |
+| Log Levels | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ 10 levels (trace ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ fatal) | 4 levels (debug, info, warn, err) | logly.zig has more granularity |
+| Custom Levels | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | Define your own levels |
+| Colored Output | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ | Cross-platform ANSI colors |
+| JSON Output | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | Built-in JSON formatter |
+| File Output | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual (stderr only) | Must implement manually for std.log |
+| Async Logging | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | Ring buffer with workers |
+| Context Binding | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | Persistent fields across logs |
+| Formatted Logging | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic templates | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Manual format strings | std.log uses basic printf-style |
+| Thread Safety | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic (advanced) | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Basic | logly.zig has lock-free options |
+| Performance Tuning | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic presets | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | Production/development presets |
+| File Rotation | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | Time + size based rotation |
+| Compression | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | gzip/zlib/zstd support |
+| Network Logging | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | TCP/UDP sinks |
+| Redaction | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | PII masking built-in |
+| Metrics | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | Built-in counters and stats |
+| Distributed Tracing | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual | Trace/span/correlation IDs |
+| Rules System | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Automatic triggers | ÃƒÂ¢Ã‚ÂÃ…â€™ | Template-based diagnostic messages |
 
 ::: info Automatic vs Manual
 - **Automatic**: Feature works out-of-the-box with configuration
@@ -95,9 +95,9 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Async high-throughput (ops/sec) | **36,483,035** | ~180,000 | N/A | N/A |
 | Multi-threaded (4 threads, ops/sec) | **51,211** | ~22,000 | ~18,000 | N/A (based on implementation) |
 | Multi-threaded JSON (4 threads, ops/sec) | **37,412** | ~14,000 | ~12,000 | N/A |
-| Avg latency – minimal config (ns) | **8,758** | ~24,000 | ~8,000 | N/A (based on implementation) |
-| Avg latency – JSON compact (ns) | **18,815** | ~37,000 | ~28,000 | N/A |
-| Avg latency – production preset (ns) | **28,278** | ~45,000 | ~35,000 | N/A |
+| Avg latency ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ minimal config (ns) | **8,758** | ~24,000 | ~8,000 | N/A (based on implementation) |
+| Avg latency ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ JSON compact (ns) | **18,815** | ~37,000 | ~28,000 | N/A |
+| Avg latency ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ production preset (ns) | **28,278** | ~45,000 | ~35,000 | N/A |
 | Max observed throughput (ops/sec) | **36.48M** | ~0.18M | ~0.12M |N/A (based on implementation) |
 | Avg baseline latency (ns) | **~939** | ~25,000 | ~8,500 |N/A (based on implementation) |
 
@@ -159,9 +159,9 @@ This feature is **not available** in std.log, nexlog, or log.zig.
 7. **Production Tested**: Compression, rotation, and retention policies
 8. **Cross-Platform**: Works on Linux, macOS, Windows, and bare-metal
 9. **Multiple Compression Algorithms**: DEFLATE, GZIP, ZLIB, Zstd, LZMA, LZMA2, XZ, ZIP, TAR.GZ, LZ4 with automatic detection, factory methods, and presets
-10. **Performance Optimized** (v0.1.6+): ~7.5x faster than v0.1.5 with performance-first defaults
+10. **Performance Optimized** (v0.1.8+): ~7.5x faster than v0.1.8 with performance-first defaults
 
-## Compression Algorithm Comparison (v0.1.6+)
+## Compression Algorithm Comparison (v0.1.8+)
 
 Logly.zig supports multiple compression and archive algorithms for log archival and archiving:
 
@@ -179,7 +179,7 @@ Logly.zig supports multiple compression and archive algorithms for log archival 
 | **lz4** | 1-2x | ~600 MB/s | ~1000 MB/s | `.lz4` | Real-time, ultra-fast compression |
 
 ::: tip Recommendation
-Use **zstd** (v0.1.5+) for best performance and a great general-purpose tradeoff. For long-term archival prefer **LZMA / XZ** (higher ratio); for ultra-low-latency real-time logging prefer **LZ4** (fastest). Choose based on the speed vs ratio trade-off for your workload.
+Use **zstd** (v0.1.8+) for best performance and a great general-purpose tradeoff. For long-term archival prefer **LZMA / XZ** (higher ratio); for ultra-low-latency real-time logging prefer **LZ4** (fastest). Choose based on the speed vs ratio trade-off for your workload.
 :::
 
 ## OpenTelemetry Comparison (v0.1.4+)
@@ -188,23 +188,23 @@ Logly.zig provides comprehensive OpenTelemetry integration:
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| OpenTelemetry Support | ✅ Full | ❌ | ❌ | ❌ |
-| OTLP Export | ✅ JSON format | ❌ | ❌ | ❌ |
-| Jaeger Integration | ✅ Thrift format | ❌ | ❌ | ❌ |
-| Zipkin Integration | ✅ JSON format | ❌ | ❌ | ❌ |
-| Datadog APM | ✅ Native format | ❌ | ❌ | ❌ |
-| Google Cloud Trace | ✅ Native format | ❌ | ❌ | ❌ |
-| Google Analytics 4 | ✅ Measurement Protocol | ❌ | ❌ | ❌ |
-| AWS X-Ray | ✅ Segment format | ❌ | ❌ | ❌ |
-| Azure App Insights | ✅ Envelope format | ❌ | ❌ | ❌ |
-| W3C Trace Context | ✅ Full spec | ⚠ Partial | ❌ | ❌ |
-| W3C Baggage | ✅ Full spec | ❌ | ❌ | ❌ |
-| Span Sampling | ✅ 4 strategies | ❌ | ❌ | ❌ |
-| Metrics Export | ✅ OTLP/Prometheus/JSON | ❌ | ⚠ Prometheus | ❌ |
-| File Exporter | ✅ JSONL | ❌ | ❌ | ❌ |
-| Custom Exporters | ✅ Plugin API | ❌ | ❌ | ❌ |
+| OpenTelemetry Support | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Full | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| OTLP Export | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ JSON format | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Jaeger Integration | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Thrift format | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Zipkin Integration | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ JSON format | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Datadog APM | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Native format | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Google Cloud Trace | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Native format | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Google Analytics 4 | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Measurement Protocol | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| AWS X-Ray | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Segment format | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Azure App Insights | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Envelope format | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| W3C Trace Context | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Full spec | ÃƒÂ¢Ã…Â¡Ã‚Â  Partial | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| W3C Baggage | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Full spec | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Span Sampling | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ 4 strategies | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Metrics Export | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ OTLP/Prometheus/JSON | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã…Â¡Ã‚Â  Prometheus | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| File Exporter | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ JSONL | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
+| Custom Exporters | ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Plugin API | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ | ÃƒÂ¢Ã‚ÂÃ…â€™ |
 
-**Note (v0.1.6):** Resolved a compile-time issue in the OTLP exporter (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will auto-export when configured batch size or timeout thresholds are reached.
+**Note (v0.1.8):** Resolved a compile-time issue in the OTLP exporter (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will auto-export when configured batch size or timeout thresholds are reached.
 
 ## Rotation Presets Comparison
 
@@ -212,11 +212,11 @@ Logly.zig offers 25+ rotation presets for common scenarios:
 
 | Category | Presets | Other Libraries |
 |:---------|:--------|:----------------|
-| **Time-Based** | `daily7Days`, `daily30Days`, `daily90Days`, `daily365Days`, `hourly24Hours`, `hourly48Hours`, `hourly7Days`, `weekly4Weeks`, `weekly12Weeks`, `monthly12Months`, `minutely60` | ❌ Manual config |
-| **Size-Based** | `size1MB`, `size5MB`, `size10MB`, `size25MB`, `size50MB`, `size100MB`, `size250MB`, `size500MB`, `size1GB` | ❌ Manual config |
-| **Hybrid** | `dailyOr100MB`, `hourlyOr50MB`, `dailyOr500MB` | ❌ Not supported |
-| **Production** | `production`, `enterprise`, `debug`, `highVolume`, `audit`, `minimal` | ❌ Not supported |
-| **Sink Helpers** | `dailySink`, `hourlySink`, `weeklySink`, `monthlySink`, `sizeSink` | ❌ Not supported |
+| **Time-Based** | `daily7Days`, `daily30Days`, `daily90Days`, `daily365Days`, `hourly24Hours`, `hourly48Hours`, `hourly7Days`, `weekly4Weeks`, `weekly12Weeks`, `monthly12Months`, `minutely60` | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual config |
+| **Size-Based** | `size1MB`, `size5MB`, `size10MB`, `size25MB`, `size50MB`, `size100MB`, `size250MB`, `size500MB`, `size1GB` | ÃƒÂ¢Ã‚ÂÃ…â€™ Manual config |
+| **Hybrid** | `dailyOr100MB`, `hourlyOr50MB`, `dailyOr500MB` | ÃƒÂ¢Ã‚ÂÃ…â€™ Not supported |
+| **Production** | `production`, `enterprise`, `debug`, `highVolume`, `audit`, `minimal` | ÃƒÂ¢Ã‚ÂÃ…â€™ Not supported |
+| **Sink Helpers** | `dailySink`, `hourlySink`, `weeklySink`, `monthlySink`, `sizeSink` | ÃƒÂ¢Ã‚ÂÃ…â€™ Not supported |
 
 ### When to Use std.log Instead
 

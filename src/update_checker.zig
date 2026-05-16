@@ -21,6 +21,7 @@ const SemanticVersion = std.SemanticVersion;
 const version_info = @import("version.zig");
 const Network = @import("network.zig");
 const Constants = @import("constants.zig");
+const Utils = @import("utils.zig");
 
 /// GitHub repository owner for update checks.
 /// GitHub repository owner for update checks.
@@ -41,7 +42,7 @@ var update_check_done = false;
 var update_check_enabled = true;
 
 /// Mutex protecting the update check flag.
-var update_check_mutex = std.Thread.Mutex{};
+var update_check_mutex = std.Io.Mutex.init;
 
 /// Enables or disables update checking project-wide.
 /// Call this function before initializing any loggers to ensure it takes effect.
@@ -57,23 +58,23 @@ var update_check_mutex = std.Thread.Mutex{};
 /// const logger = logly.Logger.init(.{});
 /// ```
 pub fn setEnabled(enabled: bool) void {
-    update_check_mutex.lock();
-    defer update_check_mutex.unlock();
+    update_check_mutex.lockUncancelable(Utils.io());
+    defer update_check_mutex.unlock(Utils.io());
     update_check_enabled = enabled;
 }
 
 /// Returns whether update checking is enabled.
 pub fn isEnabled() bool {
-    update_check_mutex.lock();
-    defer update_check_mutex.unlock();
+    update_check_mutex.lockUncancelable(Utils.io());
+    defer update_check_mutex.unlock(Utils.io());
     return update_check_enabled;
 }
 
 /// Resets the update check state (useful for testing).
 /// This should only be called in test scenarios.
 pub fn resetState() void {
-    update_check_mutex.lock();
-    defer update_check_mutex.unlock();
+    update_check_mutex.lockUncancelable(Utils.io());
+    defer update_check_mutex.unlock(Utils.io());
     update_check_done = false;
     update_check_enabled = true;
 }
@@ -148,8 +149,8 @@ fn fetchLatestTag(allocator: std.mem.Allocator) ![]const u8 {
 /// Fails silently on errors (no internet, api limits, etc).
 /// Respects the project-wide update_check_enabled flag.
 pub fn checkForUpdates(allocator: std.mem.Allocator, global_console_display: bool) ?std.Thread {
-    update_check_mutex.lock();
-    defer update_check_mutex.unlock();
+    update_check_mutex.lockUncancelable(Utils.io());
+    defer update_check_mutex.unlock(Utils.io());
 
     // Prevent concurrent checks, running during tests, or when disabled project-wide
     if (update_check_done or builtin.is_test or !update_check_enabled) return null;
@@ -167,7 +168,7 @@ fn checkWorker(allocator: std.mem.Allocator, global_console_display: bool) void 
     // const reset = "\x1b[0m";
     // const bold_white = "\x1b[1;37m";
     // const red_bg = "\x1b[41m";
-    // std.log.info("{s}{s} [UPDATE ERROR] ❌ Failed to check for updates {s}", .{ bold_white, red_bg, reset });
+    // std.log.info("{s}{s} [UPDATE ERROR] âŒ Failed to check for updates {s}", .{ bold_white, red_bg, reset });
 
     const escape = "\x1b[";
     const reset = escape ++ Constants.Colors.reset ++ "m";

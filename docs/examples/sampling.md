@@ -23,7 +23,7 @@ const Sampler = logly.Sampler;
 const Config = logly.Config;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -84,7 +84,7 @@ fn onRateExceeded(count: u32, max: u32) void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     const allocator = gpa.allocator();
 
     var sampler = Sampler.init(allocator, .{ .rate_limit = .{

@@ -36,7 +36,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -248,7 +248,8 @@ config.rules.console_output = false;
 var json_buf: std.ArrayList(u8) = .empty;
 defer json_buf.deinit(allocator);
 
-try rules.formatMessagesJson(&messages, json_buf.writer(allocator), true);
+var writer = logly.Utils.ArrayListWriter.init(&json_buf, allocator);
+try rules.formatMessagesJson(&messages, &writer.writer, true);
 ```
 
 ```json

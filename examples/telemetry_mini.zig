@@ -2,7 +2,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -25,7 +25,7 @@ pub fn main() !void {
 
         try span.setAttribute("items.count", .{ .integer = 42 });
         try span.addEvent("started", null);
-        std.time.sleep(10 * std.time.ns_per_ms);
+        logly.Utils.sleepMs(10);
         try span.addEvent("finished", null);
     }
 

@@ -2,7 +2,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -26,13 +26,13 @@ pub fn main() !void {
     try logger.info("Starting async logging test...", @src());
 
     // Log many messages quickly
-    const start = std.time.milliTimestamp();
+    const start = logly.Utils.currentMillis();
     for (0..1000) |i| {
         const msg = try std.fmt.allocPrint(allocator, "Async log message #{d}", .{i});
         defer allocator.free(msg);
         try logger.info(msg, @src());
     }
-    const end = std.time.milliTimestamp();
+    const end = logly.Utils.currentMillis();
 
     try logger.info("Finished logging 1000 messages", @src());
 

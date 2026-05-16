@@ -93,7 +93,7 @@ You can also use your own application/request arena backed by GPA independently 
 ```zig
 const std = @import("std");
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
 var request_arena = std.heap.ArenaAllocator.init(gpa.allocator());
@@ -149,25 +149,25 @@ Defaults for distributed headers are centralized in `Constants.ConfigDefaults` t
 OpenTelemetry integration configuration for trace and metric export. This section controls OTLP/Jaeger/Zipkin/Datadog/Azure/Google providers and local file exporters.
 
 Key fields:
-*   `enabled: bool` — Enable OpenTelemetry integration (default: `false`).
-*   `provider: Provider` — Provider enum (`.none`, `.jaeger`, `.zipkin`, `.datadog`, `.google_cloud`, `.google_analytics`, `.google_tag_manager`, `.aws_xray`, `.azure`, `.generic`, `.file`, `.custom`).
-*   `exporter_endpoint: ?[]const u8` — Exporter endpoint URL for HTTP/gRPC exporters (e.g., `"http://localhost:4317"`).
-*   `api_key: ?[]const u8` — API key for providers that require authentication.
-*   `connection_string: ?[]const u8` — Connection string for Azure Application Insights.
-*   `exporter_file_path: ?[]const u8` — File path for JSONL file exporter.
-*   `batch_size: usize = Constants.TelemetryDefaults.batch_size` — Batch span export size (default: 256).
-*   `batch_timeout_ms: u64 = Constants.TelemetryDefaults.batch_timeout_ms` — Batch export timeout in ms (default: 5000).
-*   `sampling_strategy: SamplingStrategy` — Sampling strategy (`.always_on`, `.always_off`, `.trace_id_ratio`, `.parent_based`).
-*   `sampling_rate: f64 = Constants.TelemetryDefaults.sampling_rate` — Sampling rate used when `trace_id_ratio` is selected.
-*   `service_name`, `service_version`, `environment`, `datacenter` — Resource identification fields.
-*   `span_processor_type: SpanProcessorType = .simple` — Span processor: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call; `.batch` will automatically export spans when the configured batch size or timeout is reached.
-*   `metric_format: MetricFormat` — Format for metrics export (e.g., `.otlp`, `.prometheus`, `.json`).
-*   `compress_exports: bool` — Whether to compress span export payloads.
-*   `custom_exporter_fn: ?*const fn () anyerror!void` — Optional custom exporter callback for user-defined exporters.
-*   `on_span_start`, `on_span_end`, `on_metric_recorded`, `on_error` — Lifecycle callbacks for telemetry events.
-*   `auto_context_propagation: bool` — Automatically propagate trace/context headers (default: `true`).
-*   `trace_header: []const u8 = Constants.TelemetryDefaults.trace_header` — Trace header name (default: `"traceparent"`).
-*   `baggage_header: []const u8 = Constants.TelemetryDefaults.baggage_header` — Baggage header name (default: `"baggage"`).
+*   `enabled: bool` â€” Enable OpenTelemetry integration (default: `false`).
+*   `provider: Provider` â€” Provider enum (`.none`, `.jaeger`, `.zipkin`, `.datadog`, `.google_cloud`, `.google_analytics`, `.google_tag_manager`, `.aws_xray`, `.azure`, `.generic`, `.file`, `.custom`).
+*   `exporter_endpoint: ?[]const u8` â€” Exporter endpoint URL for HTTP/gRPC exporters (e.g., `"http://localhost:4317"`).
+*   `api_key: ?[]const u8` â€” API key for providers that require authentication.
+*   `connection_string: ?[]const u8` â€” Connection string for Azure Application Insights.
+*   `exporter_file_path: ?[]const u8` â€” File path for JSONL file exporter.
+*   `batch_size: usize = Constants.TelemetryDefaults.batch_size` â€” Batch span export size (default: 256).
+*   `batch_timeout_ms: u64 = Constants.TelemetryDefaults.batch_timeout_ms` â€” Batch export timeout in ms (default: 5000).
+*   `sampling_strategy: SamplingStrategy` â€” Sampling strategy (`.always_on`, `.always_off`, `.trace_id_ratio`, `.parent_based`).
+*   `sampling_rate: f64 = Constants.TelemetryDefaults.sampling_rate` â€” Sampling rate used when `trace_id_ratio` is selected.
+*   `service_name`, `service_version`, `environment`, `datacenter` â€” Resource identification fields.
+*   `span_processor_type: SpanProcessorType = .simple` â€” Span processor: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call; `.batch` will automatically export spans when the configured batch size or timeout is reached.
+*   `metric_format: MetricFormat` â€” Format for metrics export (e.g., `.otlp`, `.prometheus`, `.json`).
+*   `compress_exports: bool` â€” Whether to compress span export payloads.
+*   `custom_exporter_fn: ?*const fn () anyerror!void` â€” Optional custom exporter callback for user-defined exporters.
+*   `on_span_start`, `on_span_end`, `on_metric_recorded`, `on_error` â€” Lifecycle callbacks for telemetry events.
+*   `auto_context_propagation: bool` â€” Automatically propagate trace/context headers (default: `true`).
+*   `trace_header: []const u8 = Constants.TelemetryDefaults.trace_header` â€” Trace header name (default: `"traceparent"`).
+*   `baggage_header: []const u8 = Constants.TelemetryDefaults.baggage_header` â€” Baggage header name (default: `"baggage"`).
 
 Presets and factory helpers:
 * `TelemetryConfig.jaeger()`, `TelemetryConfig.zipkin()`, `TelemetryConfig.datadog(api_key)`,
@@ -180,7 +180,7 @@ Presets and factory helpers:
 Notes:
 * Use `.simple` when you prefer explicit export control (call `exportSpans()` at safe points in your application). Use `.batch` for automatic behavior when you want the library to flush spans based on batch size or timeout.
 * Defaults are centralized in `Constants.TelemetryDefaults` (batch size, timeout, header defaults, etc.).
-* v0.1.6 includes a small OTLP exporter fix: a compile-time issue in the OTLP span writer (`writeOtlpSpan`) was resolved so the telemetry feature builds cleanly across targets.
+* v0.1.8 includes a small OTLP exporter fix: a compile-time issue in the OTLP span writer (`writeOtlpSpan`) was resolved so the telemetry feature builds cleanly across targets.
 
 
 ### Display Options
@@ -295,7 +295,7 @@ Custom format structure configuration.
 
 #### `level_colors: LevelColorConfig`
 
-Level-specific color customization with theme presets (v0.1.5).
+Level-specific color customization with theme presets (v0.1.8).
 - `theme_preset`: Theme preset for base colors (`.default`, `.bright`, `.dim`, `.minimal`, `.neon`, `.pastel`, `.dark`, `.light`, `.none`).
 - `trace_color`, `debug_color`, `info_color`, `notice_color`, `success_color`, `warning_color`, `error_color`, `fail_color`, `critical_color`, `fatal_color`: Individual color overrides (take precedence over theme).
 - `use_rgb`: Use RGB color mode.
@@ -444,7 +444,7 @@ Rules system configuration. The rules system **respects global switches** (`glob
 - `include_rule_id_prefix`: Include "R0001:" prefix. Default: `false`.
 - `rule_id_format`: Custom rule ID format. Default: `"R{d}"`.
 - `indent`: Message indent. Default: `"    "`.
-- `message_prefix`: Prefix character (deprecated, use `symbols`). Default: `"↳"`.
+- `message_prefix`: Prefix character (deprecated, use `symbols`). Default: `"â†³"`.
 - `symbols`: Custom symbols for message categories. See [RuleSymbols](#rulesymbols).
 - `console_output`: Output to console (AND'd with `global_console_display`). Default: `true`.
 - `file_output`: Output to files (AND'd with `global_file_storage`). Default: `true`.
@@ -616,7 +616,7 @@ Enables log-optimized compression (text strategy).
 
 Enables production-ready compression (balanced, checksums, background).
 
-### Zstd Compression Methods (v0.1.5+)
+### Zstd Compression Methods (v0.1.8+)
 
 ### `withZstdCompression() Config`
 

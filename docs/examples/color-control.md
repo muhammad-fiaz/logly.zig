@@ -26,7 +26,7 @@ pub fn main() !void {
     // No-op on Linux/macOS
     _ = logly.Terminal.enableAnsiColors();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -228,7 +228,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -267,7 +267,7 @@ pub fn main() !void {
 ```
 
 ```zig
-const is_tty = std.io.getStdOut().isTty();
+const is_tty = std.Io.getStdOut().isTty();
 const force_no_color = std.process.getEnvVarOwned(allocator, "NO_COLOR") catch null;
 
 var config = logly.Config.default();

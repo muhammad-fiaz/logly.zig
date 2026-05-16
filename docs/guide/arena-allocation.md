@@ -18,7 +18,7 @@ head:
 Logly.zig supports optional arena allocation for improved performance in high-throughput logging scenarios. Arena allocation reduces memory allocation overhead by batching temporary allocations and releasing them efficiently.
 
 By default, arena allocation is disabled (`use_arena_allocator = false`) and the logger uses the allocator passed to `Logger.init(...)` / `Logger.initWithConfig(...)`.
-In most applications, that allocator is `std.heap.GeneralPurposeAllocator`.
+In most applications, that allocator is `std.heap.DebugAllocator`.
 
 ## Overview
 
@@ -36,7 +36,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     // Configure logger with arena allocator
@@ -72,7 +72,7 @@ If your application already uses arena allocation (for example, per-request memo
 ```zig
 const std = @import("std");
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
 // Application-level arena (independent from logger internal arena)
@@ -178,7 +178,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const config = logly.Config{
@@ -254,7 +254,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     // Production configuration with arena allocation

@@ -28,7 +28,7 @@ const logly = @import("logly");
 const Filter = logly.Filter;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -107,7 +107,7 @@ try filter.addMessageFilter("error", .allow);
 
 ### Regex Filtering
 
-Filter messages or modules using the improved regex-like engine (v0.1.5):
+Filter messages or modules using the improved regex-like engine (v0.1.8):
 
 ```zig
 var filter = Filter.init(allocator);
@@ -179,7 +179,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -218,7 +218,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -271,7 +271,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -317,7 +317,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -377,7 +377,7 @@ const logly = @import("logly");
 const Filter = logly.Filter;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -428,7 +428,7 @@ pub fn main() !void {
 3. **Test your filters**: Verify filtering works at different levels
 4. **Document filter rules**: Add comments explaining why each rule exists
 
-## New Features (v0.1.5)
+## New Features (v0.1.8)
 
 ### Improved Regex Engine
 

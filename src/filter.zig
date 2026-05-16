@@ -127,7 +127,7 @@ pub const Filter = struct {
     allocator: std.mem.Allocator,
     rules: std.ArrayList(FilterRule),
     stats: FilterStats = .{},
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
     mode: Mode = .all,
     enabled: bool = true,
 
@@ -255,8 +255,8 @@ pub const Filter = struct {
 
     /// Adds a new filter rule.
     pub fn addRule(self: *Filter, rule: FilterRule) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         // Deep copy patterns and keys if present
         var new_rule = rule;
@@ -277,36 +277,36 @@ pub const Filter = struct {
 
     /// Sets the callback for record allowed events.
     pub fn setAllowedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_record_allowed = callback;
     }
 
     /// Sets the callback for record denied events.
     pub fn setDeniedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_record_denied = callback;
     }
 
     /// Sets the callback for filter creation.
     pub fn setCreatedCallback(self: *Filter, callback: *const fn (*const FilterStats) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_filter_created = callback;
     }
 
     /// Sets the callback for rule addition.
     pub fn setRuleAddedCallback(self: *Filter, callback: *const fn (u32, u32) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_rule_added = callback;
     }
 
     /// Returns filter statistics.
     pub fn getStats(self: *Filter) FilterStats {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return self.stats;
     }

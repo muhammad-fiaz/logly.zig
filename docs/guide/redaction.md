@@ -28,7 +28,7 @@ const logly = @import("logly");
 const Redactor = logly.Redactor;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -91,7 +91,7 @@ try redactor.addPattern("secret_key", .exact, "supersecretkey123", "[HIDDEN]");
 
 ### Regex Match
 
-Use regex-like patterns for complex matching with the improved engine (v0.1.5).
+Use regex-like patterns for complex matching with the improved engine (v0.1.8).
 Supports: `*` (zero or more), `+` (one or more), `?` (optional), `.` (any char), `\d` (digit), `\w` (word char), `\s` (whitespace).
 
 ```zig
@@ -167,7 +167,7 @@ const Redactor = logly.Redactor;
 const RedactionPresets = logly.RedactionPresets;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

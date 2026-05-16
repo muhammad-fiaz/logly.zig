@@ -36,36 +36,12 @@ const Rotation = @import("rotation.zig").Rotation;
 const Network = @import("network.zig");
 const Utils = @import("utils.zig");
 
-// Helper writer for compression that adapts ArrayList to std.io.Writer interface
-const SinkWriter = struct {
-    writer: std.io.Writer,
-    list: *std.ArrayList(u8),
-    allocator: std.mem.Allocator,
-
-    fn drain(writer: *std.io.Writer, iovecs: []const []const u8, len: usize) error{WriteFailed}!usize {
-        const self: *SinkWriter = @fieldParentPtr("writer", writer);
-        var total: usize = 0;
-        for (iovecs[0..len]) |iov| {
-            self.list.appendSlice(self.allocator, iov) catch return error.WriteFailed;
-            total += iov.len;
-        }
-        return total;
-    }
-
-    const vtable = std.io.Writer.VTable{ .drain = drain };
-
-    pub fn init(list: *std.ArrayList(u8), allocator: std.mem.Allocator, buffer: []u8) SinkWriter {
-        return .{
-            .writer = .{
-                .vtable = &vtable,
-                .buffer = buffer,
-                .end = 0,
-            },
-            .list = list,
-            .allocator = allocator,
-        };
-    }
-};
+fn writeStreamAll(stream: std.Io.net.Stream, data: []const u8) !void {
+    var buffer: [Constants.BufferSizes.message]u8 = undefined;
+    var writer = stream.writer(Utils.io(), &buffer);
+    try writer.interface.writeAll(data);
+    try writer.interface.flush();
+}
 
 /// Abstraction for system-level logging (Event Log on Windows, Syslog on POSIX).
 const SystemLog = struct {
@@ -565,13 +541,13 @@ pub const Sink = struct {
     /// Sink configuration options.
     config: SinkConfig,
     /// File handle for file-based sinks.
-    file: ?std.fs.File = null,
+    file: ?std.Io.File = null,
     /// TCP stream for network sinks.
-    stream: ?std.net.Stream = null,
+    stream: ?std.Io.net.Stream = null,
     /// UDP socket for network sinks.
-    udp_socket: ?std.posix.socket_t = null,
+    udp_socket: ?std.Io.net.Socket = null,
     /// UDP destination address.
-    udp_addr: ?std.net.Address = null,
+    udp_addr: ?std.Io.net.IpAddress = null,
     /// System log handle (Windows Event Log / Syslog).
     system_log: ?SystemLog = null,
     /// Formatter for converting records to output.
@@ -581,7 +557,7 @@ pub const Sink = struct {
     /// Internal write buffer.
     buffer: std.ArrayList(u8),
     /// Mutex for thread-safe operations.
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
     /// Whether the sink is enabled.
     enabled: bool = true,
     /// Track if this is the first JSON entry for file output.
@@ -653,13 +629,13 @@ pub const Sink = struct {
 
                 const dir = std.fs.path.dirname(path);
                 if (dir) |d| {
-                    std.fs.cwd().makePath(d) catch {
+                    std.Io.Dir.cwd().createDirPath(Utils.io(), d) catch {
                         // Failed to create directory - continue anyway
                     };
                 }
 
                 // Use overwrite_mode to determine file truncation behavior
-                sink.file = try std.fs.cwd().createFile(path, .{
+                sink.file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{
                     .read = true,
                     .truncate = config.overwrite_mode,
                 });
@@ -667,7 +643,7 @@ pub const Sink = struct {
                 // Write opening bracket for JSON array files
                 if (config.json) {
                     if (sink.file) |file| {
-                        try file.writeAll("[\n");
+                        try file.writeStreamingAll(Utils.io(), "[\n");
                     }
                 }
 
@@ -702,9 +678,9 @@ pub const Sink = struct {
     pub const create = init;
 
     fn resolvePath(allocator: std.mem.Allocator, path_pattern: []const u8) ![]u8 {
-        var buf: std.ArrayList(u8) = .empty;
-        errdefer buf.deinit(allocator);
-        const writer = buf.writer(allocator);
+        var buf = std.Io.Writer.Allocating.init(allocator);
+        errdefer buf.deinit();
+        const writer = &buf.writer;
 
         const now_ms = Utils.currentMillis();
         const tc = Utils.fromMilliTimestamp(now_ms);
@@ -741,7 +717,7 @@ pub const Sink = struct {
                 i += 1;
             }
         }
-        return buf.toOwnedSlice(allocator);
+        return buf.toOwnedSlice();
     }
 
     /// Deinitializes the sink and releases resources.
@@ -756,12 +732,12 @@ pub const Sink = struct {
         // Write closing bracket for JSON array files
         if (self.config.json and self.file != null) {
             if (self.file) |file| {
-                file.writeAll("\n]") catch {};
+                file.writeStreamingAll(Utils.io(), "\n]") catch {};
             }
         }
-        if (self.file) |f| f.close();
-        if (self.stream) |s| s.close();
-        if (self.udp_socket) |s| std.posix.close(s);
+        if (self.file) |f| f.close(Utils.io());
+        if (self.stream) |s| s.close(Utils.io());
+        if (self.udp_socket) |s| s.close(Utils.io());
 
         if (self.rotation) |*r| r.deinit();
         self.buffer.deinit(self.allocator);
@@ -774,8 +750,8 @@ pub const Sink = struct {
 
     /// Sets the callback for write events.
     pub fn setWriteCallback(self: *Sink, callback: *const fn (u64, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_write = callback;
     }
 
@@ -784,8 +760,8 @@ pub const Sink = struct {
 
     /// Sets the callback for flush events.
     pub fn setFlushCallback(self: *Sink, callback: *const fn (u64, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_flush = callback;
     }
 
@@ -794,8 +770,8 @@ pub const Sink = struct {
 
     /// Sets the callback for error events.
     pub fn setErrorCallback(self: *Sink, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_error = callback;
     }
 
@@ -804,8 +780,8 @@ pub const Sink = struct {
 
     /// Sets the callback for rotation events.
     pub fn setRotationCallback(self: *Sink, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_rotation = callback;
     }
 
@@ -814,8 +790,8 @@ pub const Sink = struct {
 
     /// Sets the callback for state changes.
     pub fn setStateChangeCallback(self: *Sink, callback: *const fn (bool) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_state_change = callback;
     }
 
@@ -824,8 +800,8 @@ pub const Sink = struct {
 
     /// Returns sink statistics.
     pub fn getStats(self: *Sink) SinkStats {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return self.stats;
     }
@@ -836,8 +812,8 @@ pub const Sink = struct {
 
     /// Clears the internal buffer.
     pub fn clearBuffer(self: *Sink) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.buffer.clearRetainingCapacity();
     }
 
@@ -852,8 +828,8 @@ pub const Sink = struct {
 
     /// Returns true if sink is enabled.
     pub fn isEnabled(self: *Sink) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         return self.enabled;
     }
 
@@ -862,24 +838,24 @@ pub const Sink = struct {
 
     /// Enables the sink.
     pub fn enable(self: *Sink) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.enabled = true;
         if (self.on_state_change) |cb| cb(true);
     }
 
     /// Disables the sink.
     pub fn disable(self: *Sink) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.enabled = false;
         if (self.on_state_change) |cb| cb(false);
     }
 
     /// Returns true if async writing is enabled for this sink.
     pub fn isAsyncEnabled(self: *Sink) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         return self.config.async_write;
     }
 
@@ -888,15 +864,15 @@ pub const Sink = struct {
 
     /// Enables async writing for this sink.
     pub fn enableAsync(self: *Sink) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config.async_write = true;
     }
 
     /// Disables async writing for this sink (forces immediate flush).
     pub fn disableAsync(self: *Sink) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.config.async_write = false;
         // Flush any pending data when disabling async
         self.flush() catch {};
@@ -905,8 +881,8 @@ pub const Sink = struct {
     /// Manually flushes the sink buffer.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn flushNow(self: *Sink) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         try self.flush();
     }
 
@@ -937,8 +913,8 @@ pub const Sink = struct {
     ///     global_config: Global configuration.
     ///     scratch_allocator: Optional allocator for temporary formatting.
     pub fn writeWithAllocator(self: *Sink, record: *const Record, global_config: anytype, scratch_allocator: ?std.mem.Allocator) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (!self.enabled) return;
 
@@ -1011,7 +987,9 @@ pub const Sink = struct {
         if (self.system_log) |*syslog| {
             // Clear buffer to ensure we only send the current message
             self.buffer.clearRetainingCapacity();
-            const writer = self.buffer.writer(self.allocator);
+            var buffer_writer = std.Io.Writer.Allocating.fromArrayList(self.allocator, &self.buffer);
+            errdefer self.buffer = buffer_writer.toArrayList();
+            const writer = &buffer_writer.writer;
 
             // Format message
             if (effective_config.json) {
@@ -1019,26 +997,30 @@ pub const Sink = struct {
             } else {
                 try formatter.formatToWriter(writer, record, effective_config);
             }
+            const written = buffer_writer.written();
 
             // Send to system log
-            if (self.buffer.items.len > 0) {
-                try syslog.log(record.level, self.buffer.items);
+            if (written.len > 0) {
+                try syslog.log(record.level, written);
 
                 // Update stats
                 _ = self.stats.total_written.fetchAdd(1, .monotonic);
-                _ = self.stats.bytes_written.fetchAdd(self.buffer.items.len, .monotonic);
+                _ = self.stats.bytes_written.fetchAdd(written.len, .monotonic);
 
                 if (self.on_write) |cb| {
-                    cb(1, self.buffer.items.len);
+                    cb(1, written.len);
                 }
             }
 
+            self.buffer = buffer_writer.toArrayList();
             self.buffer.clearRetainingCapacity();
             return;
         }
 
         // Write to buffer
-        const writer = self.buffer.writer(self.allocator);
+        var buffer_writer = std.Io.Writer.Allocating.fromArrayList(self.allocator, &self.buffer);
+        errdefer self.buffer = buffer_writer.toArrayList();
+        const writer = &buffer_writer.writer;
         const is_file = self.file != null;
         const use_json_array = is_file and effective_config.json;
 
@@ -1056,6 +1038,7 @@ pub const Sink = struct {
             }
             try writer.writeByte('\n');
         }
+        self.buffer = buffer_writer.toArrayList();
 
         self.buffered_records += 1;
 
@@ -1077,8 +1060,8 @@ pub const Sink = struct {
     /// Arguments:
     ///     data: The raw string data to write.
     pub fn writeRaw(self: *Sink, data: []const u8) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (!self.enabled) return;
 
@@ -1093,11 +1076,11 @@ pub const Sink = struct {
                     try self.flush();
                 }
             } else {
-                file.writeAll(data) catch |err| {
+                file.writeStreamingAll(Utils.io(), data) catch |err| {
                     try self.handleWriteError(err, 1);
                     return;
                 };
-                file.writeAll("\n") catch |err| {
+                file.writeStreamingAll(Utils.io(), "\n") catch |err| {
                     try self.handleWriteError(err, 1);
                     return;
                 };
@@ -1109,11 +1092,11 @@ pub const Sink = struct {
                 }
             }
         } else if (self.stream) |stream| {
-            stream.writeAll(data) catch |err| {
+            writeStreamAll(stream, data) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
-            stream.writeAll("\n") catch |err| {
+            writeStreamAll(stream, "\n") catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1137,12 +1120,12 @@ pub const Sink = struct {
                 cb(1, data.len);
             }
         } else {
-            const stdout_file = std.fs.File.stdout();
-            stdout_file.writeAll(data) catch |err| {
+            const stdout_file = std.Io.File.stdout();
+            stdout_file.writeStreamingAll(Utils.io(), data) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
-            stdout_file.writeAll("\n") catch |err| {
+            stdout_file.writeStreamingAll(Utils.io(), "\n") catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1156,19 +1139,19 @@ pub const Sink = struct {
     }
 
     fn reconnect(self: *Sink) bool {
-        if (self.stream) |s| s.close();
+        if (self.stream) |s| s.close(Utils.io());
         self.stream = null;
 
         if (self.config.path) |uri| {
             if (std.mem.startsWith(u8, uri, "tcp://")) {
                 const max_retries = Constants.TimeDefaults.max_retries;
-                const retry_sleep_ns = Constants.TimeDefaults.retry_delay_ms * std.time.ns_per_ms;
+                const retry_sleep = std.Io.Duration.fromMilliseconds(Constants.TimeDefaults.retry_delay_ms);
 
                 var attempt: u32 = 0;
                 while (attempt <= max_retries) : (attempt += 1) {
                     self.stream = Network.connectTcp(self.allocator, uri) catch {
                         if (attempt < max_retries) {
-                            std.Thread.sleep(retry_sleep_ns);
+                            Utils.io().sleep(retry_sleep, .awake) catch {};
                         }
                         continue;
                     };
@@ -1206,7 +1189,7 @@ pub const Sink = struct {
     pub fn flush(self: *Sink) !void {
         if (self.buffer.items.len == 0) return;
 
-        const start_ns = std.time.nanoTimestamp();
+        const start_ns = Utils.currentNanos();
         const buffered_records = if (self.buffered_records == 0) @as(u64, 1) else @as(u64, @intCast(self.buffered_records));
 
         // Compression for Network Sinks
@@ -1214,35 +1197,33 @@ pub const Sink = struct {
         var compressed_data: ?[]u8 = null;
 
         if (self.config.compression.enabled and (self.stream != null or self.udp_socket != null)) {
-            var list = try std.ArrayList(u8).initCapacity(self.allocator, Constants.BufferSizes.message);
-            errdefer list.deinit(self.allocator);
+            var list = try std.Io.Writer.Allocating.initCapacity(self.allocator, Constants.BufferSizes.message);
+            errdefer list.deinit();
 
             var compress_buffer: [Constants.BufferSizes.message]u8 = undefined;
-            var sink_writer_buffer: [Constants.BufferSizes.message]u8 = undefined;
-            var sink_writer = SinkWriter.init(&list, self.allocator, &sink_writer_buffer);
 
-            var compressor = std.compress.flate.Compress.init(&sink_writer.writer, &compress_buffer, .{});
+            var compressor = try std.compress.flate.Compress.init(&list.writer, &compress_buffer, .raw, .default);
 
             try compressor.writer.writeAll(self.buffer.items);
-            try compressor.end();
+            try compressor.finish();
 
-            compressed_data = try list.toOwnedSlice(self.allocator);
+            compressed_data = try list.toOwnedSlice();
             data_to_write = compressed_data.?;
         }
         defer if (compressed_data) |d| self.allocator.free(d);
 
         if (self.file) |file| {
-            file.writeAll(self.buffer.items) catch |err| {
+            file.writeStreamingAll(Utils.io(), self.buffer.items) catch |err| {
                 try self.handleWriteError(err, buffered_records);
                 self.buffer.clearRetainingCapacity();
                 self.buffered_records = 0;
                 return;
             };
         } else if (self.stream) |stream| {
-            stream.writeAll(data_to_write) catch |err| {
+            writeStreamAll(stream, data_to_write) catch |err| {
                 if (self.reconnect()) {
                     if (self.stream) |new_stream| {
-                        new_stream.writeAll(data_to_write) catch |retry_err| {
+                        writeStreamAll(new_stream, data_to_write) catch |retry_err| {
                             try self.handleWriteError(retry_err, buffered_records);
                             self.buffer.clearRetainingCapacity();
                             self.buffered_records = 0;
@@ -1263,7 +1244,7 @@ pub const Sink = struct {
             };
         } else if (self.udp_socket) |sock| {
             if (self.udp_addr) |addr| {
-                _ = std.posix.sendto(sock, data_to_write, 0, &addr.any, addr.getOsSockLen()) catch |err| {
+                sock.send(Utils.io(), &addr, data_to_write) catch |err| {
                     try self.handleWriteError(err, buffered_records);
                     self.buffer.clearRetainingCapacity();
                     self.buffered_records = 0;
@@ -1283,8 +1264,8 @@ pub const Sink = struct {
             }
         } else {
             // Console
-            const stdout_file = std.fs.File.stdout();
-            stdout_file.writeAll(self.buffer.items) catch |err| {
+            const stdout_file = std.Io.File.stdout();
+            stdout_file.writeStreamingAll(Utils.io(), self.buffer.items) catch |err| {
                 try self.handleWriteError(err, buffered_records);
                 self.buffer.clearRetainingCapacity();
                 self.buffered_records = 0;
@@ -1293,7 +1274,7 @@ pub const Sink = struct {
         }
 
         const bytes_flushed = if (self.file != null) self.buffer.items.len else data_to_write.len;
-        const end_ns = std.time.nanoTimestamp();
+        const end_ns = Utils.currentNanos();
         const duration_ns: u64 = if (end_ns > start_ns) @as(u64, @intCast(end_ns - start_ns)) else 0;
         const buffered_records_atomic: Constants.AtomicUnsigned = @intCast(@min(
             buffered_records,
@@ -1420,7 +1401,7 @@ test "sink flush updates stats" {
     sink_cfg.overwrite_mode = true;
 
     const sink = try Sink.init(allocator, sink_cfg);
-    defer std.fs.cwd().deleteFile(log_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), log_path) catch {};
     defer sink.deinit();
 
     var record = Record.init(allocator, .info, "stats check");
@@ -1450,7 +1431,7 @@ test "sink manual flushNow updates stats" {
     sink_cfg.overwrite_mode = true;
 
     const sink = try Sink.init(allocator, sink_cfg);
-    defer std.fs.cwd().deleteFile(log_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), log_path) catch {};
     defer sink.deinit();
 
     var record = Record.init(allocator, .info, "manual flush stats check");

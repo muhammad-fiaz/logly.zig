@@ -77,7 +77,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
@@ -105,8 +105,8 @@ pub fn main() !void {
 - **Cross-Platform**: Works on Linux, Windows, macOS, and more
 - **Well Documented**: Comprehensive guides and API documentation
 
-::: tip 💡 Note
-Logly.zig aims to be production-ready. While this is a relatively new project and not yet widely adopted, it offers powerful features that can simplify your Zig project's logging. If you love Logly.zig, feel free to use it in your projects and give it a ⭐ on GitHub!
+::: tip ðŸ’¡ Note
+Logly.zig aims to be production-ready. While this is a relatively new project and not yet widely adopted, it offers powerful features that can simplify your Zig project's logging. If you love Logly.zig, feel free to use it in your projects and give it a â­ on GitHub!
 :::
 
 ## Installation
@@ -114,7 +114,7 @@ Logly.zig aims to be production-ready. While this is a relatively new project an
 The easiest way to add Logly to your project:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
@@ -125,5 +125,5 @@ For Nightly builds, you can use the Git URL directly:
 zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
 ```
 
-[Get Started →](/guide/getting-started)
+[Get Started â†’](/guide/getting-started)
 

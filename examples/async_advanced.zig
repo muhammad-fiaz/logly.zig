@@ -2,7 +2,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -59,7 +59,7 @@ pub fn main() !void {
     // Push some entries
     for (0..10) |i| {
         _ = rb.push(.{
-            .timestamp = std.time.milliTimestamp(),
+            .timestamp = logly.Utils.currentMillis(),
             .formatted_message = "Test message",
             .level_priority = 20,
             .queued_at = @intCast(i),

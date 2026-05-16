@@ -501,9 +501,9 @@ Track callback execution time:
 
 ```zig
 fn monitoredCallback(record: *const logly.Record) void {
-    const start = std.time.nanoTimestamp();
+    const start = logly.Utils.currentNanos();
     defer {
-        const elapsed = std.time.nanoTimestamp() - start;
+        const elapsed = logly.Utils.currentNanos() - start;
         if (elapsed > 1_000_000) { // >1ms
             std.debug.print("⚠️  Slow callback: {d}μs\n", .{elapsed / 1000});
         }
@@ -560,7 +560,7 @@ const MonitoringSystem = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     

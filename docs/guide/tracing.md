@@ -70,7 +70,7 @@ For single-threaded scripts, you can set global context:
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -227,7 +227,7 @@ pub fn handleHttpRequest(
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     const allocator = gpa.allocator();
 
     var logger = try logly.Logger.init(allocator);

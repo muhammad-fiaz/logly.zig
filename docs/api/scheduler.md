@@ -176,7 +176,7 @@ pub const SchedulerConfig = struct {
 | `min_age_days_for_compression` | `u64` | `1` | Min age before compression |
 | `max_concurrent_compressions` | `usize` | `2` | Max parallel compressions |
 
-> Note: v0.1.6 expanded compression and archiving support — including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 — and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compression_algorithm` and `compression_level` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
+> Note: v0.1.8 expanded compression and archiving support â€” including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 â€” and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compression_algorithm` and `compression_level` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
 
 
 ### ScheduledTask
@@ -711,7 +711,7 @@ const Scheduler = logly.Scheduler;
 const SchedulerPresets = logly.SchedulerPresets;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -778,7 +778,7 @@ Helper functions for creating common schedules and task configurations.
 |--------|-------------|
 | `hourlyCompression()` | Compression every hour |
 | `everyMinutes(n)` | Every N minutes |
-| `every15Minutes()` | Every 15 minutes (v0.1.5+) |
+| `every15Minutes()` | Every 15 minutes (v0.1.8+) |
 | `every30Minutes()` | Every 30 minutes |
 | `every6Hours()` | Every 6 hours |
 | `every12Hours()` | Every 12 hours |
@@ -786,9 +786,9 @@ Helper functions for creating common schedules and task configurations.
 | `dailyMidnight()` | Daily at midnight |
 | `dailyMaintenance()` | Daily at 2 AM |
 | `weeklyCleanup()` | Weekly on Sunday at 2 AM |
-| `onceAfter(seconds)` | Once after delay (v0.1.5+) |
-| `healthCheckSchedule()` | Every 5 minutes (v0.1.5+) |
-| `metricsSchedule()` | Every minute (v0.1.5+) |
+| `onceAfter(seconds)` | Once after delay (v0.1.8+) |
+| `healthCheckSchedule()` | Every 5 minutes (v0.1.8+) |
+| `metricsSchedule()` | Every minute (v0.1.8+) |
 
 ### Task Config Presets
 
@@ -800,19 +800,19 @@ Helper functions for creating common schedules and task configurations.
 | `compressOnly(path, days)` | Compress only, never delete |
 | `archiveOldLogs(path, compress_days, delete_days)` | Archive with age limits |
 | `aggressiveCleanup(path, days, max_files)` | Compress + file count limit |
-| `hourlyArchive(path)` | Compress files older than 1 day (v0.1.5+) |
-| `compressOnRotation(path)` | Compress just-rotated files (v0.1.5+) |
-| `sizeBasedCompression(path, bytes)` | Compress when size exceeds threshold (v0.1.5+) |
-| `diskUsageTriggered(path, percent)` | Compress when disk usage high (v0.1.5+) |
-| `lowDiskSpaceTriggered(path, min_free)` | Compress when disk space low (v0.1.5+) |
-| `recursiveCompression(path, days)` | Recursive directory compression (v0.1.5+) |
+| `hourlyArchive(path)` | Compress files older than 1 day (v0.1.8+) |
+| `compressOnRotation(path)` | Compress just-rotated files (v0.1.8+) |
+| `sizeBasedCompression(path, bytes)` | Compress when size exceeds threshold (v0.1.8+) |
+| `diskUsageTriggered(path, percent)` | Compress when disk usage high (v0.1.8+) |
+| `lowDiskSpaceTriggered(path, min_free)` | Compress when disk space low (v0.1.8+) |
+| `recursiveCompression(path, days)` | Recursive directory compression (v0.1.8+) |
 
 ```zig
 pub const SchedulerPresets = struct {
     // Schedules
     pub fn hourlyCompression() Schedule;
     pub fn everyMinutes(n: u64) Schedule;
-    pub fn every15Minutes() Schedule;          // v0.1.5+
+    pub fn every15Minutes() Schedule;          // v0.1.8+
     pub fn every30Minutes() Schedule;
     pub fn every6Hours() Schedule;
     pub fn every12Hours() Schedule;
@@ -820,9 +820,9 @@ pub const SchedulerPresets = struct {
     pub fn dailyMidnight() Schedule;
     pub fn dailyMaintenance() Schedule;
     pub fn weeklyCleanup() Schedule;
-    pub fn onceAfter(seconds: u64) Schedule;   // v0.1.5+
-    pub fn healthCheckSchedule() Schedule;     // v0.1.5+
-    pub fn metricsSchedule() Schedule;         // v0.1.5+
+    pub fn onceAfter(seconds: u64) Schedule;   // v0.1.8+
+    pub fn healthCheckSchedule() Schedule;     // v0.1.8+
+    pub fn metricsSchedule() Schedule;         // v0.1.8+
 
     // Task Configurations
     pub fn dailyCleanup(path: []const u8, max_age_days: u64) TaskConfig;
@@ -831,12 +831,12 @@ pub const SchedulerPresets = struct {
     pub fn compressOnly(path: []const u8, min_age_days: u64) TaskConfig;
     pub fn archiveOldLogs(path: []const u8, compress_days: u64, delete_days: u64) TaskConfig;
     pub fn aggressiveCleanup(path: []const u8, max_age_days: u64, max_files: usize) TaskConfig;
-    pub fn hourlyArchive(path: []const u8) TaskConfig;             // v0.1.5+
-    pub fn compressOnRotation(path: []const u8) TaskConfig;        // v0.1.5+
-    pub fn sizeBasedCompression(path: []const u8, bytes: u64) TaskConfig;  // v0.1.5+
-    pub fn diskUsageTriggered(path: []const u8, percent: u8) TaskConfig;   // v0.1.5+
-    pub fn lowDiskSpaceTriggered(path: []const u8, min_free: u64) TaskConfig;  // v0.1.5+
-    pub fn recursiveCompression(path: []const u8, days: u64) TaskConfig;   // v0.1.5+
+    pub fn hourlyArchive(path: []const u8) TaskConfig;             // v0.1.8+
+    pub fn compressOnRotation(path: []const u8) TaskConfig;        // v0.1.8+
+    pub fn sizeBasedCompression(path: []const u8, bytes: u64) TaskConfig;  // v0.1.8+
+    pub fn diskUsageTriggered(path: []const u8, percent: u8) TaskConfig;   // v0.1.8+
+    pub fn lowDiskSpaceTriggered(path: []const u8, min_free: u64) TaskConfig;  // v0.1.8+
+    pub fn recursiveCompression(path: []const u8, days: u64) TaskConfig;   // v0.1.8+
 };
 ```
 

@@ -272,7 +272,7 @@ pub const Rotation = struct {
     /// Rotation statistics.
     stats: RotationStats = .{},
     /// Mutex for thread-safe operations.
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
 
     /// Initializes rotation with optional interval, size limit, and retention count.
     pub fn init(
@@ -443,7 +443,7 @@ pub const Rotation = struct {
     }
 
     /// Computes rotation reason without taking locks.
-    fn computeRotationReason(self: *Rotation, file_ptr: *std.fs.File, now: i64) ?RotationReason {
+    fn computeRotationReason(self: *Rotation, file_ptr: *std.Io.File, now: i64) ?RotationReason {
         var by_interval = false;
         var by_size = false;
 
@@ -452,7 +452,7 @@ pub const Rotation = struct {
         }
 
         if (self.size_limit) |limit| {
-            if (file_ptr.stat()) |stat| {
+            if (file_ptr.stat(Utils.io())) |stat| {
                 by_size = stat.size >= limit;
             } else |_| {
                 // Ignore stat errors and retry on next check.
@@ -466,15 +466,15 @@ pub const Rotation = struct {
     }
 
     /// Returns why rotation would occur for the current file state.
-    pub fn getRotationReason(self: *Rotation, file_ptr: *std.fs.File) ?RotationReason {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+    pub fn getRotationReason(self: *Rotation, file_ptr: *std.Io.File) ?RotationReason {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return self.computeRotationReason(file_ptr, Utils.currentSeconds());
     }
 
     /// Returns true when rotation conditions are currently met.
-    pub fn shouldRotate(self: *Rotation, file_ptr: *std.fs.File) bool {
+    pub fn shouldRotate(self: *Rotation, file_ptr: *std.Io.File) bool {
         return self.getRotationReason(file_ptr) != null;
     }
 
@@ -489,24 +489,24 @@ pub const Rotation = struct {
     }
 
     /// Forces immediate rotation regardless of current interval/size checks.
-    pub fn forceRotate(self: *Rotation, file_ptr: *std.fs.File) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+    pub fn forceRotate(self: *Rotation, file_ptr: *std.Io.File) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         try self.performRotation(file_ptr);
     }
 
     /// Returns the next rotated path without mutating state.
     pub fn previewNextPath(self: *Rotation) ![]u8 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         return self.generateRotatedPath();
     }
 
     /// Performs rotation when interval and/or size triggers are met.
-    pub fn checkAndRotate(self: *Rotation, file_ptr: *std.fs.File) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+    pub fn checkAndRotate(self: *Rotation, file_ptr: *std.Io.File) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         const now = Utils.currentSeconds();
 
@@ -609,7 +609,7 @@ pub const Rotation = struct {
     pub const rotateIfNeeded = checkAndRotate;
     pub const maybeRotate = checkAndRotate;
 
-    fn performRotation(self: *Rotation, file_ptr: *std.fs.File) !void {
+    fn performRotation(self: *Rotation, file_ptr: *std.Io.File) !void {
         const start_time = Utils.currentMillis();
 
         // 1. Generate new filename
@@ -620,14 +620,14 @@ pub const Rotation = struct {
         if (self.archive_dir) |_| {
             const dir = std.fs.path.dirname(rotated_path);
             if (dir) |d| {
-                std.fs.cwd().makePath(d) catch {};
+                std.Io.Dir.cwd().createDirPath(Utils.io(), d) catch {};
             }
         }
 
         if (self.on_rotation_start) |cb| cb(self.base_path, rotated_path);
 
         // 2. Close current file
-        file_ptr.close();
+        file_ptr.close(Utils.io());
 
         // 3. Rename current file to rotated path
         // For index strategy, we might need to shift existing files first
@@ -635,15 +635,14 @@ pub const Rotation = struct {
             try self.shiftIndexFiles();
         }
 
-        std.fs.cwd().rename(self.base_path, rotated_path) catch |err| {
+        std.Io.Dir.cwd().rename(self.base_path, std.Io.Dir.cwd(), rotated_path, Utils.io()) catch |err| {
             // Try to reopen functionality if rename fails
-            file_ptr.* = try std.fs.cwd().createFile(self.base_path, .{ .read = true, .truncate = false }); // Append mode effectively
-            file_ptr.seekFromEnd(0) catch {};
+            file_ptr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.base_path, .{ .read = true, .truncate = false }); // Append mode effectively
             return err;
         };
 
         // 4. Re-open log file (fresh)
-        file_ptr.* = try std.fs.cwd().createFile(self.base_path, .{
+        file_ptr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.base_path, .{
             .read = true,
             .truncate = true,
         });
@@ -676,7 +675,7 @@ pub const Rotation = struct {
 
                 // If successful and keep_original is false, remove uncompressed rotated file
                 if (!self.keep_original) {
-                    std.fs.cwd().deleteFile(rotated_path) catch {};
+                    std.Io.Dir.cwd().deleteFile(Utils.io(), rotated_path) catch {};
                 }
 
                 self.allocator.free(final_path);
@@ -723,9 +722,9 @@ pub const Rotation = struct {
                 const m = (ds.secs % @as(u64, Constants.TimeConstants.seconds_per_hour)) / @as(u64, Constants.TimeConstants.seconds_per_minute);
                 const s = ds.secs % @as(u64, Constants.TimeConstants.seconds_per_minute);
 
-                var res: std.ArrayList(u8) = .empty;
-                errdefer res.deinit(self.allocator);
-                const w = res.writer(self.allocator);
+                var res = std.Io.Writer.Allocating.init(self.allocator);
+                errdefer res.deinit();
+                const w = &res.writer;
                 try w.writeAll(base_name);
                 try w.writeByte('.');
                 try Utils.writeFilenameSafe(w, Utils.TimeComponents{
@@ -736,7 +735,7 @@ pub const Rotation = struct {
                     .minute = m,
                     .second = s,
                 });
-                name_buf = try res.toOwnedSlice(self.allocator);
+                name_buf = try res.toOwnedSlice();
             },
             .index => {
                 // For index strategy, the immediate rotated file is always .1
@@ -759,27 +758,27 @@ pub const Rotation = struct {
 
                     // Optimization: Pre-allocate buffer to minimize reallocations
                     // Estimate size: format length + extra space for replacements (timestamp, etc.)
-                    var res = std.ArrayList(u8){};
-                    try res.ensureTotalCapacity(self.allocator, fmt.len + 64);
-                    defer res.deinit(self.allocator);
+                    var res = try std.Io.Writer.Allocating.initCapacity(self.allocator, fmt.len + 64);
+                    errdefer res.deinit();
+                    const w = &res.writer;
 
                     var i: usize = 0;
                     while (i < fmt.len) {
                         if (fmt[i] == '{') {
                             const end = std.mem.indexOfPos(u8, fmt, i, "}") orelse {
-                                try res.append(self.allocator, fmt[i]);
+                                try w.writeByte(fmt[i]);
                                 i += 1;
                                 continue;
                             };
                             const tag = fmt[i + 1 .. end];
                             if (std.mem.eql(u8, tag, "base")) {
-                                try res.appendSlice(self.allocator, stem);
+                                try w.writeAll(stem);
                             } else if (std.mem.eql(u8, tag, "ext")) {
-                                try res.appendSlice(self.allocator, ext);
+                                try w.writeAll(ext);
                             } else if (std.mem.eql(u8, tag, "timestamp")) {
-                                try Utils.writeInt(res.writer(self.allocator), now);
+                                try Utils.writeInt(w, now);
                             } else if (std.mem.eql(u8, tag, "date")) {
-                                try Utils.writeIsoDate(res.writer(self.allocator), Utils.TimeComponents{
+                                try Utils.writeIsoDate(w, Utils.TimeComponents{
                                     .year = yd.year,
                                     .month = md.month.numeric(),
                                     .day = md.day_index + 1,
@@ -788,7 +787,7 @@ pub const Rotation = struct {
                                     .second = s,
                                 });
                             } else if (std.mem.eql(u8, tag, "time")) {
-                                try Utils.writeIsoTime(res.writer(self.allocator), Utils.TimeComponents{
+                                try Utils.writeIsoTime(w, Utils.TimeComponents{
                                     .year = yd.year,
                                     .month = md.month.numeric(),
                                     .day = md.day_index + 1,
@@ -797,7 +796,7 @@ pub const Rotation = struct {
                                     .second = s,
                                 });
                             } else if (std.mem.eql(u8, tag, "iso")) {
-                                try Utils.writeIsoDateTime(res.writer(self.allocator), Utils.TimeComponents{
+                                try Utils.writeIsoDateTime(w, Utils.TimeComponents{
                                     .year = yd.year,
                                     .month = md.month.numeric(),
                                     .day = md.day_index + 1,
@@ -807,15 +806,15 @@ pub const Rotation = struct {
                                 });
                             } else {
                                 // Granular date format parsing via shared utility
-                                try Utils.formatDatePattern(res.writer(self.allocator), tag, yd.year, md.month.numeric(), md.day_index + 1, h, m, s, millis);
+                                try Utils.formatDatePattern(w, tag, yd.year, md.month.numeric(), md.day_index + 1, h, m, s, millis);
                             }
                             i = end + 1;
                         } else {
-                            try res.append(self.allocator, fmt[i]);
+                            try w.writeByte(fmt[i]);
                             i += 1;
                         }
                     }
-                    name_buf = try res.toOwnedSlice(self.allocator);
+                    name_buf = try res.toOwnedSlice();
                 } else {
                     // Fallback if custom selected but no format
                     name_buf = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ base_name, now });
@@ -853,10 +852,10 @@ pub const Rotation = struct {
             defer self.allocator.free(current_path);
 
             // If file exists
-            if (std.fs.cwd().access(current_path, .{})) |_| {
+            if (std.Io.Dir.cwd().access(Utils.io(), current_path, .{})) |_| {
                 if (i == max) {
                     // Delete overflow
-                    std.fs.cwd().deleteFile(current_path) catch {};
+                    std.Io.Dir.cwd().deleteFile(Utils.io(), current_path) catch {};
                 } else {
                     // Rename to next
                     const next_name = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ base_name, i + 1 });
@@ -864,7 +863,7 @@ pub const Rotation = struct {
                     const next_path = try std.fs.path.join(self.allocator, &.{ target_dir, next_name });
                     defer self.allocator.free(next_path);
 
-                    std.fs.cwd().rename(current_path, next_path) catch {};
+                    std.Io.Dir.cwd().rename(current_path, std.Io.Dir.cwd(), next_path, Utils.io()) catch {};
                 }
             } else |_| {}
         }
@@ -874,8 +873,8 @@ pub const Rotation = struct {
         const dir_path = self.archive_dir orelse (std.fs.path.dirname(self.base_path) orelse ".");
         const base_name = std.fs.path.basename(self.base_path);
 
-        var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return;
-        defer dir.close();
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return;
+        defer dir.close(Utils.io());
 
         const FileInfo = struct { name: []u8, mtime: i128, is_compressed: bool };
         var files: std.ArrayList(FileInfo) = .empty;
@@ -885,21 +884,21 @@ pub const Rotation = struct {
         }
 
         var iter = dir.iterate();
-        while (try iter.next()) |entry| {
+        while (try iter.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
             // Matches base_name and starts with it
             if (std.mem.startsWith(u8, entry.name, base_name) and !std.mem.eql(u8, entry.name, base_name)) {
                 const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, entry.name });
                 defer self.allocator.free(full_path);
 
-                const stat = std.fs.cwd().statFile(full_path) catch continue;
+                const stat = std.Io.Dir.cwd().statFile(Utils.io(), full_path, .{}) catch continue;
 
                 // Check if already compressed
                 const is_compressed = Constants.CompressionExtensions.isCompressed(entry.name);
 
                 // Age check
                 if (self.max_age_seconds) |max_age| {
-                    const age = Utils.currentNanos() - stat.mtime;
+                    const age = Utils.currentNanos() - stat.mtime.toNanoseconds();
                     if (age > max_age * Constants.TimeConstants.ns_per_second) {
                         try self.handleRetentionFile(full_path, is_compressed);
                         continue; // handled, don't add to list
@@ -908,7 +907,7 @@ pub const Rotation = struct {
 
                 try files.append(self.allocator, .{
                     .name = try self.allocator.dupe(u8, entry.name),
-                    .mtime = stat.mtime,
+                    .mtime = stat.mtime.toNanoseconds(),
                     .is_compressed = is_compressed,
                 });
             }
@@ -937,7 +936,7 @@ pub const Rotation = struct {
             // Only attempt to clean if archive_dir is explicitly set to avoid accidents
             if (self.archive_dir) |archive_path| {
                 // Attempt to remove directory. Will fail safely if not empty.
-                std.fs.cwd().deleteDir(archive_path) catch {};
+                std.Io.Dir.cwd().deleteDir(Utils.io(), archive_path) catch {};
             }
         }
     }
@@ -966,7 +965,7 @@ pub const Rotation = struct {
 
                 // Delete original after successful compression if configured
                 if (self.delete_after_retention_compress) {
-                    std.fs.cwd().deleteFile(path) catch {};
+                    std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
                 }
                 return;
             }
@@ -977,7 +976,7 @@ pub const Rotation = struct {
     }
 
     fn deleteFile(self: *Rotation, path: []const u8) !void {
-        std.fs.cwd().deleteFile(path) catch return;
+        std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch return;
         _ = self.stats.files_deleted.fetchAdd(1, .monotonic);
         if (self.on_retention_cleanup) |cb| cb(path);
     }
@@ -1420,15 +1419,15 @@ test "rotation force rotate helper" {
 
     const file_name = try std.fmt.allocPrint(allocator, "rotation_force_{d}.log", .{Utils.currentMillis()});
     defer allocator.free(file_name);
-    defer std.fs.cwd().deleteFile(file_name) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), file_name) catch {};
 
     const rotated_name = try std.fmt.allocPrint(allocator, "{s}.1", .{file_name});
     defer allocator.free(rotated_name);
-    defer std.fs.cwd().deleteFile(rotated_name) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), rotated_name) catch {};
 
-    var file = try std.fs.cwd().createFile(file_name, .{ .read = true, .truncate = true });
-    defer file.close();
-    try file.writeAll("force rotation content");
+    var file = try std.Io.Dir.cwd().createFile(Utils.io(), file_name, .{ .read = true, .truncate = true });
+    defer file.close(Utils.io());
+    try file.writeStreamingAll(Utils.io(), "force rotation content");
 
     var rot = try Rotation.init(allocator, file_name, null, null, 3);
     defer rot.deinit();
@@ -1436,8 +1435,8 @@ test "rotation force rotate helper" {
 
     try rot.forceRotate(&file);
 
-    try std.fs.cwd().access(file_name, .{});
-    try std.fs.cwd().access(rotated_name, .{});
+    try std.Io.Dir.cwd().access(Utils.io(), file_name, .{});
+    try std.Io.Dir.cwd().access(Utils.io(), rotated_name, .{});
     try std.testing.expect(rot.getStats().rotationCount() >= 1);
 }
 
@@ -1478,12 +1477,11 @@ test "rotation reason helpers and preview path" {
 
     const file_name = try std.fmt.allocPrint(allocator, "rotation_reason_{d}.log", .{Utils.currentMillis()});
     defer allocator.free(file_name);
-    defer std.fs.cwd().deleteFile(file_name) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), file_name) catch {};
 
-    var file = try std.fs.cwd().createFile(file_name, .{ .read = true, .truncate = true });
-    defer file.close();
-    try file.writeAll("0123456789");
-    try file.seekTo(0);
+    var file = try std.Io.Dir.cwd().createFile(Utils.io(), file_name, .{ .read = true, .truncate = true });
+    defer file.close(Utils.io());
+    try file.writeStreamingAll(Utils.io(), "0123456789");
 
     var rot = try Rotation.init(allocator, file_name, null, 1, 3);
     defer rot.deinit();

@@ -131,7 +131,7 @@ const level = Level.fatal;
 const color = level.defaultColor(); // Returns "97;41" (white on red)
 ```
 
-### brightColor (v0.1.5)
+### brightColor (v0.1.8)
 
 Returns the bright/bold color variant. Uses `Constants.Colors.Themes.bright`.
 
@@ -140,7 +140,7 @@ const level = Level.trace;
 const bright = level.brightColor(); // Returns "96;1" (bright cyan bold)
 ```
 
-### dimColor (v0.1.5)
+### dimColor (v0.1.8)
 
 Returns the dim color variant. Uses `Constants.Colors.Themes.dim`.
 
@@ -149,7 +149,7 @@ const level = Level.info;
 const dim = level.dimColor(); // Returns "37;2" (white dim)
 ```
 
-### underlineColor (v0.1.5)
+### underlineColor (v0.1.8)
 
 Returns the underline color variant. Uses `Constants.Colors.Themes.underlined`.
 
@@ -158,7 +158,7 @@ const level = Level.warning;
 const underline = level.underlineColor(); // Returns "33;4" (yellow underline)
 ```
 
-### color256 (v0.1.5)
+### color256 (v0.1.8)
 
 Returns the 256-color palette code. Uses `Constants.Colors.Themes.neon`.
 
@@ -176,12 +176,12 @@ pub const CustomLevel = struct {
     name: []const u8,           // Display name (e.g., "AUDIT")
     priority: u8,               // Numeric priority
     color: []const u8,          // ANSI color code
-    bright_color: ?[]const u8,  // Bright color variant (v0.1.5)
-    dim_color: ?[]const u8,     // Dim color variant (v0.1.5)
-    color_256: ?[]const u8,     // 256-color code (v0.1.5)
-    rgb_color: ?struct { r: u8, g: u8, b: u8 },  // RGB color (v0.1.5)
-    bg_color: ?[]const u8,      // Background color (v0.1.5)
-    style: ?[]const u8,         // Text style (v0.1.5)
+    bright_color: ?[]const u8,  // Bright color variant (v0.1.8)
+    dim_color: ?[]const u8,     // Dim color variant (v0.1.8)
+    color_256: ?[]const u8,     // 256-color code (v0.1.8)
+    rgb_color: ?struct { r: u8, g: u8, b: u8 },  // RGB color (v0.1.8)
+    bg_color: ?[]const u8,      // Background color (v0.1.8)
+    style: ?[]const u8,         // Text style (v0.1.8)
 };
 ```
 
@@ -199,7 +199,7 @@ try logger.customf("AUDIT", "User {s} logged in", .{"admin"}, @src());
 logger.removeCustomLevel("AUDIT");
 ```
 
-### Advanced CustomLevel Constructors (v0.1.5)
+### Advanced CustomLevel Constructors (v0.1.8)
 
 ```zig
 const CustomLevel = logly.CustomLevel;
@@ -227,7 +227,7 @@ const styled = CustomLevel.initStyled("STYLED", 45, "31", "1;4");
 const alert = CustomLevel.initWithBackground("ALERT", 50, "97", "41");
 ```
 
-### CustomLevel Methods (v0.1.5)
+### CustomLevel Methods (v0.1.8)
 
 ```zig
 const custom = CustomLevel.initFull("TEST", 42, "32", "92;1", "32;2", "38;5;46");
@@ -275,7 +275,7 @@ if (level1.priority() < level2.priority()) {
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     const allocator = gpa.allocator();
 
     const logger = try logly.Logger.init(allocator);

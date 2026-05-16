@@ -224,11 +224,11 @@ try rot.applyConfig(global_config.rotation);
 
 ### Rotation Decision Helpers
 
-#### `getRotationReason(self: *Rotation, file_ptr: *std.fs.File) ?RotationReason`
+#### `getRotationReason(self: *Rotation, file_ptr: *std.Io.File) ?RotationReason`
 
 Returns why rotation would occur right now (`interval`, `size`, or `interval_and_size`).
 
-#### `shouldRotate(self: *Rotation, file_ptr: *std.fs.File) bool`
+#### `shouldRotate(self: *Rotation, file_ptr: *std.Io.File) bool`
 
 Returns true when any rotation condition is currently met.
 
@@ -240,7 +240,7 @@ Returns remaining seconds until next interval rotation, or `null` if interval ro
 
 Returns the next rotated path without mutating internal state.
 
-#### `forceRotate(self: *Rotation, file_ptr: *std.fs.File) !void`
+#### `forceRotate(self: *Rotation, file_ptr: *std.Io.File) !void`
 
 Forces an immediate rotation regardless of interval or size checks.
 
@@ -289,7 +289,7 @@ pub const RotationConfig = struct {
 | `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
 | `file_prefix` | `?[]const u8` | `null` | Prefix for rotated file names |
 | `file_suffix` | `?[]const u8` | `null` | Suffix for rotated file names |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd v0.1.5+) |
+| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd v0.1.8+) |
 | `compression_level` | `CompressionLevel` | `.default` | Compression level |
 | `keep_original` | `bool` | `false` | Keep original after compression |
 | `compress_on_retention` | `bool` | `false` | Compress instead of delete |

@@ -129,7 +129,7 @@ const logly = @import("logly");
 const UpdateChecker = logly.UpdateChecker;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){}; 
+    var gpa = std.heap.DebugAllocator(.{}){}; 
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -169,11 +169,11 @@ pub fn main() !void {
 
 ## Recent Changes
 
-### v0.1.7
+### v0.1.8
 
-- Updated examples and version references to the latest release (`0.1.7`).
+- Updated examples and version references to the latest release (`0.1.8`).
 
-### v0.1.6
+### v0.1.8
 
 - Fixed a telemetry compilation issue: Resolved a compile-time error in the telemetry module (OTLP exporter) by removing an unnecessary discard of the `self` parameter in `writeOtlpSpan`. This ensures the telemetry feature compiles cleanly across targets and prevents build failures when telemetry is enabled.
 

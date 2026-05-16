@@ -64,7 +64,7 @@ fn udpServer() !void {
 // --- Main Example ---
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -76,7 +76,7 @@ pub fn main() !void {
     udp_thread.detach();
 
     // Give servers a moment to start
-    std.Thread.sleep(500 * std.time.ns_per_ms);
+    logly.Utils.sleepMs(500);
 
     // 2. Initialize logger
     var config = logly.Config.default();
@@ -169,7 +169,7 @@ pub fn main() !void {
     std.debug.print("\n--- Logs sent. Waiting for servers to print output... ---\n", .{});
 
     // Wait a bit for messages to be received/printed by servers
-    std.Thread.sleep(2 * std.time.ns_per_s);
+    logly.Utils.sleepMs(2000);
 
     // Demonstrate Syslog formatting with constants
     std.debug.print("\n--- Syslog Formatting Example ---\n", .{});

@@ -2,7 +2,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -53,7 +53,7 @@ pub fn main() !void {
 
     // Wait a bit for async logs to flush (since main exits immediately)
     // Using explicit cast to u64 to avoid integer overflow
-    std.Thread.sleep(@as(u64, 100) * std.time.ns_per_ms);
+    logly.Utils.sleepMs(100);
 
     std.debug.print("Done! Check logs/thread_pool_arena.log\n", .{});
 }

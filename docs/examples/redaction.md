@@ -22,7 +22,7 @@ const logly = @import("logly");
 const Redactor = logly.Redactor;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -164,13 +164,13 @@ defer allocator.free(message);
 4. **Layer defenses** - Use redaction with encryption and access controls
 5. **Document patterns** - Maintain list of redaction rules for compliance
 
-## New Features (v0.1.5)
+## New Features (v0.1.8)
  
  ### Improved Regex Engine
  
  Redaction now supports a production-ready regex-like engine for pattern matching (see [Redaction Guide](/guide/redaction) for details).
  
-## New Compliance Presets (v0.1.5)
+## New Compliance Presets (v0.1.8)
 
 ```zig
 const RedactionPresets = logly.RedactionPresets;

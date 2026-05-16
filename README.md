@@ -2,7 +2,7 @@
 <img src="https://github.com/user-attachments/assets/565fc3dc-dd2c-47a6-bab6-2f545c551f26" alt="logly logo" width="400" />
 
 <a href="https://muhammad-fiaz.github.io/logly.zig/"><img src="https://img.shields.io/badge/docs-muhammad--fiaz.github.io-blue" alt="Documentation"></a>
-<a href="https://ziglang.org/"><img src="https://img.shields.io/badge/Zig-0.15.1-orange.svg?logo=zig" alt="Zig Version"></a>
+<a href="https://ziglang.org/"><img src="https://img.shields.io/badge/Zig-0.16.0-orange.svg?logo=zig" alt="Zig Version"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig"><img src="https://img.shields.io/github/stars/muhammad-fiaz/logly.zig" alt="GitHub stars"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/issues"><img src="https://img.shields.io/github/issues/muhammad-fiaz/logly.zig" alt="GitHub issues"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/pulls"><img src="https://img.shields.io/github/issues-pr/muhammad-fiaz/logly.zig" alt="GitHub pull requests"></a>
@@ -43,12 +43,11 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-  - [Version 0.1.7](#version-017)
+    - [Version 0.1.8](#version-018)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
-  - [Method 2: Project Starter Template (Quick Start)](#method-2-project-starter-template-quick-start)
-  - [Method 3: Manual Configuration](#method-3-manual-configuration)
-  - [Method 4: Building from Source](#method-4-building-from-source)
+  - [Method 2: Manual Configuration](#method-2-manual-configuration)
+  - [Method 3: Building from Source](#method-3-building-from-source)
   - [Prebuilt Library](#prebuilt-library)
 - [Quick Start](#quick-start)
 - [Allocator Strategies (GPA + Arena)](#allocator-strategies-gpa--arena)
@@ -170,11 +169,13 @@ Before installing Logly, ensure you have the following:
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| **Zig** | 0.15.0+ | Download from [ziglang.org](https://ziglang.org/download/) |
+| **Zig** | 0.15.0+ or 0.16.0+ | Download from [ziglang.org](https://ziglang.org/download/) |
 | **Operating System** | Windows 10+, Linux, macOS | Cross-platform support |
 | **Terminal** | Any modern terminal | For colored output support |
 
 > Verify your Zig installation by running `zig version` in your terminal.
+> - For Zig 0.16.0+, use logly.zig version 0.1.8
+> - For Zig 0.15.0, use logly.zig version 0.1.7
 
 ---
 
@@ -207,7 +208,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.7
+### Version 0.1.8
 
 **Highlights:**
 
@@ -241,61 +242,44 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 The easiest way to add Logly to your project:
 
-Latest stable (`0.1.7`):
+**For Zig 0.16.0+ (Latest stable `0.1.8`):**
+
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
+```
+
+**For Zig 0.15.0 (Use `0.1.7`):**
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
 ```
+
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
-Previous stable (`0.1.6`):
-
-```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.6.tar.gz
-```
-This automatically adds the dependency with the correct hash to your `build.zig.zon`.
-
-or
-
-For Nightly builds, you can use the Git URL directly:
+**For Nightly builds:**
 
 ```bash
 zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
-
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
-### Method 2: Project Starter Template (Quick Start)
-
-Get started quickly with a pre-configured project template:
-
-**[Download Project Starter Example](https://download-directory.github.io/?url=https://github.com/muhammad-fiaz/logly.zig/tree/main/project-starter-example
-)**
-
-Or clone directly:
-```bash
-# Download and extract the starter template
-curl -L https://github.com/muhammad-fiaz/logly.zig/releases/latest/download/project-starter-example.zip -o logly-starter.zip
-unzip logly-starter.zip
-cd project-starter-example
-
-# Build and run
-zig build run
-```
-
-> [!NOTE]
-> **The starter template includes:**
-> - Pre-configured `build.zig` and `build.zig.zon`
-> - Example code demonstrating all major features
-> - Multiple sink configurations (console, file, rotation)
-> - Context binding and custom log levels
-> - JSON logging examples
-
-
-### Method 3: Manual Configuration
+### Method 2: Manual Configuration
 
 Add to your `build.zig.zon`:
+
+**For Zig 0.16.0+:**
+
+```zig
+.dependencies = .{
+    .logly = .{
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz",
+        .hash = "...", // you needed to add hash here :)
+    },
+},
+```
+
+**For Zig 0.15.0:**
 
 ```zig
 .dependencies = .{
@@ -320,7 +304,7 @@ const logly = b.dependency("logly", .{
 exe.root_module.addImport("logly", logly.module("logly"));
 ```
 
-### Method 4: Building from Source
+### Method 3: Building from Source
 
 Clone the repository and build Logly:
 
@@ -357,7 +341,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -391,12 +375,12 @@ Default behavior:
 
 - Logger allocation strategy is the allocator you pass to `Logger.init(...)` / `Logger.initWithConfig(...)`.
 - `Config.use_arena_allocator` defaults to `false`.
-- The recommended default in applications is `std.heap.GeneralPurposeAllocator`.
+- The recommended default in applications is `std.heap.DebugAllocator`.
 
-Use `GeneralPurposeAllocator` as a production-safe default with leak tracking:
+Use `DebugAllocator` as a production-safe default with leak tracking:
 
 ```zig
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
 const logger = try logly.Logger.init(gpa.allocator());
@@ -432,7 +416,7 @@ Field-vs-builder difference:
 - `config.use_arena_allocator = true` mutates your existing config variable.
 - `config = config.withArenaAllocator()` (or `withArenaAllocation()` / `withArena()`) returns a modified copy and requires reassignment.
 
-All examples in the `examples/` directory use `std.heap.GeneralPurposeAllocator` as the base allocator and then optionally enable logger arena scratch allocation per config.
+All examples in the `examples/` directory use `std.heap.DebugAllocator` as the base allocator and then optionally enable logger arena scratch allocation per config.
 
 When arena allocation is enabled, Logly automatically performs threshold-based arena resets between records to keep memory usage bounded while preserving high throughput.
 
@@ -639,7 +623,7 @@ Logly provides comprehensive OpenTelemetry support for distributed tracing, metr
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

@@ -27,13 +27,13 @@ var colorBufs: [8][32]u8 = undefined;
 /// current and future 32-bit / 64-bit architectures.
 ///
 /// Fixes: https://github.com/muhammad-fiaz/logly.zig/issues/11
-pub const AtomicUnsigned = std.meta.Int(.unsigned, @bitSizeOf(usize));
+pub const AtomicUnsigned = @Int(.unsigned, @bitSizeOf(usize));
 
 /// Architecture-dependent signed atomic integer type.
 ///
 /// Derived from native pointer width to keep signed counters aligned with
 /// platform word size across 32-bit and 64-bit targets.
-pub const AtomicSigned = std.meta.Int(.signed, @bitSizeOf(usize));
+pub const AtomicSigned = @Int(.signed, @bitSizeOf(usize));
 
 /// Native pointer-sized unsigned integer for the target architecture.
 pub const NativeUint = usize;
@@ -172,7 +172,7 @@ pub const TimeDefaults = struct {
 /// Complexity: O(1)
 pub const AsyncConstants = struct {
     /// Sleep duration when blocking on full queue.
-    pub const block_sleep_ns: u64 = 1 * std.time.ns_per_ms;
+    pub const block_sleep_ns: u64 = 1 * TimeConstants.ns_per_ms;
     /// Default batch size for async processing.
     pub const batch_size: usize = BufferSizes.async_batch;
 };
@@ -208,7 +208,7 @@ pub const ThreadDefaults = struct {
     /// Default stack size for worker threads.
     pub const stack_size: usize = 1024 * 1024; // 1MB
     /// Default wait timeout in nanoseconds.
-    pub const wait_timeout_ns: u64 = 100 * std.time.ns_per_ms;
+    pub const wait_timeout_ns: u64 = 100 * TimeConstants.ns_per_ms;
     /// Maximum concurrent tasks.
     pub const max_tasks: usize = 10000;
     /// Queue size for low resource environments.

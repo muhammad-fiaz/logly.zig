@@ -24,16 +24,16 @@ Comprehensive log file compression with multiple algorithms, streaming support, 
 | `decompress()` | `decode()`, `inflate()` | Decompress data |
 | `compressFile()` | `packFile()` | Compress a file |
 | `decompressFile()` | `unpackFile()` | Decompress a file |
-| `compressDirectory()` | `packDirectory()`, `archiveFolder()` | Compress directory (v0.1.5+) |
+| `compressDirectory()` | `packDirectory()`, `archiveFolder()` | Compress directory (v0.1.8+) |
 | `getStats()` | `statistics()` | Get compression statistics |
-| `resetStats()` | `clearStats()` | Reset statistics (v0.1.5+) |
-| `configure()` | `setConfig()`, `updateConfig()` | Update configuration (v0.1.5+) |
+| `resetStats()` | `clearStats()` | Reset statistics (v0.1.8+) |
+| `configure()` | `setConfig()`, `updateConfig()` | Update configuration (v0.1.8+) |
 | `shouldCompress()` | `needsCompression()` | Check if file needs compression |
-| `zstdCompression()` | `zstdDefault()` | Create zstd compressor (v0.1.5+) |
-| `zstdFast()` | `zstdSpeed()` | Create fast zstd compressor (v0.1.5+) |
-| `zstdBest()` | `zstdMax()` | Create best zstd compressor (v0.1.5+) |
+| `zstdCompression()` | `zstdDefault()` | Create zstd compressor (v0.1.8+) |
+| `zstdFast()` | `zstdSpeed()` | Create fast zstd compressor (v0.1.8+) |
+| `zstdBest()` | `zstdMax()` | Create best zstd compressor (v0.1.8+) |
 
-## Batch Compression Methods (v0.1.5+)
+## Batch Compression Methods (v0.1.8+)
 
 | Method | Description |
 |--------|-------------|
@@ -42,7 +42,7 @@ Comprehensive log file compression with multiple algorithms, streaming support, 
 | `compressOldest(dir, count)` | Compress N oldest files in directory |
 | `compressLargerThan(dir, size)` | Compress files larger than threshold |
 
-## Utility Methods (v0.1.5+)
+## Utility Methods (v0.1.8+)
 
 | Method | Description |
 |--------|-------------|
@@ -237,21 +237,21 @@ pub const CompressionAlgorithm = enum {
 };
 ```
 
-### Algorithm Comparison (v0.1.6+)
+### Algorithm Comparison (v0.1.8+)
 
 | Algorithm | Speed | Ratio | Best For |
 |-----------|-------|-------|----------|
-| `none` | ★★★★★ | - | Pass-through |
-| `deflate` | ★★★★ | ★★★ | General logs |
-| `zlib` | ★★★★ | ★★★ | HTTP/Web logs |
-| `gzip` | ★★★★ | ★★★ | File archives |
-| `zstd` | ★★★★★ | ★★★★ | High-perf logging |
-| `lzma` | ★★ | ★★★★★ | Long-term archival |
-| `lzma2` | ★★ | ★★★★★ | Large files |
-| `xz` | ★★ | ★★★★★ | Distribution |
-| `tar_gz` | ★★★ | ★★★★ | Multi-file archives |
-| `zip` | ★★★★ | ★★★ | Cross-platform |
-| `lz4` | ★★★★★ | ★★ | Real-time logging |
+| `none` | â˜…â˜…â˜…â˜…â˜… | - | Pass-through |
+| `deflate` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | General logs |
+| `zlib` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | HTTP/Web logs |
+| `gzip` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | File archives |
+| `zstd` | â˜…â˜…â˜…â˜…â˜… | â˜…â˜…â˜…â˜… | High-perf logging |
+| `lzma` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Long-term archival |
+| `lzma2` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Large files |
+| `xz` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Distribution |
+| `tar_gz` | â˜…â˜…â˜… | â˜…â˜…â˜…â˜… | Multi-file archives |
+| `zip` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | Cross-platform |
+| `lz4` | â˜…â˜…â˜…â˜…â˜… | â˜…â˜… | Real-time logging |
 
 ## CompressionConfig Preset Methods
 
@@ -293,7 +293,7 @@ The `CompressionConfig` struct provides preset factory methods for minimal confi
 | `production()` | Production-ready (balanced, background, checksums) |
 | `development()` | Development mode (fast, keep originals) |
 
-### Zstd Presets (v0.1.5+)
+### Zstd Presets (v0.1.8+)
 
 Zstandard (zstd) compression provides excellent compression ratios with very fast decompression. It's particularly well-suited for log files and streaming scenarios.
 
@@ -308,7 +308,7 @@ Zstandard (zstd) compression provides excellent compression ratios with very fas
 | `zstdProduction()` | Production zstd with background processing |
 | `zstdWithLevel(level)` | Custom zstd level (1-22) |
 
-### Custom Zstd Levels (v0.1.5+)
+### Custom Zstd Levels (v0.1.8+)
 
 Zstd supports compression levels from 1 to 22. Higher levels provide better compression but slower speed.
 
@@ -425,10 +425,10 @@ The `Config` struct provides quick-enable methods for compression:
 | `withBackgroundCompression()` | Background thread |
 | `withLogCompression()` | Log-optimized |
 | `withProductionCompression()` | Production-ready |
-| `withZstdCompression()` | Default zstd compression (v0.1.5+) |
-| `withZstdFastCompression()` | Fast zstd compression (v0.1.5+) |
-| `withZstdBestCompression()` | Best zstd compression (v0.1.5+) |
-| `withZstdProductionCompression()` | Production zstd (v0.1.5+) |
+| `withZstdCompression()` | Default zstd compression (v0.1.8+) |
+| `withZstdFastCompression()` | Fast zstd compression (v0.1.8+) |
+| `withZstdBestCompression()` | Best zstd compression (v0.1.8+) |
+| `withZstdProductionCompression()` | Production zstd (v0.1.8+) |
 
 **Usage Examples:**
 
@@ -439,7 +439,7 @@ var config = logly.Config.default().withCompressionEnabled();
 // Production-ready in one line
 var config2 = logly.Config.default().withProductionCompression();
 
-// Zstd compression with one line (v0.1.5+)
+// Zstd compression with one line (v0.1.8+)
 var config3 = logly.Config.default().withZstdCompression();
 
 // Chain with other settings
@@ -471,10 +471,10 @@ The `Compression` struct provides preset factory methods for direct instantiatio
 | `development(allocator)` | Development mode |
 | `background(allocator)` | Background thread |
 | `streaming(allocator)` | Streaming mode |
-| `zstdCompression(allocator)` | Default zstd (v0.1.5+) |
-| `zstdFast(allocator)` | Fast zstd (v0.1.5+) |
-| `zstdBest(allocator)` | Best zstd (v0.1.5+) |
-| `zstdProduction(allocator)` | Production zstd (v0.1.5+) |
+| `zstdCompression(allocator)` | Default zstd (v0.1.8+) |
+| `zstdFast(allocator)` | Fast zstd (v0.1.8+) |
+| `zstdBest(allocator)` | Best zstd (v0.1.8+) |
+| `zstdProduction(allocator)` | Production zstd (v0.1.8+) |
 
 **Usage Examples:**
 
@@ -485,7 +485,7 @@ defer compressor.deinit();
 
 try compressor.compressFile("logs/app.log", null);
 
-// Zstd compression instance (v0.1.5+)
+// Zstd compression instance (v0.1.8+)
 var zstd_compressor = logly.Compression.zstdCompression(allocator);
 defer zstd_compressor.deinit();
 
@@ -502,7 +502,7 @@ try zstd_compressor.compressFile("logs/app.log", null);
 | `zlib` | 3-5x | ~180 MB/s | ~280 MB/s | Network transport |
 | `raw_deflate` | 3-5x | ~220 MB/s | ~320 MB/s | Custom headers |
 | `gzip` | 3-5x | ~190 MB/s | ~290 MB/s | Standard file compatibility |
-| `zstd` | 3-6x | ~400 MB/s | ~1400 MB/s | High-performance, streaming (v0.1.5+) |
+| `zstd` | 3-6x | ~400 MB/s | ~1400 MB/s | High-performance, streaming (v0.1.8+) |
 
 
 ### CompressionLevel
@@ -872,7 +872,7 @@ const count = try compression.compressDirectory("logs/");
 std.debug.print("Compressed {d} files\n", .{count});
 ```
 
-### compressBatch (v0.1.5+)
+### compressBatch (v0.1.8+)
 
 Compresses multiple files in a batch operation.
 
@@ -893,7 +893,7 @@ const count = compression.compressBatch(files);
 std.debug.print("Compressed {d} files\n", .{count});
 ```
 
-### compressPattern (v0.1.5+)
+### compressPattern (v0.1.8+)
 
 Compresses files matching a glob pattern in a directory.
 
@@ -916,7 +916,7 @@ std.debug.print("Compressed {d} log files\n", .{count});
 const json_count = try compression.compressPattern("data/", "*.json");
 ```
 
-### compressOldest (v0.1.5+)
+### compressOldest (v0.1.8+)
 
 Compresses the N oldest files in a directory based on modification time.
 
@@ -936,7 +936,7 @@ const count = try compression.compressOldest("logs/", 5);
 std.debug.print("Compressed {d} oldest files\n", .{count});
 ```
 
-### compressLargerThan (v0.1.5+)
+### compressLargerThan (v0.1.8+)
 
 Compresses files larger than a specified size threshold.
 
@@ -954,7 +954,7 @@ std.debug.print("Compressed {d} large files\n", .{count});
 const large_count = try compression.compressLargerThan("logs/", 10 * 1024 * 1024);
 ```
 
-## Utility Methods (v0.1.5+)
+## Utility Methods (v0.1.8+)
 
 ### estimateCompressedSize
 
@@ -1026,17 +1026,18 @@ pub fn compressStream(self: *Compression, reader: anytype, writer: anytype) !voi
 
 **Features:**
 - Low memory footprint (no large buffers)
-- Compatible with `std.io.Reader` and `std.io.Writer`
+- Compatible with `std.Io.Reader` and `std.Io.Writer`
 - Supports GZIP and Deflate algorithms
 
 **Example:**
 
 ```zig
-var input_stream = std.io.fixedBufferStream(data);
-var output_buffer = std.ArrayList(u8).init(allocator);
-defer output_buffer.deinit();
+var input_stream = std.Io.Reader.fixed(data);
+var output_buffer: std.ArrayList(u8) = .empty;
+defer output_buffer.deinit(allocator);
 
-try compression.compressStream(input_stream.reader(), output_buffer.writer(allocator));
+var output_writer = logly.Utils.ArrayListWriter.init(&output_buffer, allocator);
+try compression.compressStream(&input_stream, &output_writer.writer);
 ```
 
 ### decompressStream
@@ -1050,11 +1051,12 @@ pub fn decompressStream(self: *Compression, reader: anytype, writer: anytype) !v
 **Example:**
 
 ```zig
-var input_stream = std.io.fixedBufferStream(compressed_data);
-var output_buffer = std.ArrayList(u8).init(allocator);
-defer output_buffer.deinit();
+var input_stream = std.Io.Reader.fixed(compressed_data);
+var output_buffer: std.ArrayList(u8) = .empty;
+defer output_buffer.deinit(allocator);
 
-try compression.decompressStream(input_stream.reader(), output_buffer.writer(allocator));
+var output_writer = logly.Utils.ArrayListWriter.init(&output_buffer, allocator);
+try compression.decompressStream(&input_stream, &output_writer.writer);
 ```
 
 ### shouldCompress
@@ -1242,9 +1244,9 @@ const size_config = CompressionPresets.onSize(50); // 50MB threshold
 
 ### Thread Safety
 
-- ✅ Thread-safe: All public methods protected by mutex
-- ✅ Atomic statistics: Lock-free reads
-- ⚠️ Callbacks: Must be thread-safe (called under lock)
+- âœ… Thread-safe: All public methods protected by mutex
+- âœ… Atomic statistics: Lock-free reads
+- âš ï¸ Callbacks: Must be thread-safe (called under lock)
 
 ### Performance Tips
 
@@ -1312,7 +1314,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -1335,7 +1337,7 @@ pub fn main() !void {
     defer if (result.output_path) |p| allocator.free(p);
 
     if (result.success) {
-        std.debug.print("✓ Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});
+        std.debug.print("âœ“ Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});
         
         // Get statistics
         const stats = compression.getStats();

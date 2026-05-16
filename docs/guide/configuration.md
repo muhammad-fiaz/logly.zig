@@ -18,15 +18,15 @@ The `Config` struct is the primary interface for global settings. You can start 
 ```zig
 var config = logly.Config.default();
 
-// 🎚️ Global controls
+// ðŸŽšï¸ Global controls
 config.global_color_display = true;
 config.global_console_display = true;
 config.global_file_storage = true;
 
-// 🔍 Log level
+// ðŸ” Log level
 config.level = .debug;
 
-// 👁️ Display options
+// ðŸ‘ï¸ Display options
 config.show_time = true;
 config.show_module = true;
 config.show_function = false;
@@ -35,12 +35,12 @@ config.show_lineno = true;   // Pinpoint the exact line
 config.include_hostname = true; // Add hostname to logs
 config.include_pid = true;      // Add process ID
 
-// 📝 Output format
+// ðŸ“ Output format
 config.json = false;
 config.pretty_json = false;
 config.color = true;
 
-// ⚡ Features
+// âš¡ Features
 config.enable_callbacks = false;  // Enable only when using callbacks
 config.enable_exception_handling = true;
 
@@ -119,10 +119,10 @@ config.telemetry = logly.TelemetryConfig.development();
 
 Notes:
 - `span_processor_type` semantics:
-  - `.simple` — Completed spans are kept pending until you explicitly call `telemetry.exportSpans()` or `telemetry.flush()`. Use this when you want to control export timing (e.g., at request boundaries).
-  - `.batch` — Spans are buffered and automatically exported when `batch_size` or `batch_timeout_ms` thresholds are reached.
+  - `.simple` â€” Completed spans are kept pending until you explicitly call `telemetry.exportSpans()` or `telemetry.flush()`. Use this when you want to control export timing (e.g., at request boundaries).
+  - `.batch` â€” Spans are buffered and automatically exported when `batch_size` or `batch_timeout_ms` thresholds are reached.
 - Default telemetry values (batch size, timeouts, headers) are centralized in `Constants.TelemetryDefaults`.
-- v0.1.6: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) so telemetry builds cleanly across targets.
+- v0.1.8: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) so telemetry builds cleanly across targets.
 
 ### Thread Pool Configuration
 
@@ -240,7 +240,7 @@ You can also run your application/request scratch allocations in your own arena 
 ```zig
 const std = @import("std");
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
 var app_arena = std.heap.ArenaAllocator.init(gpa.allocator());
@@ -707,7 +707,7 @@ The Rules System provides guided diagnostics and can be customized with specific
 var config = logly.Config.default();
 config.rules.enabled = true;
 // Define custom symbols (supports Emoji if terminal allows)
-config.rules.symbols.error_analysis = "🛑 Cause:";
+config.rules.symbols.error_analysis = "ðŸ›‘ Cause:";
 ```
 
 ## Advanced Features

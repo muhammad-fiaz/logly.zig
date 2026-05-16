@@ -1,8 +1,8 @@
 .{
     .name = .logly,
-    .version = "0.1.7",
+    .version = "0.1.8",
     .fingerprint = 0x54acba927bcb9891,
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zstd = .{
             .url = "git+https://github.com/muhammad-fiaz/zstd.zig.git#4f0fc73e52787d1dab0620412516e6ac9cc8f38c",

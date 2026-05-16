@@ -220,7 +220,7 @@ pub const Formatter = struct {
     /// Formatter statistics.
     stats: FormatterStats = .{},
     /// Mutex for thread-safe operations.
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
 
     /// Cached hostname of the current machine.
     hostname: ?[]const u8 = null,
@@ -520,43 +520,43 @@ pub const Formatter = struct {
 
     /// Sets the callback for format completion.
     pub fn setFormatCompleteCallback(self: *Formatter, callback: *const fn (u32, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_format_complete = callback;
     }
 
     /// Sets the callback for JSON formatting.
     pub fn setJsonFormatCallback(self: *Formatter, callback: *const fn (*const Record, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_json_format = callback;
     }
 
     /// Sets the callback for custom formatting.
     pub fn setCustomFormatCallback(self: *Formatter, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_custom_format = callback;
     }
 
     /// Sets the callback for format errors.
     pub fn setErrorCallback(self: *Formatter, callback: *const fn ([]const u8) void) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.on_format_error = callback;
     }
 
     /// Sets a custom color theme.
     pub fn setTheme(self: *Formatter, theme: Theme) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
         self.theme = theme;
     }
 
     /// Returns formatter statistics.
     pub fn getStats(self: *Formatter) FormatterStats {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         return self.stats;
     }
@@ -605,8 +605,8 @@ pub const Formatter = struct {
             _ = elapsed;
         }
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
 
         if (self.configIsJson(config)) {
             const res = try self.formatJsonWithAllocator(record, config, scratch_allocator);
@@ -614,9 +614,9 @@ pub const Formatter = struct {
             return res;
         }
 
-        var buf: std.ArrayList(u8) = .empty;
-        errdefer buf.deinit(alloc);
-        const writer = buf.writer(alloc);
+        var buf = std.Io.Writer.Allocating.init(alloc);
+        errdefer buf.deinit();
+        const writer = &buf.writer;
 
         if (self.configIsCustom(config)) {
             _ = self.stats.custom_formats.fetchAdd(1, .monotonic);
@@ -625,10 +625,10 @@ pub const Formatter = struct {
         try self.formatToWriter(writer, record, config);
 
         if (self.on_format_complete) |cb| {
-            cb(0, buf.items.len);
+            cb(0, buf.written().len);
         }
 
-        const res = try buf.toOwnedSlice(alloc);
+        const res = try buf.toOwnedSlice();
         bytes_formatted = res.len;
         return res;
     }
@@ -655,11 +655,11 @@ pub const Formatter = struct {
     /// Formats a timestamp string using an optional scratch allocator.
     pub fn formatTimestampWithAllocator(self: *Formatter, timestamp_ms: i64, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
-        var buf: std.ArrayList(u8) = .empty;
-        errdefer buf.deinit(alloc);
+        var buf = std.Io.Writer.Allocating.init(alloc);
+        errdefer buf.deinit();
 
-        try self.writeTimestamp(buf.writer(alloc), timestamp_ms, config);
-        return buf.toOwnedSlice(alloc);
+        try self.writeTimestamp(&buf.writer, timestamp_ms, config);
+        return buf.toOwnedSlice();
     }
 
     /// Formats a log record directly to a writer.
@@ -830,19 +830,8 @@ pub const Formatter = struct {
 
                     for (st.instruction_addresses[0..count]) |addr| {
                         if (self.debug_info) |di| {
-                            // Attempt to get module and symbol
-                            // Note: getSymbolAtAddress allocates unless we provide a buffer,
-                            // but here it uses di.allocator which is typically gpa
-                            if (di.getModuleForAddress(addr) catch null) |module| {
-                                if (module.getSymbolAtAddress(di.allocator, addr) catch null) |symbol| {
-                                    if (symbol.source_location) |sl| {
-                                        try writer.print("  {s} ({s}:{d})\n", .{ symbol.name, sl.file_name, sl.line });
-                                    } else {
-                                        try writer.print("  {s}\n", .{symbol.name});
-                                    }
-                                } else {
-                                    try writer.print("  0x{x}\n", .{addr});
-                                }
+                            if (di.getModuleName(Utils.io(), addr) catch null) |module_name| {
+                                try writer.print("  {s}:0x{x}\n", .{ module_name, addr });
                             } else {
                                 try writer.print("  0x{x}\n", .{addr});
                             }
@@ -1006,18 +995,18 @@ pub const Formatter = struct {
     /// Complexity: O(N)
     pub fn formatJsonWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
-        var buf: std.ArrayList(u8) = .empty;
-        errdefer buf.deinit(alloc);
-        const writer = buf.writer(alloc);
+        var buf = std.Io.Writer.Allocating.init(alloc);
+        errdefer buf.deinit();
+        const writer = &buf.writer;
         try self.formatJsonToWriter(writer, record, config);
 
         _ = self.stats.json_formats.fetchAdd(1, .monotonic);
 
         if (self.on_json_format) |cb| {
-            cb(record, buf.items.len);
+            cb(record, buf.written().len);
         }
 
-        return buf.toOwnedSlice(alloc);
+        return buf.toOwnedSlice();
     }
 
     /// Formats a log record as JSON directly to a writer.
@@ -1220,16 +1209,8 @@ pub const Formatter = struct {
                     if (!first_addr) try writer.writeAll(", ");
 
                     if (self.debug_info) |di| {
-                        if (di.getModuleForAddress(addr) catch null) |module| {
-                            if (module.getSymbolAtAddress(di.allocator, addr) catch null) |symbol| {
-                                if (symbol.source_location) |sl| {
-                                    try writer.print("\"{s} ({s}:{d})\"", .{ symbol.name, sl.file_name, sl.line });
-                                } else {
-                                    try writer.print("\"{s}\"", .{symbol.name});
-                                }
-                            } else {
-                                try writer.print("\"{x}\"", .{addr});
-                            }
+                        if (di.getModuleName(Utils.io(), addr) catch null) |module_name| {
+                            try writer.print("\"{s}:0x{x}\"", .{ module_name, addr });
                         } else {
                             try writer.print("\"{x}\"", .{addr});
                         }
@@ -1493,10 +1474,9 @@ pub const FormatterPresets = struct {
 
 /// Formats an offset suffix for test assertions.
 fn formatOffsetSuffixForTest(buf: []u8, offset_minutes: i16) ![]const u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    try Utils.writeUtcOffset(fbs.writer(), offset_minutes);
-
-    return fbs.getWritten();
+    var writer = std.Io.Writer.fixed(buf);
+    try Utils.writeUtcOffset(&writer, offset_minutes);
+    return buf[0..writer.end];
 }
 
 test "formatter ISO8601 UTC uses Z suffix" {
@@ -1512,11 +1492,11 @@ test "formatter ISO8601 UTC uses Z suffix" {
     config.time_format = Config.TimeFormat.iso8601;
     config.timezone = .utc;
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Z\"") != null);
+    try formatter.formatJsonToWriter(&buf.writer, &record, config);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "Z\"") != null);
 }
 
 test "formatter ISO8601 local uses local offset suffix" {
@@ -1532,17 +1512,17 @@ test "formatter ISO8601 local uses local offset suffix" {
     config.time_format = Config.TimeFormat.iso8601;
     config.timezone = .local;
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+    try formatter.formatJsonToWriter(&buf.writer, &record, config);
 
     const offset_minutes = Utils.localUtcOffsetMinutes(record.timestamp);
     var expected_offset_buf: [6]u8 = undefined;
     const expected_offset = try formatOffsetSuffixForTest(&expected_offset_buf, offset_minutes);
 
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_offset) != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Z\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), expected_offset) != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "Z\"") == null);
 }
 
 test "formatter RFC3339 UTC uses +00:00 suffix" {
@@ -1558,11 +1538,11 @@ test "formatter RFC3339 UTC uses +00:00 suffix" {
     config.time_format = Config.TimeFormat.rfc3339;
     config.timezone = .utc;
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "+00:00\"") != null);
+    try formatter.formatJsonToWriter(&buf.writer, &record, config);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "+00:00\"") != null);
 }
 
 test "formatter RFC3339 local uses local offset suffix" {
@@ -1578,16 +1558,16 @@ test "formatter RFC3339 local uses local offset suffix" {
     config.time_format = Config.TimeFormat.rfc3339;
     config.timezone = .local;
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+    try formatter.formatJsonToWriter(&buf.writer, &record, config);
 
     const offset_minutes = Utils.localUtcOffsetMinutes(record.timestamp);
     var expected_offset_buf: [6]u8 = undefined;
     const expected_offset = try formatOffsetSuffixForTest(&expected_offset_buf, offset_minutes);
 
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_offset) != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), expected_offset) != null);
 }
 
 test "formatter unix and unix_ms remain numeric" {
@@ -1603,22 +1583,22 @@ test "formatter unix and unix_ms remain numeric" {
     unix_config.time_format = Config.TimeFormat.unix;
     unix_config.timezone = .local;
 
-    var unix_buf: std.ArrayList(u8) = .{};
-    defer unix_buf.deinit(allocator);
+    var unix_buf = std.Io.Writer.Allocating.init(allocator);
+    defer unix_buf.deinit();
 
-    try formatter.formatJsonToWriter(unix_buf.writer(allocator), &record, unix_config);
-    try std.testing.expect(std.mem.indexOf(u8, unix_buf.items, "\"timestamp\":1700000000") != null);
+    try formatter.formatJsonToWriter(&unix_buf.writer, &record, unix_config);
+    try std.testing.expect(std.mem.indexOf(u8, unix_buf.written(), "\"timestamp\":1700000000") != null);
 
     var unix_ms_config = Config{};
     unix_ms_config.time_format = Config.TimeFormat.unix_ms;
     unix_ms_config.timezone = .local;
 
-    var unix_ms_buf: std.ArrayList(u8) = .{};
-    defer unix_ms_buf.deinit(allocator);
+    var unix_ms_buf = std.Io.Writer.Allocating.init(allocator);
+    defer unix_ms_buf.deinit();
 
-    try formatter.formatJsonToWriter(unix_ms_buf.writer(allocator), &record, unix_ms_config);
-    try std.testing.expect(std.mem.indexOf(u8, unix_ms_buf.items, "\"timestamp\":1700000000123") != null);
-    try std.testing.expect(std.mem.indexOf(u8, unix_ms_buf.items, "\"timestamp\":\"1700000000123\"") == null);
+    try formatter.formatJsonToWriter(&unix_ms_buf.writer, &record, unix_ms_config);
+    try std.testing.expect(std.mem.indexOf(u8, unix_ms_buf.written(), "\"timestamp\":1700000000123") != null);
+    try std.testing.expect(std.mem.indexOf(u8, unix_ms_buf.written(), "\"timestamp\":\"1700000000123\"") == null);
 }
 
 test "formatter default time format alias maps to configured default pattern" {
@@ -1634,13 +1614,13 @@ test "formatter default time format alias maps to configured default pattern" {
     config.timezone = .utc;
     config.time_format = Config.TimeFormat.default_alias;
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+    try formatter.formatJsonToWriter(&buf.writer, &record, config);
 
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\"timestamp\":\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "default") == null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "\"timestamp\":\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "default") == null);
 }
 
 test "formatter custom pattern supports timezone tokens" {
@@ -1656,22 +1636,22 @@ test "formatter custom pattern supports timezone tokens" {
     config.timezone = .local;
     config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ ZZ";
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
+    try formatter.formatJsonToWriter(&buf.writer, &record, config);
 
     const offset_minutes = Utils.localUtcOffsetMinutes(record.timestamp);
     var expected_colon_buf: [6]u8 = undefined;
     const expected_colon = try formatOffsetSuffixForTest(&expected_colon_buf, offset_minutes);
 
     var expected_compact_buf: [5]u8 = undefined;
-    var compact_fbs = std.io.fixedBufferStream(&expected_compact_buf);
-    try Utils.writeUtcOffsetCompact(compact_fbs.writer(), offset_minutes);
-    const expected_compact = compact_fbs.getWritten();
+    var compact_writer = std.Io.Writer.fixed(&expected_compact_buf);
+    try Utils.writeUtcOffsetCompact(&compact_writer, offset_minutes);
+    const expected_compact = expected_compact_buf[0..compact_writer.end];
 
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_colon) != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, expected_compact) != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), expected_colon) != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), expected_compact) != null);
 }
 
 test "formatter timestamp helper formats numeric and textual values" {
@@ -1708,11 +1688,11 @@ test "formatter plain text" {
     record.module = "test_mod";
     record.timestamp = 1700000000000;
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatToWriter(buf.writer(allocator), &record, Config{});
-    const output_str = buf.items;
+    try formatter.formatToWriter(&buf.writer, &record, Config{});
+    const output_str = buf.written();
 
     try std.testing.expect(std.mem.indexOf(u8, output_str, "INFO") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "test_mod") != null);
@@ -1729,11 +1709,11 @@ test "formatter json" {
     record.module = "api";
     record.timestamp = 1700000000000;
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, Config{});
-    const output_str = buf.items;
+    try formatter.formatJsonToWriter(&buf.writer, &record, Config{});
+    const output_str = buf.written();
 
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"level\":\"ERROR\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"message\":\"Error occurred\"") != null);
@@ -1757,11 +1737,11 @@ test "formatter json distributed fields" {
     config.distributed.service_name = "test-service";
     config.distributed.region = "us-east-1";
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
 
-    try formatter.formatJsonToWriter(buf.writer(allocator), &record, config);
-    const output_str = buf.items;
+    try formatter.formatJsonToWriter(&buf.writer, &record, config);
+    const output_str = buf.written();
 
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"service\":\"test-service\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "\"region\":\"us-east-1\"") != null);

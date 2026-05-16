@@ -24,7 +24,7 @@ const std = @import("std");
 const logly = @import("logly");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -96,4 +96,4 @@ zig build run-basic
 
 ## Related
 
-- [Allocator Strategies Example](allocator-strategies.md) - Default GeneralPurposeAllocator workflow and optional arena allocation.
+- [Allocator Strategies Example](allocator-strategies.md) - Default DebugAllocator workflow and optional arena allocation.

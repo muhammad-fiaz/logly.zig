@@ -158,9 +158,9 @@ pub fn formatSyslog(
     const priority = (@as(u8, @intFromEnum(facility)) * 8) + @as(u8, @intFromEnum(severity));
     const timestamp = Utils.currentSeconds();
 
-    var res = std.ArrayList(u8){};
-    errdefer res.deinit(allocator);
-    const w = res.writer(allocator);
+    var res = std.Io.Writer.Allocating.init(allocator);
+    errdefer res.deinit();
+    const w = &res.writer;
 
     try w.writeByte('<');
     try Utils.writeInt(w, priority);
@@ -174,7 +174,7 @@ pub fn formatSyslog(
     try w.writeAll(message);
     try w.writeByte('\n');
 
-    return res.toOwnedSlice(allocator);
+    return res.toOwnedSlice();
 }
 
 /// Alias for formatSyslog
@@ -182,8 +182,8 @@ pub const syslogFormat = formatSyslog;
 pub const formatAsSyslog = formatSyslog;
 
 /// Connects to a TCP host specified by a URI string (e.g., "tcp://127.0.0.1:8080").
-/// Returns a std.net.Stream.
-pub fn connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.net.Stream {
+/// Returns a std.Io.net.Stream.
+pub fn connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.Io.net.Stream {
     if (!std.mem.startsWith(u8, uri, "tcp://")) return NetworkError.InvalidUri;
     const address_part = uri[6..];
 
@@ -192,7 +192,9 @@ pub fn connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.net.Stream
         const port_str = address_part[colon_idx + 1 ..];
         const port = std.fmt.parseInt(u16, port_str, 10) catch return NetworkError.InvalidUri;
 
-        const stream = std.net.tcpConnectToHost(allocator, host, port) catch return NetworkError.ConnectionFailed;
+        _ = allocator;
+        const host_name = std.Io.net.HostName.init(host) catch return NetworkError.InvalidUri;
+        const stream = host_name.connect(Utils.io(), port, .{ .mode = .stream, .protocol = .tcp }) catch return NetworkError.ConnectionFailed;
         _ = stats.connections_made.fetchAdd(1, .monotonic);
         return stream;
     }
@@ -205,7 +207,7 @@ pub const connect = connectTcp;
 
 /// Creates a UDP socket connected to a host specified by a URI string (e.g., "udp://127.0.0.1:514").
 /// Returns a tuple of (socket, address).
-pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { socket: std.posix.socket_t, address: std.net.Address } {
+pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { socket: std.Io.net.Socket, address: std.Io.net.IpAddress } {
     if (!std.mem.startsWith(u8, uri, "udp://")) return NetworkError.InvalidUri;
     const address_part = uri[6..];
 
@@ -214,12 +216,14 @@ pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { 
         const port_str = address_part[colon_idx + 1 ..];
         const port = std.fmt.parseInt(u16, port_str, 10) catch return NetworkError.InvalidUri;
 
-        const list = std.net.getAddressList(allocator, host, port) catch return NetworkError.AddressResolutionError;
-        defer list.deinit();
-
-        if (list.addrs.len > 0) {
-            const address = list.addrs[0];
-            const socket = std.posix.socket(address.any.family, std.posix.SOCK.DGRAM, 0) catch return NetworkError.SocketCreationError;
+        _ = allocator;
+        const address = std.Io.net.IpAddress.parse(host, port) catch return NetworkError.AddressResolutionError;
+        {
+            const local_address = switch (address) {
+                .ip4 => std.Io.net.IpAddress.parse("0.0.0.0", 0) catch unreachable,
+                .ip6 => std.Io.net.IpAddress.parse("::", 0) catch unreachable,
+            };
+            const socket = local_address.bind(Utils.io(), .{ .mode = .dgram, .protocol = .udp }) catch return NetworkError.SocketCreationError;
             _ = stats.connections_made.fetchAdd(1, .monotonic);
             return .{ .socket = socket, .address = address };
         }
@@ -231,12 +235,12 @@ pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { 
 pub const udpSocket = createUdpSocket;
 
 /// Sends data via UDP socket.
-pub fn sendUdp(socket: std.posix.socket_t, address: std.net.Address, data: []const u8) !void {
-    const sent = std.posix.sendto(socket, data, 0, &address.any, address.getOsSockLen()) catch {
+pub fn sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: []const u8) !void {
+    socket.send(Utils.io(), &address, data) catch {
         _ = stats.errors.fetchAdd(1, .monotonic);
         return NetworkError.SendFailed;
     };
-    _ = stats.bytes_sent.fetchAdd(@truncate(sent), .monotonic);
+    _ = stats.bytes_sent.fetchAdd(@truncate(data.len), .monotonic);
     _ = stats.messages_sent.fetchAdd(1, .monotonic);
 }
 
@@ -247,7 +251,7 @@ pub const sendToUdp = sendUdp;
 /// Fetches a JSON response from a URL.
 /// Returns the parsed JSON value (caller must deinit).
 pub fn fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value) {
-    var client = http.Client{ .allocator = allocator };
+    var client = http.Client{ .allocator = allocator, .io = Utils.io() };
     defer client.deinit();
 
     var req = try client.request(.GET, try std.Uri.parse(url), .{
@@ -279,7 +283,8 @@ pub fn fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const
     var body = std.ArrayList(u8).initCapacity(allocator, Constants.BufferSizes.message) catch return NetworkError.ReadError;
     defer body.deinit(allocator);
 
-    const writer = body.writer(allocator);
+    var body_writer = Utils.ArrayListWriter.init(&body, allocator);
+    const writer = &body_writer.writer;
     var buf: [Constants.BufferSizes.message]u8 = undefined;
     while (true) {
         const n = reader.readSliceShort(&buf) catch return NetworkError.ReadError;
@@ -364,36 +369,29 @@ pub const LogServer = struct {
     pub const listenUdp = startUdp;
 
     fn tcpWorker(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) void {
-        const address = std.net.Address.parseIp("0.0.0.0", port) catch return;
-        const tpe: u32 = std.posix.SOCK.STREAM;
-        const protocol = std.posix.IPPROTO.TCP;
-
-        const listener = std.posix.socket(address.any.family, tpe, protocol) catch return;
-        defer std.posix.close(listener);
-
-        std.posix.setsockopt(listener, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1))) catch {};
-        std.posix.bind(listener, &address.any, address.getOsSockLen()) catch return;
-        std.posix.listen(listener, 128) catch return;
+        const io = Utils.io();
+        const address = std.Io.net.IpAddress.parse("0.0.0.0", port) catch return;
+        var server = address.listen(io, .{ .reuse_address = true }) catch return;
+        defer server.deinit(io);
 
         while (self.running.load(.monotonic)) {
-            var client_address: std.net.Address = undefined;
-            var client_address_len: std.posix.socklen_t = @sizeOf(std.net.Address);
+            const stream = server.accept(io) catch continue;
 
-            const socket = std.posix.accept(listener, &client_address.any, &client_address_len, 0) catch continue;
-
-            const thread = std.Thread.spawn(.{}, tcpClientHandler, .{ self, socket, callback }) catch {
-                std.posix.close(socket);
+            const thread = std.Thread.spawn(.{}, tcpClientHandler, .{ self, stream, callback }) catch {
+                stream.close(io);
                 continue;
             };
             thread.detach();
         }
     }
 
-    fn tcpClientHandler(self: *LogServer, socket: std.posix.socket_t, callback: *const fn ([]const u8) void) void {
-        defer std.posix.close(socket);
+    fn tcpClientHandler(self: *LogServer, stream: std.Io.net.Stream, callback: *const fn ([]const u8) void) void {
+        const io = Utils.io();
+        defer stream.close(io);
         var buf: [Constants.NetworkConstants.tcp_buffer_size]u8 = undefined;
+        var reader = stream.reader(io, &buf);
         while (self.running.load(.monotonic)) {
-            const read = std.posix.recv(socket, &buf, 0) catch break;
+            const read = reader.interface.readSliceShort(&buf) catch break;
             if (read == 0) break;
             _ = self.messages_received.fetchAdd(1, .monotonic);
             callback(buf[0..read]);
@@ -401,22 +399,17 @@ pub const LogServer = struct {
     }
 
     fn udpWorker(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) void {
-        const address = std.net.Address.parseIp("0.0.0.0", port) catch return;
-        const socket = std.posix.socket(address.any.family, std.posix.SOCK.DGRAM, std.posix.IPPROTO.UDP) catch return;
-        defer std.posix.close(socket);
-
-        std.posix.setsockopt(socket, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1))) catch {};
-        std.posix.bind(socket, &address.any, address.getOsSockLen()) catch return;
+        const io = Utils.io();
+        const address = std.Io.net.IpAddress.parse("0.0.0.0", port) catch return;
+        const socket = address.bind(io, .{ .mode = .dgram, .protocol = .udp }) catch return;
+        defer socket.close(io);
 
         var buf: [Constants.NetworkConstants.udp_max_packet]u8 = undefined;
         while (self.running.load(.monotonic)) {
-            var client_address: std.net.Address = undefined;
-            var client_address_len: std.posix.socklen_t = @sizeOf(std.net.Address);
-
-            const read = std.posix.recvfrom(socket, &buf, 0, &client_address.any, &client_address_len) catch continue;
-            if (read == 0) continue;
+            const message = socket.receive(io, &buf) catch continue;
+            if (message.data.len == 0) continue;
             _ = self.messages_received.fetchAdd(1, .monotonic);
-            callback(buf[0..read]);
+            callback(message.data);
         }
     }
 };
