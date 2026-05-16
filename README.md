@@ -212,24 +212,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 **Highlights:**
 
-- Added timezone tokens for custom `time_format`: `ZZZ` (`+HH:MM`) and `ZZ` (`+HHMM`).
-- Added centralized `Config.TimeFormat` constants (`default_pattern`, `default_alias`, `iso8601`, `rfc3339`, `unix`, `unix_ms`).
-- Expanded distributed tracing helpers for W3C `traceparent` workflows.
-- Improved sink reliability (`on_error` handling, retry-aware reconnect, flush accounting).
-- Added runtime control/introspection APIs across metrics, async, thread pool, rotation, redactor, sampler, scheduler, rules, and telemetry.
-
-**Fixes:**
-
-- Improved local timezone handling for formatted timestamps (see [#29](https://github.com/muhammad-fiaz/logly.zig/issues/29)).
-- Correct timezone suffix behavior for ISO8601/RFC3339 output.
-- Ensured `unix` and `unix_ms` JSON timestamps are emitted as numbers.
-- Resolved `time_format = "default"` alias behavior to map to canonical default pattern.
-- Made sink write/flush error policy handling and flush statistics more consistent.
-
-**Quality & Tests:**
-
-- Broadened regression coverage across logger/sink, sampler/scheduler/rules, thread-pool stress, formatter, rotation, redactor, and telemetry APIs.
-- Added explicit test coverage for newly introduced runtime control helpers.
+- Migrated codebase to Zig 0.16 (from 0.15); updated examples, benchmarks, and vendored build scripts to match Zig 0.16 stdlib API changes. Documentation and examples were updated to reflect these API and build changes.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -1219,6 +1202,9 @@ zig build docs
 ```
 
 This will generate HTML documentation in the `zig-out/docs/` directory. Open `zig-out/docs/index.html` in your browser to view the documentation.
+
+>[!NOTE]
+> For projects using Zig 0.15, you can also generate the local documentation with `zig build docs` while using the matching `logly.zig` release (`0.1.7`). Ensure you select the appropriate repository tag or dependency version that targets Zig 0.15 before running the command.
 
 ## Contributing
 

@@ -591,7 +591,13 @@ pub const ThreadPool = struct {
             return true;
         }
 
-        _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+        // Do not increment `tasks_dropped` here: callers commonly retry on
+        // transient push failures (e.g., brief queue contention). Counting
+        // those transient attempts as "dropped" causes wait/timeout logic to
+        // incorrectly consider all work finished (completed + dropped >=
+        // submitted) even when some submitted tasks are still pending. Final
+        // or irrevocable drops are recorded at the batch/try paths where a
+        // task is deliberately skipped.
         return false;
     }
 
