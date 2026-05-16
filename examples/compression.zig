@@ -25,7 +25,7 @@ pub fn main() !void {
     const decompressed = try comp.decompress(compressed);
     defer allocator.free(decompressed);
     std.debug.print("   Decompressed size: {d} bytes\n", .{decompressed.len});
-    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, test_data, decompressed)) "âœ“ Verified" else "âœ— Failed"});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, test_data, decompressed)) "✓ Verified" else "✗ Failed"});
 
     // Example 2: Using compression presets
     std.debug.print("2. Compression Presets\n", .{});
@@ -132,7 +132,7 @@ pub fn main() !void {
     const zstd_decompressed = try zstd_comp.decompress(zstd_compressed);
     defer allocator.free(zstd_decompressed);
     std.debug.print("   Zstd decompressed: {d} bytes\n", .{zstd_decompressed.len});
-    std.debug.print("   Data integrity: {s}\n", .{if (std.mem.eql(u8, zstd_data, zstd_decompressed)) "âœ“ Verified" else "âœ— Failed"});
+    std.debug.print("   Data integrity: {s}\n", .{if (std.mem.eql(u8, zstd_data, zstd_decompressed)) "✓ Verified" else "✗ Failed"});
 
     // Show zstd preset options
     std.debug.print("   Zstd presets available:\n", .{});
@@ -198,14 +198,14 @@ pub fn main() !void {
     defer allocator.free(encoded);
     const decoded = try alias_comp.decode(encoded);
     defer allocator.free(decoded);
-    std.debug.print("    encode/decode aliases: {s}\n", .{if (std.mem.eql(u8, alias_data, decoded)) "âœ“ Working" else "âœ— Failed"});
+    std.debug.print("    encode/decode aliases: {s}\n", .{if (std.mem.eql(u8, alias_data, decoded)) "✓ Working" else "✗ Failed"});
 
     // Use deflate/inflate aliases
     const deflated = try alias_comp.deflate(alias_data);
     defer allocator.free(deflated);
     const inflated = try alias_comp.inflate(deflated);
     defer allocator.free(inflated);
-    std.debug.print("    deflate/inflate aliases: {s}\n", .{if (std.mem.eql(u8, alias_data, inflated)) "âœ“ Working" else "âœ— Failed"});
+    std.debug.print("    deflate/inflate aliases: {s}\n", .{if (std.mem.eql(u8, alias_data, inflated)) "✓ Working" else "✗ Failed"});
 
     // Check needsCompression alias
     const needs = alias_comp.needsCompression("test.log");
@@ -235,7 +235,7 @@ pub fn main() !void {
 
     var decomp_writer = logly.Utils.ArrayListWriter.init(&decomp_output, allocator);
     try stream_comp.decompressStream(&decomp_input, &decomp_writer.writer);
-    std.debug.print("    Stream decompressed verified: {s}\n\n", .{if (std.mem.eql(u8, stream_data, decomp_output.items)) "âœ“ Yes" else "âœ— No"});
+    std.debug.print("    Stream decompressed verified: {s}\n\n", .{if (std.mem.eql(u8, stream_data, decomp_output.items)) "✓ Yes" else "✗ No"});
 
     // Example 12: Directory Compression
     std.debug.print("12. Directory Compression\n", .{});
@@ -278,7 +278,7 @@ pub fn main() !void {
         defer allocator.free(lzma_compressed);
         const lzma_decompressed = try lzma_comp.decompress(lzma_compressed);
         defer allocator.free(lzma_decompressed);
-        std.debug.print("    LZMA:   {} -> {} bytes ({s})\n", .{ algo_test_data.len, lzma_compressed.len, if (std.mem.eql(u8, algo_test_data, lzma_decompressed)) "âœ“" else "âœ—" });
+        std.debug.print("    LZMA:   {} -> {} bytes ({s})\n", .{ algo_test_data.len, lzma_compressed.len, if (std.mem.eql(u8, algo_test_data, lzma_decompressed)) "✓" else "✗" });
     }
 
     // LZMA2
@@ -289,7 +289,7 @@ pub fn main() !void {
         defer allocator.free(lzma2_compressed);
         const lzma2_decompressed = try lzma2_comp.decompress(lzma2_compressed);
         defer allocator.free(lzma2_decompressed);
-        std.debug.print("    LZMA2:  {} -> {} bytes ({s})\n", .{ algo_test_data.len, lzma2_compressed.len, if (std.mem.eql(u8, algo_test_data, lzma2_decompressed)) "âœ“" else "âœ—" });
+        std.debug.print("    LZMA2:  {} -> {} bytes ({s})\n", .{ algo_test_data.len, lzma2_compressed.len, if (std.mem.eql(u8, algo_test_data, lzma2_decompressed)) "✓" else "✗" });
     }
 
     // XZ
@@ -300,7 +300,7 @@ pub fn main() !void {
         defer allocator.free(xz_compressed);
         const xz_decompressed = try xz_comp.decompress(xz_compressed);
         defer allocator.free(xz_decompressed);
-        std.debug.print("    XZ:     {} -> {} bytes ({s})\n", .{ algo_test_data.len, xz_compressed.len, if (std.mem.eql(u8, algo_test_data, xz_decompressed)) "âœ“" else "âœ—" });
+        std.debug.print("    XZ:     {} -> {} bytes ({s})\n", .{ algo_test_data.len, xz_compressed.len, if (std.mem.eql(u8, algo_test_data, xz_decompressed)) "✓" else "✗" });
     }
 
     // ZIP
@@ -311,7 +311,7 @@ pub fn main() !void {
         defer allocator.free(zip_compressed);
         const zip_decompressed = try zip_comp.decompress(zip_compressed);
         defer allocator.free(zip_decompressed);
-        std.debug.print("    ZIP:    {} -> {} bytes ({s})\n", .{ algo_test_data.len, zip_compressed.len, if (std.mem.eql(u8, algo_test_data, zip_decompressed)) "âœ“" else "âœ—" });
+        std.debug.print("    ZIP:    {} -> {} bytes ({s})\n", .{ algo_test_data.len, zip_compressed.len, if (std.mem.eql(u8, algo_test_data, zip_decompressed)) "✓" else "✗" });
     }
 
     // TAR.GZ
@@ -322,7 +322,7 @@ pub fn main() !void {
         defer allocator.free(targz_compressed);
         const targz_decompressed = try targz_comp.decompress(targz_compressed);
         defer allocator.free(targz_decompressed);
-        std.debug.print("    TAR.GZ: {} -> {} bytes ({s})\n", .{ algo_test_data.len, targz_compressed.len, if (std.mem.eql(u8, algo_test_data, targz_decompressed)) "âœ“" else "âœ—" });
+        std.debug.print("    TAR.GZ: {} -> {} bytes ({s})\n", .{ algo_test_data.len, targz_compressed.len, if (std.mem.eql(u8, algo_test_data, targz_decompressed)) "✓" else "✗" });
     }
 
     // LZ4
@@ -333,7 +333,7 @@ pub fn main() !void {
         defer allocator.free(lz4_compressed);
         const lz4_decompressed = try lz4_comp.decompress(lz4_compressed);
         defer allocator.free(lz4_decompressed);
-        std.debug.print("    LZ4:    {} -> {} bytes ({s})\n", .{ algo_test_data.len, lz4_compressed.len, if (std.mem.eql(u8, algo_test_data, lz4_decompressed)) "âœ“" else "âœ—" });
+        std.debug.print("    LZ4:    {} -> {} bytes ({s})\n", .{ algo_test_data.len, lz4_compressed.len, if (std.mem.eql(u8, algo_test_data, lz4_decompressed)) "✓" else "✗" });
     }
 
     std.debug.print("\n", .{});

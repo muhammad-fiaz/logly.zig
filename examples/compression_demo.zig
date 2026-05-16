@@ -55,7 +55,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -77,7 +77,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -99,7 +99,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -121,7 +121,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -143,7 +143,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -165,7 +165,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -187,7 +187,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -209,7 +209,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================
@@ -231,7 +231,7 @@ pub fn main() !void {
         std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "âœ“ OK" else "âœ— FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
     }
 
     // =========================================================================

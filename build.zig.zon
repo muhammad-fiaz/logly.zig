@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zstd = .{
-            .url = "git+https://github.com/muhammad-fiaz/zstd.zig.git#4f0fc73e52787d1dab0620412516e6ac9cc8f38c",
-            .hash = "zstd-1.6.0-biH4jAuQMgBpKrfhAYLEuSkWHj3a6qJwh1TtNIBpV_Hp",
+            .url = "git+https://github.com/muhammad-fiaz/zstd.zig.git#fde307fd8dd47cd90c1fb4524f04919d51913154",
+            .hash = "zstd-1.6.0-biH4jGjVMgBcWgNYfRHyn7Np8ttUWUU54a71UCPH5D32",
         },
     },
     .paths = .{
