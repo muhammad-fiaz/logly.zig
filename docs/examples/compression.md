@@ -276,13 +276,13 @@ defer allocator.free(fast_compressed);
 
 | Algorithm | Speed | Ratio | Use Case |
 |-----------|-------|-------|----------|
-| `deflate` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | General purpose |
-| `zstd` | â˜…â˜…â˜…â˜…â˜… | â˜…â˜…â˜…â˜… | High performance |
-| `lzma` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Long-term storage |
-| `xz` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Distribution |
-| `zip` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | Cross-platform |
-| `tar_gz` | â˜…â˜…â˜… | â˜…â˜…â˜…â˜… | Unix archives |
-| `lz4` | â˜…â˜…â˜…â˜…â˜… | â˜…â˜… | Real-time |
+| `deflate` | ★★★★ | ★★★ | General purpose |
+| `zstd` | ★★★★★ | ★★★★ | High performance |
+| `lzma` | ★★ | ★★★★★ | Long-term storage |
+| `xz` | ★★ | ★★★★★ | Distribution |
+| `zip` | ★★★★ | ★★★ | Cross-platform |
+| `tar_gz` | ★★★ | ★★★★ | Unix archives |
+| `lz4` | ★★★★★ | ★★ | Real-time |
 
 ## See Also
 

@@ -444,7 +444,7 @@ Rules system configuration. The rules system **respects global switches** (`glob
 - `include_rule_id_prefix`: Include "R0001:" prefix. Default: `false`.
 - `rule_id_format`: Custom rule ID format. Default: `"R{d}"`.
 - `indent`: Message indent. Default: `"    "`.
-- `message_prefix`: Prefix character (deprecated, use `symbols`). Default: `"â†³"`.
+- `message_prefix`: Prefix character (deprecated, use `symbols`). Default: `"↳"`.
 - `symbols`: Custom symbols for message categories. See [RuleSymbols](#rulesymbols).
 - `console_output`: Output to console (AND'd with `global_console_display`). Default: `true`.
 - `file_output`: Output to files (AND'd with `global_file_storage`). Default: `true`.

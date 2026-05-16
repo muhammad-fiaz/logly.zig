@@ -21,11 +21,11 @@ Logly-Zig provides comprehensive ANSI color support for console output, with opt
 
 | Platform | Color Support | Notes |
 |----------|--------------|-------|
-| Linux | âœ… Native | Works out of the box |
-| macOS | âœ… Native | Works out of the box |
-| Windows 10+ | âœ… Requires init | Call `Terminal.enableAnsiColors()` |
-| VS Code Terminal | âœ… Full | Works on all platforms |
-| Windows Console | âš ï¸ Legacy | May need VT processing enabled |
+| Linux | ✅ Native | Works out of the box |
+| macOS | ✅ Native | Works out of the box |
+| Windows 10+ | ✅ Requires init | Call `Terminal.enableAnsiColors()` |
+| VS Code Terminal | ✅ Full | Works on all platforms |
+| Windows Console | ⚠️ Legacy | May need VT processing enabled |
 
 ## Enabling Colors
 

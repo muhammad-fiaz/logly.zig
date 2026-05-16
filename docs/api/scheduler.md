@@ -176,7 +176,7 @@ pub const SchedulerConfig = struct {
 | `min_age_days_for_compression` | `u64` | `1` | Min age before compression |
 | `max_concurrent_compressions` | `usize` | `2` | Max parallel compressions |
 
-> Note: v0.1.8 expanded compression and archiving support â€” including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 â€” and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compression_algorithm` and `compression_level` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
+> Note: v0.1.6 expanded compression and archiving support — including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 — and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compression_algorithm` and `compression_level` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
 
 
 ### ScheduledTask
