@@ -727,11 +727,11 @@ pub const Telemetry = struct {
             },
             .integer => |i| {
                 try writer.writeAll("\"intValue\":");
-                try writer.print( "{d}", .{i});
+                try writer.print("{d}", .{i});
             },
             .float => |f| {
                 try writer.writeAll("\"doubleValue\":");
-                try writer.print( "{d:.6}", .{f});
+                try writer.print("{d:.6}", .{f});
             },
             .boolean => |b| {
                 try writer.writeAll("\"boolValue\":");
@@ -943,12 +943,12 @@ pub const Telemetry = struct {
         try writer.writeAll("\",\"start_time\":");
         const ns_per_sec_f = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
         const start_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.start_time))) / ns_per_sec_f;
-        try writer.print( "{d:.6}", .{start_s});
+        try writer.print("{d:.6}", .{start_s});
         if (span.end_time > 0) {
             try writer.writeAll(",\"end_time\":");
             const ns_per_sec_end_f = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
             const end_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.end_time))) / ns_per_sec_end_f;
-            try writer.print( "{d:.6}", .{end_s});
+            try writer.print("{d:.6}", .{end_s});
         }
         try writer.writeAll(",\"origin\":\"");
         try writer.writeAll(self.resource.service_name orelse "unknown");
@@ -978,7 +978,7 @@ pub const Telemetry = struct {
         // Write ISO 8601 timestamp
         const timestamp_ns = utils.safeToUnsigned(u64, span.start_time);
         const timestamp_s = timestamp_ns / Constants.TimeConstants.ns_per_second;
-        try writer.print( "{d}", .{timestamp_s});
+        try writer.print("{d}", .{timestamp_s});
         try writer.writeAll("\",\"data\":{\"baseType\":\"RequestData\",\"baseData\":{");
         try writer.writeAll("\"id\":\"");
         try writer.writeAll(span.span_id);
@@ -993,7 +993,7 @@ pub const Telemetry = struct {
             const minutes = (duration_ms % 3_600_000) / 60_000;
             const seconds = (duration_ms % 60_000) / 1_000;
             const ms = duration_ms % 1_000;
-            try writer.print( "{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{ hours, minutes, seconds, ms });
+            try writer.print("{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{ hours, minutes, seconds, ms });
             try writer.writeByte('"');
         }
         try writer.writeAll("}},\"iKey\":\"");
@@ -1098,7 +1098,7 @@ pub const Telemetry = struct {
                         try writer.writeByte('"');
                     },
                     .integer => |i| try utils.writeInt(writer, i),
-                    .float => |f| try writer.print( "{d:.6}", .{f}),
+                    .float => |f| try writer.print("{d:.6}", .{f}),
                     .boolean => |b| try writer.writeAll(if (b) "true" else "false"),
                     .string_array => |arr| {
                         try writer.writeByte('[');
