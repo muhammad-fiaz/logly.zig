@@ -1210,8 +1210,8 @@ pub const Logger = struct {
         // and the user hasn't explicitly disabled it (assuming default behavior was implicit).
         // However, to respect the new config strictly:
         if ((level == .err or level == .critical) and self.config.capture_stack_trace) {
-            // Use the logger's main allocator for the stack trace so Record can safely free it
-            const allocator = self.allocator;
+            // Use the same allocator as the record so Record.deinit can release it safely.
+            const allocator = self.scratchAllocator();
             // We use catch here to avoid failing the log if allocation fails
             if (allocator.create(std.builtin.StackTrace)) |st| {
                 // Allocate a larger buffer to be safe
