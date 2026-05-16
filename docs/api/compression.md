@@ -1244,9 +1244,9 @@ const size_config = CompressionPresets.onSize(50); // 50MB threshold
 
 ### Thread Safety
 
-- âœ… Thread-safe: All public methods protected by mutex
-- âœ… Atomic statistics: Lock-free reads
-- âš ï¸ Callbacks: Must be thread-safe (called under lock)
+- ✅ Thread-safe: All public methods protected by mutex
+- ✅ Atomic statistics: Lock-free reads
+- ⚠️ Callbacks: Must be thread-safe (called under lock)
 
 ### Performance Tips
 
@@ -1337,8 +1337,8 @@ pub fn main() !void {
     defer if (result.output_path) |p| allocator.free(p);
 
     if (result.success) {
-        std.debug.print("âœ“ Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});
-        
+        std.debug.print("✓ Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});
+
         // Get statistics
         const stats = compression.getStats();
         std.debug.print("Total files: {d}\\n", 

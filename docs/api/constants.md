@@ -299,7 +299,7 @@ pub const RulesConstants = struct {
     /// Default indentation for rule messages
     pub const default_indent: []const u8 = "    ";
     /// Default prefix character for rule messages
-    pub const default_prefix: []const u8 = "â†³";
+    pub const default_prefix: []const u8 = "↳";
     /// Default prefix character for ASCII mode
     pub const default_prefix_ascii: []const u8 = "|--";
     /// Maximum number of rules allowed by default
@@ -309,17 +309,17 @@ pub const RulesConstants = struct {
 
     /// Unicode prefixes for each message category
     pub const Prefixes = struct {
-        pub const cause: []const u8 = "â¦¿ cause:";
-        pub const fix: []const u8 = "âœ¦ fix:";
-        pub const suggest: []const u8 = "â†’ suggest:";
-        pub const action: []const u8 = "â–¸ action:";
-        pub const docs: []const u8 = "ðŸ“– docs:";
-        pub const report: []const u8 = "ðŸ”— report:";
-        pub const note: []const u8 = "â„¹ note:";
-        pub const caution: []const u8 = "âš  caution:";
-        pub const perf: []const u8 = "âš¡ perf:";
-        pub const security: []const u8 = "ðŸ›¡ security:";
-        pub const custom: []const u8 = "â€¢";
+       pub const cause: []const u8 = "⦿ cause:";
+        pub const fix: []const u8 = "✦ fix:";
+        pub const suggest: []const u8 = "→ suggest:";
+        pub const action: []const u8 = "▸ action:";
+        pub const docs: []const u8 = "📖 docs:";
+        pub const report: []const u8 = "🔗 report:";
+        pub const note: []const u8 = "ℹ note:";
+        pub const caution: []const u8 = "⚠ caution:";
+        pub const perf: []const u8 = "⚡ perf:";
+        pub const security: []const u8 = "🛡 security:";
+        pub const custom: []const u8 = "•";
     };
 
     /// ASCII-only prefixes for each message category
