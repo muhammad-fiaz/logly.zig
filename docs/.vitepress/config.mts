@@ -359,11 +359,11 @@ gtag('config', '${GA_ID}');`,
         text: "Support",
         items: [
           {
-            text: "ðŸ’– Sponsor",
-            link: "https://github.com/sponsors/muhammad-fiaz",
+            text: "💖 Sponsor",
+                        link: "https://github.com/sponsors/muhammad-fiaz",
           },
-          { text: "â˜• Donate", link: "https://pay.muhammadfiaz.com" },
-        ],
+          { text: "☕ Donate", link: "https://pay.muhammadfiaz.com" },
+                ],
       },
       { text: "GitHub", link: "https://github.com/muhammad-fiaz/logly.zig" },
     ],
@@ -512,8 +512,8 @@ gtag('config', '${GA_ID}');`,
 
     footer: {
       message: "Released under the MIT License.",
-      copyright: `Copyright Â© 2025-${new Date().getFullYear()} Muhammad Fiaz`,
-    },
+      copyright: `Copyright © 2025-${new Date().getFullYear()} Muhammad Fiaz`,
+        },
 
     search: {
       provider: "local",

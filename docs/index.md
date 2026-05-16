@@ -125,5 +125,5 @@ For Nightly builds, you can use the Git URL directly:
 zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
 ```
 
-[Get Started â†’](/guide/getting-started)
+[Get Started](/guide/getting-started)
 

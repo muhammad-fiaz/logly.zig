@@ -241,17 +241,17 @@ pub const CompressionAlgorithm = enum {
 
 | Algorithm | Speed | Ratio | Best For |
 |-----------|-------|-------|----------|
-| `none` | â˜…â˜…â˜…â˜…â˜… | - | Pass-through |
-| `deflate` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | General logs |
-| `zlib` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | HTTP/Web logs |
-| `gzip` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | File archives |
-| `zstd` | â˜…â˜…â˜…â˜…â˜… | â˜…â˜…â˜…â˜… | High-perf logging |
-| `lzma` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Long-term archival |
-| `lzma2` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Large files |
-| `xz` | â˜…â˜… | â˜…â˜…â˜…â˜…â˜… | Distribution |
-| `tar_gz` | â˜…â˜…â˜… | â˜…â˜…â˜…â˜… | Multi-file archives |
-| `zip` | â˜…â˜…â˜…â˜… | â˜…â˜…â˜… | Cross-platform |
-| `lz4` | â˜…â˜…â˜…â˜…â˜… | â˜…â˜… | Real-time logging |
+| `none` | ★★★★★ | - | Pass-through |
+| `deflate` | ★★★★ | ★★★ | General logs |
+| `zlib` | ★★★★ | ★★★ | HTTP/Web logs |
+| `gzip` | ★★★★ | ★★★ | File archives |
+| `zstd` | ★★★★★ | ★★★★ | High-perf logging |
+| `lzma` | ★★ | ★★★★★ | Long-term archival |
+| `lzma2` | ★★ | ★★★★★ | Large files |
+| `xz` | ★★ | ★★★★★ | Distribution |
+| `tar_gz` | ★★★ | ★★★★ | Multi-file archives |
+| `zip` | ★★★★ | ★★★ | Cross-platform |
+| `lz4` | ★★★★★ | ★★ | Real-time logging |
 
 ## CompressionConfig Preset Methods
 
