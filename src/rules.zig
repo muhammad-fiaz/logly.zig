@@ -2227,14 +2227,9 @@ test "rules concurrent stress loop" {
     const worker_iterations = 3_000;
     const control_iterations = 1_200;
 
-    var match_hits = std.atomic.Value(Constants.AtomicUnsigned).init(0);
-    var eval_hits = std.atomic.Value(Constants.AtomicUnsigned).init(0);
-
     const WorkerCtx = struct {
         rules: *Rules,
         iterations: usize,
-        match_hits: *std.atomic.Value(Constants.AtomicUnsigned),
-        eval_hits: *std.atomic.Value(Constants.AtomicUnsigned),
     };
 
     const Worker = struct {
@@ -2256,9 +2251,7 @@ test "rules concurrent stress loop" {
                 var record = Record.init(std.heap.page_allocator, level, message);
                 defer record.deinit();
 
-                if (ctx.rules.wouldMatchAny(&record)) {
-                    _ = ctx.match_hits.fetchAdd(1, .monotonic);
-                }
+                _ = ctx.rules.wouldMatchAny(&record);
 
                 if ((i % 8) == 0) {
                     if (ctx.rules.matchingRuleIdsWithAllocator(&record, std.heap.page_allocator)) |ids| {
@@ -2270,7 +2263,6 @@ test "rules concurrent stress loop" {
                     if (ctx.rules.evaluateWithAllocator(&record, std.heap.page_allocator)) |messages| {
                         std.heap.page_allocator.free(messages);
                     }
-                    _ = ctx.eval_hits.fetchAdd(1, .monotonic);
                 }
             }
         }
@@ -2312,8 +2304,6 @@ test "rules concurrent stress loop" {
         worker_contexts[i] = .{
             .rules = &rules,
             .iterations = worker_iterations,
-            .match_hits = &match_hits,
-            .eval_hits = &eval_hits,
         };
         worker_threads[i] = try std.Thread.spawn(.{}, Worker.run, .{&worker_contexts[i]});
     }
@@ -2327,8 +2317,6 @@ test "rules concurrent stress loop" {
 
     const stats = rules.getStats();
     try std.testing.expect(stats.getRulesEvaluated() > 0);
-    try std.testing.expect(Utils.atomicLoadU64(&match_hits) > 0);
-    try std.testing.expect(Utils.atomicLoadU64(&eval_hits) > 0);
 
     const total_rules = rules.count();
     const enabled_rules = rules.enabledRuleCount();
@@ -2337,5 +2325,16 @@ test "rules concurrent stress loop" {
 
     var final_record = Record.init(std.testing.allocator, .err, "database timeout");
     defer final_record.deinit();
+
+    const final_match_ids = rules.matchingRuleIdsWithAllocator(&final_record, std.testing.allocator) orelse return error.TestUnexpectedResult;
+    defer std.testing.allocator.free(final_match_ids);
+    try std.testing.expect(final_match_ids.len > 0);
+
+    const final_messages = rules.evaluateWithAllocator(&final_record, std.testing.allocator) orelse return error.TestUnexpectedResult;
+    defer std.testing.allocator.free(final_messages);
+    try std.testing.expect(final_messages.len > 0);
+
+    try std.testing.expect(stats.getRulesMatched() > 0);
+    try std.testing.expect(stats.getMessagesEmitted() > 0);
     try std.testing.expect(rules.wouldMatchAny(&final_record));
 }
