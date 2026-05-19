@@ -111,10 +111,18 @@ Logly.zig aims to be production-ready. While this is a relatively new project an
 
 ## Installation
 
-The easiest way to add Logly to your project:
+The easiest way to add Logly to your project.
+
+For Zig 0.16 (and newer):
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz
+```
+
+For Zig 0.15.0 (use `0.1.7` or earlier):
+
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
 ```
 
 This automatically adds the dependency with the correct hash to your `build.zig.zon`.
@@ -126,5 +134,3 @@ zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
 ```
 
 [Get Started](/guide/getting-started)
-[Installation](/guide/installation)
-
