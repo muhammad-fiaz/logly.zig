@@ -2348,9 +2348,6 @@ test "rules concurrent stress loop" {
 
     _ = rules.setAllEnabled(true);
 
-    const stats = rules.getStats();
-    try std.testing.expect(stats.getRulesEvaluated() > 0);
-
     const total_rules = rules.count();
     const enabled_rules = rules.enabledRuleCount();
     const disabled_rules = rules.disabledRuleCount();
@@ -2367,6 +2364,8 @@ test "rules concurrent stress loop" {
     defer std.testing.allocator.free(final_messages);
     try std.testing.expect(final_messages.len > 0);
 
+    const stats = rules.getStats();
+    try std.testing.expect(stats.getRulesEvaluated() > 0);
     try std.testing.expect(stats.getRulesMatched() > 0);
     try std.testing.expect(stats.getMessagesEmitted() > 0);
     try std.testing.expect(rules.wouldMatchAny(&final_record));
