@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Documentation for versions below 0.1.2 is not available. Please refer to commit history or pull requests for those versions.
 
+## [0.1.9]
+
+### Added
+
+- **Redaction truncate support**: new `RedactionType.truncate` with configurable `truncate_length` and `truncate_suffix` in `RedactionConfig`.
+- **Redaction hash selection**: configurable hash algorithm (`sha256`, `sha512`, `md5`) for hash-based redaction.
+- **Deterministic key sampling**: `Sampler.shouldSampleKey(...)` and `shouldSampleKeyWithReason(...)` for stable sampling decisions.
+- **Rotation time helpers**: `Rotation.nextRotationAt()` and `Rotation.rotationAgeSeconds()` with convenience aliases.
+- **Telemetry metrics export**: JSON and Prometheus metric exports with `TelemetryConfig.metrics_file_path` override.
+- **Telemetry metric naming controls**: `metric_prefix`, `metric_prefix_separator`, and `sanitize_metric_names` with config helpers for exporter-safe metric names.
+- **Pipeline configuration builders**: chainable helpers for async, thread pool, metrics, scheduler, rotation, rules, and full high-throughput/observability profiles.
+- **Metrics export customization**: configurable metric prefix, Prometheus/StatsD separators, sanitization, per-level export, and per-sink export breakdowns.
+- **Network send helpers**: `Network.sendTcp(...)` and `Network.sendSyslogUdp(...)` plus aliases.
+- **Formatter template validation**: `Formatter.validateTemplate(...)` and placeholder counting for custom format strings.
+- **Metrics level reset helper**: `Metrics.resetLevelMetrics(...)` for targeted level-counter resets.
+- **Scheduler dependency validation**: `Scheduler.validateDependencies(...)` to detect missing links and cycles.
+- **Filter mode helpers**: `Filter.setMode(...)` and `Filter.isMode(...)` for runtime mode control.
+- **Async backpressure tracking**: configurable backpressure threshold, effective batch-size clamping, and default drain timeout helpers.
+- **Rules count helpers**: `Rules.hasRules(...)` and `Rules.totalRuleCount(...)` for quick rule-set introspection.
+
+### Fixed
+
+- Fixed formatter theme precedence so sink/formatter custom themes are no longer masked by the default global color config.
+- Fixed file-based telemetry span and metrics exporters on Windows by opening append targets with read access before querying length.
+- Fixed `LogServer.stop()` shutdown behavior so TCP/UDP worker threads wake before join instead of hanging in network tests.
+- Corrected thread pool wait-time stats (ms to ns conversion) to prevent inflated averages.
+- Fixed async logging memory leak in the async pipeline.
+- Fixed aarch64 build/runtime compatibility issues.
+- Replaced comptime-only hex formatting in redaction hashing for Zig 0.16 runtime safety.
+
+### Documentation
+
+- Updated README and API/guide docs for redaction truncate, deterministic sampling, telemetry metric exports, rotation helpers, and network send helpers.
+- Added examples for new redaction, sampling, telemetry, rotation, and network helpers.
+- Added telemetry metric name prefix/sanitization example and docs.
+- Added pipeline controls example covering async, thread pool, metrics, scheduler, rotation, rules, and Prometheus export previews.
+- Refreshed telemetry docs to clarify file-based exporter output paths.
+- General docs refresh and maintenance updates.
+
+### Tests
+
+- Added formatter theme precedence regression tests.
+- Stabilized network send helper test shutdown and callback synchronization.
+- Added telemetry metric export format tests.
+- Added telemetry metric prefix/sanitization tests.
+- Added pipeline builder, metrics export naming/breakdown, async batch/backpressure, and Prometheus label escaping tests.
+- Added network send helper tests.
+- Added file-based telemetry span export test coverage.
+- Added formatter template validation, metrics level reset, scheduler dependency validation, filter mode helper, rules count helper, and async backpressure tests.
+
+
 ## [0.1.8] - Zig 0.16.0 Compatibility
 
 ### Changed

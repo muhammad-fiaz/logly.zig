@@ -133,6 +133,21 @@ var sampler = Sampler.init(allocator, .{ .adaptive = .{
 defer sampler.deinit();
 ```
 
+```
+
+### Deterministic Key Sampling
+
+Use a stable key (user/session/etc.) to get consistent decisions across requests:
+
+```zig
+var sampler = Sampler.init(allocator, .{ .probability = 0.2 });
+defer sampler.deinit();
+
+const should_log = sampler.shouldSampleKey("user-123");
+if (should_log) {
+    std.debug.print("Sampled log for user-123\n", .{});
+}
+```
 ## Monitoring and Callbacks
 
 You can register callbacks to monitor sampling decisions and rate adjustments:

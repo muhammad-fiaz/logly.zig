@@ -43,7 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-    - [Version 0.1.8](#version-018)
+    - [Version 0.1.9](#version-019)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
   - [Method 2: Manual Configuration](#method-2-manual-configuration)
@@ -174,7 +174,7 @@ Before installing Logly, ensure you have the following:
 | **Terminal** | Any modern terminal | For colored output support |
 
 > Verify your Zig installation by running `zig version` in your terminal.
-> - For Zig 0.16.0+, use logly.zig version 0.1.8
+> - For Zig 0.16.0+, use logly.zig version 0.1.9
 > - For Zig 0.15.0, use logly.zig version 0.1.7
 
 ---
@@ -208,11 +208,22 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.8
+### Version 0.1.9
 
 **Highlights:**
 
-- Migrated codebase to Zig 0.16 (from 0.15); updated examples, benchmarks, and vendored build scripts to match Zig 0.16 stdlib API changes. Documentation and examples were updated to reflect these API and build changes.
+- Added redaction truncate support and configurable hash algorithms.
+- Added deterministic key-based sampling helpers.
+- Added rotation time helpers (`nextRotationAt`, `rotationAgeSeconds`) with aliases.
+- Added telemetry metric export to JSON/Prometheus with `metrics_file_path` override.
+- Added telemetry metric prefixing and sanitization controls for exporter-compatible metric names.
+- Added library-wide pipeline controls for async, thread pool, metrics, scheduler, rotation, and rules composition.
+- Added metrics export naming/breakdown controls for Prometheus and StatsD output.
+- Added network send helpers for TCP and syslog UDP.
+- Fixed custom theme precedence, file-based telemetry exports on Windows, and network test/server shutdown.
+- Fixed async logging memory leak and aarch64 compatibility issues.
+- Refreshed docs and dependency maintenance updates.
+- Added formatter template validation, metrics level reset, scheduler dependency validation, filter mode helpers, async backpressure tracking, and rules count helpers.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -225,10 +236,10 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 The easiest way to add Logly to your project:
 
-**For Zig 0.16.0+ (Latest stable `0.1.8`):**
+**For Zig 0.16.0+ (Latest stable `0.1.9`):**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz
 ```
 
 **For Zig 0.15.0 (Use `0.1.7`):**
@@ -256,7 +267,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },

@@ -133,6 +133,32 @@ var config = logly.TelemetryConfig.file("telemetry_spans.jsonl");
 config.service_name = "dev-app";
 ```
 
+Note: the output path is relative to the current working directory. When running
+via `zig build run-telemetry`, this is often `zig-out/bin`.
+
+### Metric Name Controls
+
+```zig
+var config = logly.TelemetryConfig.development()
+    .withPrometheusMetrics("telemetry_metric_names.prom")
+    .withMetricPrefix("api.v1");
+config.metric_prefix_separator = ":";
+config.sanitize_metric_names = true;
+
+var telemetry = try logly.Telemetry.init(allocator, config);
+defer telemetry.deinit();
+
+try telemetry.recordCounter("http.requests-total", 42.0);
+try telemetry.recordGauge("99.cpu.usage", 73.5);
+try telemetry.exportMetrics();
+```
+
+Run the standalone example with:
+
+```bash
+zig build run-telemetry_metric_names
+```
+
 ### Custom Provider
 
 ```zig
@@ -274,6 +300,20 @@ try telemetry.recordGauge("memory.used_mb", 512.0);
 try telemetry.recordHistogram("latency_ms", 45.2);
 
 // Export metrics
+try telemetry.exportMetrics();
+```
+
+### Metric Export Formats
+
+```zig
+var config = logly.TelemetryConfig.development();
+config.metric_format = .json; // or .prometheus
+config.metrics_file_path = "telemetry_metrics.jsonl";
+
+var telemetry = try logly.Telemetry.init(allocator, config);
+defer telemetry.deinit();
+
+try telemetry.recordCounter("requests.total", 1.0);
 try telemetry.exportMetrics();
 ```
 

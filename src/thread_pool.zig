@@ -772,7 +772,8 @@ pub const ThreadPool = struct {
 
             if (item) |work| {
                 const start_time = Utils.currentNanos();
-                const wait_time = start_time - work.submitted_at;
+                const wait_time_ms = Utils.currentMillis() - work.submitted_at;
+                const wait_time_ns = @as(u64, @intCast(@max(0, wait_time_ms))) * Constants.TimeConstants.ns_per_ms;
 
                 // Get arena allocator if available
                 var task_allocator: ?std.mem.Allocator = null;
@@ -788,7 +789,7 @@ pub const ThreadPool = struct {
                 }
 
                 const exec_time = Utils.currentNanos() - start_time;
-                _ = pool.stats.total_wait_time_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, wait_time)))), .monotonic);
+                _ = pool.stats.total_wait_time_ns.fetchAdd(@truncate(wait_time_ns), .monotonic);
                 _ = pool.stats.total_exec_time_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, exec_time)))), .monotonic);
                 _ = pool.stats.tasks_completed.fetchAdd(1, .monotonic);
                 _ = worker.tasks_processed.fetchAdd(1, .monotonic);

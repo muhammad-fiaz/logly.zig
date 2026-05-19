@@ -159,6 +159,11 @@ pub const Rotation = struct {
             return Utils.atomicLoadU64(&self.compression_errors);
         }
 
+        /// Returns last rotation timestamp in milliseconds.
+        pub fn getLastRotationTimeMs(self: *const RotationStats) u64 {
+            return Utils.atomicLoadU64(&self.last_rotation_time_ms);
+        }
+
         /// Checks if any rotation errors occurred.
         pub fn hasErrors(self: *const RotationStats) bool {
             return self.rotation_errors.load(.monotonic) > 0;
@@ -208,6 +213,9 @@ pub const Rotation = struct {
         /// Alias for getCompressionErrors
         pub const compressionErrors = getCompressionErrors;
         pub const compressErrors = getCompressionErrors;
+
+        /// Alias for getLastRotationTimeMs
+        pub const lastRotationTimeMs = getLastRotationTimeMs;
 
         /// Alias for hasErrors
         pub const hasRotationErrors = hasErrors;
@@ -488,6 +496,19 @@ pub const Rotation = struct {
         return if (remaining > 0) remaining else 0;
     }
 
+    /// Returns the next rotation time as epoch seconds.
+    ///
+    /// Returns null when interval rotation is disabled.
+    pub fn nextRotationAt(self: *const Rotation) ?i64 {
+        const remaining = self.nextRotationInSeconds() orelse return null;
+        return Utils.currentSeconds() + remaining;
+    }
+
+    /// Returns how many seconds have elapsed since the last rotation.
+    pub fn rotationAgeSeconds(self: *const Rotation) i64 {
+        return Utils.currentSeconds() - self.last_rotation;
+    }
+
     /// Forces immediate rotation regardless of current interval/size checks.
     pub fn forceRotate(self: *Rotation, file_ptr: *std.Io.File) !void {
         self.mutex.lockUncancelable(Utils.io());
@@ -596,6 +617,12 @@ pub const Rotation = struct {
 
     /// Alias for nextRotationInSeconds
     pub const secondsUntilNextRotation = nextRotationInSeconds;
+
+    /// Alias for nextRotationAt
+    pub const nextRotationAtSeconds = nextRotationAt;
+
+    /// Alias for rotationAgeSeconds
+    pub const lastRotationAgeSeconds = rotationAgeSeconds;
 
     /// Alias for forceRotate
     pub const rotateNow = forceRotate;
@@ -1508,4 +1535,19 @@ test "rotation next rotation in seconds" {
     try std.testing.expect(remaining != null);
     try std.testing.expect(remaining.? >= 0);
     try std.testing.expect(remaining.? <= @as(i64, Constants.TimeConstants.seconds_per_hour));
+}
+
+test "rotation next rotation at and age helpers" {
+    const allocator = std.testing.allocator;
+
+    var rot = try Rotation.init(allocator, "test-next-at.log", "hourly", null, 7);
+    defer rot.deinit();
+
+    rot.last_rotation = Utils.currentSeconds() - 10;
+    const next_at = rot.nextRotationAt();
+    try std.testing.expect(next_at != null);
+    try std.testing.expect(next_at.? >= Utils.currentSeconds());
+
+    const age = rot.rotationAgeSeconds();
+    try std.testing.expect(age >= 0);
 }

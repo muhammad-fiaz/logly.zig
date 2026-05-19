@@ -846,6 +846,19 @@ pub const Rules = struct {
         return disabled_total;
     }
 
+    /// Returns the total number of configured rules.
+    pub fn totalRuleCount(self: *Rules) usize {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        return self.rules.items.len;
+    }
+
+    /// Returns true when at least one rule is configured.
+    pub fn hasRules(self: *Rules) bool {
+        return self.totalRuleCount() > 0;
+    }
+
     /// Returns true if at least one rule would match this record.
     /// This does not mutate once-only rule state.
     pub fn wouldMatchAny(self: *Rules, record: *const Record) bool {
@@ -1690,6 +1703,26 @@ test "rules statistics" {
     const stats = rules.getStats();
     try std.testing.expect(stats.rules_evaluated.load(.monotonic) > 0);
     try std.testing.expect(stats.rules_matched.load(.monotonic) > 0);
+}
+
+test "rules count helpers" {
+    var rules = Rules.init(std.testing.allocator);
+    defer rules.deinit();
+
+    try std.testing.expect(!rules.hasRules());
+
+    const messages = [_]Rules.RuleMessage{
+        .{ .category = .general_information, .message = "count helper" },
+    };
+
+    try rules.add(.{
+        .id = 11,
+        .level_match = .{ .any = {} },
+        .messages = &messages,
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), rules.totalRuleCount());
+    try std.testing.expect(rules.hasRules());
 }
 
 test "rules json format" {

@@ -583,6 +583,7 @@ pub const Telemetry = struct {
         };
 
         if (result) |_| {} else |err| {
+            std.debug.print("ERROR IN EXPORT: {s}\n", .{@errorName(err)});
             if (self.config.on_error) |callback| {
                 callback(@errorName(err));
             }
@@ -613,14 +614,14 @@ pub const Telemetry = struct {
             try Network.sendUdp(self.network_socket.?, self.network_address.?, self.batch_buffer.items);
             self.exporter_stats.recordNetworkExport();
         } else if (self.config.exporter_file_path) |path| {
-            const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .truncate = false });
+            const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
             defer file.close(Utils.io());
             var file_buffer: [Constants.BufferSizes.telemetry]u8 = undefined;
             var file_writer = file.writer(Utils.io(), &file_buffer);
             try file_writer.seekTo(try file.length(Utils.io()));
             try file_writer.interface.writeAll(self.batch_buffer.items);
             try file_writer.interface.writeAll("\n");
-            try file_writer.interface.flush();
+            try file_writer.flush();
         }
 
         self.exporter_stats.recordExport(self.completed_spans.items.len, self.batch_buffer.items.len);
@@ -1014,10 +1015,9 @@ pub const Telemetry = struct {
     fn exportToFile(self: *Telemetry) !void {
         const path = self.config.exporter_file_path orelse return;
 
-        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .truncate = false });
+        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
         defer file.close(Utils.io());
 
-        // Write each span as a JSON line
         var file_buffer: [Constants.BufferSizes.telemetry]u8 = undefined;
         var file_writer = file.writer(Utils.io(), &file_buffer);
         try file_writer.seekTo(try file.length(Utils.io()));
@@ -1029,7 +1029,7 @@ pub const Telemetry = struct {
             try writer.writeByte('\n');
             try file_writer.interface.writeAll(self.batch_buffer.items);
         }
-        try file_writer.interface.flush();
+        try file_writer.flush();
     }
 
     /// Export spans to network (TCP/UDP) using Network module
@@ -1129,12 +1129,29 @@ pub const Telemetry = struct {
         try self.exportSpansInternal();
     }
 
-    /// Exports all metrics (placeholder for actual export logic)
+    /// Exports all metrics using the configured exporter.
     pub fn exportMetrics(self: *Telemetry) !void {
         if (!self.enabled) return;
 
         self.mutex.lockUncancelable(utils.io());
         defer self.mutex.unlock(utils.io());
+
+        if (self.metric_count == 0) return;
+
+        const export_result: anyerror!void = switch (self.config.metric_format) {
+            .json => self.exportMetricsJson(),
+            .prometheus => self.exportMetricsPrometheus(),
+            .otlp => {},
+        };
+
+        if (export_result) |_| {
+            self.exporter_stats.recordMetricExport(self.metric_count);
+        } else |err| {
+            if (self.config.on_error) |callback| {
+                callback(@errorName(err));
+            }
+            self.exporter_stats.recordError();
+        }
 
         // Clear metrics after export
         for (self.metrics.items) |metric| {
@@ -1142,6 +1159,105 @@ pub const Telemetry = struct {
         }
         self.metrics.clearRetainingCapacity();
         self.metric_count = 0;
+    }
+
+    /// Export metrics as JSON lines to the configured metrics path.
+    fn exportMetricsJson(self: *Telemetry) !void {
+        const path = self.config.metrics_file_path orelse self.config.exporter_file_path orelse return;
+
+        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
+        defer file.close(Utils.io());
+
+        var file_buffer: [Constants.BufferSizes.telemetry]u8 = undefined;
+        var file_writer = file.writer(Utils.io(), &file_buffer);
+        try file_writer.seekTo(try file.length(Utils.io()));
+
+        for (self.metrics.items) |metric| {
+            self.batch_buffer.clearRetainingCapacity();
+            var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+            const writer = &batch_writer.writer;
+            try self.writeMetricJson(writer, metric);
+            try writer.writeByte('\n');
+            try file_writer.interface.writeAll(self.batch_buffer.items);
+        }
+        try file_writer.flush();
+    }
+
+    /// Export metrics in Prometheus text format to the configured metrics path.
+    fn exportMetricsPrometheus(self: *Telemetry) !void {
+        const path = self.config.metrics_file_path orelse self.config.exporter_file_path orelse return;
+
+        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
+        defer file.close(Utils.io());
+
+        var file_buffer: [Constants.BufferSizes.telemetry]u8 = undefined;
+        var file_writer = file.writer(Utils.io(), &file_buffer);
+        try file_writer.seekTo(try file.length(Utils.io()));
+
+        for (self.metrics.items) |metric| {
+            self.batch_buffer.clearRetainingCapacity();
+            var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+            const writer = &batch_writer.writer;
+            try self.writeMetricPrometheus(writer, metric);
+            try file_writer.interface.writeAll(self.batch_buffer.items);
+        }
+        try file_writer.flush();
+    }
+
+    /// Write a single metric as a JSON object.
+    fn writeMetricJson(self: *Telemetry, writer: anytype, metric: Metric) !void {
+        try writer.writeAll("{\"name\":\"");
+        try utils.writeTelemetryMetricName(
+            writer,
+            self.config.metric_prefix,
+            self.config.metric_prefix_separator,
+            metric.name,
+            self.config.sanitize_metric_names,
+        );
+        try writer.writeAll("\",\"kind\":\"");
+        try writer.writeAll(@tagName(metric.kind));
+        try writer.writeAll("\",\"value\":");
+        try writer.print("{d}", .{metric.value});
+
+        if (metric.unit) |unit| {
+            try writer.writeAll(",\"unit\":\"");
+            try utils.escapeJsonString(writer, unit);
+            try writer.writeByte('"');
+        }
+
+        if (metric.description) |desc| {
+            try writer.writeAll(",\"description\":\"");
+            try utils.escapeJsonString(writer, desc);
+            try writer.writeByte('"');
+        }
+
+        try writer.writeAll(",\"timestamp\":");
+        try utils.writeInt(writer, utils.safeToUnsigned(u64, metric.timestamp));
+        try writer.writeByte('}');
+    }
+
+    /// Write a single metric in Prometheus text format.
+    fn writeMetricPrometheus(self: *Telemetry, writer: anytype, metric: Metric) !void {
+        try writer.writeAll("# TYPE ");
+        try utils.writeTelemetryMetricName(
+            writer,
+            self.config.metric_prefix,
+            self.config.metric_prefix_separator,
+            metric.name,
+            self.config.sanitize_metric_names,
+        );
+        try writer.writeByte(' ');
+        try writer.writeAll(@tagName(metric.kind));
+        try writer.writeByte('\n');
+        try utils.writeTelemetryMetricName(
+            writer,
+            self.config.metric_prefix,
+            self.config.metric_prefix_separator,
+            metric.name,
+            self.config.sanitize_metric_names,
+        );
+        try writer.writeByte(' ');
+        try writer.print("{d}\n", .{metric.value});
     }
 
     /// Flushes all data (spans and metrics)
@@ -1865,6 +1981,33 @@ test "Span creation and lifecycle" {
     // Check counters updated
     try std.testing.expectEqual(@as(usize, 0), telemetry.active_span_count);
     try std.testing.expectEqual(@as(usize, 1), telemetry.completed_span_count);
+}
+
+test "File exporter writes spans" {
+    const allocator = std.testing.allocator;
+    const path = "telemetry_spans_test.jsonl";
+
+    std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+
+    var config = TelemetryConfig.file(path);
+    config.sampling_strategy = .always_on;
+
+    var telemetry = try Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    var span = try telemetry.startSpan("file_export_test", .{});
+    defer span.deinit();
+
+    span.end();
+    try telemetry.endSpan(&span);
+    try telemetry.exportSpans();
+
+    const file = try std.Io.Dir.cwd().openFile(Utils.io(), path, .{});
+    defer file.close(Utils.io());
+
+    const stat = try file.stat(Utils.io());
+    try std.testing.expect(stat.size > 0);
 }
 
 test "Span with parent" {
@@ -2654,6 +2797,67 @@ test "Telemetry metric batch helper" {
     const recorded = try telemetry.recordMetricsBatch(metrics[0..]);
     try std.testing.expectEqual(@as(usize, 3), recorded);
     try std.testing.expectEqual(@as(usize, 3), telemetry.getMetricCount());
+}
+
+test "Telemetry metrics export formats" {
+    const allocator = std.testing.allocator;
+    const json_path = "telemetry-metrics-test.jsonl";
+    const prom_path = "telemetry-metrics-test.prom";
+
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), json_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), prom_path) catch {};
+
+    var json_config = TelemetryConfig.development();
+    json_config.metric_format = .json;
+    json_config.metrics_file_path = json_path;
+
+    var telemetry_json = try Telemetry.init(allocator, json_config);
+    defer telemetry_json.deinit();
+
+    try telemetry_json.recordCounter("requests.total", 2.0);
+    try telemetry_json.exportMetrics();
+
+    const json_file = try std.Io.Dir.cwd().openFile(Utils.io(), json_path, .{});
+    defer json_file.close(Utils.io());
+    try std.testing.expect((try json_file.length(Utils.io())) > 0);
+
+    var prom_config = TelemetryConfig.development();
+    prom_config.metric_format = .prometheus;
+    prom_config.metrics_file_path = prom_path;
+
+    var telemetry_prom = try Telemetry.init(allocator, prom_config);
+    defer telemetry_prom.deinit();
+
+    try telemetry_prom.recordGauge("cpu.usage", 12.5);
+    try telemetry_prom.exportMetrics();
+
+    const prom_file = try std.Io.Dir.cwd().openFile(Utils.io(), prom_path, .{});
+    defer prom_file.close(Utils.io());
+    try std.testing.expect((try prom_file.length(Utils.io())) > 0);
+}
+
+test "Telemetry metric export applies prefix and sanitization" {
+    const allocator = std.testing.allocator;
+    const path = "telemetry-metrics-prefixed.prom";
+
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+
+    var config = TelemetryConfig.development()
+        .withPrometheusMetrics(path)
+        .withMetricPrefix("api.v1");
+    config.metric_prefix_separator = ":";
+
+    var telemetry = try Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    try telemetry.recordCounter("requests.total", 5.0);
+    try telemetry.exportMetrics();
+
+    const body = try std.Io.Dir.cwd().readFileAlloc(Utils.io(), path, allocator, .limited(4096));
+    defer allocator.free(body);
+
+    try std.testing.expect(std.mem.indexOf(u8, body, "api_v1:requests_total") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "requests.total") == null);
 }
 
 test "Telemetry startSpanFromTraceparent" {

@@ -32,6 +32,8 @@ The `Network` module provides utilities for network-based logging, including TCP
 | `connectTcp()` | `tcpConnect()`, `connect()` | Connect to TCP endpoint |
 | `createUdpSocket()` | `udpSocket()` | Create UDP socket |
 | `sendUdp()` | `udpSend()`, `sendToUdp()` | Send UDP message |
+| `sendTcp()` | `tcpSend()`, `sendToTcp()` | Send TCP message |
+| `sendSyslogUdp()` | `syslogSend()`, `sendSyslog()` | Send syslog message over UDP |
 | `fetchJson()` | `getJson()`, `httpGet()` | Fetch JSON from HTTP endpoint |
 | `init()` | `create()` | Initialize log server |
 | `deinit()` | `destroy()` | Deinitialize log server |
@@ -172,6 +174,14 @@ Creates a UDP socket connected to a host specified by a URI string (e.g., "udp:/
 
 Sends data via UDP socket.
 
+### `sendTcp(stream: std.Io.net.Stream, data: []const u8) !void`
+
+Sends data via TCP stream and updates network stats.
+
+### `sendSyslogUdp(allocator: std.mem.Allocator, socket: std.Io.net.Socket, address: std.Io.net.IpAddress, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, app_name: []const u8, message: []const u8) !void`
+
+Formats a syslog message and sends it over UDP.
+
 ### `fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value)`
 
 Fetches and parses a JSON response from a URL.
@@ -191,6 +201,10 @@ The Network module provides convenience aliases:
 | `udpSocket` | `createUdpSocket` |
 | `udpSend` | `sendUdp` |
 | `sendToUdp` | `sendUdp` |
+| `tcpSend` | `sendTcp` |
+| `sendToTcp` | `sendTcp` |
+| `syslogSend` | `sendSyslogUdp` |
+| `sendSyslog` | `sendSyslogUdp` |
 | `getJson` | `fetchJson` |
 | `httpGet` | `fetchJson` |
 | `syslogFormat` | `formatSyslog` |

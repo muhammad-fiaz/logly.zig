@@ -155,6 +155,7 @@ Key fields:
 *   `api_key: ?[]const u8` -  API key for providers that require authentication.
 *   `connection_string: ?[]const u8` -  Connection string for Azure Application Insights.
 *   `exporter_file_path: ?[]const u8` -  File path for JSONL file exporter.
+*   `metrics_file_path: ?[]const u8` -  File path override for JSON/Prometheus metric exports.
 *   `batch_size: usize = Constants.TelemetryDefaults.batch_size` -  Batch span export size (default: 256).
 *   `batch_timeout_ms: u64 = Constants.TelemetryDefaults.batch_timeout_ms` -  Batch export timeout in ms (default: 5000).
 *   `sampling_strategy: SamplingStrategy` -  Sampling strategy (`.always_on`, `.always_off`, `.trace_id_ratio`, `.parent_based`).

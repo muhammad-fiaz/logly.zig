@@ -85,6 +85,31 @@ _ = try logger.addSink(sink);
 try logger.info("Hello from client!", .{});
 ```
 
+## Network Helper APIs
+
+Use the `Network` helpers directly when you need one-off sends outside of sinks:
+
+```zig
+const Network = logly.Network;
+
+const stream = try Network.connectTcp(allocator, "tcp://127.0.0.1:9000");
+defer stream.close(logly.Utils.io());
+try Network.sendTcp(stream, "raw tcp log\n");
+
+const udp = try Network.createUdpSocket(allocator, "udp://127.0.0.1:514");
+defer udp.socket.close(logly.Utils.io());
+try Network.sendSyslogUdp(
+  allocator,
+  udp.socket,
+  udp.address,
+  .user,
+  .info,
+  "localhost",
+  "my-app",
+  "syslog helper message",
+);
+```
+
 ## Reliability
 
 *   **Async Logging**: It is highly recommended to use `async_write = true` (default) for network sinks to avoid blocking your application if the network is slow or the server is unreachable.

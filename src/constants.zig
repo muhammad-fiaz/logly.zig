@@ -175,6 +175,10 @@ pub const AsyncConstants = struct {
     pub const block_sleep_ns: u64 = 1 * TimeConstants.ns_per_ms;
     /// Default batch size for async processing.
     pub const batch_size: usize = BufferSizes.async_batch;
+    /// Queue utilization ratio that counts as backpressure.
+    pub const backpressure_threshold_ratio: f64 = 0.9;
+    /// Default time to wait for an async queue to drain during explicit waits.
+    pub const drain_timeout_ms: u64 = 5000;
 };
 
 /// Default limits for queues and buffers.
@@ -271,6 +275,12 @@ pub const TelemetryDefaults = struct {
     pub const trace_header: []const u8 = "traceparent";
     /// Default baggage/correlation context header name.
     pub const baggage_header: []const u8 = "baggage";
+    /// Default prefix for exported metric names.
+    pub const metric_prefix: []const u8 = "";
+    /// Default separator inserted between a metric prefix and metric name.
+    pub const metric_prefix_separator: []const u8 = "_";
+    /// Whether metric names should be sanitized for exporter compatibility.
+    pub const sanitize_metric_names: bool = true;
 };
 
 /// Async preset tuning defaults.
@@ -326,6 +336,20 @@ test "telemetry defaults exist" {
     try std.testing.expectEqual(@as(usize, TelemetryDefaults.header_initial_capacity), @as(usize, 256));
     try std.testing.expectEqualStrings(TelemetryDefaults.trace_header, "traceparent");
     try std.testing.expectEqualStrings(TelemetryDefaults.baggage_header, "baggage");
+    try std.testing.expectEqualStrings(TelemetryDefaults.metric_prefix, "");
+    try std.testing.expectEqualStrings(TelemetryDefaults.metric_prefix_separator, "_");
+    try std.testing.expect(TelemetryDefaults.sanitize_metric_names);
+}
+
+test "shared metrics and async defaults exist" {
+    try std.testing.expectEqualStrings("logly", MetricsConstants.default_prefix);
+    try std.testing.expectEqualStrings("_", MetricsConstants.prometheus_separator);
+    try std.testing.expectEqualStrings(".", MetricsConstants.statsd_separator);
+    try std.testing.expect(MetricsConstants.sanitize_names);
+    try std.testing.expect(MetricsConstants.include_level_breakdown);
+    try std.testing.expect(MetricsConstants.include_sink_breakdown);
+    try std.testing.expect(AsyncConstants.backpressure_threshold_ratio > 0.0);
+    try std.testing.expect(AsyncConstants.drain_timeout_ms > 0);
 }
 
 /// Log level count and priorities.
@@ -423,6 +447,19 @@ pub const TimeConstants = struct {
 
 /// Metrics-related constants.
 pub const MetricsConstants = struct {
+    /// Default exported metric namespace.
+    pub const default_prefix: []const u8 = "logly";
+    /// Separator used by Prometheus-compatible metric names.
+    pub const prometheus_separator: []const u8 = "_";
+    /// Separator used by StatsD metric names.
+    pub const statsd_separator: []const u8 = ".";
+    /// Sanitize metric names by default for exporter compatibility.
+    pub const sanitize_names: bool = true;
+    /// Include per-level counters in metrics exports by default.
+    pub const include_level_breakdown: bool = true;
+    /// Include per-sink counters in metrics exports by default.
+    pub const include_sink_breakdown: bool = true;
+
     /// Default histogram bucket boundaries in nanoseconds.
     pub const histogram_boundaries = [_]u64{
         1_000,         2_000,                5_000,     10_000,     20_000,     50_000,     100_000,     200_000,     500_000,
@@ -1084,6 +1121,10 @@ pub const RedactionDefaults = struct {
     pub const partial_end_chars: u8 = 4;
     /// Default mask character.
     pub const mask_char: u8 = '*';
+    /// Default max length for truncate redaction.
+    pub const truncate_length: u8 = 8;
+    /// Default suffix for truncate redaction.
+    pub const truncate_suffix: []const u8 = "...";
 };
 
 /// Rate limiting defaults.

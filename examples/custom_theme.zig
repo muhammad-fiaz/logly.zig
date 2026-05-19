@@ -14,7 +14,7 @@ pub fn main() !void {
 
     const Theme = logly.Formatter.Theme;
 
-    std.debug.print("\n=== Theme Presets (v0.1.8) ===\n\n", .{});
+    std.debug.print("\n=== Theme Presets (v0.1.9) ===\n\n", .{});
 
     // Built-in theme presets
     std.debug.print("Available presets:\n", .{});

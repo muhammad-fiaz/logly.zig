@@ -79,6 +79,20 @@ Rotates files when they reach a specific size limit.
 const config = SinkConfig.createSizeRotatingSink("app.log", 100 * 1024 * 1024, 10);
 ```
 
+### Rotation Helper APIs
+
+```zig
+var rot = try Rotation.init(allocator, "app.log", "hourly", null, 7);
+defer rot.deinit();
+
+if (rot.nextRotationAt()) |epoch_seconds| {
+    std.debug.print("Next rotation at: {d}\n", .{epoch_seconds});
+}
+
+const age = rot.rotationAgeSeconds();
+std.debug.print("Last rotation age: {d}s\n", .{age});
+```
+
 ### Sink Configuration Fields
 
 When using `logger.add(.{...})`, you can use the following fields to control rotation:

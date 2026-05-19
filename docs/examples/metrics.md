@@ -51,6 +51,25 @@ pub fn main() !void {
 }
 ```
 
+## Pipeline Controls Example
+
+Run the full pipeline-control example:
+
+```bash
+zig build run-pipeline_controls
+```
+
+It demonstrates chainable 0.1.9 configuration across async logging, thread pools, metrics exports, rules, scheduler maintenance, and rotation:
+
+```zig
+const config = logly.Config.default()
+    .withHighThroughputPipeline()
+    .withObservability("checkout.api")
+    .withAsync(logly.AsyncConfig.lowLatency().buffer(256).batch(8).backpressure(0.75))
+    .withThreadPool(logly.ThreadPoolConfig.ioBound().threads(4).queue(512).arena(true))
+    .withRotation(logly.Config.RotationConfig.daily(7).withCompression(.zstd));
+```
+
 ## Metrics Available
 
 ```zig

@@ -45,6 +45,20 @@ _ = try logger.add(.{
 });
 ```
 
+## Rotation Helper Utilities
+
+```zig
+var rot = try logly.Rotation.init(allocator, "logs/app.log", "hourly", null, 7);
+defer rot.deinit();
+
+if (rot.nextRotationAt()) |epoch_seconds| {
+    std.debug.print("Next rotation at: {d}\n", .{epoch_seconds});
+}
+
+const age = rot.rotationAgeSeconds();
+std.debug.print("Last rotation age: {d}s\n", .{age});
+```
+
 ---
 
 ## Using Presets

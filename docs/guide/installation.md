@@ -20,10 +20,10 @@ This guide covers all available methods to install Logly.zig in your project.
 
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
-**For Zig 0.16.0+ (Latest stable `0.1.8`):**
+**For Zig 0.16.0+ (Latest stable `0.1.9`):**
 
 ```bash
-    zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
+    zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz
 ```
 
 **For Zig 0.15.0 (Use `0.1.7`):**
@@ -55,7 +55,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
     .version = "0.1.0",
     .dependencies = .{
         .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz",
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz",
             .hash = "1220...", // Run: zig fetch <url> to get this hash
         },
     },
@@ -81,7 +81,7 @@ To get the hash manually, run:
 
 **For Zig 0.16.0+:**
 ```bash
-zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz
 ```
 
 **For Zig 0.15.0:**
@@ -224,7 +224,7 @@ error: hash mismatch
 Update the hash in your `build.zig.zon` by running:
 
 ```bash
-zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.8.tar.gz
+zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz
 ```
 
 ### Module Not Found

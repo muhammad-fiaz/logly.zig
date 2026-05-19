@@ -65,6 +65,17 @@ for (0..200) |i| {
 }
 ```
 
+## Deterministic Key Sampling
+
+```zig
+var sampler = Sampler.init(allocator, .{ .probability = 0.2 });
+defer sampler.deinit();
+
+if (sampler.shouldSampleKey("user-123")) {
+    std.debug.print("Deterministic sample\n", .{});
+}
+```
+
 ## Callbacks and Statistics
 
 You can monitor sampling behavior using callbacks and statistics.

@@ -246,6 +246,7 @@ pub const Redactor = struct {
         partial_end,
         hash,
         mask_middle,
+        truncate,
 
         pub fn apply(self: RedactionType, allocator: std.mem.Allocator, value: []const u8) ![]u8 {
             return switch (self) {
@@ -271,14 +272,9 @@ pub const Redactor = struct {
                 .hash => blk: {
                     var hash: [32]u8 = undefined;
                     std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
-                    const hex_val = std.fmt.bytesToHex(hash[0..8], .lower);
-                    const prefix = "[HASH:";
-                    const suffix = "]";
-                    const res = try allocator.alloc(u8, prefix.len + hex_val.len + suffix.len);
-                    @memcpy(res[0..prefix.len], prefix);
-                    @memcpy(res[prefix.len..][0..hex_val.len], &hex_val);
-                    @memcpy(res[prefix.len + hex_val.len ..], suffix);
-                    break :blk res;
+                    const hex_val = try Utils.bytesToHexLowerAlloc(allocator, hash[0..8]);
+                    defer allocator.free(hex_val);
+                    break :blk try std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hex_val});
                 },
                 .mask_middle => blk: {
                     if (value.len <= 6) {
@@ -288,6 +284,17 @@ pub const Redactor = struct {
                     @memcpy(result[0..3], value[0..3]);
                     @memset(result[3 .. value.len - 3], '*');
                     @memcpy(result[value.len - 3 ..], value[value.len - 3 ..]);
+                    break :blk result;
+                },
+                .truncate => blk: {
+                    const max_len: usize = Constants.RedactionDefaults.truncate_length;
+                    const suffix = Constants.RedactionDefaults.truncate_suffix;
+                    if (value.len <= max_len) {
+                        break :blk try allocator.dupe(u8, value);
+                    }
+                    const result = try allocator.alloc(u8, max_len + suffix.len);
+                    @memcpy(result[0..max_len], value[0..max_len]);
+                    @memcpy(result[max_len..], suffix);
                     break :blk result;
                 },
             };
@@ -321,6 +328,27 @@ pub const Redactor = struct {
         }
 
         return redactor;
+    }
+
+    /// Applies field/pattern rules defined in the redaction config.
+    ///
+    /// This does not mutate existing rules; it only adds new ones from config.
+    pub fn applyConfigRules(self: *Redactor) !void {
+        if (self.config.fields) |fields| {
+            const mapped = mapConfigRedactionType(self.config.default_type);
+            for (fields) |field_name| {
+                try self.addField(field_name, mapped);
+            }
+        }
+
+        if (self.config.patterns) |patterns| {
+            const pattern_type: RedactionPattern.PatternType = if (self.config.enable_regex) .regex else .contains;
+            for (patterns, 0..) |pattern, i| {
+                const name = try std.fmt.allocPrint(self.allocator, "config_pattern_{d}", .{i});
+                defer self.allocator.free(name);
+                try self.addPattern(name, pattern_type, pattern, self.config.replacement);
+            }
+        }
     }
 
     /// Releases all resources associated with the redactor.
@@ -632,8 +660,53 @@ pub const Redactor = struct {
             .full => try self.allocator.dupe(u8, self.config.replacement),
             .partial_start => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .partial_start),
             .partial_end => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .partial_end),
-            .hash => Utils.computeRedactionHash(self.allocator, value),
+            .hash => self.computeRedactionHash(value),
             .mask_middle => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .mask_middle),
+            .truncate => self.applyTruncate(value),
+        };
+    }
+
+    fn applyTruncate(self: *Redactor, value: []const u8) ![]u8 {
+        const max_len = self.config.truncate_length;
+        const suffix = self.config.truncate_suffix;
+        if (max_len == 0) return self.allocator.dupe(u8, suffix);
+        if (value.len <= max_len) return self.allocator.dupe(u8, value);
+        const result = try self.allocator.alloc(u8, max_len + suffix.len);
+        @memcpy(result[0..max_len], value[0..max_len]);
+        @memcpy(result[max_len..], suffix);
+        return result;
+    }
+
+    fn computeRedactionHash(self: *Redactor, value: []const u8) ![]u8 {
+        return switch (self.config.hash_algorithm) {
+            .sha256 => Utils.computeRedactionHash(self.allocator, value),
+            .sha512 => blk: {
+                var hash: [64]u8 = undefined;
+                std.crypto.hash.sha2.Sha512.hash(value, &hash, .{});
+                break :blk formatHashTag(self.allocator, hash[0..8]);
+            },
+            .md5 => blk: {
+                var hash: [16]u8 = undefined;
+                std.crypto.hash.Md5.hash(value, &hash, .{});
+                break :blk formatHashTag(self.allocator, hash[0..8]);
+            },
+        };
+    }
+
+    fn formatHashTag(allocator: std.mem.Allocator, hash_bytes: []const u8) ![]u8 {
+        const hex_val = try Utils.bytesToHexLowerAlloc(allocator, hash_bytes);
+        defer allocator.free(hex_val);
+        return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hex_val});
+    }
+
+    fn mapConfigRedactionType(rtype: RedactionConfig.RedactionType) RedactionType {
+        return switch (rtype) {
+            .full => .full,
+            .partial_start => .partial_start,
+            .partial_end => .partial_end,
+            .hash => .hash,
+            .mask_middle => .mask_middle,
+            .truncate => .truncate,
         };
     }
 
@@ -836,6 +909,10 @@ pub const Redactor = struct {
 
     /// Alias for initWithConfig
     pub const createWithConfig = initWithConfig;
+
+    /// Alias for applyConfigRules
+    pub const applyConfig = applyConfigRules;
+    pub const loadConfigRules = applyConfigRules;
 
     /// Alias for setCallback
     // pub const callback = setCallback; // shadows parameters
@@ -1123,4 +1200,31 @@ test "redactor preview message does not mutate stats" {
     defer std.testing.allocator.free(actual);
     try std.testing.expect(std.mem.indexOf(u8, actual, "[REDACTED]") != null);
     try std.testing.expect(redactor.getStats().getTotalProcessed() > after_processed);
+}
+
+test "redactor truncate redaction" {
+    var redactor = Redactor.init(std.testing.allocator);
+    defer redactor.deinit();
+
+    redactor.config.truncate_length = 4;
+    redactor.config.truncate_suffix = "...";
+    try redactor.addField("token", .truncate);
+
+    const redacted = try redactor.redactField("token", "abcdef");
+    defer std.testing.allocator.free(redacted);
+
+    try std.testing.expectEqualStrings("abcd...", redacted);
+}
+
+test "redactor hash algorithm selection" {
+    var redactor = Redactor.init(std.testing.allocator);
+    defer redactor.deinit();
+
+    redactor.config.hash_algorithm = .md5;
+    try redactor.addField("secret", .hash);
+
+    const redacted = try redactor.redactField("secret", "super-secret");
+    defer std.testing.allocator.free(redacted);
+
+    try std.testing.expect(std.mem.startsWith(u8, redacted, "[HASH:"));
 }

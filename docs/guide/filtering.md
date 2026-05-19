@@ -20,6 +20,8 @@ The `Filter` module allows you to:
 - Apply filters globally or per-sink
 - Use pre-built filter presets for common scenarios
 
+You can switch the runtime combination strategy with `filter.setMode(.any)`, `filter.setMode(.all)`, and related mode helpers.
+
 ## Basic Usage
 
 ```zig

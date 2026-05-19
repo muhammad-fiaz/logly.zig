@@ -114,6 +114,8 @@ pub const AsyncLogger = struct {
         records_dropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of buffer overflow events.
         buffer_overflows: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        /// Number of times the queue entered a high-utilization backpressure range.
+        backpressure_events: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of flush operations performed.
         flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total latency in nanoseconds.
@@ -176,6 +178,11 @@ pub const AsyncLogger = struct {
             return Utils.atomicLoadU64(&self.buffer_overflows);
         }
 
+        /// Returns backpressure event count as u64.
+        pub fn getBackpressureEvents(self: *const AsyncStats) u64 {
+            return Utils.atomicLoadU64(&self.backpressure_events);
+        }
+
         /// Checks if any records have been dropped.
         pub fn hasDropped(self: *const AsyncStats) bool {
             return self.records_dropped.load(.monotonic) > 0;
@@ -184,6 +191,11 @@ pub const AsyncLogger = struct {
         /// Checks if any buffer overflows occurred.
         pub fn hasOverflows(self: *const AsyncStats) bool {
             return self.buffer_overflows.load(.monotonic) > 0;
+        }
+
+        /// Checks if any backpressure events occurred.
+        pub fn hasBackpressureEvents(self: *const AsyncStats) bool {
+            return self.backpressure_events.load(.monotonic) > 0;
         }
 
         /// Calculate write success rate (0.0 - 1.0).
@@ -200,6 +212,8 @@ pub const AsyncLogger = struct {
 
         /// Alias for inFlight
         pub const pendingRecords = inFlight;
+        /// Alias for getBackpressureEvents.
+        pub const backpressureCount = getBackpressureEvents;
     };
 
     /// Represents a single log entry within the ring buffer.
@@ -395,6 +409,12 @@ pub const AsyncLogger = struct {
         }
     }
 
+    /// Returns the effective batch size after clamping configuration to the static buffer.
+    pub fn effectiveBatchSize(self: *const AsyncLogger) usize {
+        if (self.config.batch_size == 0) return 1;
+        return @min(self.config.batch_size, Constants.AsyncConstants.batch_size);
+    }
+
     /// Registers a new sink for log output.
     /// Thread-safe.
     pub fn addSink(self: *AsyncLogger, sink: *Sink) !void {
@@ -494,6 +514,20 @@ pub const AsyncLogger = struct {
                 if (self.buffer.push(entry)) {
                     _ = self.stats.records_queued.fetchAdd(1, .monotonic);
 
+                    const threshold = if (self.config.backpressure_threshold < 0.0)
+                        0.0
+                    else if (self.config.backpressure_threshold > 1.0)
+                        1.0
+                    else
+                        self.config.backpressure_threshold;
+                    const queue_load = if (self.buffer.capacity == 0)
+                        0.0
+                    else
+                        @as(f64, @floatFromInt(self.buffer.count)) / @as(f64, @floatFromInt(self.buffer.capacity));
+                    if (queue_load >= threshold) {
+                        _ = self.stats.backpressure_events.fetchAdd(1, .monotonic);
+                    }
+
                     // Update max queue depth
                     const current = self.buffer.size();
                     var max = self.stats.max_queue_depth.load(.monotonic);
@@ -551,12 +585,13 @@ pub const AsyncLogger = struct {
         defer self.mutex.unlock(Utils.io());
 
         var batch: [Constants.AsyncConstants.batch_size]BufferEntry = undefined;
+        const batch_limit = self.effectiveBatchSize();
         const start_time = Utils.currentMillis();
         var total_flushed: u64 = 0;
         var total_bytes: u64 = 0;
 
         while (true) {
-            const count = self.buffer.popBatch(&batch);
+            const count = self.buffer.popBatch(batch[0..batch_limit]);
             if (count == 0) break;
 
             for (batch[0..count]) |entry| {
@@ -597,6 +632,7 @@ pub const AsyncLogger = struct {
         }
 
         var batch: [Constants.AsyncConstants.batch_size]BufferEntry = undefined;
+        const batch_limit = self.effectiveBatchSize();
         var last_flush = Utils.currentMillis();
 
         while (self.running.load(.acquire) or !self.buffer.isEmpty()) {
@@ -620,7 +656,7 @@ pub const AsyncLogger = struct {
             }
 
             // Process batch
-            const count = self.buffer.popBatch(&batch);
+            const count = self.buffer.popBatch(batch[0..batch_limit]);
             self.mutex.unlock(Utils.io());
 
             if (count > 0) {
@@ -754,6 +790,11 @@ pub const AsyncLogger = struct {
         }
     }
 
+    /// Waits for the queue to drain using the configured drain timeout.
+    pub fn waitUntilDrainedDefault(self: *AsyncLogger) bool {
+        return self.waitUntilDrained(self.config.drain_timeout_ms);
+    }
+
     /// Sets overflow callback.
     pub fn setOverflowCallback(self: *AsyncLogger, callback: *const fn (u64) void) void {
         self.overflow_callback = callback;
@@ -845,6 +886,7 @@ pub const AsyncLogger = struct {
     /// Alias for waitUntilDrained
     pub const waitForDrain = waitUntilDrained;
     pub const drain = waitUntilDrained;
+    pub const drainDefault = waitUntilDrainedDefault;
 
     /// Alias for isQueueEmpty
     pub const empty = isQueueEmpty;
@@ -1206,4 +1248,45 @@ test "async queue utilization and drain helpers" {
 
     logger.flushSync();
     try std.testing.expect(logger.waitUntilDrained(25));
+    try std.testing.expect(logger.drainDefault());
+}
+
+test "async backpressure events" {
+    const allocator = std.testing.allocator;
+
+    const config = AsyncLogger.AsyncConfig{
+        .buffer_size = 2,
+        .background_worker = false,
+        .overflow_policy = .drop_newest,
+        .backpressure_threshold = 0.5,
+    };
+
+    var logger = try AsyncLogger.initWithConfig(allocator, config);
+    defer logger.deinit();
+
+    _ = logger.queue("alpha", 1);
+    _ = logger.queue("beta", 1);
+
+    try std.testing.expect(logger.stats.hasBackpressureEvents());
+    try std.testing.expect(logger.stats.getBackpressureEvents() > 0);
+    try std.testing.expect(logger.stats.backpressureCount() > 0);
+}
+
+test "async effective batch size respects config" {
+    const allocator = std.testing.allocator;
+
+    var logger = try AsyncLogger.initWithConfig(allocator, .{
+        .buffer_size = 8,
+        .batch_size = 3,
+        .background_worker = false,
+    });
+    defer logger.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), logger.effectiveBatchSize());
+
+    logger.config.batch_size = 0;
+    try std.testing.expectEqual(@as(usize, 1), logger.effectiveBatchSize());
+
+    logger.config.batch_size = Constants.AsyncConstants.batch_size * 4;
+    try std.testing.expectEqual(Constants.AsyncConstants.batch_size, logger.effectiveBatchSize());
 }

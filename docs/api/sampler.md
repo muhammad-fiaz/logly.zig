@@ -33,6 +33,8 @@ The `Sampler` struct controls log throughput by selectively processing records.
 | `totalAccepted()` | `accepted_()` | Get total accepted count |
 | `totalRejected()` | `rejected_()` | Get total rejected count |
 | `shouldSample()` | `sample()`, `check()`, `allow()` | Check if record should be sampled |
+| `shouldSampleKey()` | `sampleKey()` | Deterministic sampling decision for a key |
+| `shouldSampleKeyWithReason()` | `keyDecision()` | Deterministic sampling decision with reason |
 | `setStrategy()` | `configure()` | Update strategy at runtime |
 | `setProbability()` | `probability()`, `setProb()` | Set probability strategy with clamping |
 | `setRateLimit()` | `rateLimit()`, `configureRateLimit()` | Set rate-limit strategy |
@@ -158,6 +160,18 @@ Releases all resources associated with the sampler.
 Determines if the current record should be sampled (processed). Returns `true` to process, `false` to drop.
 
 **Alias**: `sample`, `check`, `allow`
+
+#### `shouldSampleKey(key: []const u8) bool`
+
+Deterministically samples based on a stable key (user/session/etc.).
+
+**Alias**: `sampleKey`
+
+#### `shouldSampleKeyWithReason(key: []const u8) SampleDecision`
+
+Deterministic sampling decision with reject reason details.
+
+**Alias**: `keyDecision`
 
 #### `shouldSampleWithReason() SampleDecision`
 

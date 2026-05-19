@@ -20,6 +20,24 @@ The `Metrics` module enables you to:
 - Measure logging throughput
 - Track per-sink statistics
 
+For targeted cleanup, `Metrics.resetLevelMetrics(level)` clears a single log-level counter without resetting the full collector.
+
+## Export Naming and Breakdowns
+
+Prometheus and StatsD exports can be namespaced and shaped from config:
+
+```zig
+const metrics_cfg = logly.Config.MetricsConfig.production()
+    .prometheus()
+    .prefix("api.gateway")
+    .histogram(20)
+    .breakdowns(true, true);
+
+var metrics = logly.Metrics.initWithConfig(allocator, metrics_cfg);
+```
+
+This produces exporter-safe names like `api_gateway_records_total` for Prometheus. Per-level and per-sink breakdowns are enabled by default and can be disabled when you need smaller exports.
+
 ## Basic Usage
 
 ```zig

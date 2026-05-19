@@ -662,6 +662,49 @@ pub const Formatter = struct {
         return buf.toOwnedSlice();
     }
 
+    /// Returns the number of interpolation placeholders in a custom format template.
+    ///
+    /// Supported placeholders are balanced `{name}` tokens. Escaped braces `{{` and `}}`
+    /// are treated as literal braces.
+    pub fn countTemplatePlaceholders(template: []const u8) !usize {
+        var count: usize = 0;
+        var i: usize = 0;
+
+        while (i < template.len) {
+            switch (template[i]) {
+                '{' => {
+                    if (i + 1 < template.len and template[i + 1] == '{') {
+                        i += 2;
+                        continue;
+                    }
+
+                    const end = std.mem.indexOfScalarPos(u8, template, i + 1, '}') orelse return error.UnbalancedBraces;
+                    if (end == i + 1) return error.InvalidTemplate;
+                    count += 1;
+                    i = end + 1;
+                },
+                '}' => {
+                    if (i + 1 < template.len and template[i + 1] == '}') {
+                        i += 2;
+                        continue;
+                    }
+                    return error.UnbalancedBraces;
+                },
+                else => i += 1,
+            }
+        }
+
+        return count;
+    }
+
+    /// Validates that a custom format template only uses balanced placeholder braces.
+    ///
+    /// This is a lightweight syntax check for custom formatter strings and does not
+    /// allocate or change the formatter state.
+    pub fn validateTemplate(template: []const u8) !void {
+        _ = try countTemplatePlaceholders(template);
+    }
+
     /// Formats a log record directly to a writer.
     ///
     /// This avoids intermediate allocations when writing directly to a sink.
@@ -683,23 +726,31 @@ pub const Formatter = struct {
         // Use custom color if available (highest priority)
         var color_code: []const u8 = if (record.custom_level_color) |c| c else "";
 
-        // If no custom color from record, check config.level_colors (overrides & themes)
+        // If no custom color from record, check explicit config overrides first.
         if (color_code.len == 0) {
             if (@hasField(@TypeOf(config), "level_colors")) {
-                color_code = config.level_colors.getColorForLevel(record.level);
+                if (config.level_colors.getOverrideForLevel(record.level)) |override| {
+                    color_code = override;
+                } else if (!config.level_colors.usesDefaultTheme()) {
+                    color_code = config.level_colors.getColorForLevel(record.level);
+                }
             }
         }
 
-        // If still no color, check legacy theme on formatter
+        // If still no color, check the formatter/sink theme.
         if (color_code.len == 0) {
             if (self.theme) |t| {
                 color_code = t.getColor(record.level);
             }
         }
 
-        // Fallback to default
+        // Fallback to default config/level colors.
         if (color_code.len == 0) {
-            color_code = record.level.defaultColor();
+            if (@hasField(@TypeOf(config), "level_colors")) {
+                color_code = config.level_colors.getColorForLevel(record.level);
+            } else {
+                color_code = record.level.defaultColor();
+            }
         }
 
         // Check for custom log format
@@ -1678,6 +1729,14 @@ test "formatter timestamp helper formats numeric and textual values" {
     try std.testing.expect(std.mem.indexOf(u8, textual, "default") == null);
 }
 
+test "formatter template validation" {
+    try std.testing.expectEqual(@as(usize, 3), try Formatter.countTemplatePlaceholders("{time} [{level}] {message}"));
+    try std.testing.expectEqual(@as(usize, 1), try Formatter.countTemplatePlaceholders("prefix {{literal}} {message}"));
+    try Formatter.validateTemplate("{time} - {message}");
+    try std.testing.expectError(error.UnbalancedBraces, Formatter.validateTemplate("{time"));
+    try std.testing.expectError(error.InvalidTemplate, Formatter.validateTemplate("{}"));
+}
+
 test "formatter plain text" {
     const allocator = std.testing.allocator;
     var formatter = Formatter.init(allocator);
@@ -1697,6 +1756,54 @@ test "formatter plain text" {
     try std.testing.expect(std.mem.indexOf(u8, output_str, "INFO") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "test_mod") != null);
     try std.testing.expect(std.mem.indexOf(u8, output_str, "Test message") != null);
+}
+
+test "formatter sink theme applies when config colors are default" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+    formatter.setTheme(Formatter.Theme.neon());
+
+    var record = Record.init(allocator, .info, "Themed message");
+    defer record.deinit();
+    record.timestamp = 1700000000000;
+
+    var config = Config{};
+    config.color = true;
+    config.global_color_display = true;
+
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
+
+    try formatter.formatToWriter(&buf.writer, &record, config);
+    const output_str = buf.written();
+
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\x1b[38;5;255m") != null);
+}
+
+test "formatter explicit level color overrides sink theme" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+    formatter.setTheme(Formatter.Theme.neon());
+
+    var record = Record.init(allocator, .info, "Override message");
+    defer record.deinit();
+    record.timestamp = 1700000000000;
+
+    var config = Config{};
+    config.color = true;
+    config.global_color_display = true;
+    config.level_colors.info_color = "35";
+
+    var buf = std.Io.Writer.Allocating.init(allocator);
+    defer buf.deinit();
+
+    try formatter.formatToWriter(&buf.writer, &record, config);
+    const output_str = buf.written();
+
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\x1b[35m") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_str, "\x1b[38;5;255m") == null);
 }
 
 test "formatter json" {

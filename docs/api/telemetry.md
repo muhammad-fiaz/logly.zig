@@ -10,6 +10,8 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 - **Distributed Tracing**: Full W3C Trace Context specification support with parent-child span relationships
 - **W3C Baggage**: Context propagation for arbitrary key-value pairs across service boundaries
 - **Metrics Collection**: Counter, gauge, histogram, and summary metrics with configurable export formats
+- **Metrics Export Paths**: `metrics_file_path` overrides the default file exporter path for JSON/Prometheus metrics
+- **Metric Name Controls**: `metric_prefix`, `metric_prefix_separator`, and `sanitize_metric_names` normalize exported metric names for Prometheus-compatible output
 - **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span and metric export
 - **Export Modes**: Synchronous, async buffered, batch, and network export modes
 - **Span Processor Semantics**: `span_processor_type` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
@@ -20,6 +22,37 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 - **Custom Callbacks**: User-defined handlers for span lifecycle and metric events
 - **Thread Safety**: Mutex-protected concurrent access to spans and metrics
 - **Utils Integration**: Leverages utils.zig for ID generation, time calculations, and JSON escaping
+
+### Metric Export Formats
+
+```zig
+var config = logly.TelemetryConfig.development();
+config.metric_format = .json; // or .prometheus
+config.metrics_file_path = "telemetry_metrics.jsonl";
+
+var telemetry = try logly.Telemetry.init(allocator, config);
+defer telemetry.deinit();
+
+try telemetry.recordCounter("requests.total", 1.0);
+try telemetry.exportMetrics();
+```
+
+### Metric Name Prefixing and Sanitization
+
+```zig
+var config = logly.TelemetryConfig.development()
+    .withPrometheusMetrics("metrics.prom")
+    .withMetricPrefix("api.v1");
+config.metric_prefix_separator = ":";
+config.sanitize_metric_names = true;
+
+// "http.requests-total" exports as "api_v1:http_requests_total"
+try telemetry.recordCounter("http.requests-total", 1.0);
+```
+
+Sanitization replaces unsupported characters with `_` and protects names that
+start with digits. Disable it with `withMetricNameSanitization(false)` when a
+custom backend expects raw metric names.
 
 ## Quick Reference: Method Aliases
 
