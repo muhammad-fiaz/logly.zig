@@ -2,6 +2,9 @@ name: Release
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   release:
     types: [published]
@@ -126,6 +129,10 @@ jobs:
             ## 📃 Documentation
 
             Full Documentations can be found at https://muhammad-fiaz.github.io/logly.zig/
+
+            ## 📝 Release Notes
+
+            For release notes, see https://github.com/muhammad-fiaz/logly.zig/blob/main/CHANGELOG.md
 
             ## 📦 Installation
 
