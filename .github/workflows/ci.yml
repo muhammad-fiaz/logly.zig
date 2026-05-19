@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     branches: [main]
@@ -59,9 +62,9 @@ jobs:
             target: x86_64-macos
           - os: macos-latest
             target: aarch64-macos
-          - os: windows-latest
+          - os: windows-2025-vs2026
             target: x86_64-windows
-          - os: windows-latest
+          - os: windows-2025-vs2026
             target: x86-windows
     steps:
       - name: Checkout
