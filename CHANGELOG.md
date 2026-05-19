@@ -57,10 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added file-based telemetry span export test coverage.
 - Added formatter template validation, metrics level reset, scheduler dependency validation, filter mode helper, rules count helper, and async backpressure tests.
 
-### Maintenance
-
-- Updated dependencies.
-- Applied formatting updates.
 
 ## [0.1.8] - Zig 0.16.0 Compatibility
 
