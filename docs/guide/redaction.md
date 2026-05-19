@@ -17,7 +17,7 @@ The `Redactor` module enables you to:
 - Automatically mask sensitive data in log messages
 - Define custom patterns for different data types
 - Use pattern matching: exact, prefix, suffix, contains, regex
-- Apply different redaction types: full, partial, hashed
+- Apply different redaction types: full, partial, hashed, truncate
 - Use pre-built presets for common compliance scenarios
 
 ## Basic Usage
@@ -137,6 +137,21 @@ try redactor.addField("patient_id", .hash);
 | `.partial_end` | `1234567890` | `1234******` |
 | `.mask_middle` | `1234567890` | `123****890` |
 | `.hash` | `sensitive` | `[HASH:a1b2c3d4...]` |
+| `.truncate` | `supersecretvalue` | `supersecre...` |
+
+### Truncation and Hash Selection
+
+```zig
+var redactor = Redactor.init(allocator);
+defer redactor.deinit();
+
+redactor.config.truncate_length = 8;
+redactor.config.truncate_suffix = "...";
+redactor.config.hash_algorithm = .sha512;
+
+try redactor.addField("token", .truncate);
+try redactor.addField("user_id", .hash);
+```
 
 ## Redaction Presets
 

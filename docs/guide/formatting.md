@@ -89,6 +89,8 @@ pub fn main() !void {
 
 You can customize the log output format using the `log_format` option in `Config` or `SinkConfig`.
 
+Use `Formatter.validateTemplate(...)` to check brace balance before deploying a custom format string.
+
 Supported tags:
 - `{time}`: Timestamp
 - `{level}`: Log level

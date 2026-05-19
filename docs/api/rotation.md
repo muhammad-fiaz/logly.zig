@@ -28,6 +28,8 @@ The `Rotation` module provides enterprise-grade log rotation capabilities, inclu
 | `getRotationReason()` | `rotationReason()`, `getReason()` | Get current rotation trigger reason |
 | `shouldRotate()` | `shouldRotateNow()` | Check if conditions currently require rotation |
 | `nextRotationInSeconds()` | `secondsUntilNextRotation()` | Get remaining interval seconds |
+| `nextRotationAt()` | `nextRotationAtSeconds()` | Get epoch seconds for next interval rotation |
+| `rotationAgeSeconds()` | `lastRotationAgeSeconds()` | Get seconds since last rotation |
 | `previewNextPath()` | `previewPath()`, `nextPath()` | Preview next rotated file path |
 | `forceRotate()` | `rotateNow()`, `force()` | Force rotation immediately |
 | `checkAndRotate()` | `rotateIfNeeded()`, `maybeRotate()` | Check and rotate if needed |
@@ -235,6 +237,14 @@ Returns true when any rotation condition is currently met.
 #### `nextRotationInSeconds(self: *const Rotation) ?i64`
 
 Returns remaining seconds until next interval rotation, or `null` if interval rotation is disabled.
+
+#### `nextRotationAt(self: *const Rotation) ?i64`
+
+Returns the epoch seconds when the next interval rotation would occur, or `null` if interval rotation is disabled.
+
+#### `rotationAgeSeconds(self: *const Rotation) i64`
+
+Returns the number of seconds since the last rotation.
 
 #### `previewNextPath(self: *Rotation) ![]u8`
 

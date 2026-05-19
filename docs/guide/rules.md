@@ -95,6 +95,8 @@ Rules support multiple message categories, each with distinct styling:
 > [!NOTE]
 > The symbols shown above is the default configuration. You can customize these in `Config.RuleSymbols`.
 
+For introspection, `Rules.hasRules()` and `Rules.totalRuleCount()` report whether a rule set is configured and how many rules it contains.
+
 ### Creating Messages
 
 Use the convenient builder methods:

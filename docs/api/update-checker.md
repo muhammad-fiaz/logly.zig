@@ -169,9 +169,9 @@ pub fn main() !void {
 
 ## Recent Changes
 
-### v0.1.8
+### v0.1.9
 
-- Updated examples and version references to the latest release (`0.1.8`).
+- Updated examples and version references to the latest release (`0.1.9`).
 
 ### v0.1.8
 

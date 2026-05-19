@@ -21,6 +21,8 @@ This guide covers automatic log maintenance in Logly using the scheduler, includ
 
 The scheduler module provides automatic log maintenance by running tasks on configurable schedules. This includes cleaning up old logs, compressing files, rotating logs, and running custom maintenance tasks.
 
+Use `Scheduler.validateDependencies()` after wiring tasks together to catch missing dependency names and dependency cycles early.
+
 ## Logger Configuration
 
 Enable scheduler through the Config struct:

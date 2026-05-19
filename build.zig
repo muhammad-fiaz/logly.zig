@@ -69,6 +69,8 @@ pub fn build(b: *std.Build) void {
         .{ .name = "config_presets", .path = "examples/config_presets.zig" },
         .{ .name = "rules", .path = "examples/rules.zig" },
         .{ .name = "telemetry", .path = "examples/telemetry.zig" },
+        .{ .name = "telemetry_metric_names", .path = "examples/telemetry_metric_names.zig" },
+        .{ .name = "pipeline_controls", .path = "examples/pipeline_controls.zig" },
     };
 
     // Create run-all-examples step that runs all examples sequentially

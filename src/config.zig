@@ -410,18 +410,7 @@ pub const Config = struct {
         /// Get the effective color for a level, considering theme and overrides.
         pub fn getColorForLevel(self: LevelColorConfig, level: Level) []const u8 {
             // Check individual overrides first
-            const override = switch (level) {
-                .trace => self.trace_color,
-                .debug => self.debug_color,
-                .info => self.info_color,
-                .notice => self.notice_color,
-                .success => self.success_color,
-                .warning => self.warning_color,
-                .err => self.error_color,
-                .fail => self.fail_color,
-                .critical => self.critical_color,
-                .fatal => self.fatal_color,
-            };
+            const override = self.getOverrideForLevel(level);
             if (override) |color| return color;
 
             // Fall back to theme colors
@@ -475,6 +464,47 @@ pub const Config = struct {
                 },
                 .none => "",
             };
+        }
+
+        /// Returns the explicit per-level color override, if one is configured.
+        pub fn getOverrideForLevel(self: LevelColorConfig, level: Level) ?[]const u8 {
+            return switch (level) {
+                .trace => self.trace_color,
+                .debug => self.debug_color,
+                .info => self.info_color,
+                .notice => self.notice_color,
+                .success => self.success_color,
+                .warning => self.warning_color,
+                .err => self.error_color,
+                .fail => self.fail_color,
+                .critical => self.critical_color,
+                .fatal => self.fatal_color,
+            };
+        }
+
+        /// Returns true when a level has an explicit per-level color override.
+        pub fn hasOverrideForLevel(self: LevelColorConfig, level: Level) bool {
+            return self.getOverrideForLevel(level) != null;
+        }
+
+        /// Returns true when the color configuration is still using the default theme.
+        pub fn usesDefaultTheme(self: LevelColorConfig) bool {
+            return self.theme_preset == .default;
+        }
+
+        /// Returns true when no explicit theme or per-level override is configured.
+        pub fn isDefault(self: LevelColorConfig) bool {
+            return self.usesDefaultTheme() and
+                self.trace_color == null and
+                self.debug_color == null and
+                self.info_color == null and
+                self.notice_color == null and
+                self.success_color == null and
+                self.warning_color == null and
+                self.error_color == null and
+                self.fail_color == null and
+                self.critical_color == null and
+                self.fatal_color == null;
         }
     };
 
@@ -627,6 +657,10 @@ pub const Config = struct {
         partial_end_chars: u8 = Constants.RedactionDefaults.partial_end_chars,
         /// Mask character for redacted content.
         mask_char: u8 = Constants.RedactionDefaults.mask_char,
+        /// Max characters to keep when using truncate redaction.
+        truncate_length: usize = Constants.RedactionDefaults.truncate_length,
+        /// Suffix appended when values are truncated.
+        truncate_suffix: []const u8 = Constants.RedactionDefaults.truncate_suffix,
         /// Enable case-insensitive field matching.
         case_insensitive: bool = true,
         /// Log when redaction is applied (for audit).
@@ -782,6 +816,82 @@ pub const Config = struct {
         keep_alive_ms: u64 = 60000,
         /// Enable thread affinity (pin threads to CPUs).
         thread_affinity: bool = false,
+
+        /// Returns a thread-pool configuration optimized for general use.
+        pub fn default() ThreadPoolConfig {
+            return .{};
+        }
+
+        /// Returns a thread-pool configuration for sustained logging throughput.
+        pub fn highThroughput() ThreadPoolConfig {
+            return .{
+                .enabled = true,
+                .thread_count = Constants.ThreadDefaults.thread_count,
+                .queue_size = Constants.ThreadDefaults.max_tasks,
+                .stack_size = 2 * Constants.ThreadDefaults.stack_size,
+                .work_stealing = true,
+            };
+        }
+
+        /// Returns a thread-pool configuration for disk and network-heavy logging.
+        pub fn ioBound() ThreadPoolConfig {
+            return .{
+                .enabled = true,
+                .thread_count = Constants.ThreadDefaults.ioBoundThreadCount(),
+                .queue_size = Constants.ThreadDefaults.queue_size * 2,
+                .work_stealing = true,
+            };
+        }
+
+        /// Returns a thread-pool configuration for CPU-heavy formatting/compression.
+        pub fn cpuBound() ThreadPoolConfig {
+            return .{
+                .enabled = true,
+                .thread_count = Constants.ThreadDefaults.cpuBoundThreadCount(),
+                .queue_size = Constants.ThreadDefaults.queue_size,
+                .work_stealing = false,
+            };
+        }
+
+        /// Returns a small thread-pool configuration for constrained targets.
+        pub fn lowResource() ThreadPoolConfig {
+            return .{
+                .enabled = true,
+                .thread_count = 2,
+                .queue_size = Constants.ThreadDefaults.queue_size_low,
+                .stack_size = Constants.ThreadDefaults.stack_size / 2,
+                .work_stealing = false,
+            };
+        }
+
+        /// Returns a copy with the worker count changed.
+        pub fn withThreadCount(self: ThreadPoolConfig, count: usize) ThreadPoolConfig {
+            var cfg = self;
+            cfg.thread_count = count;
+            cfg.enabled = true;
+            return cfg;
+        }
+
+        /// Returns a copy with queue size changed.
+        pub fn withQueueSize(self: ThreadPoolConfig, size: usize) ThreadPoolConfig {
+            var cfg = self;
+            cfg.queue_size = size;
+            return cfg;
+        }
+
+        /// Returns a copy with per-worker arenas enabled or disabled.
+        pub fn withArena(self: ThreadPoolConfig, enabled: bool) ThreadPoolConfig {
+            var cfg = self;
+            cfg.enable_arena = enabled;
+            return cfg;
+        }
+
+        /// Alias for `withThreadCount`.
+        pub const threads = withThreadCount;
+        /// Alias for `withQueueSize`.
+        pub const queue = withQueueSize;
+        /// Alias for `withArena`.
+        pub const arena = ThreadPoolConfig.withArena;
     };
 
     /// Parallel sink writing configuration.
@@ -885,6 +995,49 @@ pub const Config = struct {
         min_age_days_for_compression: u64 = 1,
         /// Maximum concurrent compression tasks.
         max_concurrent_compressions: usize = 2,
+
+        /// Returns scheduler settings for routine log maintenance.
+        pub fn maintenance(logs_path: []const u8) SchedulerConfig {
+            return .{
+                .enabled = true,
+                .file_pattern = "*.log",
+                .archive_root_dir = logs_path,
+                .compress_before_cleanup = true,
+                .clean_empty_dirs = true,
+            };
+        }
+
+        /// Returns a copy configured for cleanup after `days`.
+        pub fn withCleanupDays(self: SchedulerConfig, days: u64) SchedulerConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.cleanup_max_age_days = days;
+            return cfg;
+        }
+
+        /// Returns a copy configured to keep at most `count` files.
+        pub fn withMaxFiles(self: SchedulerConfig, count: usize) SchedulerConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.max_files = count;
+            return cfg;
+        }
+
+        /// Returns a copy with scheduled compression enabled.
+        pub fn withCompression(self: SchedulerConfig, algorithm: CompressionConfig.CompressionAlgorithm) SchedulerConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.compress_before_cleanup = true;
+            cfg.compression_algorithm = algorithm;
+            return cfg;
+        }
+
+        /// Alias for `withCleanupDays`.
+        pub const cleanupDays = withCleanupDays;
+        /// Alias for `withMaxFiles`.
+        pub const retainFiles = withMaxFiles;
+        /// Alias for `withCompression`.
+        pub const compressBeforeCleanup = SchedulerConfig.withCompression;
     };
 
     /// Metrics collection configuration.
@@ -915,6 +1068,18 @@ pub const Config = struct {
         histogram_buckets: u8 = 10,
         /// Retain metrics history (in snapshots).
         history_size: u16 = 0,
+        /// Prefix/namespace used by exported metric names.
+        metric_prefix: []const u8 = Constants.MetricsConstants.default_prefix,
+        /// Separator used when joining metric prefix and metric name.
+        metric_separator: []const u8 = Constants.MetricsConstants.prometheus_separator,
+        /// Separator used by StatsD exports.
+        statsd_separator: []const u8 = Constants.MetricsConstants.statsd_separator,
+        /// Sanitize exported metric names for the target exporter.
+        sanitize_names: bool = Constants.MetricsConstants.sanitize_names,
+        /// Include per-level counters in metrics exports.
+        export_level_breakdown: bool = Constants.MetricsConstants.include_level_breakdown,
+        /// Include per-sink counters in metrics exports.
+        export_sink_breakdown: bool = Constants.MetricsConstants.include_sink_breakdown,
 
         pub const ExportFormat = enum {
             text,
@@ -974,6 +1139,75 @@ pub const Config = struct {
                 .history_size = 60,
             };
         }
+
+        /// Returns a copy configured for a specific export format.
+        pub fn withExport(self: MetricsConfig, format: ExportFormat) MetricsConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.export_format = format;
+            return cfg;
+        }
+
+        /// Returns a copy configured for Prometheus export naming.
+        pub fn prometheus(self: MetricsConfig) MetricsConfig {
+            var cfg = self.withExport(.prometheus);
+            cfg.metric_separator = Constants.MetricsConstants.prometheus_separator;
+            cfg.sanitize_names = true;
+            return cfg;
+        }
+
+        /// Returns a copy configured for StatsD export naming.
+        pub fn statsd(self: MetricsConfig) MetricsConfig {
+            var cfg = self.withExport(.statsd);
+            cfg.metric_separator = cfg.statsd_separator;
+            cfg.sanitize_names = false;
+            return cfg;
+        }
+
+        /// Returns a copy with an exported metric prefix/namespace.
+        pub fn withPrefix(self: MetricsConfig, metric_prefix_value: []const u8) MetricsConfig {
+            var cfg = self;
+            cfg.metric_prefix = metric_prefix_value;
+            return cfg;
+        }
+
+        /// Returns a copy with latency histograms enabled.
+        pub fn withLatencyHistogram(self: MetricsConfig, buckets: u8) MetricsConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.track_latency = true;
+            cfg.enable_histogram = true;
+            cfg.histogram_buckets = buckets;
+            return cfg;
+        }
+
+        /// Returns a copy with error/drop alert thresholds.
+        pub fn withAlerts(self: MetricsConfig, error_rate: f32, drop_rate: f32) MetricsConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.error_rate_threshold = error_rate;
+            cfg.drop_rate_threshold = drop_rate;
+            return cfg;
+        }
+
+        /// Returns a copy with level/sink export breakdowns enabled or disabled.
+        pub fn withBreakdowns(self: MetricsConfig, levels: bool, sinks: bool) MetricsConfig {
+            var cfg = self;
+            cfg.export_level_breakdown = levels;
+            cfg.export_sink_breakdown = sinks;
+            return cfg;
+        }
+
+        /// Alias for `withExport`.
+        pub const exportAs = withExport;
+        /// Alias for `withPrefix`.
+        pub const prefix = withPrefix;
+        /// Alias for `withLatencyHistogram`.
+        pub const histogram = withLatencyHistogram;
+        /// Alias for `withAlerts`.
+        pub const alerts = withAlerts;
+        /// Alias for `withBreakdowns`.
+        pub const breakdowns = withBreakdowns;
     };
 
     /// Compression configuration.
@@ -1672,6 +1906,55 @@ pub const Config = struct {
             /// Custom format string (requires naming_format to be set)
             custom,
         };
+
+        /// Returns a size-based rotation configuration.
+        pub fn bySize(size_bytes: u64, retention: usize) RotationConfig {
+            return .{
+                .enabled = true,
+                .size_limit = size_bytes,
+                .retention_count = retention,
+            };
+        }
+
+        /// Returns a time-based rotation configuration.
+        pub fn byInterval(interval_name: []const u8, retention: usize) RotationConfig {
+            return .{
+                .enabled = true,
+                .interval = interval_name,
+                .retention_count = retention,
+            };
+        }
+
+        /// Returns a daily rotation configuration.
+        pub fn daily(retention_days: usize) RotationConfig {
+            return byInterval("daily", retention_days);
+        }
+
+        /// Returns a copy with compression enabled for rotated files.
+        pub fn withCompression(self: RotationConfig, algorithm: CompressionConfig.CompressionAlgorithm) RotationConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.compression_algorithm = algorithm;
+            cfg.compress_on_retention = true;
+            return cfg;
+        }
+
+        /// Returns a copy with archive directory controls configured.
+        pub fn withArchive(self: RotationConfig, dir: []const u8, date_subdirs: bool) RotationConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.archive_dir = dir;
+            cfg.archive_root_dir = dir;
+            cfg.create_date_subdirs = date_subdirs;
+            return cfg;
+        }
+
+        /// Alias for `bySize`.
+        pub const size = bySize;
+        /// Alias for `byInterval`.
+        pub const intervalRotation = byInterval;
+        /// Alias for `withArchive`.
+        pub const archiveTo = withArchive;
     };
 
     /// Customizable symbols for rule message categories.
@@ -1843,12 +2126,94 @@ pub const Config = struct {
         background_worker: bool = true,
         /// Use arena allocator for batch processing (reduces malloc overhead).
         use_arena: bool = false,
+        /// Queue utilization ratio that records a backpressure event.
+        backpressure_threshold: f64 = Constants.AsyncConstants.backpressure_threshold_ratio,
+        /// Default timeout for explicit drain waits.
+        drain_timeout_ms: u64 = Constants.AsyncConstants.drain_timeout_ms,
 
         pub const OverflowPolicy = enum {
             drop_oldest,
             drop_newest,
             block,
         };
+
+        /// Returns async settings for high-throughput buffered logging.
+        pub fn highThroughput() AsyncConfig {
+            return .{
+                .enabled = true,
+                .buffer_size = Constants.AsyncPresetDefaults.high_throughput_buffer_size,
+                .batch_size = Constants.AsyncPresetDefaults.high_throughput_batch_size,
+                .flush_interval_ms = Constants.AsyncPresetDefaults.high_throughput_flush_interval_ms,
+                .min_flush_interval_ms = Constants.AsyncPresetDefaults.high_throughput_min_flush_interval_ms,
+                .max_latency_ms = Constants.AsyncPresetDefaults.high_throughput_max_latency_ms,
+                .overflow_policy = .drop_oldest,
+                .background_worker = true,
+            };
+        }
+
+        /// Returns async settings for low-latency logging.
+        pub fn lowLatency() AsyncConfig {
+            return .{
+                .enabled = true,
+                .buffer_size = Constants.AsyncPresetDefaults.low_latency_buffer_size,
+                .batch_size = Constants.AsyncPresetDefaults.low_latency_batch_size,
+                .flush_interval_ms = Constants.AsyncPresetDefaults.low_latency_flush_interval_ms,
+                .min_flush_interval_ms = Constants.AsyncPresetDefaults.low_latency_min_flush_interval_ms,
+                .max_latency_ms = Constants.AsyncPresetDefaults.low_latency_max_latency_ms,
+                .overflow_policy = .block,
+                .background_worker = true,
+            };
+        }
+
+        /// Returns async settings that prefer blocking over dropping records.
+        pub fn reliable() AsyncConfig {
+            return .{
+                .enabled = true,
+                .flush_interval_ms = Constants.AsyncPresetDefaults.balanced_flush_interval_ms,
+                .min_flush_interval_ms = Constants.AsyncPresetDefaults.balanced_min_flush_interval_ms,
+                .max_latency_ms = Constants.AsyncPresetDefaults.balanced_max_latency_ms,
+                .overflow_policy = .block,
+                .background_worker = true,
+            };
+        }
+
+        /// Returns a copy with a specific queue size.
+        pub fn withBufferSize(self: AsyncConfig, size: usize) AsyncConfig {
+            var cfg = self;
+            cfg.enabled = true;
+            cfg.buffer_size = size;
+            return cfg;
+        }
+
+        /// Returns a copy with a specific batch size.
+        pub fn withBatchSize(self: AsyncConfig, size: usize) AsyncConfig {
+            var cfg = self;
+            cfg.batch_size = size;
+            return cfg;
+        }
+
+        /// Returns a copy with a specific overflow policy.
+        pub fn withOverflowPolicy(self: AsyncConfig, policy: OverflowPolicy) AsyncConfig {
+            var cfg = self;
+            cfg.overflow_policy = policy;
+            return cfg;
+        }
+
+        /// Returns a copy with a clamped backpressure threshold.
+        pub fn withBackpressureThreshold(self: AsyncConfig, threshold: f64) AsyncConfig {
+            var cfg = self;
+            cfg.backpressure_threshold = if (threshold < 0.0) 0.0 else if (threshold > 1.0) 1.0 else threshold;
+            return cfg;
+        }
+
+        /// Alias for `withBufferSize`.
+        pub const buffer = withBufferSize;
+        /// Alias for `withBatchSize`.
+        pub const batch = withBatchSize;
+        /// Alias for `withOverflowPolicy`.
+        pub const overflow = withOverflowPolicy;
+        /// Alias for `withBackpressureThreshold`.
+        pub const backpressure = withBackpressureThreshold;
     };
 
     /// Returns the default configuration.
@@ -2032,6 +2397,62 @@ pub const Config = struct {
         result.async_config.enabled = true;
         return result;
     }
+
+    /// Returns a copy with metrics configuration applied and top-level metrics enabled.
+    ///
+    /// Use this to keep `enable_metrics` synchronized with the detailed
+    /// `metrics` block when composing production profiles.
+    pub fn withMetrics(self: Config, config: MetricsConfig) Config {
+        var result = self;
+        result.metrics = config;
+        result.enable_metrics = config.enabled;
+        return result;
+    }
+
+    /// Returns a copy with rules configuration applied.
+    pub fn withRules(self: Config, config: RulesConfig) Config {
+        var result = self;
+        result.rules = config;
+        return result;
+    }
+
+    /// Returns a copy with rotation configuration applied.
+    pub fn withRotation(self: Config, config: RotationConfig) Config {
+        var result = self;
+        result.rotation = config;
+        return result;
+    }
+
+    /// Returns a copy with a complete high-throughput async pipeline enabled.
+    pub fn withHighThroughputPipeline(self: Config) Config {
+        var result = self;
+        result.async_config = AsyncConfig.highThroughput();
+        result.thread_pool = ThreadPoolConfig.highThroughput();
+        result.metrics = MetricsConfig.production().withLatencyHistogram(20).prometheus();
+        result.enable_metrics = true;
+        return result;
+    }
+
+    /// Returns a copy with metrics, rules, and maintenance controls enabled.
+    pub fn withObservability(self: Config, metric_prefix: []const u8) Config {
+        var result = self;
+        result.metrics = MetricsConfig.detailed().prometheus().withPrefix(metric_prefix);
+        result.enable_metrics = true;
+        result.rules = RulesConfig.production();
+        result.scheduler.enabled = true;
+        return result;
+    }
+
+    /// Alias for `withMetrics`.
+    pub const metricsConfig = withMetrics;
+    /// Alias for `withRules`.
+    pub const rulesConfig = withRules;
+    /// Alias for `withRotation`.
+    pub const rotationConfig = withRotation;
+    /// Alias for `withHighThroughputPipeline`.
+    pub const pipeline = withHighThroughputPipeline;
+    /// Alias for `withObservability`.
+    pub const observability = withObservability;
 
     /// Returns a configuration with compression enabled.
     ///
@@ -2445,6 +2866,58 @@ test "config arena allocation aliases" {
     try std.testing.expect(arena_via_short_alias.use_arena_allocator);
 }
 
+test "config pipeline builders enable related features" {
+    const cfg = Config.default()
+        .withHighThroughputPipeline()
+        .withObservability("svc.api")
+        .withRotation(Config.RotationConfig.daily(7).withCompression(.zstd));
+
+    try std.testing.expect(cfg.async_config.enabled);
+    try std.testing.expect(cfg.thread_pool.enabled);
+    try std.testing.expect(cfg.enable_metrics);
+    try std.testing.expect(cfg.metrics.enabled);
+    try std.testing.expectEqual(Config.MetricsConfig.ExportFormat.prometheus, cfg.metrics.export_format);
+    try std.testing.expectEqualStrings("svc.api", cfg.metrics.metric_prefix);
+    try std.testing.expect(cfg.rules.enabled);
+    try std.testing.expect(cfg.scheduler.enabled);
+    try std.testing.expect(cfg.rotation.enabled);
+    try std.testing.expectEqual(Config.CompressionConfig.CompressionAlgorithm.zstd, cfg.rotation.compression_algorithm);
+}
+
+test "config async metrics and threadpool helper aliases" {
+    const async_cfg = Config.AsyncConfig.lowLatency()
+        .buffer(128)
+        .batch(8)
+        .overflow(.drop_newest)
+        .backpressure(2.0);
+    try std.testing.expect(async_cfg.enabled);
+    try std.testing.expectEqual(@as(usize, 128), async_cfg.buffer_size);
+    try std.testing.expectEqual(@as(usize, 8), async_cfg.batch_size);
+    try std.testing.expectEqual(Config.AsyncConfig.OverflowPolicy.drop_newest, async_cfg.overflow_policy);
+    try std.testing.expectEqual(@as(f64, 1.0), async_cfg.backpressure_threshold);
+
+    const metrics_cfg = Config.MetricsConfig.minimal()
+        .prometheus()
+        .prefix("worker")
+        .histogram(12)
+        .alerts(0.1, 0.2)
+        .breakdowns(false, true);
+    try std.testing.expect(metrics_cfg.enabled);
+    try std.testing.expectEqual(Config.MetricsConfig.ExportFormat.prometheus, metrics_cfg.export_format);
+    try std.testing.expectEqualStrings("worker", metrics_cfg.metric_prefix);
+    try std.testing.expect(metrics_cfg.track_latency);
+    try std.testing.expect(metrics_cfg.enable_histogram);
+    try std.testing.expectEqual(@as(u8, 12), metrics_cfg.histogram_buckets);
+    try std.testing.expect(!metrics_cfg.export_level_breakdown);
+    try std.testing.expect(metrics_cfg.export_sink_breakdown);
+
+    const pool_cfg = Config.ThreadPoolConfig.ioBound().threads(4).queue(256).arena(true);
+    try std.testing.expect(pool_cfg.enabled);
+    try std.testing.expectEqual(@as(usize, 4), pool_cfg.thread_count);
+    try std.testing.expectEqual(@as(usize, 256), pool_cfg.queue_size);
+    try std.testing.expect(pool_cfg.enable_arena);
+}
+
 test "rules config default values" {
     const rules_config = Config.RulesConfig{};
     try std.testing.expect(!rules_config.enabled);
@@ -2849,6 +3322,23 @@ test "level color config none theme" {
     try std.testing.expectEqualStrings("", cfg_none.getColorForLevel(.err));
 }
 
+test "telemetry metric export helpers" {
+    const base = TelemetryConfig.development();
+
+    const json_cfg = base.withJsonMetrics("metrics.jsonl");
+    try std.testing.expectEqual(TelemetryConfig.MetricFormat.json, json_cfg.metric_format);
+    try std.testing.expectEqualStrings("metrics.jsonl", json_cfg.metrics_file_path.?);
+
+    const prom_cfg = base.withPrometheusMetrics("metrics.prom").withMetricPrefix("api");
+    try std.testing.expectEqual(TelemetryConfig.MetricFormat.prometheus, prom_cfg.metric_format);
+    try std.testing.expectEqualStrings("metrics.prom", prom_cfg.metrics_file_path.?);
+    try std.testing.expectEqualStrings("api", prom_cfg.metric_prefix);
+    try std.testing.expect(prom_cfg.sanitize_metric_names);
+
+    const raw_cfg = prom_cfg.withMetricNameSanitization(false);
+    try std.testing.expect(!raw_cfg.sanitize_metric_names);
+}
+
 /// OpenTelemetry telemetry configuration options.
 pub const TelemetryConfig = struct {
     /// Enable OpenTelemetry integration.
@@ -2874,6 +3364,9 @@ pub const TelemetryConfig = struct {
 
     /// File path for file-based exporter (JSONL format).
     exporter_file_path: ?[]const u8 = null,
+
+    /// File path for metrics export when using JSON/Prometheus formats.
+    metrics_file_path: ?[]const u8 = null,
 
     /// Batch span export size.
     batch_size: usize = Constants.TelemetryDefaults.batch_size,
@@ -2904,6 +3397,15 @@ pub const TelemetryConfig = struct {
 
     /// Metric exporter format.
     metric_format: MetricFormat = .otlp,
+
+    /// Optional prefix applied to exported metric names.
+    metric_prefix: []const u8 = Constants.TelemetryDefaults.metric_prefix,
+
+    /// Separator inserted between `metric_prefix` and the original metric name.
+    metric_prefix_separator: []const u8 = Constants.TelemetryDefaults.metric_prefix_separator,
+
+    /// Sanitize metric names for exporter compatibility.
+    sanitize_metric_names: bool = Constants.TelemetryDefaults.sanitize_metric_names,
 
     /// Compress span exports.
     compress_exports: bool = false,
@@ -3147,4 +3649,46 @@ pub const TelemetryConfig = struct {
             .sampling_strategy = .always_on,
         };
     }
+
+    /// Returns a copy with a metric export format and path configured.
+    pub fn withMetricExport(self: TelemetryConfig, format: MetricFormat, path: []const u8) TelemetryConfig {
+        var cfg = self;
+        cfg.metric_format = format;
+        cfg.metrics_file_path = path;
+        return cfg;
+    }
+
+    /// Returns a copy configured for JSON metrics at the given path.
+    pub fn withJsonMetrics(self: TelemetryConfig, path: []const u8) TelemetryConfig {
+        return self.withMetricExport(.json, path);
+    }
+
+    /// Returns a copy configured for Prometheus metrics at the given path.
+    pub fn withPrometheusMetrics(self: TelemetryConfig, path: []const u8) TelemetryConfig {
+        return self.withMetricExport(.prometheus, path);
+    }
+
+    /// Returns a copy that prefixes exported metric names.
+    pub fn withMetricPrefix(self: TelemetryConfig, prefix: []const u8) TelemetryConfig {
+        var cfg = self;
+        cfg.metric_prefix = prefix;
+        return cfg;
+    }
+
+    /// Returns a copy that controls metric name sanitization.
+    pub fn withMetricNameSanitization(self: TelemetryConfig, enabled: bool) TelemetryConfig {
+        var cfg = self;
+        cfg.sanitize_metric_names = enabled;
+        return cfg;
+    }
+
+    /// Alias for `withMetricPrefix`.
+    pub const metricPrefix = withMetricPrefix;
+    pub const prefixedMetrics = withMetricPrefix;
+
+    /// Alias for `withPrometheusMetrics`.
+    pub const prometheusMetrics = withPrometheusMetrics;
+
+    /// Alias for `withJsonMetrics`.
+    pub const jsonMetrics = withJsonMetrics;
 };

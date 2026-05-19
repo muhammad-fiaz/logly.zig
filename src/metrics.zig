@@ -698,6 +698,47 @@ pub const Metrics = struct {
         });
     }
 
+    fn writePrometheusMetricName(self: *const Metrics, writer: anytype, name: []const u8) !void {
+        try Utils.writeTelemetryMetricName(
+            writer,
+            self.config.metric_prefix,
+            self.config.metric_separator,
+            name,
+            self.config.sanitize_names,
+        );
+    }
+
+    fn writeStatsdMetricName(self: *const Metrics, writer: anytype, name: []const u8) !void {
+        try Utils.writeTelemetryMetricName(
+            writer,
+            self.config.metric_prefix,
+            self.config.statsd_separator,
+            name,
+            self.config.sanitize_names,
+        );
+    }
+
+    fn writePrometheusHeader(self: *const Metrics, writer: anytype, name: []const u8, help: []const u8, metric_type: []const u8) !void {
+        try writer.writeAll("# HELP ");
+        try self.writePrometheusMetricName(writer, name);
+        try writer.writeByte(' ');
+        try writer.writeAll(help);
+        try writer.writeByte('\n');
+        try writer.writeAll("# TYPE ");
+        try self.writePrometheusMetricName(writer, name);
+        try writer.writeByte(' ');
+        try writer.writeAll(metric_type);
+        try writer.writeByte('\n');
+    }
+
+    fn writePrometheusUnsigned(self: *const Metrics, writer: anytype, name: []const u8, help: []const u8, metric_type: []const u8, value: u64) !void {
+        try self.writePrometheusHeader(writer, name, help, metric_type);
+        try self.writePrometheusMetricName(writer, name);
+        try writer.writeByte(' ');
+        try Utils.writeInt(writer, value);
+        try writer.writeByte('\n');
+    }
+
     /// Export as Prometheus format.
     pub fn exportPrometheus(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
         const snapshot = self.getSnapshot();
@@ -706,35 +747,49 @@ pub const Metrics = struct {
         var list_writer = Utils.ArrayListWriter.init(&buf, allocator);
         const writer = &list_writer.writer;
 
-        try writer.writeAll("# HELP logly_records_total Total log records\n");
-        try writer.writeAll("# TYPE logly_records_total counter\n");
-        try writer.writeAll("logly_records_total ");
-        try Utils.writeInt(writer, snapshot.total_records);
-        try writer.writeByte('\n');
+        try self.writePrometheusUnsigned(writer, "records_total", "Total log records", "counter", snapshot.total_records);
+        try self.writePrometheusUnsigned(writer, "bytes_total", "Total bytes logged", "counter", snapshot.total_bytes);
+        try self.writePrometheusUnsigned(writer, "dropped_total", "Dropped records", "counter", snapshot.dropped_records);
+        try self.writePrometheusUnsigned(writer, "errors_total", "Error count", "counter", snapshot.error_count);
 
-        try writer.writeAll("# HELP logly_bytes_total Total bytes logged\n");
-        try writer.writeAll("# TYPE logly_bytes_total counter\n");
-        try writer.writeAll("logly_bytes_total ");
-        try Utils.writeInt(writer, snapshot.total_bytes);
-        try writer.writeByte('\n');
-
-        try writer.writeAll("# HELP logly_dropped_total Dropped records\n");
-        try writer.writeAll("# TYPE logly_dropped_total counter\n");
-        try writer.writeAll("logly_dropped_total ");
-        try Utils.writeInt(writer, snapshot.dropped_records);
-        try writer.writeByte('\n');
-
-        try writer.writeAll("# HELP logly_errors_total Error count\n");
-        try writer.writeAll("# TYPE logly_errors_total counter\n");
-        try writer.writeAll("logly_errors_total ");
-        try Utils.writeInt(writer, snapshot.error_count);
-        try writer.writeByte('\n');
-
-        try writer.writeAll("# HELP logly_records_per_second Records per second\n");
-        try writer.writeAll("# TYPE logly_records_per_second gauge\n");
-        try writer.writeAll("logly_records_per_second ");
+        try self.writePrometheusHeader(writer, "records_per_second", "Records per second", "gauge");
+        try self.writePrometheusMetricName(writer, "records_per_second");
+        try writer.writeByte(' ');
         try writer.print("{d:.2}", .{snapshot.records_per_second});
         try writer.writeByte('\n');
+
+        if (self.config.export_level_breakdown) {
+            try self.writePrometheusHeader(writer, "level_records_total", "Log records by level", "counter");
+            for (snapshot.level_counts, 0..) |count, i| {
+                if (count == 0) continue;
+                try self.writePrometheusMetricName(writer, "level_records_total");
+                try writer.writeAll("{level=");
+                try Utils.writePrometheusLabelValue(writer, indexToLevelName(i));
+                try writer.writeAll("} ");
+                try Utils.writeInt(writer, count);
+                try writer.writeByte('\n');
+            }
+        }
+
+        if (self.config.export_sink_breakdown) {
+            try self.writePrometheusHeader(writer, "sink_records_total", "Log records by sink", "counter");
+            try self.writePrometheusHeader(writer, "sink_errors_total", "Sink write errors", "counter");
+            for (self.sink_metrics.items) |metric| {
+                try self.writePrometheusMetricName(writer, "sink_records_total");
+                try writer.writeAll("{sink=");
+                try Utils.writePrometheusLabelValue(writer, metric.name);
+                try writer.writeAll("} ");
+                try Utils.writeInt(writer, metric.getRecordsWritten());
+                try writer.writeByte('\n');
+
+                try self.writePrometheusMetricName(writer, "sink_errors_total");
+                try writer.writeAll("{sink=");
+                try Utils.writePrometheusLabelValue(writer, metric.name);
+                try writer.writeAll("} ");
+                try Utils.writeInt(writer, metric.getWriteErrors());
+                try writer.writeByte('\n');
+            }
+        }
 
         return buf.toOwnedSlice(allocator);
     }
@@ -742,19 +797,23 @@ pub const Metrics = struct {
     /// Export as StatsD format.
     pub fn exportStatsd(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
         const snapshot = self.getSnapshot();
-        return try std.fmt.allocPrint(allocator,
-            \\logly.records.total:{d}|c
-            \\logly.bytes.total:{d}|c
-            \\logly.dropped.total:{d}|c
-            \\logly.errors.total:{d}|c
-            \\logly.rps:{d:.2}|g
-        , .{
-            snapshot.total_records,
-            snapshot.total_bytes,
-            snapshot.dropped_records,
-            snapshot.error_count,
-            snapshot.records_per_second,
-        });
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+        var list_writer = Utils.ArrayListWriter.init(&buf, allocator);
+        const writer = &list_writer.writer;
+
+        try self.writeStatsdMetricName(writer, "records.total");
+        try writer.print(":{d}|c\n", .{snapshot.total_records});
+        try self.writeStatsdMetricName(writer, "bytes.total");
+        try writer.print(":{d}|c\n", .{snapshot.total_bytes});
+        try self.writeStatsdMetricName(writer, "dropped.total");
+        try writer.print(":{d}|c\n", .{snapshot.dropped_records});
+        try self.writeStatsdMetricName(writer, "errors.total");
+        try writer.print(":{d}|c\n", .{snapshot.error_count});
+        try self.writeStatsdMetricName(writer, "rps");
+        try writer.print(":{d:.2}|g\n", .{snapshot.records_per_second});
+
+        return buf.toOwnedSlice(allocator);
     }
 
     /// Get average latency in nanoseconds.
@@ -1025,6 +1084,15 @@ pub const Metrics = struct {
         const idx = levelToIndex(level);
         return @as(u64, self.level_counts[idx].load(.monotonic));
     }
+
+    /// Resets the counter for a single log level without affecting other metrics.
+    pub fn resetLevelMetrics(self: *Metrics, level: Level) void {
+        const idx = levelToIndex(level);
+        self.level_counts[idx].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+    }
+
+    /// Alias for resetLevelMetrics.
+    pub const clearLevelMetrics = resetLevelMetrics;
 
     /// Returns the number of sinks being tracked.
     pub fn sinkCount(self: *const Metrics) usize {
@@ -1321,6 +1389,22 @@ test "metrics level count" {
     try std.testing.expectEqual(@as(u64, 1), metrics.levelCount(.err));
 }
 
+test "metrics reset level count" {
+    var metrics = Metrics.init(std.testing.allocator);
+    defer metrics.deinit();
+
+    metrics.recordLog(.info, 50);
+    metrics.recordLog(.err, 100);
+
+    try std.testing.expectEqual(@as(u64, 1), metrics.levelCount(.info));
+    try std.testing.expectEqual(@as(u64, 1), metrics.levelCount(.err));
+
+    metrics.resetLevelMetrics(.info);
+
+    try std.testing.expectEqual(@as(u64, 0), metrics.levelCount(.info));
+    try std.testing.expectEqual(@as(u64, 1), metrics.levelCount(.err));
+}
+
 test "metrics reset" {
     var metrics = Metrics.init(std.testing.allocator);
     defer metrics.deinit();
@@ -1425,4 +1509,34 @@ test "metrics sink totals and last record age" {
 
     try std.testing.expectEqual(@as(u64, 2), metrics.totalSinkErrors());
     try std.testing.expectEqual(@as(u64, 3), metrics.totalSinkFlushes());
+}
+
+test "metrics prometheus export uses configured names and breakdowns" {
+    var metrics = Metrics.initWithConfig(std.testing.allocator, Config.MetricsConfig.production().prometheus().withPrefix("svc.api"));
+    defer metrics.deinit();
+
+    metrics.recordLog(.info, 100);
+    metrics.recordLog(.err, 50);
+    const sink_idx = try metrics.addSink("file\"main");
+    metrics.recordSinkWrite(sink_idx, 150);
+    metrics.recordSinkError(sink_idx);
+
+    const exported = try metrics.exportPrometheus(std.testing.allocator);
+    defer std.testing.allocator.free(exported);
+
+    try std.testing.expect(std.mem.indexOf(u8, exported, "svc_api_records_total 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, exported, "svc_api_level_records_total{level=\"INFO\"} 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, exported, "svc_api_sink_errors_total{sink=\"file\\\"main\"} 1") != null);
+}
+
+test "metrics statsd export supports configured prefix" {
+    var metrics = Metrics.initWithConfig(std.testing.allocator, Config.MetricsConfig.production().statsd().withPrefix("svc.api"));
+    defer metrics.deinit();
+
+    metrics.recordLog(.warning, 25);
+
+    const exported = try metrics.exportStatsd(std.testing.allocator);
+    defer std.testing.allocator.free(exported);
+
+    try std.testing.expect(std.mem.indexOf(u8, exported, "svc.api.records.total:1|c") != null);
 }

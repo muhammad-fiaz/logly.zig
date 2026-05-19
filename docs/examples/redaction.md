@@ -114,6 +114,24 @@ const masked = try RedactionType.mask_middle.apply(allocator, "1234567890");
 // Result: "123****890"
 ```
 
+## Truncate and Hash Selection
+
+```zig
+var redactor = Redactor.init(allocator);
+defer redactor.deinit();
+
+redactor.config.truncate_length = 8;
+redactor.config.truncate_suffix = "...";
+redactor.config.hash_algorithm = .sha512;
+
+try redactor.addField("token", .truncate);
+try redactor.addField("user_id", .hash);
+
+const truncated = try redactor.redactField("token", "supersecretvalue");
+defer allocator.free(truncated);
+// truncated = "supersec..."
+```
+
 ## Redaction Presets
 
 ```zig

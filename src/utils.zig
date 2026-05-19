@@ -1416,8 +1416,86 @@ pub fn maskString(
 pub fn computeRedactionHash(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
     var hash: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
-    const hex_val = std.fmt.bytesToHex(hash[0..8], .lower);
+    const hex_val = try bytesToHexLowerAlloc(allocator, hash[0..8]);
+    defer allocator.free(hex_val);
     return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hex_val});
+}
+
+/// Converts bytes to a lowercase hexadecimal string using the provided allocator.
+pub fn bytesToHexLowerAlloc(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
+    const hex_chars = "0123456789abcdef";
+    const result = try allocator.alloc(u8, bytes.len * 2);
+    for (bytes, 0..) |b, i| {
+        result[i * 2] = hex_chars[b >> 4];
+        result[i * 2 + 1] = hex_chars[b & 0x0f];
+    }
+    return result;
+}
+
+/// Returns true when a byte is safe in an exported telemetry metric name.
+///
+/// Uses the portable Prometheus/OpenTelemetry subset: ASCII letters, digits,
+/// underscore, and colon. Dots, dashes, spaces, and path separators are not
+/// accepted because they can break Prometheus text output.
+pub fn isTelemetryMetricNameChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_' or c == ':';
+}
+
+/// Writes a telemetry metric name with optional prefixing and sanitization.
+///
+/// When sanitization is enabled, unsupported bytes are replaced with `_` and
+/// an initial digit is protected by a leading `_`. This lets JSON, Prometheus,
+/// and future OTLP exporters share one consistent name policy.
+pub fn writeTelemetryMetricName(
+    writer: anytype,
+    prefix: []const u8,
+    separator: []const u8,
+    name: []const u8,
+    sanitize: bool,
+) !void {
+    var wrote_any = false;
+    if (prefix.len > 0) {
+        try writeTelemetryMetricNamePart(writer, prefix, sanitize, &wrote_any);
+        if (separator.len > 0 and name.len > 0) {
+            try writeTelemetryMetricNamePart(writer, separator, sanitize, &wrote_any);
+        }
+    }
+    try writeTelemetryMetricNamePart(writer, name, sanitize, &wrote_any);
+}
+
+/// Writes a Prometheus label value with the minimal required escaping.
+///
+/// Escapes backslash, quote, and newline so arbitrary sink names and other
+/// user-provided labels remain valid in text exposition output.
+pub fn writePrometheusLabelValue(writer: anytype, value: []const u8) !void {
+    try writer.writeByte('"');
+    for (value) |c| {
+        switch (c) {
+            '\\' => try writer.writeAll("\\\\"),
+            '"' => try writer.writeAll("\\\""),
+            '\n' => try writer.writeAll("\\n"),
+            else => try writer.writeByte(c),
+        }
+    }
+    try writer.writeByte('"');
+}
+
+fn writeTelemetryMetricNamePart(writer: anytype, part: []const u8, sanitize: bool, wrote_any: *bool) !void {
+    for (part) |c| {
+        if (!sanitize) {
+            try writer.writeByte(c);
+            wrote_any.* = true;
+            continue;
+        }
+
+        if (!wrote_any.* and std.ascii.isDigit(c)) {
+            try writer.writeByte('_');
+            wrote_any.* = true;
+        }
+
+        try writer.writeByte(if (isTelemetryMetricNameChar(c)) c else '_');
+        wrote_any.* = true;
+    }
 }
 
 /// Replaces all occurrences of a substring with a replacement string.
@@ -1499,4 +1577,36 @@ test "durationSinceNs" {
     const duration = durationSinceNs(start);
     // Duration should be very small (microseconds to milliseconds) since we just started
     try std.testing.expect(duration < 1_000_000_000); // Less than 1 second
+}
+
+test "writeTelemetryMetricName sanitizes and prefixes" {
+    var buf = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer buf.deinit();
+
+    try writeTelemetryMetricName(&buf.writer, "api.v1", "_", "http.requests-total", true);
+    try std.testing.expectEqualStrings("api_v1_http_requests_total", buf.written());
+}
+
+test "writeTelemetryMetricName preserves raw names when disabled" {
+    var buf = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer buf.deinit();
+
+    try writeTelemetryMetricName(&buf.writer, "", "_", "99.raw.metric", false);
+    try std.testing.expectEqualStrings("99.raw.metric", buf.written());
+}
+
+test "writeTelemetryMetricName protects leading digits" {
+    var buf = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer buf.deinit();
+
+    try writeTelemetryMetricName(&buf.writer, "", "_", "99.requests", true);
+    try std.testing.expectEqualStrings("_99_requests", buf.written());
+}
+
+test "writePrometheusLabelValue escapes unsafe bytes" {
+    var buf = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer buf.deinit();
+
+    try writePrometheusLabelValue(&buf.writer, "file\"sink\\main\nnext");
+    try std.testing.expectEqualStrings("\"file\\\"sink\\\\main\\nnext\"", buf.written());
 }

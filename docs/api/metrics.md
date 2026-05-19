@@ -91,6 +91,35 @@ The `Metrics` struct provides comprehensive observability into the logging syste
 
 Metrics tracks record counts, throughput, errors, and per-sink statistics. It uses thread-safe atomic operations for all counters, making it safe for concurrent access without locks on hot paths.
 
+## Export Customization
+
+`Config.MetricsConfig` now includes exporter naming and breakdown controls:
+
+```zig
+const cfg = logly.Config.MetricsConfig.production()
+    .prometheus()
+    .withPrefix("checkout.api")
+    .withLatencyHistogram(20)
+    .withBreakdowns(true, true);
+
+var metrics = logly.Metrics.initWithConfig(allocator, cfg);
+```
+
+Available controls:
+
+| Field / Helper | Purpose |
+|----------------|---------|
+| `metric_prefix`, `withPrefix()` / `prefix()` | Namespace exported metrics |
+| `metric_separator` | Separator for Prometheus-compatible names |
+| `statsd_separator` | Separator for StatsD metric names |
+| `sanitize_names` | Replace exporter-unsafe characters |
+| `export_level_breakdown` | Include per-level counters |
+| `export_sink_breakdown` | Include per-sink counters/errors |
+| `prometheus()` | Configure Prometheus export naming |
+| `statsd()` | Configure StatsD export naming |
+| `withAlerts()` / `alerts()` | Configure error/drop thresholds |
+| `withLatencyHistogram()` / `histogram()` | Enable latency histogram collection |
+
 ## Types
 
 ### Metrics

@@ -121,6 +121,7 @@ Notes:
 - `span_processor_type` semantics:
   - `.simple`: Completed spans are kept pending until you explicitly call `telemetry.exportSpans()` or `telemetry.flush()`. Use this when you want to control export timing (e.g., at request boundaries).
   - `.batch` : Spans are buffered and automatically exported when `batch_size` or `batch_timeout_ms` thresholds are reached.
+- `metrics_file_path` overrides `exporter_file_path` for JSON/Prometheus metric exports.
 - Default telemetry values (batch size, timeouts, headers) are centralized in `Constants.TelemetryDefaults`.
 - v0.1.8: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) so telemetry builds cleanly across targets.
 

@@ -87,10 +87,6 @@ fn fileBasedTelemetry(allocator: std.mem.Allocator) !void {
         .kind = .server,
     });
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("http.method", logly.SpanAttribute{ .string = "GET" });
     try span.setAttribute("http.url", logly.SpanAttribute{ .string = "/api/users" });
@@ -100,6 +96,8 @@ fn fileBasedTelemetry(allocator: std.mem.Allocator) !void {
     try span.addEvent("database_query", null);
     try span.addEvent("response_sent", null);
 
+    span.end();
+    try telemetry.endSpan(&span);
     try telemetry.exportSpans();
 
     std.debug.print("✓ File-based telemetry configured\n", .{});

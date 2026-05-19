@@ -234,6 +234,19 @@ pub const Filter = struct {
 
     pub const create = init;
 
+    /// Sets the logical mode used when combining filter rules.
+    pub fn setMode(self: *Filter, mode: Mode) void {
+        self.mode = mode;
+    }
+
+    /// Returns true when the filter is currently using the requested mode.
+    pub fn isMode(self: *const Filter, mode: Mode) bool {
+        return self.mode == mode;
+    }
+
+    /// Alias for setMode.
+    pub const withMode = setMode;
+
     /// Releases all resources associated with the filter.
     ///
     /// Frees all rules and character patterns.
@@ -973,4 +986,14 @@ test "filter with custom level" {
 
     // info (20) < warning (30), should not pass
     try std.testing.expect(!filter.shouldLog(&record_custom_low));
+}
+
+test "filter mode helpers" {
+    var filter = Filter.init(std.testing.allocator);
+    defer filter.deinit();
+
+    try std.testing.expect(filter.isMode(.all));
+    filter.setMode(.any);
+    try std.testing.expect(filter.isMode(.any));
+    try std.testing.expect(!filter.isMode(.none));
 }

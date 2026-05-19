@@ -657,6 +657,42 @@ pub const Scheduler = struct {
     /// Alias for setTaskDependency
     pub const dependsOn = setTaskDependency;
 
+    /// Validates that every task dependency resolves and that no dependency cycle exists.
+    ///
+    /// Returns an error if a dependency name cannot be resolved or if following the
+    /// dependency chain revisits a task.
+    pub fn validateDependencies(self: *Scheduler) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        for (self.tasks.items, 0..) |task, start_index| {
+            _ = task;
+            var current_index: usize = start_index;
+            var hops: usize = 0;
+
+            while (true) {
+                if (hops > self.tasks.items.len) return error.DependencyCycle;
+
+                const current_task = self.tasks.items[current_index];
+                const dep_name = current_task.depends_on orelse break;
+
+                var next_index: ?usize = null;
+                for (self.tasks.items, 0..) |candidate, candidate_index| {
+                    if (std.mem.eql(u8, candidate.name, dep_name)) {
+                        next_index = candidate_index;
+                        break;
+                    }
+                }
+
+                const resolved_index = next_index orelse return error.MissingDependency;
+                if (resolved_index == start_index) return error.DependencyCycle;
+
+                current_index = resolved_index;
+                hops += 1;
+            }
+        }
+    }
+
     /// Adds a cleanup task for old log files.
     ///
     /// Arguments:
@@ -2110,6 +2146,25 @@ test "scheduler name based controls and snapshots" {
     try std.testing.expect(scheduler.removeTaskByName("named-task"));
     try std.testing.expect(!scheduler.hasTaskNamed("named-task"));
     try std.testing.expect(!scheduler.removeTaskByName("named-task"));
+}
+
+test "scheduler dependency validation" {
+    const allocator = std.testing.allocator;
+    const scheduler = try Scheduler.init(allocator);
+    defer scheduler.deinit();
+
+    const Callbacks = struct {
+        fn run(task: *Scheduler.ScheduledTask) anyerror!void {
+            _ = task;
+        }
+    };
+
+    const a = try scheduler.addCustomTask("task-a", .{ .once = 0 }, Callbacks.run);
+    const b = try scheduler.addCustomTask("task-b", .{ .once = 0 }, Callbacks.run);
+    try scheduler.setTaskDependency(a, "task-b");
+    try scheduler.setTaskDependency(b, "task-a");
+
+    try std.testing.expectError(error.DependencyCycle, scheduler.validateDependencies());
 }
 
 var scheduler_tick_called = false;

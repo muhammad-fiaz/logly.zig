@@ -244,9 +244,49 @@ pub fn sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: [
     _ = stats.messages_sent.fetchAdd(1, .monotonic);
 }
 
+/// Sends data via a TCP stream.
+pub fn sendTcp(stream: std.Io.net.Stream, data: []const u8) !void {
+    var buffer: [Constants.BufferSizes.message]u8 = undefined;
+    var writer = stream.writer(Utils.io(), &buffer);
+    writer.interface.writeAll(data) catch {
+        _ = stats.errors.fetchAdd(1, .monotonic);
+        return NetworkError.SendFailed;
+    };
+    writer.interface.flush() catch {
+        _ = stats.errors.fetchAdd(1, .monotonic);
+        return NetworkError.SendFailed;
+    };
+    _ = stats.bytes_sent.fetchAdd(@truncate(data.len), .monotonic);
+    _ = stats.messages_sent.fetchAdd(1, .monotonic);
+}
+
+/// Formats a syslog message and sends it via UDP.
+pub fn sendSyslogUdp(
+    allocator: std.mem.Allocator,
+    socket: std.Io.net.Socket,
+    address: std.Io.net.IpAddress,
+    facility: SyslogFacility,
+    severity: SyslogSeverity,
+    hostname: []const u8,
+    app_name: []const u8,
+    message: []const u8,
+) !void {
+    const formatted = try formatSyslog(allocator, facility, severity, hostname, app_name, message);
+    defer allocator.free(formatted);
+    try sendUdp(socket, address, formatted);
+}
+
 /// Alias for sendUdp
 pub const udpSend = sendUdp;
 pub const sendToUdp = sendUdp;
+
+/// Alias for sendTcp
+pub const tcpSend = sendTcp;
+pub const sendToTcp = sendTcp;
+
+/// Alias for sendSyslogUdp
+pub const syslogSend = sendSyslogUdp;
+pub const sendSyslog = sendSyslogUdp;
 
 /// Fetches a JSON response from a URL.
 /// Returns the parsed JSON value (caller must deinit).
@@ -307,6 +347,8 @@ pub const LogServer = struct {
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     tcp_thread: ?std.Thread = null,
     udp_thread: ?std.Thread = null,
+    tcp_port: u16 = 0,
+    udp_port: u16 = 0,
     messages_received: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     pub fn init(allocator: std.mem.Allocator) LogServer {
@@ -327,10 +369,14 @@ pub const LogServer = struct {
 
     pub fn stop(self: *LogServer) void {
         self.running.store(false, .monotonic);
+        self.wakeTcpWorker();
+        self.wakeUdpWorker();
         if (self.tcp_thread) |t| t.join();
         if (self.udp_thread) |t| t.join();
         self.tcp_thread = null;
         self.udp_thread = null;
+        self.tcp_port = 0;
+        self.udp_port = 0;
     }
 
     /// Alias for stop
@@ -354,6 +400,7 @@ pub const LogServer = struct {
 
     pub fn startTcp(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) !void {
         self.running.store(true, .monotonic);
+        self.tcp_port = port;
         self.tcp_thread = try std.Thread.spawn(.{}, tcpWorker, .{ self, port, callback });
     }
 
@@ -362,11 +409,28 @@ pub const LogServer = struct {
 
     pub fn startUdp(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) !void {
         self.running.store(true, .monotonic);
+        self.udp_port = port;
         self.udp_thread = try std.Thread.spawn(.{}, udpWorker, .{ self, port, callback });
     }
 
     /// Alias for startUdp
     pub const listenUdp = startUdp;
+
+    fn wakeTcpWorker(self: *LogServer) void {
+        if (self.tcp_thread == null or self.tcp_port == 0) return;
+        const host_name = std.Io.net.HostName.init("127.0.0.1") catch return;
+        const stream = host_name.connect(Utils.io(), self.tcp_port, .{ .mode = .stream, .protocol = .tcp }) catch return;
+        stream.close(Utils.io());
+    }
+
+    fn wakeUdpWorker(self: *LogServer) void {
+        if (self.udp_thread == null or self.udp_port == 0) return;
+        const address = std.Io.net.IpAddress.parse("127.0.0.1", self.udp_port) catch return;
+        const local_address = std.Io.net.IpAddress.parse("0.0.0.0", 0) catch return;
+        const socket = local_address.bind(Utils.io(), .{ .mode = .dgram, .protocol = .udp }) catch return;
+        defer socket.close(Utils.io());
+        socket.send(Utils.io(), &address, "") catch {};
+    }
 
     fn tcpWorker(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) void {
         const io = Utils.io();
@@ -476,4 +540,62 @@ test "syslog formatting" {
     // user(1)*8 + info(6) = 14
     try std.testing.expect(std.mem.startsWith(u8, formatted, "<14>1 "));
     try std.testing.expect(std.mem.indexOf(u8, formatted, "localhost test-app - - - Hello Syslog") != null);
+}
+
+test "network send helpers" {
+    const allocator = std.testing.allocator;
+
+    const TestContext = struct {
+        var received: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+
+        fn onMessage(message: []const u8) void {
+            _ = message;
+            received.store(true, .monotonic);
+        }
+    };
+
+    resetStats();
+
+    const udp = try createUdpSocket(allocator, "udp://127.0.0.1:5514");
+    defer udp.socket.close(Utils.io());
+
+    try sendSyslogUdp(allocator, udp.socket, udp.address, .user, .info, "localhost", "logly", "syslog test");
+
+    const udp_stats = getStats();
+    try std.testing.expect(udp_stats.totalMessagesCount() >= 1);
+
+    TestContext.received.store(false, .monotonic);
+    var server = LogServer.init(allocator);
+    defer server.deinit();
+
+    const port: u16 = 39090;
+    try server.startTcp(port, TestContext.onMessage);
+    defer server.stop();
+
+    var stream: ?std.Io.net.Stream = null;
+    var attempt: u8 = 0;
+    while (attempt < 10 and stream == null) : (attempt += 1) {
+        stream = connectTcp(allocator, "tcp://127.0.0.1:39090") catch {
+            Utils.io().sleep(.fromMilliseconds(10), .awake) catch {};
+            continue;
+        };
+    }
+
+    try std.testing.expect(stream != null);
+    defer if (stream) |s| s.close(Utils.io());
+
+    resetStats();
+    try sendTcp(stream.?, "tcp test");
+    if (stream) |s| {
+        s.close(Utils.io());
+        stream = null;
+    }
+    var wait_attempt: u8 = 0;
+    while (wait_attempt < 50 and !TestContext.received.load(.monotonic)) : (wait_attempt += 1) {
+        Utils.io().sleep(.fromMilliseconds(10), .awake) catch {};
+    }
+
+    const tcp_stats = getStats();
+    try std.testing.expect(tcp_stats.totalMessagesCount() >= 1);
+    try std.testing.expect(TestContext.received.load(.monotonic));
 }

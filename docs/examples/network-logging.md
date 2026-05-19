@@ -93,6 +93,29 @@ nc -l -p 9000
 nc -u -l -p 9001
 ```
 
+## Helper APIs
+
+```zig
+const Network = logly.Network;
+
+const stream = try Network.connectTcp(allocator, "tcp://127.0.0.1:9000");
+defer stream.close(logly.Utils.io());
+try Network.sendTcp(stream, "raw tcp log\n");
+
+const udp = try Network.createUdpSocket(allocator, "udp://127.0.0.1:514");
+defer udp.socket.close(logly.Utils.io());
+try Network.sendSyslogUdp(
+  allocator,
+  udp.socket,
+  udp.address,
+  .user,
+  .info,
+  "localhost",
+  "my-app",
+  "syslog helper message",
+);
+```
+
 ## Best Practices
 
 1.  **Use JSON for Aggregators**: Most log management systems prefer structured data.

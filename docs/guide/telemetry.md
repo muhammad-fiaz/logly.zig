@@ -36,6 +36,7 @@ Logly's telemetry module integrates with:
 | **W3C Trace Context** | Full W3C traceparent/tracestate header support |
 | **W3C Baggage** | Context propagation across service boundaries |
 | **Metrics Collection** | Counter, gauge, histogram, and summary metrics |
+| **Metric Name Controls** | Prefix and sanitize exported metric names |
 | **Export Modes** | Sync, async buffer, batch, and network export |
 | **Custom Providers** | Build your own exporter with callback interface |
 | **Sampling Strategies** | always_on, always_off, trace_id_ratio, parent_based |
@@ -95,6 +96,30 @@ span.end();
 try telemetry.endSpan(&span);
 try telemetry.exportSpans();
 ```
+
+## Metric Export Names
+
+Prometheus and many telemetry backends accept a narrower metric-name character
+set than application code often uses. Logly can prefix and sanitize exported
+metric names while keeping the recorded name readable in application code.
+
+```zig
+var config = logly.TelemetryConfig.development()
+    .withPrometheusMetrics("telemetry_metrics.prom")
+    .withMetricPrefix("api.v1");
+config.metric_prefix_separator = ":";
+config.sanitize_metric_names = true;
+
+var telemetry = try logly.Telemetry.init(allocator, config);
+defer telemetry.deinit();
+
+try telemetry.recordCounter("http.requests-total", 42.0);
+try telemetry.exportMetrics();
+// Prometheus output: api_v1:http_requests_total 42
+```
+
+Set `sanitize_metric_names = false` or call
+`withMetricNameSanitization(false)` for custom exporters that require raw names.
 
 ## Supported Providers
 
@@ -223,6 +248,20 @@ try telemetry.recordHistogram("response.latency", 123.4);
 try telemetry.exportMetrics();
 ```
 
+### Metric Export Formats
+
+```zig
+var config = logly.TelemetryConfig.development();
+config.metric_format = .prometheus; // or .json
+config.metrics_file_path = "telemetry_metrics.prom";
+
+var telemetry = try logly.Telemetry.init(allocator, config);
+defer telemetry.deinit();
+
+try telemetry.recordGauge("cpu.usage", 42.0);
+try telemetry.exportMetrics();
+```
+
 ### Metric Kinds
 
 | Kind | Description | Use Case |
@@ -257,6 +296,8 @@ Monitor telemetry events:
 
 ```zig
 var config = logly.TelemetryConfig.file("spans.jsonl");
+
+// Output path is relative to the current working directory.
 
 config.on_span_start = struct {
     fn callback(span_id: []const u8, name: []const u8) void {

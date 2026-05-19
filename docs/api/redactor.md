@@ -123,6 +123,7 @@ pub const RedactionType = enum {
     partial_end,    // 1234****
     hash,           // SHA256 hash
     mask_middle,    // 12****34
+    truncate,       // Truncate to N chars
     
     pub fn apply(self: RedactionType, allocator: Allocator, value: []const u8) ![]u8;
 };
@@ -197,6 +198,10 @@ pub const RedactionConfig = struct {
     enable_regex: bool = false,
     /// Hash algorithm for hash redaction type.
     hash_algorithm: HashAlgorithm = .sha256,
+    /// Maximum length before truncation (truncate redaction type).
+    truncate_length: usize = 24,
+    /// Suffix to append after truncation.
+    truncate_suffix: []const u8 = "...",
     /// Characters to reveal at start for partial redaction.
     partial_start_chars: u8 = 4,
     /// Characters to reveal at end for partial redaction.

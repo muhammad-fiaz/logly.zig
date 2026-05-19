@@ -369,6 +369,55 @@ pub const Sampler = struct {
         );
         self.mutex.unlock(Utils.io());
 
+        return self.applyDecision(sample_decision, rate_exceeded_info, adjustment_info);
+    }
+
+    /// Determines whether a record should be sampled using a deterministic key.
+    ///
+    /// Useful when you want consistent sampling for the same ID (user/session/etc.).
+    pub fn shouldSampleKey(self: *Sampler, key: []const u8) bool {
+        return self.shouldSampleKeyWithReason(key).accepted;
+    }
+
+    /// Determines whether a record should be sampled using a deterministic key,
+    /// returning the structured decision payload.
+    pub fn shouldSampleKeyWithReason(self: *Sampler, key: []const u8) SampleDecision {
+        return switch (self.strategy) {
+            .none => blk: {
+                _ = self.state.stats.total_records_sampled.fetchAdd(1, .monotonic);
+                break :blk self.applyDecision(.{ .accepted = true, .sample_rate = 1.0 }, null, null);
+            },
+            .probability => |prob| blk: {
+                _ = self.state.stats.total_records_sampled.fetchAdd(1, .monotonic);
+                const effective = clampRate(prob);
+                const roll = hashToUnitInterval(key);
+                if (roll < effective) {
+                    break :blk self.applyDecision(.{ .accepted = true, .sample_rate = effective }, null, null);
+                }
+                break :blk self.applyDecision(.{ .accepted = false, .sample_rate = effective, .reject_reason = .probability_filter }, null, null);
+            },
+            .every_n => |n| blk: {
+                _ = self.state.stats.total_records_sampled.fetchAdd(1, .monotonic);
+                if (n == 0) {
+                    break :blk self.applyDecision(.{ .accepted = true, .sample_rate = 1.0 }, null, null);
+                }
+                const effective = 1.0 / @as(f64, @floatFromInt(n));
+                const key_decision = if (@mod(hashToU64(key), @as(u64, n)) == 0)
+                    SampleDecision{ .accepted = true, .sample_rate = effective }
+                else
+                    SampleDecision{ .accepted = false, .sample_rate = effective, .reject_reason = .every_n_filter };
+                break :blk self.applyDecision(key_decision, null, null);
+            },
+            .rate_limit, .adaptive => self.shouldSampleWithReason(),
+        };
+    }
+
+    fn applyDecision(
+        self: *Sampler,
+        sample_decision: SampleDecision,
+        rate_exceeded_info: ?RateExceededInfo,
+        adjustment_info: ?AdjustmentInfo,
+    ) SampleDecision {
         if (adjustment_info) |info| {
             if (self.on_rate_adjustment) |cb| cb(info.old, info.new, "throughput adjustment");
         }
@@ -386,6 +435,16 @@ pub const Sampler = struct {
         }
 
         return sample_decision;
+    }
+
+    fn hashToU64(key: []const u8) u64 {
+        return std.hash.Wyhash.hash(0, key);
+    }
+
+    fn hashToUnitInterval(key: []const u8) f64 {
+        const hash = hashToU64(key);
+        const denom: f64 = @floatFromInt(std.math.maxInt(u64));
+        return @as(f64, @floatFromInt(hash)) / denom;
     }
 
     fn resetStateForStrategy(self: *Sampler) void {
@@ -450,6 +509,13 @@ pub const Sampler = struct {
         self.mutex.lockUncancelable(Utils.io());
         self.state.current_rate = bounded_max;
         self.mutex.unlock(Utils.io());
+    }
+
+    /// Reseeds the internal RNG for probability-based sampling.
+    pub fn setSeed(self: *Sampler, seed: u64) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.state.rng = std.Random.DefaultPrng.init(seed);
     }
 
     /// Disables filtering and allows all records through.
@@ -595,6 +661,10 @@ pub const Sampler = struct {
     pub const sampleWithReason = shouldSampleWithReason;
     pub const decision = shouldSampleWithReason;
 
+    /// Alias for shouldSampleKey
+    pub const sampleKey = shouldSampleKey;
+    pub const keyDecision = shouldSampleKeyWithReason;
+
     /// Alias for getCurrentRate
     pub const rate = getCurrentRate;
 
@@ -614,6 +684,9 @@ pub const Sampler = struct {
 
     /// Alias for setAdaptive
     pub const adaptive = setAdaptive;
+
+    /// Alias for setSeed
+    pub const reseed = setSeed;
 
     /// Alias for disableSampling
     pub const disable = disableSampling;
@@ -808,6 +881,15 @@ test "sampler adaptive" {
 
     const rate = sampler.getCurrentRate();
     try std.testing.expect(rate < 1.0);
+}
+
+test "sampler key-based deterministic sampling" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .probability = 0.5 });
+    defer sampler.deinit();
+
+    const first = sampler.shouldSampleKey("user-123");
+    const second = sampler.shouldSampleKey("user-123");
+    try std.testing.expectEqual(first, second);
 }
 
 test "sampler decision details include reason" {

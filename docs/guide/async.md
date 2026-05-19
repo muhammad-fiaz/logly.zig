@@ -85,6 +85,22 @@ When async logging is enabled, log messages follow this flow:
 3. **Batch Writing**: Messages are written in batches for efficiency
 4. **Flushing**: Buffers are flushed based on time or size
 
+The async stats object now also tracks backpressure events so you can see when the queue approaches capacity.
+
+The backpressure threshold and drain timeout are configurable:
+
+```zig
+const async_cfg = logly.AsyncConfig.lowLatency()
+    .buffer(2048)
+    .batch(32)
+    .backpressure(0.75);
+
+var async_logger = try logly.AsyncLogger.initWithConfig(allocator, async_cfg);
+defer async_logger.deinit();
+
+_ = async_logger.drainDefault(); // uses async_cfg.drain_timeout_ms
+```
+
 ## Configuration
 
 ### Logger Configuration
@@ -134,6 +150,8 @@ const config = logly.AsyncLogger.AsyncConfig{
 | `batch_size` | 64 | Messages written per batch |
 | `overflow_policy` | `.drop_oldest` | Behavior when buffer full |
 | `background_worker` | true | Enable background thread |
+| `backpressure_threshold` | 0.9 | Queue utilization ratio that records backpressure |
+| `drain_timeout_ms` | 5000 | Default timeout for `drainDefault()` |
 
 ## Overflow Policies
 

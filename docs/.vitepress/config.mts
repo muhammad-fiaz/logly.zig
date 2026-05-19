@@ -16,7 +16,7 @@ export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
 
 // SEO Keywords
 export const KEYWORDS =
-  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, rules engine, diagnostics rules, metrics, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
+  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, rules engine, diagnostics rules, metrics, metrics export, prometheus, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
 
 export default defineConfig({
   lang: "en-US",
@@ -273,7 +273,7 @@ gtag('config', '${GA_ID}');`,
           priceCurrency: "USD",
         },
         downloadUrl: "https://github.com/muhammad-fiaz/logly.zig",
-        softwareVersion: "0.1.8",
+        softwareVersion: "0.1.9",
         license: "https://opensource.org/licenses/MIT",
       });
     } else {
