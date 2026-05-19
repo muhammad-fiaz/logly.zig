@@ -126,4 +126,5 @@ zig fetch --save git+https://github.com/muhammad-fiaz/logly.zig.git
 ```
 
 [Get Started](/guide/getting-started)
+[Installation](/guide/installation)
 

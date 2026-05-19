@@ -18,15 +18,15 @@ The `Config` struct is the primary interface for global settings. You can start 
 ```zig
 var config = logly.Config.default();
 
-// ðŸŽšï¸ Global controls
+// Global controls
 config.global_color_display = true;
 config.global_console_display = true;
 config.global_file_storage = true;
 
-// ðŸ” Log level
+// Log level
 config.level = .debug;
 
-// ðŸ‘ï¸ Display options
+// Display options
 config.show_time = true;
 config.show_module = true;
 config.show_function = false;
@@ -35,12 +35,12 @@ config.show_lineno = true;   // Pinpoint the exact line
 config.include_hostname = true; // Add hostname to logs
 config.include_pid = true;      // Add process ID
 
-// ðŸ“ Output format
+// Output format
 config.json = false;
 config.pretty_json = false;
 config.color = true;
 
-// âš¡ Features
+// Features
 config.enable_callbacks = false;  // Enable only when using callbacks
 config.enable_exception_handling = true;
 
