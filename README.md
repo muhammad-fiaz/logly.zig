@@ -298,6 +298,9 @@ const logly = b.dependency("logly", .{
 exe.root_module.addImport("logly", logly.module("logly"));
 ```
 
+> [!NOTE]
+> Zig 0.16 keeps `root_module` on the compile step. You only need it to attach the `logly` module when using the package manager. If you link a prebuilt library only, no `root_module` import is required.
+
 ### Method 3: Building from Source
 
 Clone the repository and build Logly:
@@ -320,12 +323,28 @@ zig build
 
 To use them, link against the static library in your build process.
 
-**Example `build.zig`:**
+**Example `build.zig` (Zig 0.16+):**
 
 ```zig
-// Assuming you downloaded the library to `libs/`
-exe.addLibraryPath(b.path("libs"));
-exe.linkSystemLibrary("logly");
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const exe = b.addExecutable(.{
+        .name = "app",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Assuming you downloaded the library to `libs/`
+    exe.addLibraryPath(b.path("libs"));
+    exe.linkSystemLibrary("logly");
+
+    b.installArtifact(exe);
+}
 ```
 
 ## Quick Start
@@ -358,8 +377,14 @@ pub fn main() !void {
     try logger.fail("Operation failed", @src());              // Magenta
     try logger.crit("Critical system error!", @src());        // Bright Red (alias for .critical())
     try logger.fatal("Fatal system failure!", @src());        // White on Red (highest severity)
+
+    // Auto flush is disabled by default; flush to ensure output is written
+    try logger.flush();
 }
 ```
+
+> [!NOTE]
+> To enable auto-flush globally, set `config.auto_flush = true` or call `logger.enableAutoFlush()`. Auto-flush trades throughput for immediate output.
 
 ## Allocator Strategies (GPA + Arena)
 
@@ -842,6 +867,9 @@ config.show_lineno = false;
 // Output format
 config.json = false;
 config.color = true;
+
+// Flush behavior
+config.auto_flush = false; // set true for immediate output (lower throughput)
 
 // Features
 config.enable_callbacks = true;
