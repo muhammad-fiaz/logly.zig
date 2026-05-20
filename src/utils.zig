@@ -774,34 +774,34 @@ test "calculatePercentage" {
 
 test "calculateThroughput" {
     // 100 items in 1 second = 100 items/sec
-    try std.testing.expectEqual(@as(f64, 100.0), calculateThroughput(100, 1_000_000_000));
+    try std.testing.expectEqual(@as(f64, 100.0), calculateThroughput(100, Constants.TimeConstants.ns_per_second));
     // 0 elapsed time = 0 throughput
     try std.testing.expectEqual(@as(f64, 0.0), calculateThroughput(100, 0));
 }
 
 test "parseSize bytes" {
-    try std.testing.expectEqual(@as(?u64, 1024), parseSize("1024"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), parseSize("1024"));
     try std.testing.expectEqual(@as(?u64, 100), parseSize("100B"));
 }
 
 test "parseSize kilobytes" {
-    try std.testing.expectEqual(@as(?u64, 1024), parseSize("1KB"));
-    try std.testing.expectEqual(@as(?u64, 1024), parseSize("1K"));
-    try std.testing.expectEqual(@as(?u64, 10240), parseSize("10KB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), parseSize("1KB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), parseSize("1K"));
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_kb), parseSize("10KB"));
 }
 
 test "parseSize megabytes" {
-    try std.testing.expectEqual(@as(?u64, 1048576), parseSize("1MB"));
-    try std.testing.expectEqual(@as(?u64, 1048576), parseSize("1M"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_mb), parseSize("1MB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_mb), parseSize("1M"));
 }
 
 test "parseSize gigabytes" {
-    try std.testing.expectEqual(@as(?u64, 1073741824), parseSize("1GB"));
-    try std.testing.expectEqual(@as(?u64, 1073741824), parseSize("1G"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), parseSize("1GB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), parseSize("1G"));
 }
 
 test "parseSize with whitespace" {
-    try std.testing.expectEqual(@as(?u64, 10485760), parseSize("10 MB"));
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_mb), parseSize("10 MB"));
 }
 
 test "parseSize invalid" {
@@ -810,10 +810,10 @@ test "parseSize invalid" {
 }
 
 test "parseDuration" {
-    try std.testing.expectEqual(@as(?i64, 1000), parseDuration("1000ms"));
-    try std.testing.expectEqual(@as(?i64, 30000), parseDuration("30s"));
-    try std.testing.expectEqual(@as(?i64, 300000), parseDuration("5m"));
-    try std.testing.expectEqual(@as(?i64, 7200000), parseDuration("2h"));
+    try std.testing.expectEqual(@as(?i64, @intCast(Constants.TimeConstants.ms_per_second)), parseDuration("1000ms"));
+    try std.testing.expectEqual(@as(?i64, @intCast(30 * Constants.TimeConstants.ms_per_second)), parseDuration("30s"));
+    try std.testing.expectEqual(@as(?i64, @intCast(5 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second)), parseDuration("5m"));
+    try std.testing.expectEqual(@as(?i64, @intCast(2 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second)), parseDuration("2h"));
     const one_day_ms = @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
     try std.testing.expectEqual(@as(?i64, one_day_ms), parseDuration("1d"));
 }
@@ -1558,7 +1558,7 @@ test "safeFloatDiv" {
 
 test "calculateBytesPerSecond" {
     try std.testing.expectEqual(@as(f64, 0.0), calculateBytesPerSecond(100, 0));
-    try std.testing.expectEqual(@as(f64, 100.0), calculateBytesPerSecond(100, 1000));
+    try std.testing.expectEqual(@as(f64, 100.0), calculateBytesPerSecond(100, @intCast(Constants.TimeConstants.ms_per_second)));
 }
 
 /// LZMA hash function
@@ -1576,7 +1576,7 @@ test "durationSinceNs" {
     // Simple test - just verify duration is non-negative without sleep
     const duration = durationSinceNs(start);
     // Duration should be very small (microseconds to milliseconds) since we just started
-    try std.testing.expect(duration < 1_000_000_000); // Less than 1 second
+    try std.testing.expect(duration < Constants.TimeConstants.ns_per_second); // Less than 1 second
 }
 
 test "writeTelemetryMetricName sanitizes and prefixes" {

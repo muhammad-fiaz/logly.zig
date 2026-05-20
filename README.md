@@ -43,7 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-    - [Version 0.1.9](#version-019)
+    - [Version 0.2.0](#version-020)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
   - [Method 2: Manual Configuration](#method-2-manual-configuration)
@@ -174,7 +174,7 @@ Before installing Logly, ensure you have the following:
 | **Terminal** | Any modern terminal | For colored output support |
 
 > Verify your Zig installation by running `zig version` in your terminal.
-> - For Zig 0.16.0+, use logly.zig version 0.1.9
+> - For Zig 0.16.0+, use logly.zig version 0.2.0
 > - For Zig 0.15.0, use logly.zig version 0.1.7
 
 ---
@@ -208,22 +208,17 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.9
+### Version 0.2.0
 
-**Highlights:**
+* Added documentation for configuring and disabling the parallel non-blocking update checker.
 
-- Added redaction truncate support and configurable hash algorithms.
-- Added deterministic key-based sampling helpers.
-- Added rotation time helpers (`nextRotationAt`, `rotationAgeSeconds`) with aliases.
-- Added telemetry metric export to JSON/Prometheus with `metrics_file_path` override.
-- Added telemetry metric prefixing and sanitization controls for exporter-compatible metric names.
-- Added library-wide pipeline controls for async, thread pool, metrics, scheduler, rotation, and rules composition.
-- Added metrics export naming/breakdown controls for Prometheus and StatsD output.
-- Added network send helpers for TCP and syslog UDP.
-- Fixed custom theme precedence, file-based telemetry exports on Windows, and network test/server shutdown.
-- Fixed async logging memory leak and aarch64 compatibility issues.
-- Refreshed docs and dependency maintenance updates.
-- Added formatter template validation, metrics level reset, scheduler dependency validation, filter mode helpers, async backpressure tracking, and rules count helpers.
+**Internal Improvements:**
+
+* Standardized constants and config defaults across all core modules.
+* Moved shared formatting, escaping, and time utilities into `src/utils.zig`.
+* Removed hardcoded values in favor of centralized `Constants.*` usage.
+* Unified common utility operations such as atomic loads, JSON escaping, size parsing, throughput calculations, duration formatting, and traceparent parsing.
+
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -236,10 +231,10 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 The easiest way to add Logly to your project:
 
-**For Zig 0.16.0+ (Latest stable `0.1.9`):**
+**For Zig 0.16.0+ (Latest stable `0.2.0`):**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
 ```
 
 **For Zig 0.15.0 (Use `0.1.7` or earlier):**
@@ -267,7 +262,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -937,6 +932,43 @@ var config = logly.Config.default()
     .withThreadPool(4)
     .withScheduler();
 ```
+
+### Disabling the Update Checker
+
+> [!NOTE]
+> Logly's built-in update checker runs asynchronously in a parallel thread, achieving **zero impact** on logging performance or startup latency.
+
+If you are running in restricted network environments, CI/CD pipelines, or production servers, you can disable the update checker programmatically using either of these two methods:
+
+#### Option 1: Global Disabling (Recommended for entire application)
+Call `setEnabled(false)` on the `UpdateChecker` module before initializing any loggers:
+```zig
+const logly = @import("logly");
+
+pub fn main() !void {
+    // Disable the update checker globally
+    logly.UpdateChecker.setEnabled(false);
+    
+    // Initialize loggers normally
+    var logger = try logly.Logger.init(allocator, logly.Config.default());
+    defer logger.deinit();
+}
+```
+
+#### Option 2: Configuration-Level Disabling
+Disable version checking on a per-config basis:
+```zig
+var config = logly.Config.default();
+config.check_for_updates = false;
+
+var logger = try logly.Logger.init(allocator, config);
+defer logger.deinit();
+```
+
+For technical reference and customized checker endpoints, see:
+- Core implementation: [update_checker.zig](file:///c:/Users/smuha/Downloads/logly.zig/src/update_checker.zig)
+- API Reference: [update-checker.md (API)](file:///c:/Users/smuha/Downloads/logly.zig/docs/api/update-checker.md)
+- User Guide: [update-checker.md (Guide)](file:///c:/Users/smuha/Downloads/logly.zig/docs/guide/update-checker.md)
 
 ## Log Levels
 

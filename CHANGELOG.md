@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Documentation for versions below 0.1.2 is not available. Please refer to commit history or pull requests for those versions.
 
+## [0.2.0]
+
+### Changed
+- **Code Optimization & Standardization**:
+  - Reused and standardized all values, limits, and calculations from `src/constants.zig` across all core modules (`src/filter.zig`, `src/formatter.zig`, `src/level.zig`, `src/logger.zig`, `src/logly.zig`, `src/metrics.zig`, `src/network.zig`, `src/record.zig`, `src/redactor.zig`, `src/rules.zig`).
+  - Standardized and verified all configuration structures, field definitions, and defaults in `src/config.zig` to ensure correct integration across all modules.
+  - Unified common functions, string escaping, formatting, and time calculations into the shared `src/utils.zig` utility layer to reduce duplication and improve performance.
+- **Update Checker Configuration Guide**: Added detailed documentation on how to configure and disable the built-in parallel, non-blocking update checker in `README.md`.
+
+
 ## [0.1.9]
 
 ### Added

@@ -81,7 +81,8 @@ pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;
 pub const Rotation = @import("rotation.zig").Rotation;
 pub const Constants = @import("constants.zig");
-pub const utils = @import("utils.zig");
+pub const Utils = @import("utils.zig");
+pub const utils = Utils;
 
 // Nested config types (convenience re-exports from Config)
 pub const ThreadPoolConfig = Config.ThreadPoolConfig;
@@ -127,11 +128,10 @@ pub const ThreadPoolPresets = @import("thread_pool.zig").ThreadPoolPresets;
 pub const Network = @import("network.zig");
 
 // Utility components
-pub const Utils = @import("utils.zig");
+pub const TelemetryConfig = @import("config.zig").TelemetryConfig;
 
 // OpenTelemetry integration
 pub const Telemetry = @import("telemetry.zig").Telemetry;
-pub const TelemetryConfig = @import("config.zig").TelemetryConfig;
 pub const Span = @import("telemetry.zig").Span;
 pub const SpanAttribute = @import("telemetry.zig").SpanAttribute;
 pub const SpanEvent = @import("telemetry.zig").SpanEvent;

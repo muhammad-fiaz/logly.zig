@@ -942,7 +942,7 @@ pub const AsyncFileWriter = struct {
     last_flush: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
     pub const FileConfig = struct {
-        buffer_size: usize = 64 * 1024, // 64KB
+        buffer_size: usize = Constants.AsyncPresetDefaults.high_throughput_buffer_size,
         flush_interval_ms: u64 = Constants.SinkDefaults.flush_interval_ms,
         sync_on_flush: bool = false,
         append_mode: bool = true,
@@ -1114,7 +1114,7 @@ pub const AsyncPresets = struct {
     /// No-drop configuration (blocks when full).
     pub fn noDrop() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = Constants.BufferSizes.async_queue * 2,
+            .buffer_size = Constants.AsyncPresetDefaults.no_drop_buffer_size,
             .flush_interval_ms = Constants.AsyncPresetDefaults.balanced_flush_interval_ms,
             .min_flush_interval_ms = Constants.AsyncPresetDefaults.balanced_min_flush_interval_ms,
             .max_latency_ms = Constants.AsyncPresetDefaults.balanced_max_latency_ms,

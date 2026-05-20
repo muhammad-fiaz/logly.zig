@@ -83,12 +83,12 @@ pub fn main() !void {
 
 Newer version available:
 ```text
-info: [UPDATE] A newer release is available: v0.1.9 (current 0.1.8)
+info: [UPDATE] A newer release is available: v0.2.1 (current 0.2.0)
 ```
 
 Running a dev/nightly build:
 ```text
-info: [NIGHTLY] Running a dev/nightly build ahead of latest release: current 0.1.10, latest 0.1.9
+info: [NIGHTLY] Running a dev/nightly build ahead of latest release: current 0.2.2, latest 0.2.0
 ```
 
 ## Use Cases

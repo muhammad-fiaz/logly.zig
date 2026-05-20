@@ -2085,7 +2085,7 @@ test "scheduler maintenance task" {
     // Verify max_total_size constraint enforcement
     {
         const file = try dir.createFile(Utils.io(), "large.log", .{});
-        try file.writeStreamingAll(Utils.io(), &([_]u8{'A'} ** 1024));
+        try file.writeStreamingAll(Utils.io(), &([_]u8{'A'} ** Constants.SizeConstants.bytes_per_kb));
         file.close(Utils.io());
     }
 

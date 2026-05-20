@@ -1357,12 +1357,12 @@ pub const Sink = struct {
 };
 
 test "sink parseSize" {
-    try std.testing.expectEqual(@as(?u64, 1024), Utils.parseSize("1024"));
-    try std.testing.expectEqual(@as(?u64, 1024), Utils.parseSize("1KB"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024), Utils.parseSize("1MB"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 10), Utils.parseSize("10M"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024), Utils.parseSize("1GB"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024 * 5), Utils.parseSize("5G"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), Utils.parseSize("1024"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), Utils.parseSize("1KB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_mb), Utils.parseSize("1MB"));
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_mb), Utils.parseSize("10M"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), Utils.parseSize("1GB"));
+    try std.testing.expectEqual(@as(?u64, 5 * Constants.SizeConstants.bytes_per_gb), Utils.parseSize("5G"));
 }
 
 test "sink filtering" {

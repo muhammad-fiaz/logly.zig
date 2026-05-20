@@ -742,7 +742,7 @@ pub const SamplerPresets = struct {
     /// Limit to 1000 records per second.
     pub fn limit1000PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .rate_limit = .{
-            .max_records = 1000,
+            .max_records = Constants.RateLimitDefaults.max_per_second,
             .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
         } });
     }
@@ -773,7 +773,7 @@ pub const SamplerPresets = struct {
     /// Adaptive sampling targeting 1000 records per second.
     pub fn adaptive1000PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .adaptive = .{
-            .target_rate = 1000,
+            .target_rate = Constants.ConfigPresetDefaults.high_throughput_sampling_target_rate,
         } });
     }
 
@@ -798,7 +798,7 @@ test "sampler probability" {
     defer sampler.deinit();
 
     var sampled: u32 = 0;
-    const iterations: u32 = 1000;
+    const iterations: u32 = Constants.ConfigPresetDefaults.high_throughput_sampling_target_rate;
     for (0..iterations) |_| {
         if (sampler.shouldSample()) {
             sampled += 1;
@@ -812,7 +812,7 @@ test "sampler probability" {
 test "sampler rate limit" {
     var sampler = Sampler.init(std.testing.allocator, .{ .rate_limit = .{
         .max_records = 10,
-        .window_ms = 1000,
+        .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
     } });
     defer sampler.deinit();
 
@@ -829,7 +829,7 @@ test "sampler rate limit" {
 test "sampler stats and callbacks" {
     var sampler = Sampler.init(std.testing.allocator, .{ .rate_limit = .{
         .max_records = 5,
-        .window_ms = 1000,
+        .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
     } });
     defer sampler.deinit();
 

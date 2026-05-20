@@ -169,6 +169,11 @@ pub fn main() !void {
 
 ## Recent Changes
 
+### v0.2.0
+
+- Upgraded build and project targets to support **Zig 0.16.0** primarily.
+- Added comprehensive guide and examples in documentation and `README.md` for configuring and disabling the update checker.
+
 ### v0.1.9
 
 - Updated examples and version references to the latest release (`0.1.9`).

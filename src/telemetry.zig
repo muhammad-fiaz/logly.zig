@@ -2378,15 +2378,15 @@ test "Traceparent parsing" {
 test "Exporter stats" {
     var stats = ExporterStats{};
 
-    stats.recordExport(10, 1024);
-    stats.recordExport(5, 512);
+    stats.recordExport(10, Constants.SizeConstants.bytes_per_kb);
+    stats.recordExport(5, Constants.SizeConstants.bytes_per_kb / 2);
     stats.recordError();
     stats.recordBatchExport();
     stats.recordNetworkExport();
 
     try std.testing.expectEqual(@as(u64, 15), stats.getSpansExported());
     try std.testing.expectEqual(@as(u64, 1), stats.getExportErrors());
-    try std.testing.expectEqual(@as(u64, 1536), stats.getBytesExported());
+    try std.testing.expectEqual(@as(u64, Constants.SizeConstants.bytes_per_kb + (Constants.SizeConstants.bytes_per_kb / 2)), stats.getBytesExported());
 }
 
 test "Metric helpers" {
@@ -2418,8 +2418,8 @@ test "High-throughput configuration" {
     const config = TelemetryConfig.highThroughput();
     try std.testing.expect(config.enabled);
     try std.testing.expectEqual(config.provider, .jaeger);
-    try std.testing.expectEqual(config.batch_size, 1024);
-    try std.testing.expectEqual(config.batch_timeout_ms, 2000);
+    try std.testing.expectEqual(config.batch_size, Constants.TelemetryDefaults.high_throughput_batch_size);
+    try std.testing.expectEqual(config.batch_timeout_ms, Constants.TelemetryDefaults.high_throughput_batch_timeout_ms);
     try std.testing.expectEqual(config.sampling_strategy, .trace_id_ratio);
     try std.testing.expect(config.sampling_rate < 0.1); // 1% sampling
 }
@@ -2853,7 +2853,7 @@ test "Telemetry metric export applies prefix and sanitization" {
     try telemetry.recordCounter("requests.total", 5.0);
     try telemetry.exportMetrics();
 
-    const body = try std.Io.Dir.cwd().readFileAlloc(Utils.io(), path, allocator, .limited(4096));
+    const body = try std.Io.Dir.cwd().readFileAlloc(Utils.io(), path, allocator, .limited(Constants.BufferSizes.file_read));
     defer allocator.free(body);
 
     try std.testing.expect(std.mem.indexOf(u8, body, "api_v1:requests_total") != null);

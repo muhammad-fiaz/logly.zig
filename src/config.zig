@@ -644,7 +644,7 @@ pub const Config = struct {
         /// Patterns to redact (string patterns).
         patterns: ?[]const []const u8 = null,
         /// Default replacement text.
-        replacement: []const u8 = "[REDACTED]",
+        replacement: []const u8 = Constants.RedactionDefaults.replacement,
         /// Default redaction type for fields.
         default_type: RedactionType = .full,
         /// Enable regex pattern matching.
@@ -811,9 +811,9 @@ pub const Config = struct {
         /// Enable per-worker arena allocator for temporary allocations.
         enable_arena: bool = false,
         /// Thread naming prefix.
-        thread_name_prefix: []const u8 = "logly-worker",
+        thread_name_prefix: []const u8 = Constants.ThreadDefaults.thread_name_prefix,
         /// Keep alive time for idle threads (milliseconds).
-        keep_alive_ms: u64 = 60000,
+        keep_alive_ms: u64 = Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second,
         /// Enable thread affinity (pin threads to CPUs).
         thread_affinity: bool = false,
 
@@ -828,7 +828,7 @@ pub const Config = struct {
                 .enabled = true,
                 .thread_count = Constants.ThreadDefaults.thread_count,
                 .queue_size = Constants.ThreadDefaults.max_tasks,
-                .stack_size = 2 * Constants.ThreadDefaults.stack_size,
+                .stack_size = Constants.ThreadDefaults.high_throughput_stack_size,
                 .work_stealing = true,
             };
         }
@@ -838,7 +838,7 @@ pub const Config = struct {
             return .{
                 .enabled = true,
                 .thread_count = Constants.ThreadDefaults.ioBoundThreadCount(),
-                .queue_size = Constants.ThreadDefaults.queue_size * 2,
+                .queue_size = Constants.ThreadDefaults.io_bound_queue_size,
                 .work_stealing = true,
             };
         }
@@ -857,9 +857,9 @@ pub const Config = struct {
         pub fn lowResource() ThreadPoolConfig {
             return .{
                 .enabled = true,
-                .thread_count = 2,
+                .thread_count = Constants.ThreadDefaults.low_latency_thread_count,
                 .queue_size = Constants.ThreadDefaults.queue_size_low,
-                .stack_size = Constants.ThreadDefaults.stack_size / 2,
+                .stack_size = Constants.ThreadDefaults.low_resource_stack_size,
                 .work_stealing = false,
             };
         }
@@ -3068,10 +3068,10 @@ test "compression config presets" {
     try std.testing.expect(keep_cfg.keep_original);
 
     // Test onSize() preset
-    const size_cfg = Config.CompressionConfig.onSize(5 * 1024 * 1024);
+    const size_cfg = Config.CompressionConfig.onSize(5 * Constants.SizeConstants.bytes_per_mb);
     try std.testing.expect(size_cfg.enabled);
     try std.testing.expectEqual(size_cfg.mode, .on_size_threshold);
-    try std.testing.expectEqual(size_cfg.size_threshold, 5 * 1024 * 1024);
+    try std.testing.expectEqual(size_cfg.size_threshold, 5 * Constants.SizeConstants.bytes_per_mb);
 
     // Test production() preset
     const prod_cfg = Config.CompressionConfig.production();
@@ -3517,7 +3517,7 @@ pub const TelemetryConfig = struct {
             .provider = .zipkin,
             .exporter_endpoint = "http://localhost:9411/api/v2/spans",
             .span_processor_type = .batch,
-            .batch_size = 512,
+            .batch_size = Constants.TelemetryDefaults.zipkin_batch_size,
         };
     }
 
@@ -3577,7 +3577,7 @@ pub const TelemetryConfig = struct {
             .api_key = api_secret,
             .exporter_endpoint = "https://www.google-analytics.com/mp/collect",
             .span_processor_type = .batch,
-            .batch_size = 25, // GA4 limit per request
+            .batch_size = Constants.TelemetryDefaults.google_analytics_batch_limit,
         };
     }
 
@@ -3601,7 +3601,7 @@ pub const TelemetryConfig = struct {
             .provider = .generic,
             .exporter_endpoint = endpoint,
             .span_processor_type = .batch,
-            .batch_size = 512,
+            .batch_size = Constants.TelemetryDefaults.collector_batch_size,
         };
     }
 
@@ -3632,10 +3632,10 @@ pub const TelemetryConfig = struct {
             .provider = .jaeger,
             .exporter_endpoint = "http://localhost:6831",
             .span_processor_type = .batch,
-            .batch_size = 1024,
-            .batch_timeout_ms = 2000,
+            .batch_size = Constants.TelemetryDefaults.high_throughput_batch_size,
+            .batch_timeout_ms = Constants.TelemetryDefaults.high_throughput_batch_timeout_ms,
             .sampling_strategy = .trace_id_ratio,
-            .sampling_rate = 0.01,
+            .sampling_rate = Constants.TelemetryDefaults.high_throughput_sampling_rate,
         };
     }
 

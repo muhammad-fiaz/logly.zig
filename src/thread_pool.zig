@@ -103,7 +103,7 @@ pub const ThreadPool = struct {
                 .thread_count = Constants.ThreadDefaults.thread_count, // Auto-detect
                 .queue_size = Constants.ThreadDefaults.max_tasks,
                 .work_stealing = true,
-                .stack_size = 2 * Constants.ThreadDefaults.stack_size, // 2MB stack
+                .stack_size = Constants.ThreadDefaults.high_throughput_stack_size,
             };
         }
 
@@ -111,10 +111,10 @@ pub const ThreadPool = struct {
         /// For embedded systems or resource-constrained environments.
         pub fn lowResource() ThreadPoolConfig {
             return .{
-                .thread_count = 2,
+                .thread_count = Constants.ThreadDefaults.low_latency_thread_count,
                 .queue_size = Constants.ThreadDefaults.queue_size_low,
                 .work_stealing = false,
-                .stack_size = Constants.ThreadDefaults.stack_size / 2, // 512KB stack
+                .stack_size = Constants.ThreadDefaults.low_resource_stack_size,
             };
         }
 
@@ -123,7 +123,7 @@ pub const ThreadPool = struct {
         pub fn ioBound() ThreadPoolConfig {
             return .{
                 .thread_count = Constants.ThreadDefaults.ioBoundThreadCount(),
-                .queue_size = Constants.ThreadDefaults.queue_size * 2,
+                .queue_size = Constants.ThreadDefaults.io_bound_queue_size,
                 .work_stealing = true,
                 .stack_size = Constants.ThreadDefaults.stack_size,
             };
@@ -176,7 +176,8 @@ pub const ThreadPool = struct {
             const completed = Utils.atomicLoadU64(&self.tasks_completed);
             const exec_time = Utils.atomicLoadU64(&self.total_exec_time_ns);
             if (exec_time == 0) return 0;
-            return @as(f64, @floatFromInt(completed)) / (@as(f64, @floatFromInt(exec_time)) / 1e9);
+            const ns_per_sec = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
+            return @as(f64, @floatFromInt(completed)) / (@as(f64, @floatFromInt(exec_time)) / ns_per_sec);
         }
 
         /// Returns total tasks submitted as u64.
@@ -1333,20 +1334,20 @@ pub const ThreadPoolPresets = struct {
 
     /// I/O-bound workload (more threads than cores).
     pub fn ioBound() ThreadPool.ThreadPoolConfig {
-        const cpu_count = std.Thread.getCpuCount() catch 4;
+        const cpu_count = Constants.ThreadDefaults.recommendedThreadCount();
         return .{
             .thread_count = cpu_count * 2,
             .work_stealing = true,
-            .queue_size = 2048,
+            .queue_size = Constants.ThreadDefaults.queue_size * 2,
         };
     }
 
     /// High-throughput logging.
     pub fn highThroughput() ThreadPool.ThreadPoolConfig {
-        const cpu_count = std.Thread.getCpuCount() catch 4;
+        const cpu_count = Constants.ThreadDefaults.recommendedThreadCount();
         return .{
             .thread_count = cpu_count,
-            .queue_size = 4096,
+            .queue_size = Constants.ThreadDefaults.queue_size * 4,
             .work_stealing = true,
         };
     }
@@ -1354,8 +1355,8 @@ pub const ThreadPoolPresets = struct {
     /// Low-latency logging.
     pub fn lowLatency() ThreadPool.ThreadPoolConfig {
         return .{
-            .thread_count = 2,
-            .queue_size = 256,
+            .thread_count = Constants.ThreadDefaults.low_latency_thread_count,
+            .queue_size = Constants.ThreadDefaults.queue_size_low * 2,
             .work_stealing = false,
         };
     }
@@ -1500,10 +1501,10 @@ test "thread pool presets" {
     try std.testing.expect(io.work_stealing);
 
     const ht = ThreadPoolPresets.highThroughput();
-    try std.testing.expect(ht.queue_size >= 4096);
+    try std.testing.expect(ht.queue_size >= Constants.ThreadDefaults.queue_size * 4);
 
     const ll = ThreadPoolPresets.lowLatency();
-    try std.testing.expectEqual(@as(usize, 2), ll.thread_count);
+    try std.testing.expectEqual(@as(usize, Constants.ThreadDefaults.low_latency_thread_count), ll.thread_count);
 }
 
 test "thread pool try submit" {

@@ -207,16 +207,26 @@ pub const Limits = struct {
 pub const ThreadDefaults = struct {
     /// Default number of threads (0 = auto-detect).
     pub const thread_count: usize = 0;
+    /// Low-latency preset thread count.
+    pub const low_latency_thread_count: usize = 2;
     /// Default queue size per thread.
     pub const queue_size: usize = 1024;
     /// Default stack size for worker threads.
     pub const stack_size: usize = 1024 * 1024; // 1MB
+    /// High-throughput preset stack size.
+    pub const high_throughput_stack_size: usize = stack_size * 2;
+    /// I/O-bound preset queue size.
+    pub const io_bound_queue_size: usize = queue_size * 2;
+    /// Low-resource preset stack size.
+    pub const low_resource_stack_size: usize = stack_size / 2;
     /// Default wait timeout in nanoseconds.
     pub const wait_timeout_ns: u64 = 100 * TimeConstants.ns_per_ms;
     /// Maximum concurrent tasks.
     pub const max_tasks: usize = 10000;
     /// Queue size for low resource environments.
     pub const queue_size_low: usize = 128;
+    /// Default thread name prefix.
+    pub const thread_name_prefix: []const u8 = "logly-worker";
 
     /// Returns recommended thread count for current CPU.
     ///
@@ -281,6 +291,19 @@ pub const TelemetryDefaults = struct {
     pub const metric_prefix_separator: []const u8 = "_";
     /// Whether metric names should be sanitized for exporter compatibility.
     pub const sanitize_metric_names: bool = true;
+
+    /// Zipkin default batch size.
+    pub const zipkin_batch_size: usize = 512;
+    /// OpenTelemetry Collector default batch size.
+    pub const collector_batch_size: usize = 512;
+    /// High-throughput batch size for telemetry exports.
+    pub const high_throughput_batch_size: usize = 1024;
+    /// High-throughput batch timeout in milliseconds.
+    pub const high_throughput_batch_timeout_ms: u64 = 2000;
+    /// High-throughput sampling rate (1%).
+    pub const high_throughput_sampling_rate: f64 = 0.01;
+    /// Google Analytics 4 batch limit per request.
+    pub const google_analytics_batch_limit: usize = 25;
 };
 
 /// Async preset tuning defaults.
@@ -308,6 +331,8 @@ pub const AsyncPresetDefaults = struct {
     pub const balanced_flush_interval_ms: u64 = 100;
     pub const balanced_min_flush_interval_ms: u64 = 10;
     pub const balanced_max_latency_ms: u64 = 500;
+    /// No-drop preset buffer size.
+    pub const no_drop_buffer_size: usize = BufferSizes.async_queue * 2;
 };
 
 /// Logger config preset tuning defaults.
@@ -1125,6 +1150,8 @@ pub const RedactionDefaults = struct {
     pub const truncate_length: u8 = 8;
     /// Default suffix for truncate redaction.
     pub const truncate_suffix: []const u8 = "...";
+    /// Default replacement text for full redaction.
+    pub const replacement: []const u8 = "[REDACTED]";
 };
 
 /// Rate limiting defaults.

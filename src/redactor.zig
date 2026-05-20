@@ -250,7 +250,7 @@ pub const Redactor = struct {
 
         pub fn apply(self: RedactionType, allocator: std.mem.Allocator, value: []const u8) ![]u8 {
             return switch (self) {
-                .full => try allocator.dupe(u8, "[REDACTED]"),
+                .full => try allocator.dupe(u8, Constants.RedactionDefaults.replacement),
                 .partial_start => blk: {
                     if (value.len <= 4) {
                         break :blk try allocator.dupe(u8, "****");
@@ -1112,13 +1112,13 @@ test "redactor pattern" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    try redactor.addPattern("password_value", .contains, "password=secret123", "[REDACTED]");
+    try redactor.addPattern("password_value", .contains, "password=secret123", Constants.RedactionDefaults.replacement);
 
     const result = try redactor.redact("user login password=secret123 success");
     defer std.testing.allocator.free(result);
 
     try std.testing.expect(std.mem.indexOf(u8, result, "secret") == null);
-    try std.testing.expect(std.mem.indexOf(u8, result, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, Constants.RedactionDefaults.replacement) != null);
 }
 
 test "redactor batch fields and field rule checks" {
@@ -1138,7 +1138,7 @@ test "redactor preflight and preview helpers" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    try redactor.addPattern("token_pattern", .contains, "token=", "token=[REDACTED]");
+    try redactor.addPattern("token_pattern", .contains, "token=", "token=" ++ Constants.RedactionDefaults.replacement);
     try redactor.addField("password", .full);
 
     try std.testing.expect(redactor.wouldRedact("token=abc123"));
@@ -1158,8 +1158,8 @@ test "redactor batch patterns remove helpers and matching count" {
     defer redactor.deinit();
 
     const patterns = [_]Redactor.RedactionPattern{
-        .{ .name = "token_pattern", .pattern_type = .contains, .pattern = "token=", .replacement = "token=[REDACTED]" },
-        .{ .name = "password_pattern", .pattern_type = .contains, .pattern = "password=", .replacement = "password=[REDACTED]" },
+        .{ .name = "token_pattern", .pattern_type = .contains, .pattern = "token=", .replacement = "token=" ++ Constants.RedactionDefaults.replacement },
+        .{ .name = "password_pattern", .pattern_type = .contains, .pattern = "password=", .replacement = "password=" ++ Constants.RedactionDefaults.replacement },
     };
 
     const added = try redactor.addPatterns(patterns[0..]);
@@ -1182,14 +1182,14 @@ test "redactor preview message does not mutate stats" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    try redactor.addPattern("token_pattern", .contains, "token=", "token=[REDACTED]");
+    try redactor.addPattern("token_pattern", .contains, "token=", "token=" ++ Constants.RedactionDefaults.replacement);
 
     const before_processed = redactor.getStats().getTotalProcessed();
     const before_redacted = redactor.getStats().getValuesRedacted();
 
     const preview = try redactor.previewRedaction("token=abc");
     defer std.testing.allocator.free(preview);
-    try std.testing.expect(std.mem.indexOf(u8, preview, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, preview, Constants.RedactionDefaults.replacement) != null);
 
     const after_processed = redactor.getStats().getTotalProcessed();
     const after_redacted = redactor.getStats().getValuesRedacted();
@@ -1198,7 +1198,7 @@ test "redactor preview message does not mutate stats" {
 
     const actual = try redactor.redact("token=abc");
     defer std.testing.allocator.free(actual);
-    try std.testing.expect(std.mem.indexOf(u8, actual, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, actual, Constants.RedactionDefaults.replacement) != null);
     try std.testing.expect(redactor.getStats().getTotalProcessed() > after_processed);
 }
 

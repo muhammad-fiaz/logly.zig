@@ -2630,7 +2630,7 @@ pub const CompressionPresets = struct {
             .algorithm = .deflate,
             .level = .default,
             .mode = .on_size_threshold,
-            .size_threshold = threshold_mb * 1024 * 1024,
+            .size_threshold = threshold_mb * Constants.SizeConstants.bytes_per_mb,
         };
     }
 };
@@ -3255,7 +3255,7 @@ test "CompressionPresets struct" {
     // Test onSize preset
     const size_config = CompressionPresets.onSize(10);
     try std.testing.expectEqual(Compression.Mode.on_size_threshold, size_config.mode);
-    try std.testing.expectEqual(@as(u64, 10 * 1024 * 1024), size_config.size_threshold);
+    try std.testing.expectEqual(@as(u64, 10 * Constants.SizeConstants.bytes_per_mb), size_config.size_threshold);
 }
 
 var callback_test_start_called: bool = false;

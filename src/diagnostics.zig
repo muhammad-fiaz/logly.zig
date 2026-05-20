@@ -227,7 +227,7 @@ fn getLinuxMemory() ?struct { total: u64, avail: u64 } {
     defer file.close(io);
 
     var buf: [Constants.BufferSizes.file_read]u8 = undefined;
-    var file_buffer: [4096]u8 = undefined;
+    var file_buffer: [Constants.BufferSizes.file_read]u8 = undefined;
     var reader = file.reader(io, &file_buffer);
     const len = reader.interface.readSliceShort(&buf) catch return null;
     const content = buf[0..len];
@@ -275,7 +275,7 @@ fn collectLinuxDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveIn
     defer file.close(io);
 
     var buf: [Constants.BufferSizes.file_read_large]u8 = undefined;
-    var file_buffer: [4096]u8 = undefined;
+    var file_buffer: [Constants.BufferSizes.file_read]u8 = undefined;
     var reader = file.reader(io, &file_buffer);
     const len = reader.interface.readSliceShort(&buf) catch return;
     const content = buf[0..len];
