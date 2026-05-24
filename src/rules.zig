@@ -499,7 +499,7 @@ pub const Rules = struct {
         /// Minimum quiescent interval (in milliseconds) required between successive invocations of this rule, preventing event storms.
         cooldown_ms: u64 = 0,
         /// Atomic timestamp representing the chronological epoch of the most recent rule invocation.
-        last_fired_ms: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+        last_fired_ms: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         pub fn matches(self: *const Rule, record: *const Record) bool {
             if (!self.enabled) return false;
@@ -559,9 +559,9 @@ pub const Rules = struct {
             }
 
             if (self.cooldown_ms > 0) {
-                const now: i64 = @intCast(Utils.currentMillis());
+                const now: Constants.AtomicUnsigned = @truncate(@as(u64, @intCast(Utils.currentMillis())));
                 const last = self.last_fired_ms.load(.monotonic);
-                if (last > 0 and now - last < self.cooldown_ms) {
+                if (last > 0 and @as(u64, now - last) < self.cooldown_ms) {
                     return false;
                 }
             }
@@ -599,7 +599,7 @@ pub const Rules = struct {
                 self.fired.store(true, .monotonic);
             }
             if (self.cooldown_ms > 0) {
-                self.last_fired_ms.store(@intCast(Utils.currentMillis()), .monotonic);
+                self.last_fired_ms.store(@truncate(@as(u64, @intCast(Utils.currentMillis()))), .monotonic);
             }
         }
 

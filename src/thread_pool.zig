@@ -51,7 +51,7 @@ pub const ThreadPool = struct {
     /// Whether shutdown has completed.
     shutdown_complete: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Next task ID generator.
-    next_task_id: std.atomic.Value(u64) = std.atomic.Value(u64).init(1),
+    next_task_id: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(1),
 
     /// Callback invoked when worker thread starts.
     /// Parameters: (thread_id: usize)
@@ -646,7 +646,7 @@ pub const ThreadPool = struct {
     pub fn submit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) TaskHandle {
         if (!self.running.load(.acquire)) return .{ .id = 0 };
 
-        const id = self.next_task_id.fetchAdd(1, .monotonic);
+        const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
         const item = WorkItem{
             .id = id,
             .task = task,
@@ -719,7 +719,7 @@ pub const ThreadPool = struct {
                 continue;
             }
 
-            const id = self.next_task_id.fetchAdd(1, .monotonic);
+            const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
             const item = WorkItem{
                 .id = id,
                 .task = task,
@@ -784,7 +784,7 @@ pub const ThreadPool = struct {
             return .{ .id = 0 };
         }
 
-        const id = self.next_task_id.fetchAdd(1, .monotonic);
+        const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
         const item = WorkItem{
             .id = id,
             .task = task,
@@ -811,7 +811,7 @@ pub const ThreadPool = struct {
         if (!self.running.load(.acquire)) return .{ .id = 0 };
         if (worker_id >= self.workers.len) return .{ .id = 0 };
 
-        const id = self.next_task_id.fetchAdd(1, .monotonic);
+        const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
         const item = WorkItem{
             .id = id,
             .task = task,
