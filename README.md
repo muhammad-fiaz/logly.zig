@@ -466,6 +466,17 @@ When arena allocation is enabled, Logly automatically performs threshold-based a
 
 ## Usage Examples
 
+> `auto_sink` creates the default console sink during logger initialization.
+> If you want custom sinks only (file, network, memory, etc.), set `auto_sink = false`
+> so Logly does not add the console sink automatically.
+
+Other common built-in modes:
+
+- `Config.displayOnly()` for console output only
+- `Config.logOnly()` for file storage only
+- `Config.withDisplayStorage(console, file, auto_sink)` for explicit control
+- `SinkConfig.console()`, `SinkConfig.file("app.log")`, `SinkConfig.memory()`, and `SinkConfig.network("tcp://...")` for manual sink setup
+
 ### Console-Only Logging
 
 Use this when you want Logly to write only to the console and keep file storage disabled:
