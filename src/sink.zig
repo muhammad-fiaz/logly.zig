@@ -1980,7 +1980,7 @@ test "sink tamper_evident cryptographic log chaining" {
 /// with automatic dynamic resizing/remapping and graceful fallback.
 pub const MmapFile = struct {
     file: std.Io.File,
-    memory: []align(4096) u8 = &.{},
+    memory: []align(std.heap.page_size_min) u8 = &.{},
     write_ptr: usize = 0,
     capacity: usize = 0,
     allocator: std.mem.Allocator,
@@ -2086,7 +2086,7 @@ pub const MmapFile = struct {
             }
 
             const ptr = win32.MapViewOfFile(h, 2, 0, 0, self.capacity) orelse return error.MmapFailed;
-            const aligned_ptr = @as([*]align(4096) u8, @ptrCast(@alignCast(ptr)));
+            const aligned_ptr = @as([*]align(std.heap.page_size_min) u8, @ptrCast(@alignCast(ptr)));
             self.memory = aligned_ptr[0..self.capacity];
             self.is_mapped = true;
         } else {
@@ -2120,7 +2120,7 @@ pub const MmapFile = struct {
     }
 
     pub fn grow(self: *MmapFile, new_capacity: usize) !void {
-        const aligned_capacity = (new_capacity + 4095) & ~@as(usize, 4095);
+        const aligned_capacity = std.mem.alignForward(usize, new_capacity, std.heap.page_size_min);
         self.unmap();
 
         const io = Utils.io();
