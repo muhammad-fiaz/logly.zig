@@ -73,6 +73,10 @@ pub const AsyncLogger = struct {
     /// Provides batch size and processing time in microseconds.
     on_batch_processed: ?*const fn (usize, u64) void = null,
 
+    /// Callback triggered after a batch of logs is successfully flushed.
+    /// Provides batch size and processing latency in nanoseconds.
+    on_batch_flushed: ?*const fn (count: usize, latency_ns: u64) void = null,
+
     /// Callback triggered when log processing latency exceeds the configured threshold.
     /// Useful for detecting I/O bottlenecks.
     on_latency_threshold_exceeded: ?*const fn (u64, u64) void = null,
@@ -374,6 +378,7 @@ pub const AsyncLogger = struct {
     /// Terminates the logger and releases all resources.
     /// Blocks until the worker thread has completely stopped and flushed pending operations.
     pub fn deinit(self: *AsyncLogger) void {
+        _ = self.drainAndFlush(self.config.shutdown_timeout_ms);
         self.stop();
 
         // Flush remaining entries
@@ -449,6 +454,21 @@ pub const AsyncLogger = struct {
     ///
     /// Complexity: O(1) amortized.
     pub fn queue(self: *AsyncLogger, message: []const u8, level_priority: u8) bool {
+        // High-priority records (Critical/Fatal) skip the queue
+        if (level_priority >= Constants.LevelConstants.Priorities.critical) {
+            self.mutex.lockUncancelable(Utils.io());
+            defer self.mutex.unlock(Utils.io());
+            const entry = BufferEntry{
+                .timestamp = Utils.currentMillis(),
+                .formatted_message = message,
+                .level_priority = level_priority,
+                .queued_at = Utils.currentNanos(),
+                .owned = false,
+            };
+            self.writeToSinks(entry);
+            return true;
+        }
+
         // Optimization: Allocate outside the lock to reduce contention
         const owned_message = self.allocator.dupe(u8, message) catch {
             _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
@@ -698,6 +718,10 @@ pub const AsyncLogger = struct {
                     cb(count, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, Constants.TimeConstants.ns_per_us))))));
                 }
 
+                if (self.on_batch_flushed) |cb| {
+                    cb(count, @truncate(@as(u64, @intCast(@max(0, write_time)))));
+                }
+
                 // Reset arena after each batch to free temporary memory
                 self.resetArena();
             }
@@ -795,6 +819,12 @@ pub const AsyncLogger = struct {
         return self.waitUntilDrained(self.config.drain_timeout_ms);
     }
 
+    /// Blocks until the queue is completely empty or the timeout expires.
+    /// Returns true if successfully drained, false on timeout.
+    pub fn drainAndFlush(self: *AsyncLogger, timeout_ms: u64) bool {
+        return self.waitUntilDrained(timeout_ms);
+    }
+
     /// Sets overflow callback.
     pub fn setOverflowCallback(self: *AsyncLogger, callback: *const fn (u64) void) void {
         self.overflow_callback = callback;
@@ -881,7 +911,11 @@ pub const AsyncLogger = struct {
 
     /// Alias for isNearCapacity
     pub const nearCapacity = isNearCapacity;
-    pub const isBackpressured = isNearCapacity;
+
+    /// Returns true when queue utilization is >= 90%.
+    pub fn isBackpressured(self: *AsyncLogger) bool {
+        return self.isNearCapacity(0.9);
+    }
 
     /// Alias for waitUntilDrained
     pub const waitForDrain = waitUntilDrained;
@@ -942,7 +976,7 @@ pub const AsyncFileWriter = struct {
     last_flush: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
     pub const FileConfig = struct {
-        buffer_size: usize = 64 * 1024, // 64KB
+        buffer_size: usize = Constants.AsyncPresetDefaults.high_throughput_buffer_size,
         flush_interval_ms: u64 = Constants.SinkDefaults.flush_interval_ms,
         sync_on_flush: bool = false,
         append_mode: bool = true,
@@ -1114,7 +1148,7 @@ pub const AsyncPresets = struct {
     /// No-drop configuration (blocks when full).
     pub fn noDrop() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = Constants.BufferSizes.async_queue * 2,
+            .buffer_size = Constants.AsyncPresetDefaults.no_drop_buffer_size,
             .flush_interval_ms = Constants.AsyncPresetDefaults.balanced_flush_interval_ms,
             .min_flush_interval_ms = Constants.AsyncPresetDefaults.balanced_min_flush_interval_ms,
             .max_latency_ms = Constants.AsyncPresetDefaults.balanced_max_latency_ms,

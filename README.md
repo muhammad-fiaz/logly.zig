@@ -43,7 +43,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-    - [Version 0.1.9](#version-019)
+    - [Version 0.2.0](#version-020)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
   - [Method 2: Manual Configuration](#method-2-manual-configuration)
@@ -174,7 +174,7 @@ Before installing Logly, ensure you have the following:
 | **Terminal** | Any modern terminal | For colored output support |
 
 > Verify your Zig installation by running `zig version` in your terminal.
-> - For Zig 0.16.0+, use logly.zig version 0.1.9
+> - For Zig 0.16.0+, use logly.zig version 0.2.0
 > - For Zig 0.15.0, use logly.zig version 0.1.7
 
 ---
@@ -208,22 +208,46 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.1.9
+### Version 0.2.0
 
-**Highlights:**
+Version `0.2.0` elevates Logly with enterprise-grade security controls, zero-copy high-performance memory-mapped logging, crash resilience, robust background processing, advanced observability, and dynamic configurability.
 
-- Added redaction truncate support and configurable hash algorithms.
-- Added deterministic key-based sampling helpers.
-- Added rotation time helpers (`nextRotationAt`, `rotationAgeSeconds`) with aliases.
-- Added telemetry metric export to JSON/Prometheus with `metrics_file_path` override.
-- Added telemetry metric prefixing and sanitization controls for exporter-compatible metric names.
-- Added library-wide pipeline controls for async, thread pool, metrics, scheduler, rotation, and rules composition.
-- Added metrics export naming/breakdown controls for Prometheus and StatsD output.
-- Added network send helpers for TCP and syslog UDP.
-- Fixed custom theme precedence, file-based telemetry exports on Windows, and network test/server shutdown.
-- Fixed async logging memory leak and aarch64 compatibility issues.
-- Refreshed docs and dependency maintenance updates.
-- Added formatter template validation, metrics level reset, scheduler dependency validation, filter mode helpers, async backpressure tracking, and rules count helpers.
+**Enterprise Security & Extreme Performance:**
+* **Tamper-Evident Logs (Cryptographic Chaining)**: Secure your logs using SHA-256 cryptographic chaining. Each log entry is cryptographically linked to the previous one, rendering any manual edits immediately obvious.
+* **Memory-Mapped (mmap) Sinks**: True zero-copy disk writes with microsecond latencies via portable RAM-to-disk mapping on Linux, macOS, and Windows.
+* **TCP Syslog**: Connection-oriented, reliable remote Syslog delivery (RFC 6587) for stable log aggregation.
+* **Global Panic Hook**: Intercept runtime crashes, produce synchronous stack dumps direct to all active sinks, and safely bypass async locks to avoid deadlocks.
+* **Dynamic Reloading**: Runtime JSON configuration reloading (`Logger.reloadFromFile`) to adapt levels, sinks, rules, and formatting on-the-fly.
+* **Dot-Notation Path Filtering**: Filter log records based on deep nested properties (e.g. `user.id` or `network.ip`) within the context metadata.
+* **Binary Serialization (MessagePack)**: Native support for compact binary MessagePack logging to minimize storage footprint and network overhead.
+* **ANSI Terminal Dev Dashboard**: Real-time interactive CLI dashboard format featuring styled borders, status badges, and structured tables.
+
+**Advanced Filtering, Formatting & Redaction:**
+* **Filters**: Time-window quiet hours, rate-limiting rules (token bucket), glob matching (`*`, `?`), composite AND/OR chains, and batch processing.
+* **Formatters**: NDJSON, Logfmt (for Grafana Loki), CEF (Common Event Format for SIEM), and fully customizable Template-based alignment.
+* **Redaction**: Built-in Regex, Email, IPv4/IPv6, JWT, and Credit Card (Luhn validation) redaction patterns with GDPR/PCI presets and Compliance Audit Logs.
+
+**Robust Sink & Async Management:**
+* **Sinks**: Sink Groups (atomic fan-out), in-memory ring buffers, per-sink rate limiting, health checks, and buffered write modes.
+* **Async Engine**: Backpressure signals (queue utilization), priority queues (Critical/Fatal bypass), shutdown grace periods, and `drainAndFlush()` handling.
+* **Rotation & Archiving**: Hourly rotation, total maximum size bounds, and multi-file `.tar.gz` archiving capability.
+
+**Metrics, Telemetry & Diagnostics:**
+* **Metrics**: Histograms per log level, P50/P95/P99 latency calculations, StatsD export, and Prometheus text format export.
+* **Diagnostics**: JSON diagnostics export, lightweight snapshots, and memory-based `HealthReport` assessments.
+* **Telemetry**: Event batching (`batch_size`, `flush_interval_ms`), Honeycomb, Datadog/GCP formats, and OTLP integrations.
+
+**Concurrency, Threading & Compression:**
+* **Thread Pool**: Task cancellation, thread naming, execution jitter, and graceful draining.
+* **Scheduler**: Task retries with exponential backoff, global pause/resume, and task dependencies.
+* **Compression**: Zstd Dictionary support for highly repetitive logs, and asynchronous compression offloading.
+* **Sampling**: Token bucket burst sampling, granular `LevelMask` overrides, and temporary level bypassing.
+
+**Internal Improvements:**
+* Standardized constants and config defaults across all core modules.
+* Moved shared formatting, escaping, and time utilities into `src/utils.zig`.
+* Removed hardcoded values in favor of centralized `Constants.*` usage.
+* Unified common utility operations such as atomic loads, JSON escaping, size parsing, throughput calculations, duration formatting, and traceparent parsing.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -236,10 +260,10 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 The easiest way to add Logly to your project:
 
-**For Zig 0.16.0+ (Latest stable `0.1.9`):**
+**For Zig 0.16.0+ (Latest stable `0.2.0`):**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
 ```
 
 **For Zig 0.15.0 (Use `0.1.7` or earlier):**
@@ -267,7 +291,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.9.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -820,6 +844,100 @@ const silent_logger = try logly.Logger.initWithConfig(allocator, silent_config);
 defer silent_logger.deinit();
 ```
 
+### Cryptographic Log Chaining (Tamper-Evident Logs)
+
+Ensure absolute audit trail integrity using SHA-256 cryptographic chaining. Each log record contains a hash that includes the signature of the preceding record, making any manual log file modifications instantly detectable.
+
+```zig
+var config = logly.Config.default();
+config.auto_sink = false; // Disable default console output
+
+// Enable tamper-evident cryptographic chaining on a file sink
+var file_sink = logly.SinkConfig.file("secure_audit.log");
+file_sink.tamper_evident = true; 
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+_ = try logger.addSink(file_sink);
+
+try logger.info("Critical action performed", @src());
+try logger.flush();
+// Output contains standard fields and a cryptographic "SIG:<hash>" signature.
+```
+
+### Memory-Mapped Sinks (Extreme Performance)
+
+Map log files directly into RAM via native Win32 or POSIX `mmap` virtual memory mappings. Bypasses standard system call overhead for microsecond-latency disk writes, with automated dynamic resizing/remapping and exact file truncation to the written offset in `deinit`.
+
+```zig
+var config = logly.Config.default();
+config.auto_sink = false;
+
+var sink_cfg = logly.SinkConfig.file("perf.log");
+sink_cfg.mmap = true;         // Use memory mapping
+sink_cfg.async_write = false; // direct zero-copy write
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+_ = try logger.addSink(sink_cfg);
+
+try logger.info("Extremely fast disk log write", @src());
+try logger.flush();
+```
+
+### Global Panic Hook (Crash Interception)
+
+A robust crash protection hook that automatically captures standard Zig panics, emits crash dumps synchronously to active sinks (bypassing async worker queues to avoid locks/deadlocks), and flushes log buffers reliably before process exit.
+
+Simply export the panic handler in your root source file (e.g., `main.zig`):
+
+```zig
+const logly = @import("logly");
+
+// Export the Logly crash handler globally
+pub const panic = logly.panic;
+
+pub fn main() !void {
+    // Deliberate panic will be cleanly logged, stack traced, and flushed to disk
+    @panic("Simulated database connection crash!");
+}
+```
+
+### Dynamic Configuration Reloading (Zero Downtime)
+
+Reload active log levels, sinks, formats, and rules dynamically from JSON configuration files at runtime without restarts or dropped records.
+
+```zig
+// Initialize with default configuration
+const logger = try logly.Logger.init(allocator);
+defer logger.deinit();
+
+// Reload configuration settings on-the-fly
+try logger.reloadFromFile("config.json");
+```
+
+### MessagePack Binary & Terminal UI Formats
+
+Utilize ultra-compact compliance MessagePack binary format to minimize network/disk footprint, or output to interactive TUI dev cards with status badges and structured tables.
+
+```zig
+// 1. MessagePack binary logging
+var msgpack_config = logly.Config.default();
+msgpack_config.msgpack = true;
+
+const msgpack_logger = try logly.Logger.initWithConfig(allocator, msgpack_config);
+defer msgpack_logger.deinit();
+
+// 2. Styled Developer Terminal UI layout
+var tui_config = logly.Config.default();
+tui_config.tui = true;
+
+const tui_logger = try logly.Logger.initWithConfig(allocator, tui_config);
+defer tui_logger.deinit();
+```
+
 ### Production Configuration
 
 ```zig
@@ -937,6 +1055,43 @@ var config = logly.Config.default()
     .withThreadPool(4)
     .withScheduler();
 ```
+
+### Disabling the Update Checker
+
+> [!NOTE]
+> Logly's built-in update checker runs asynchronously in a parallel thread, achieving **zero impact** on logging performance or startup latency.
+
+If you are running in restricted network environments, CI/CD pipelines, or production servers, you can disable the update checker programmatically using either of these two methods:
+
+#### Option 1: Global Disabling (Recommended for entire application)
+Call `setEnabled(false)` on the `UpdateChecker` module before initializing any loggers:
+```zig
+const logly = @import("logly");
+
+pub fn main() !void {
+    // Disable the update checker globally
+    logly.UpdateChecker.setEnabled(false);
+    
+    // Initialize loggers normally
+    var logger = try logly.Logger.init(allocator, logly.Config.default());
+    defer logger.deinit();
+}
+```
+
+#### Option 2: Configuration-Level Disabling
+Disable version checking on a per-config basis:
+```zig
+var config = logly.Config.default();
+config.check_for_updates = false;
+
+var logger = try logly.Logger.init(allocator, config);
+defer logger.deinit();
+```
+
+For technical reference and customized checker endpoints, see:
+- Core implementation: [update_checker.zig](file:///c:/Users/smuha/Downloads/logly.zig/src/update_checker.zig)
+- API Reference: [update-checker.md (API)](file:///c:/Users/smuha/Downloads/logly.zig/docs/api/update-checker.md)
+- User Guide: [update-checker.md (Guide)](file:///c:/Users/smuha/Downloads/logly.zig/docs/guide/update-checker.md)
 
 ## Log Levels
 

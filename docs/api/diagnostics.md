@@ -406,6 +406,136 @@ pub const DiagnosticsPresets = struct {
 };
 ```
 
+## New Features in v0.2.0
+
+### HealthStatus
+
+Represents the overall health of the logging system's resources.
+
+```zig
+pub const HealthStatus = enum {
+    healthy,    // System is operating normally
+    degraded,   // System is operating but with some degradation
+    unhealthy,  // System is unhealthy and may be losing data
+};
+```
+
+### HealthReport
+
+Full health report returned by `checkHealth()`.
+
+```zig
+pub const HealthReport = struct {
+    status: HealthStatus,
+    queue_utilization: f64,  // 0.0–1.0
+    error_rate: f64,         // 0.0–1.0
+    memory_used_bytes: u64,
+    uptime_ms: i64,
+    issues: []const u8,      // Description of issues; empty if healthy
+
+    pub fn isHealthy(self: *const HealthReport) bool;
+    pub fn isUnhealthy(self: *const HealthReport) bool;
+};
+```
+
+**Example:**
+
+```zig
+var diag = try logly.Diagnostics.collect(allocator, false);
+defer diag.deinit(allocator);
+
+const health = logly.Diagnostics.checkHealth(&diag);
+switch (health.status) {
+    .healthy   => std.debug.print("System healthy\n", .{}),
+    .degraded  => std.debug.print("Warning: {s}\n", .{health.issues}),
+    .unhealthy => std.debug.print("CRITICAL: {s}\n", .{health.issues}),
+}
+```
+
+### DiagnosticsSnapshot
+
+A lightweight snapshot for diff comparisons.
+
+```zig
+pub const DiagnosticsSnapshot = struct {
+    timestamp_ms: i64,
+    os_tag: []const u8,
+    arch: []const u8,
+    logical_cores: usize,
+    total_mem: ?u64,
+    avail_mem: ?u64,
+    drive_count: usize,
+};
+```
+
+### `toJson(diag, allocator) ![]u8`
+
+Serializes the diagnostics as a compact JSON string. Caller must free the returned slice.
+
+**Aliases:** `asJson`, `serializeJson`
+
+```zig
+var diag = try logly.Diagnostics.collect(allocator, false);
+defer diag.deinit(allocator);
+
+const json = try logly.Diagnostics.toJson(&diag, allocator);
+defer allocator.free(json);
+std.debug.print("{s}\n", .{json});
+```
+
+**Output example:**
+```json
+{"timestamp_ms":1716123456789,"os":"windows","arch":"x86_64","cpu":"Intel Core i7","cores":8,"total_mem_mb":32768,"avail_mem_mb":16384,"drive_count":2,"drives":[{"C:\\":{"total_gb":931.51,"free_gb":256.00}}]}
+```
+
+### `emitJson(diag, allocator, writer) !void`
+
+Streams JSON diagnostics to any writer with a `writeAll` method.
+
+**Aliases:** `writeJson`, `printJson`
+
+```zig
+const stdout = std.Io.getStdOut().writer();
+try logly.Diagnostics.emitJson(&diag, allocator, stdout);
+```
+
+### `checkHealth(diag) HealthReport`
+
+Returns a `HealthReport` based on available memory:
+- `avail_mem < 10%` of `total_mem` → **unhealthy**
+- `avail_mem < 20%` of `total_mem` → **degraded**
+- Otherwise → **healthy**
+
+**Aliases:** `healthCheck`, `getHealth`
+
+### `takeSnapshot(diag) DiagnosticsSnapshot`
+
+Creates a lightweight snapshot of current state (O(1), no allocation).
+
+**Aliases:** `snapshot2`
+
+### `diff(snap1, snap2, allocator) ![]u8`
+
+Returns a human-readable string describing the delta between two snapshots. Caller must free.
+
+**Aliases:** `delta`, `compare`
+
+```zig
+var diag1 = try logly.Diagnostics.collect(allocator, false);
+defer diag1.deinit(allocator);
+const snap1 = logly.Diagnostics.takeSnapshot(&diag1);
+
+std.time.sleep(1_000_000); // 1ms
+
+var diag2 = try logly.Diagnostics.collect(allocator, false);
+defer diag2.deinit(allocator);
+const snap2 = logly.Diagnostics.takeSnapshot(&diag2);
+
+const delta = try logly.Diagnostics.diff(snap1, snap2, allocator);
+defer allocator.free(delta);
+std.debug.print("{s}", .{delta});
+```
+
 ## See Also
 
 - [Diagnostics Guide](../guide/diagnostics.md) - Usage patterns and best practices

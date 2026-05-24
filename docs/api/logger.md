@@ -687,6 +687,22 @@ Temporarily disables all logging.
 Flushes all sinks, ensuring all buffered data is written.
 Note: `config.auto_flush` defaults to `false` for throughput. Enable it when immediate durability is required.
 
+### `reloadFromFile(file_path: []const u8) !void`
+
+Dynamically reloads the configuration of the logger from a JSON file on disk. This will update the logger's active levels, sinks, formats, and rules at runtime without dropping log records or restarting the application.
+
+```zig
+try logger.reloadFromFile("config.json");
+```
+
+### `logPanic(message: []const u8) !void`
+
+Synchronously writes a fatal crash dump (with stack traces) directly to all active sinks, bypassing asynchronous worker queues to prevent deadlocks during application panics.
+
+```zig
+try logger.logPanic("Database connection pool saturated!");
+```
+
 ### `logSystemDiagnostics(src: ?std.builtin.SourceLocation) !void`
 
 Collects OS/CPU/memory (and optional per-drive storage) and logs them as a single `info` record. Honors `config.include_drive_diagnostics` and uses the logger's scratch allocator.

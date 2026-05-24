@@ -291,6 +291,9 @@ pub const Metrics = struct {
     /// Histogram buckets for latency distribution.
     histogram: [Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.MetricsConstants.histogram_boundaries.len,
 
+    /// Histogram buckets for latency distribution per log level.
+    level_histograms: [Constants.LevelConstants.count][Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = [_][Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned){[_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.MetricsConstants.histogram_boundaries.len} ** Constants.LevelConstants.count,
+
     /// Snapshot history for trend analysis.
     history: std.ArrayList(Snapshot),
 
@@ -481,6 +484,8 @@ pub const Metrics = struct {
             const bucket = self.getHistogramBucket(latency_ns);
             if (bucket < self.histogram.len) {
                 _ = self.histogram[bucket].fetchAdd(1, .monotonic);
+                const level_index = levelToIndex(level);
+                _ = self.level_histograms[level_index][bucket].fetchAdd(1, .monotonic);
             }
         }
     }
@@ -655,6 +660,13 @@ pub const Metrics = struct {
         // Reset histogram
         for (0..Constants.MetricsConstants.histogram_boundaries.len) |i| {
             self.histogram[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        }
+
+        // Reset level histograms
+        for (0..Constants.LevelConstants.count) |l| {
+            for (0..Constants.MetricsConstants.histogram_boundaries.len) |i| {
+                self.level_histograms[l][i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            }
         }
 
         for (0..Constants.LevelConstants.count) |i| {
@@ -840,6 +852,16 @@ pub const Metrics = struct {
         var result: [20]u64 = undefined;
         for (0..20) |i| {
             result[i] = @as(u64, self.histogram[i].load(.monotonic));
+        }
+        return result;
+    }
+
+    /// Get histogram data for a specific level.
+    pub fn getLevelHistogram(self: *const Metrics, level: Level) [20]u64 {
+        const level_index = levelToIndex(level);
+        var result: [20]u64 = undefined;
+        for (0..20) |i| {
+            result[i] = @as(u64, self.level_histograms[level_index][i].load(.monotonic));
         }
         return result;
     }

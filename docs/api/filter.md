@@ -147,6 +147,7 @@ pub const FilterRule = struct {
         span_id_match,
         context_has_key,
         context_value_match,
+        context_path_match,
         thread_id_match,
         has_error,
         custom,
@@ -237,6 +238,26 @@ Explicitly deny a specific module.
 
 Filter based on context values matching a pattern.
 
+#### `addContextPathMatch(key: []const u8, pattern: []const u8, action: Action) !void`
+
+Filters log records using structured nested context keys (e.g. `user.id` or `network.ip`) using dot-notation syntax. Recursively traverses nested JSON maps to match the targeted property.
+
+#### `addTimeWindowRule(start_hour: u8, end_hour: u8, timezone_offset_hours: i8) !void`
+
+Adds a time window rule that denies records outside the configured hour range. Useful for implementing "quiet hours".
+
+#### `addRateRule(max_msgs_per_sec: u32) !void`
+
+Adds a rate-based filter using a token bucket algorithm to automatically deny logs if a module exceeds `N` messages per second.
+
+#### `addGlobModule(pattern: []const u8, action: Action) !void`
+
+Adds a module filter using glob pattern matching (`*`, `?`).
+
+#### `addCompositeFilter(other: *Filter, logic: Mode) !void`
+
+Chains another `Filter` instance to this filter using AND/OR semantics defined by the mode.
+
 #### `addErrorOnly() !void`
 
 Only allow records that contain error information.
@@ -257,7 +278,11 @@ Evaluates a record against all rules. Returns `true` if the record should be log
 
 #### `shouldLogBatch(records: []const *const Record, results: []bool) void`
 
-Batch filter evaluation for multiple records at once. More efficient for processing large volumes.
+Fast batch filter evaluation for multiple records at once, writing boolean results into the provided slice.
+
+#### `filterBatch(allocator: Allocator, records: []const *const Record) ![]FilterResult`
+
+Evaluates a batch of records and returns a slice of `FilterResult` structs containing both the boolean evaluation and the reason string for why the record was allowed/denied.
 
 #### `allowsAll() bool`
 

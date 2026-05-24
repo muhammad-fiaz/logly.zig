@@ -240,6 +240,10 @@ pub const Rotation = struct {
     retention: ?usize = null,
     /// Maximum age of rotated files in seconds.
     max_age_seconds: ?i64 = null,
+    /// Maximum total size of all rotated files in bytes.
+    max_total_size: ?u64 = null,
+    /// Custom rotation callback.
+    on_rotate: ?*const fn (old_path: []const u8, new_path: []const u8) void = null,
     /// Timestamp of last rotation.
     last_rotation: i64,
     /// Naming strategy for rotated files.
@@ -297,6 +301,8 @@ pub const Rotation = struct {
             .interval = interval,
             .size_limit = size_limit,
             .retention = retention,
+            .max_total_size = null,
+            .on_rotate = null,
             .last_rotation = Utils.currentSeconds(),
         };
 
@@ -375,6 +381,21 @@ pub const Rotation = struct {
         self.max_age_seconds = max_age_seconds;
     }
 
+    /// Sets max total size in bytes for all rotated files combined.
+    pub fn setMaxTotalSize(self: *Rotation, limit: ?u64) void {
+        self.max_total_size = limit;
+    }
+
+    /// Builder for setting max total size.
+    pub fn withMaxTotalSize(self: *Rotation, limit: u64) void {
+        self.max_total_size = limit;
+    }
+
+    /// Sets custom rotation callback.
+    pub fn withOnRotate(self: *Rotation, callback: ?*const fn (old_path: []const u8, new_path: []const u8) void) void {
+        self.on_rotate = callback;
+    }
+
     /// Sets archive directory for rotated files.
     pub fn withArchiveDir(self: *Rotation, dir: []const u8) !void {
         if (self.archive_dir) |d| self.allocator.free(d);
@@ -406,12 +427,27 @@ pub const Rotation = struct {
     /// Applies global rotation configuration where local settings are missing.
     pub fn applyConfig(self: *Rotation, config: RotationConfig) !void {
         if (self.interval == null and config.interval != null) {
-            self.interval = RotationInterval.fromString(config.interval.?);
+            const s = config.interval.?;
+            if (RotationInterval.fromString(s)) |inv| {
+                self.interval = inv;
+            } else if (Utils.parseDuration(s)) |dur_ms| {
+                self.max_age_seconds = @divTrunc(dur_ms, Constants.TimeConstants.ms_per_second);
+            }
         }
         if (self.size_limit == null) {
             if (config.size_limit) |l| self.size_limit = l else if (config.size_limit_str) |s| {
                 self.size_limit = Utils.parseSize(s);
             }
+        }
+        if (self.max_total_size == null) {
+            if (config.max_total_size) |l| {
+                self.max_total_size = l;
+            } else if (config.max_total_size_str) |s| {
+                self.max_total_size = Utils.parseSize(s);
+            }
+        }
+        if (self.on_rotate == null) {
+            self.on_rotate = config.on_rotate;
         }
         if (self.retention == null) self.retention = config.retention_count;
         if (self.max_age_seconds == null) self.max_age_seconds = config.max_age_seconds;
@@ -680,6 +716,7 @@ pub const Rotation = struct {
         const elapsed = @as(Constants.AtomicUnsigned, @intCast(Utils.currentMillis() - start_time));
         self.stats.last_rotation_time_ms.store(elapsed, .monotonic);
         if (self.on_rotation_complete) |cb| cb(self.base_path, rotated_path, @as(u64, @intCast(elapsed)));
+        if (self.on_rotate) |cb| cb(self.base_path, rotated_path);
 
         // 5. Compress if enabled
         var final_path = try self.allocator.dupe(u8, rotated_path);
@@ -903,7 +940,7 @@ pub const Rotation = struct {
         var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return;
         defer dir.close(Utils.io());
 
-        const FileInfo = struct { name: []u8, mtime: i128, is_compressed: bool };
+        const FileInfo = struct { name: []u8, mtime: i128, is_compressed: bool, size: u64 };
         var files: std.ArrayList(FileInfo) = .empty;
         defer {
             for (files.items) |f| self.allocator.free(f.name);
@@ -936,26 +973,49 @@ pub const Rotation = struct {
                     .name = try self.allocator.dupe(u8, entry.name),
                     .mtime = stat.mtime.toNanoseconds(),
                     .is_compressed = is_compressed,
+                    .size = stat.size,
                 });
             }
         }
 
+        // Sort by modification time (oldest first)
+        std.mem.sort(FileInfo, files.items, {}, struct {
+            fn lessThan(_: void, a: FileInfo, b: FileInfo) bool {
+                return a.mtime < b.mtime;
+            }
+        }.lessThan);
+
+        var remaining_start: usize = 0;
+
         // Retention check with count sorted by mtime
         if (self.retention) |max_files| {
             if (files.items.len > max_files) {
-                // Sort by modification time (oldest first)
-                std.mem.sort(FileInfo, files.items, {}, struct {
-                    fn lessThan(_: void, a: FileInfo, b: FileInfo) bool {
-                        return a.mtime < b.mtime;
-                    }
-                }.lessThan);
-
                 const to_delete = files.items.len - max_files;
                 for (files.items[0..to_delete]) |item| {
                     const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, item.name });
                     defer self.allocator.free(full_path);
                     try self.handleRetentionFile(full_path, item.is_compressed);
                 }
+                remaining_start = to_delete;
+            }
+        }
+
+        // Max total size check
+        if (self.max_total_size) |max_bytes| {
+            const remaining_files = files.items[remaining_start..];
+            var total_size: u64 = 0;
+            for (remaining_files) |item| {
+                total_size += item.size;
+            }
+
+            var idx: usize = 0;
+            while (idx < remaining_files.len and total_size > max_bytes) {
+                const item = remaining_files[idx];
+                const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, item.name });
+                defer self.allocator.free(full_path);
+                try self.handleRetentionFile(full_path, item.is_compressed);
+                total_size -= item.size;
+                idx += 1;
             }
         }
 
@@ -1096,64 +1156,64 @@ pub const RotationPresets = struct {
 
     /// 1MB size-based rotation with 5 file retention (small logs).
     pub fn size1MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 1 * 1024 * 1024, 5);
+        return Rotation.init(allocator, path, null, 1 * Constants.SizeConstants.bytes_per_mb, 5);
     }
 
     /// 5MB size-based rotation with 5 file retention.
     pub fn size5MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 5 * 1024 * 1024, 5);
+        return Rotation.init(allocator, path, null, 5 * Constants.SizeConstants.bytes_per_mb, 5);
     }
 
     /// 10MB size-based rotation with 5 file retention.
     pub fn size10MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 10 * 1024 * 1024, 5);
+        return Rotation.init(allocator, path, null, 10 * Constants.SizeConstants.bytes_per_mb, 5);
     }
 
     /// 25MB size-based rotation with 10 file retention.
     pub fn size25MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 25 * 1024 * 1024, 10);
+        return Rotation.init(allocator, path, null, 25 * Constants.SizeConstants.bytes_per_mb, 10);
     }
 
     /// 50MB size-based rotation with 10 file retention.
     pub fn size50MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 50 * 1024 * 1024, 10);
+        return Rotation.init(allocator, path, null, 50 * Constants.SizeConstants.bytes_per_mb, 10);
     }
 
     /// 100MB size-based rotation with 10 file retention.
     pub fn size100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 100 * 1024 * 1024, 10);
+        return Rotation.init(allocator, path, null, 100 * Constants.SizeConstants.bytes_per_mb, 10);
     }
 
     /// 250MB size-based rotation with 5 file retention (large logs).
     pub fn size250MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 250 * 1024 * 1024, 5);
+        return Rotation.init(allocator, path, null, 250 * Constants.SizeConstants.bytes_per_mb, 5);
     }
 
     /// 500MB size-based rotation with 3 file retention.
     pub fn size500MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 500 * 1024 * 1024, 3);
+        return Rotation.init(allocator, path, null, 500 * Constants.SizeConstants.bytes_per_mb, 3);
     }
 
     /// 1GB size-based rotation with 2 file retention.
     pub fn size1GB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 1024 * 1024 * 1024, 2);
+        return Rotation.init(allocator, path, null, Constants.SizeConstants.bytes_per_gb, 2);
     }
 
     // Hybrid Presets (Time + Size)
 
     /// Daily rotation OR 100MB, 30 day retention.
     pub fn dailyOr100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, "daily", 100 * 1024 * 1024, 30);
+        return Rotation.init(allocator, path, "daily", 100 * Constants.SizeConstants.bytes_per_mb, 30);
     }
 
     /// Hourly rotation OR 50MB, 48 hour retention.
     pub fn hourlyOr50MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, "hourly", 50 * 1024 * 1024, 48);
+        return Rotation.init(allocator, path, "hourly", 50 * Constants.SizeConstants.bytes_per_mb, 48);
     }
 
     /// Daily rotation OR 500MB, 7 day retention (high volume).
     pub fn dailyOr500MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, "daily", 500 * 1024 * 1024, 7);
+        return Rotation.init(allocator, path, "daily", 500 * Constants.SizeConstants.bytes_per_mb, 7);
     }
 
     // Production Presets
@@ -1184,7 +1244,7 @@ pub const RotationPresets = struct {
 
     /// High-volume preset: hourly OR 500MB, 7 days, compressed.
     pub fn highVolume(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        var rot = try Rotation.init(allocator, path, "hourly", 500 * 1024 * 1024, 168);
+        var rot = try Rotation.init(allocator, path, "hourly", 500 * Constants.SizeConstants.bytes_per_mb, 168);
         rot.withNaming(.iso_datetime);
         try rot.withCompression(.{ .algorithm = .deflate });
         return rot;
@@ -1202,7 +1262,7 @@ pub const RotationPresets = struct {
 
     /// Minimal preset: size-only 10MB, 3 files (embedded/resource constrained).
     pub fn minimal(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        var rot = try Rotation.init(allocator, path, null, 10 * 1024 * 1024, 3);
+        var rot = try Rotation.init(allocator, path, null, 10 * Constants.SizeConstants.bytes_per_mb, 3);
         rot.withNaming(.index);
         return rot;
     }
@@ -1335,19 +1395,19 @@ test "rotation presets size-based" {
 
     var size1 = try RotationPresets.size1MB(allocator, "test.log");
     defer size1.deinit();
-    try std.testing.expectEqual(@as(?u64, 1 * 1024 * 1024), size1.size_limit);
+    try std.testing.expectEqual(@as(?u64, 1 * Constants.SizeConstants.bytes_per_mb), size1.size_limit);
 
     var size10 = try RotationPresets.size10MB(allocator, "test.log");
     defer size10.deinit();
-    try std.testing.expectEqual(@as(?u64, 10 * 1024 * 1024), size10.size_limit);
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_mb), size10.size_limit);
 
     var size100 = try RotationPresets.size100MB(allocator, "test.log");
     defer size100.deinit();
-    try std.testing.expectEqual(@as(?u64, 100 * 1024 * 1024), size100.size_limit);
+    try std.testing.expectEqual(@as(?u64, 100 * Constants.SizeConstants.bytes_per_mb), size100.size_limit);
 
     var size1gb = try RotationPresets.size1GB(allocator, "test.log");
     defer size1gb.deinit();
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024), size1gb.size_limit);
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), size1gb.size_limit);
 }
 
 test "rotation presets hybrid" {
@@ -1356,7 +1416,7 @@ test "rotation presets hybrid" {
     var hybrid = try RotationPresets.dailyOr100MB(allocator, "test.log");
     defer hybrid.deinit();
     try std.testing.expectEqual(Rotation.RotationInterval.daily, hybrid.interval.?);
-    try std.testing.expectEqual(@as(?u64, 100 * 1024 * 1024), hybrid.size_limit);
+    try std.testing.expectEqual(@as(?u64, 100 * Constants.SizeConstants.bytes_per_mb), hybrid.size_limit);
     try std.testing.expectEqual(@as(?usize, 30), hybrid.retention);
 }
 
@@ -1417,7 +1477,7 @@ test "rotation configuration methods" {
 test "rotation explicit control helpers" {
     const allocator = std.testing.allocator;
 
-    var rot = try Rotation.init(allocator, "rotation_controls.log", "daily", 1024, 7);
+    var rot = try Rotation.init(allocator, "rotation_controls.log", "daily", Constants.SizeConstants.bytes_per_kb, 7);
     defer rot.deinit();
 
     rot.setInterval(.hourly);
@@ -1430,8 +1490,8 @@ test "rotation explicit control helpers" {
     try std.testing.expect(rot.interval == null);
     try std.testing.expect(!rot.setIntervalFromString("invalid-interval"));
 
-    rot.setSizeLimit(2048);
-    try std.testing.expectEqual(@as(?u64, 2048), rot.size_limit);
+    rot.setSizeLimit(Constants.SizeConstants.bytes_per_kb * 2);
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb * 2), rot.size_limit);
 
     rot.setRetentionCount(12);
     try std.testing.expectEqual(@as(?usize, 12), rot.retention);
@@ -1475,8 +1535,8 @@ test "rotation sink creation" {
     try std.testing.expectEqual(@as(?usize, 7), daily_sink.retention);
 
     // Size sink
-    const size_sink = RotationPresets.sizeSink("logs/app.log", 50 * 1024 * 1024, 5);
-    try std.testing.expectEqual(@as(?u64, 50 * 1024 * 1024), size_sink.size_limit);
+    const size_sink = RotationPresets.sizeSink("logs/app.log", 50 * Constants.SizeConstants.bytes_per_mb, 5);
+    try std.testing.expectEqual(@as(?u64, 50 * Constants.SizeConstants.bytes_per_mb), size_sink.size_limit);
     try std.testing.expectEqual(@as(?usize, 5), size_sink.retention);
 }
 
@@ -1489,7 +1549,7 @@ test "rotation is enabled check" {
     try std.testing.expect(rot1.isEnabled());
 
     // Size-based enabled
-    var rot2 = try Rotation.init(allocator, "test.log", null, 1024, null);
+    var rot2 = try Rotation.init(allocator, "test.log", null, Constants.SizeConstants.bytes_per_kb, null);
     defer rot2.deinit();
     try std.testing.expect(rot2.isEnabled());
 

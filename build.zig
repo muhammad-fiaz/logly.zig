@@ -71,6 +71,17 @@ pub fn build(b: *std.Build) void {
         .{ .name = "telemetry", .path = "examples/telemetry.zig" },
         .{ .name = "telemetry_metric_names", .path = "examples/telemetry_metric_names.zig" },
         .{ .name = "pipeline_controls", .path = "examples/pipeline_controls.zig" },
+        .{ .name = "filter_advanced", .path = "examples/filter_advanced.zig" },
+        .{ .name = "formatter_advanced", .path = "examples/formatter_advanced.zig" },
+        .{ .name = "sink_advanced", .path = "examples/sink_advanced.zig" },
+        .{ .name = "redaction_advanced", .path = "examples/redaction_advanced.zig" },
+        .{ .name = "network_advanced", .path = "examples/network_advanced.zig", .skip_run_all = true },
+        // v0.2.0 examples
+        .{ .name = "crash_handler", .path = "examples/crash_handler.zig" },
+        .{ .name = "hot_reload", .path = "examples/hot_reload.zig" },
+        .{ .name = "mmap_sink", .path = "examples/mmap_sink.zig" },
+        .{ .name = "context_filter", .path = "examples/context_filter.zig" },
+        .{ .name = "msgpack_tui", .path = "examples/msgpack_tui.zig" },
     };
 
     // Create run-all-examples step that runs all examples sequentially

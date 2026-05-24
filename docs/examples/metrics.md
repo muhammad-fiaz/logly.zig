@@ -59,7 +59,7 @@ Run the full pipeline-control example:
 zig build run-pipeline_controls
 ```
 
-It demonstrates chainable 0.1.9 configuration across async logging, thread pools, metrics exports, rules, scheduler maintenance, and rotation:
+It demonstrates chainable 0.2.0 configuration across async logging, thread pools, metrics exports, rules, scheduler maintenance, and rotation:
 
 ```zig
 const config = logly.Config.default()

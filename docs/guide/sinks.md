@@ -321,4 +321,29 @@ _ = try logger.addSink(.{
     .size_limit_str = "500MB",
     .retention = 24,
 });
+
+## Memory-Mapped (mmap) Sinks (v0.2.0)
+
+To achieve extreme microsecond-level write performance, you can enable virtual memory mapping (`mmap`) on file sinks. This maps files directly to physical memory blocks, bypassing heavy filesystem context switches and kernel write system calls.
+
+```zig
+var mmap_sink = logly.SinkConfig.file("logs/perf.log");
+mmap_sink.mmap = true; // [!code hl] // Enable zero-copy mmap writes!
+_ = try logger.addSink(mmap_sink);
+```
+
+## Cryptographic Tamper-Evident Chaining (v0.2.0)
+
+For high-security audit log systems (PCI-DSS/GDPR compliance), you can protect files with native SHA-256 cryptographic chaining. Every log line is cryptographically signed with a SHA-256 hash containing its own message, timestamp, and the signature of the *preceding* line. Any unauthorized insertion, edit, or deletion breaks the signature chain instantly.
+
+```zig
+var secure_sink = logly.SinkConfig.file("logs/secure_audit.log");
+secure_sink.tamper_evident = true; // [!code hl] // Enable cryptographic chain!
+_ = try logger.addSink(secure_sink);
+```
+
+## See Also
+- [Sink API](/api/sink) - Sinks reference API
+- [Memory Mapped Sink Example](/examples/mmap) - Zero-copy I/O example
+- [Network Logging](/guide/network-logging) - Remote TCP/UDP sinks guide
 ```

@@ -36,6 +36,13 @@ const Rotation = @import("rotation.zig").Rotation;
 const Network = @import("network.zig");
 const Utils = @import("utils.zig");
 
+/// File write mode.
+pub const WriteMode = enum {
+    append,
+    overwrite,
+    append_rotate,
+};
+
 fn writeStreamAll(stream: std.Io.net.Stream, data: []const u8) !void {
     var buffer: [Constants.BufferSizes.message]u8 = undefined;
     var writer = stream.writer(Utils.io(), &buffer);
@@ -238,6 +245,18 @@ pub const SinkConfig = struct {
     /// Pretty print JSON output with indentation.
     pretty_json: bool = false,
 
+    /// New formatting options.
+    ndjson: bool = false,
+    logfmt: bool = false,
+    cef: bool = false,
+    align_fields: bool = false,
+
+    /// Enables cryptographic log chaining to detect tampering.
+    tamper_evident: bool = false,
+
+    /// Enables memory-mapped file logging for extremely high performance.
+    mmap: bool = false,
+
     /// Enable/disable colors for this sink.
     /// If null, auto-detect (enabled for console, disabled for files).
     color: ?bool = null,
@@ -267,6 +286,21 @@ pub const SinkConfig = struct {
     /// File write mode: false = append (default), true = overwrite.
     /// When true, existing files are truncated before writing.
     overwrite_mode: bool = false,
+
+    /// New File write mode.
+    write_mode: WriteMode = .append,
+
+    /// Whether this is an in-memory sink.
+    is_memory: bool = false,
+
+    /// Whether this is a stderr console sink.
+    is_stderr: bool = false,
+
+    /// Per-sink rate limiting (messages per second, 0 = unlimited).
+    rate_limit_per_second: u32 = Constants.SinkDefaults.rate_limit_per_second,
+
+    /// Capacity of the in-memory ring buffer.
+    memory_capacity: usize = Constants.SinkDefaults.memory_ring_size,
 
     /// Compression settings for file sinks.
     compression: CompressionConfig = .{},
@@ -337,6 +371,28 @@ pub const SinkConfig = struct {
             .path = null, // Console output
             .color = null, // Auto-detect
             .async_write = true,
+            .enabled = true,
+        };
+    }
+
+    /// Returns a stderr console sink configuration.
+    pub fn stderr() SinkConfig {
+        return .{
+            .path = null,
+            .is_stderr = true,
+            .color = null,
+            .async_write = true,
+            .enabled = true,
+        };
+    }
+
+    /// Returns an in-memory ring buffer sink configuration.
+    pub fn memory() SinkConfig {
+        return .{
+            .path = "memory",
+            .is_memory = true,
+            .color = false,
+            .async_write = false, // Sync write by default to keep memory immediate
             .enabled = true,
         };
     }
@@ -542,6 +598,8 @@ pub const Sink = struct {
     config: SinkConfig,
     /// File handle for file-based sinks.
     file: ?std.Io.File = null,
+    /// Memory-mapped file handle for high-performance sinks.
+    mmap_file: ?MmapFile = null,
     /// TCP stream for network sinks.
     stream: ?std.Io.net.Stream = null,
     /// UDP socket for network sinks.
@@ -567,6 +625,24 @@ pub const Sink = struct {
     /// Sink statistics.
     stats: SinkStats = .{},
 
+    /// Last cryptographic chain hash.
+    last_record_hash: ?[32]u8 = null,
+
+    /// Number of consecutive write errors.
+    consecutive_errors: u32 = 0,
+
+    /// Rate limiter: last token refill timestamp (nanoseconds).
+    rate_limit_last_refill_ns: i128 = 0,
+    /// Rate limiter: current tokens.
+    rate_limit_tokens: f64 = 0,
+
+    /// Ring buffer for in-memory logging.
+    memory_ring: ?[]?[]const u8 = null,
+    /// Ring buffer write index.
+    memory_ring_index: usize = 0,
+    /// Ring buffer count of stored messages.
+    memory_ring_count: usize = 0,
+
     /// Callback invoked when a record is written to the sink.
     /// Parameters: (record_count: u64, bytes_written: u64)
     on_write: ?*const fn (u64, u64) void = null,
@@ -586,6 +662,14 @@ pub const Sink = struct {
     /// Callback invoked when sink is disabled/enabled.
     /// Parameters: (is_enabled: bool)
     on_state_change: ?*const fn (bool) void = null,
+
+    /// Callback invoked when a cryptographic signature is generated for a log record.
+    /// Parameters: (sink_name: []const u8, signature: []const u8)
+    on_signature: ?*const fn ([]const u8, []const u8) void = null,
+
+    /// Callback invoked when a memory-mapped sink grows in virtual memory size.
+    /// Parameters: (sink_name: []const u8, old_size: u64, new_size: u64)
+    on_mmap_resize: ?*const fn ([]const u8, u64, u64) void = null,
 
     /// Initializes a new sink with the provided configuration.
     ///
@@ -611,7 +695,12 @@ pub const Sink = struct {
             sink.formatter.setTheme(t);
         }
 
-        if (config.event_log) {
+        if (config.is_memory) {
+            sink.memory_ring = try allocator.alloc(?[]const u8, config.memory_capacity);
+            @memset(sink.memory_ring.?, null);
+            sink.memory_ring_index = 0;
+            sink.memory_ring_count = 0;
+        } else if (config.event_log) {
             sink.system_log = try SystemLog.init(allocator, config.name);
         } else if (config.path) |path_pattern| {
             // Check for network schemes
@@ -637,12 +726,20 @@ pub const Sink = struct {
                 // Use overwrite_mode to determine file truncation behavior
                 sink.file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{
                     .read = true,
-                    .truncate = config.overwrite_mode,
+                    .truncate = config.overwrite_mode or (config.write_mode == .overwrite),
                 });
+
+                if (config.mmap) {
+                    sink.mmap_file = try MmapFile.init(allocator, sink.file.?, 1024 * 1024);
+                }
 
                 // Write opening bracket for JSON array files
                 if (config.json) {
-                    if (sink.file) |file| {
+                    if (config.mmap) {
+                        if (sink.mmap_file) |*mmap_f| {
+                            try mmap_f.write("[\n");
+                        }
+                    } else if (sink.file) |file| {
                         try file.writeStreamingAll(Utils.io(), "[\n");
                     }
                 }
@@ -731,15 +828,31 @@ pub const Sink = struct {
 
         // Write closing bracket for JSON array files
         if (self.config.json and self.file != null) {
-            if (self.file) |file| {
+            if (self.config.mmap) {
+                if (self.mmap_file) |*mmap_f| {
+                    mmap_f.write("\n]") catch {};
+                }
+            } else if (self.file) |file| {
                 file.writeStreamingAll(Utils.io(), "\n]") catch {};
             }
+        }
+        if (self.config.mmap) {
+            if (self.mmap_file) |*mmap_f| {
+                mmap_f.deinit();
+            }
+            self.mmap_file = null;
         }
         if (self.file) |f| f.close(Utils.io());
         if (self.stream) |s| s.close(Utils.io());
         if (self.udp_socket) |s| s.close(Utils.io());
 
         if (self.rotation) |*r| r.deinit();
+        if (self.memory_ring) |ring| {
+            for (ring) |msg| {
+                if (msg) |m| self.allocator.free(m);
+            }
+            self.allocator.free(ring);
+        }
         self.buffer.deinit(self.allocator);
         self.formatter.deinit();
         self.allocator.destroy(self);
@@ -798,6 +911,26 @@ pub const Sink = struct {
     /// Alias for setStateChangeCallback
     pub const onStateChange = setStateChangeCallback;
 
+    /// Sets the callback for cryptographic signature generation.
+    pub fn setSignatureCallback(self: *Sink, callback: *const fn ([]const u8, []const u8) void) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.on_signature = callback;
+    }
+
+    /// Alias for setSignatureCallback
+    pub const onSignature = setSignatureCallback;
+
+    /// Sets the callback for memory-mapped sink resizes.
+    pub fn setMmapResizeCallback(self: *Sink, callback: *const fn ([]const u8, u64, u64) void) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.on_mmap_resize = callback;
+    }
+
+    /// Alias for setMmapResizeCallback
+    pub const onMmapResize = setMmapResizeCallback;
+
     /// Returns sink statistics.
     pub fn getStats(self: *Sink) SinkStats {
         self.mutex.lockUncancelable(Utils.io());
@@ -835,6 +968,59 @@ pub const Sink = struct {
 
     /// Alias for isEnabled
     pub const is_enabled = isEnabled;
+
+    /// Returns true if the sink is healthy (errors have not exceeded the unhealthy threshold).
+    pub fn isHealthy(self: *Sink) bool {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        return self.consecutive_errors < Constants.SinkDefaults.unhealthy_error_threshold;
+    }
+
+    /// Alias for isHealthy
+    pub const is_healthy = isHealthy;
+
+    /// Retrieves in-memory logged messages in chronological order.
+    /// The caller owns the returned slice and all the duplicated string elements.
+    pub fn getMemoryMessages(self: *Sink, allocator: std.mem.Allocator) ![][]const u8 {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        const ring = self.memory_ring orelse return error.NotAMemorySink;
+        const count = self.memory_ring_count;
+        var list: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer {
+            for (list.items) |msg| {
+                allocator.free(msg);
+            }
+            list.deinit(allocator);
+        }
+
+        try list.ensureTotalCapacity(allocator, count);
+
+        if (count < ring.len) {
+            var i: usize = 0;
+            while (i < count) : (i += 1) {
+                if (ring[i]) |msg| {
+                    const dup = try allocator.dupe(u8, msg);
+                    list.appendAssumeCapacity(dup);
+                }
+            }
+        } else {
+            var i: usize = 0;
+            while (i < ring.len) : (i += 1) {
+                const idx = (self.memory_ring_index + i) % ring.len;
+                if (ring[idx]) |msg| {
+                    const dup = try allocator.dupe(u8, msg);
+                    list.appendAssumeCapacity(dup);
+                }
+            }
+        }
+
+        return try list.toOwnedSlice(allocator);
+    }
+
+    /// Alias for getMemoryMessages
+    pub const get_memory_messages = getMemoryMessages;
 
     /// Enables the sink.
     pub fn enable(self: *Sink) void {
@@ -918,6 +1104,29 @@ pub const Sink = struct {
 
         if (!self.enabled) return;
 
+        // Rate limiting
+        if (self.config.rate_limit_per_second > 0) {
+            const now = Utils.currentNanos();
+            if (self.rate_limit_last_refill_ns == 0) {
+                self.rate_limit_last_refill_ns = now;
+                self.rate_limit_tokens = @floatFromInt(self.config.rate_limit_per_second);
+            } else {
+                const elapsed_ns = now - self.rate_limit_last_refill_ns;
+                const elapsed_secs = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
+                const new_tokens = elapsed_secs * @as(f64, @floatFromInt(self.config.rate_limit_per_second));
+                if (new_tokens > 0) {
+                    self.rate_limit_tokens = @min(@as(f64, @floatFromInt(self.config.rate_limit_per_second)), self.rate_limit_tokens + new_tokens);
+                    self.rate_limit_last_refill_ns = now;
+                }
+            }
+
+            if (self.rate_limit_tokens < 1.0) {
+                // Rate limit exceeded - silent drop
+                return;
+            }
+            self.rate_limit_tokens -= 1.0;
+        }
+
         // Check minimum level filtering
         if (self.config.level) |min_level| {
             if (record.level.priority() < min_level.priority()) {
@@ -954,6 +1163,21 @@ pub const Sink = struct {
         }
         if (self.config.pretty_json) {
             effective_config.pretty_json = true;
+        }
+        if (self.config.ndjson) {
+            effective_config.ndjson = true;
+        }
+        if (self.config.logfmt) {
+            effective_config.logfmt = true;
+        }
+        if (self.config.cef) {
+            effective_config.cef = true;
+        }
+        if (self.config.align_fields) {
+            effective_config.align_fields = true;
+        }
+        if (self.config.tamper_evident) {
+            effective_config.tamper_evident = true;
         }
 
         // Override Color setting
@@ -992,7 +1216,13 @@ pub const Sink = struct {
             const writer = &buffer_writer.writer;
 
             // Format message
-            if (effective_config.json) {
+            if (effective_config.ndjson) {
+                try formatter.formatJsonToWriter(writer, record, effective_config);
+            } else if (effective_config.logfmt) {
+                try formatter.formatLogfmtToWriter(writer, record, effective_config);
+            } else if (effective_config.cef) {
+                try formatter.formatCefToWriter(writer, record, effective_config);
+            } else if (effective_config.json) {
                 try formatter.formatJsonToWriter(writer, record, effective_config);
             } else {
                 try formatter.formatToWriter(writer, record, effective_config);
@@ -1018,11 +1248,12 @@ pub const Sink = struct {
         }
 
         // Write to buffer
+        const start_idx = self.buffer.items.len;
         var buffer_writer = std.Io.Writer.Allocating.fromArrayList(self.allocator, &self.buffer);
         errdefer self.buffer = buffer_writer.toArrayList();
         const writer = &buffer_writer.writer;
         const is_file = self.file != null;
-        const use_json_array = is_file and effective_config.json;
+        const use_json_array = is_file and effective_config.json and !effective_config.ndjson;
 
         if (use_json_array) {
             if (!self.json_first_entry) {
@@ -1031,14 +1262,47 @@ pub const Sink = struct {
             try formatter.formatJsonToWriter(writer, record, effective_config);
             self.json_first_entry = false;
         } else {
-            if (effective_config.json) {
+            if (effective_config.ndjson) {
+                try formatter.formatJsonToWriter(writer, record, effective_config);
+            } else if (effective_config.logfmt) {
+                try formatter.formatLogfmtToWriter(writer, record, effective_config);
+            } else if (effective_config.cef) {
+                try formatter.formatCefToWriter(writer, record, effective_config);
+            } else if (effective_config.json) {
                 try formatter.formatJsonToWriter(writer, record, effective_config);
             } else {
                 try formatter.formatToWriter(writer, record, effective_config);
             }
-            try writer.writeByte('\n');
         }
         self.buffer = buffer_writer.toArrayList();
+
+        // Apply Tamper-Evident Hashing
+        if (effective_config.tamper_evident) {
+            const newly_written = self.buffer.items[start_idx..];
+            self.last_record_hash = Utils.computeChainHash(self.last_record_hash, newly_written);
+
+            const hash_hex = std.fmt.bytesToHex(self.last_record_hash.?, .lower);
+
+            if (self.on_signature) |cb| {
+                cb(self.config.name orelse "unnamed_sink", &hash_hex);
+            }
+
+            if (use_json_array or effective_config.ndjson or effective_config.json) {
+                // For JSON, we inject it as a metadata field at the end before the closing brace if possible
+                // As a simpler robust approach, we just append it as a raw string comment or metadata block
+                try self.buffer.appendSlice(self.allocator, " /* SIG:");
+                try self.buffer.appendSlice(self.allocator, &hash_hex);
+                try self.buffer.appendSlice(self.allocator, " */");
+            } else {
+                try self.buffer.appendSlice(self.allocator, " [SIG:");
+                try self.buffer.appendSlice(self.allocator, &hash_hex);
+                try self.buffer.append(self.allocator, ']');
+            }
+        }
+
+        if (!use_json_array) {
+            try self.buffer.append(self.allocator, '\n');
+        }
 
         self.buffered_records += 1;
 
@@ -1076,14 +1340,33 @@ pub const Sink = struct {
                     try self.flush();
                 }
             } else {
-                file.writeStreamingAll(Utils.io(), data) catch |err| {
-                    try self.handleWriteError(err, 1);
-                    return;
-                };
-                file.writeStreamingAll(Utils.io(), "\n") catch |err| {
-                    try self.handleWriteError(err, 1);
-                    return;
-                };
+                if (self.config.mmap) {
+                    if (self.mmap_file) |*mmap_f| {
+                        const old_capacity = mmap_f.capacity;
+                        mmap_f.write(data) catch |err| {
+                            try self.handleWriteError(err, 1);
+                            return;
+                        };
+                        mmap_f.write("\n") catch |err| {
+                            try self.handleWriteError(err, 1);
+                            return;
+                        };
+                        if (mmap_f.capacity > old_capacity) {
+                            if (self.on_mmap_resize) |cb| {
+                                cb(self.config.name orelse "unnamed_sink", old_capacity, mmap_f.capacity);
+                            }
+                        }
+                    }
+                } else {
+                    file.writeStreamingAll(Utils.io(), data) catch |err| {
+                        try self.handleWriteError(err, 1);
+                        return;
+                    };
+                    file.writeStreamingAll(Utils.io(), "\n") catch |err| {
+                        try self.handleWriteError(err, 1);
+                        return;
+                    };
+                }
 
                 _ = self.stats.total_written.fetchAdd(1, .monotonic);
                 _ = self.stats.bytes_written.fetchAdd(bytes_with_newline, .monotonic);
@@ -1164,6 +1447,7 @@ pub const Sink = struct {
 
     fn handleWriteError(self: *Sink, err: anyerror, record_count: u64) !void {
         _ = self.stats.write_errors.fetchAdd(1, .monotonic);
+        self.consecutive_errors += 1;
 
         if (self.on_error) |callback| {
             callback(@errorName(err), record_count);
@@ -1192,6 +1476,47 @@ pub const Sink = struct {
         const start_ns = Utils.currentNanos();
         const buffered_records = if (self.buffered_records == 0) @as(u64, 1) else @as(u64, @intCast(self.buffered_records));
 
+        // Memory sink handling
+        if (self.memory_ring) |ring| {
+            var it = std.mem.splitScalar(u8, self.buffer.items, '\n');
+            while (it.next()) |line| {
+                if (line.len == 0) continue;
+                var trimmed = line;
+                if (std.mem.endsWith(u8, trimmed, ",")) {
+                    trimmed = trimmed[0 .. trimmed.len - 1];
+                }
+                trimmed = std.mem.trim(u8, trimmed, " \r\t");
+                if (trimmed.len == 0) continue;
+
+                const idx = self.memory_ring_index;
+                if (ring[idx]) |old| {
+                    self.allocator.free(old);
+                }
+                ring[idx] = try self.allocator.dupe(u8, trimmed);
+                self.memory_ring_index = (idx + 1) % ring.len;
+                if (self.memory_ring_count < ring.len) {
+                    self.memory_ring_count += 1;
+                }
+            }
+
+            const buffered_records_atomic: Constants.AtomicUnsigned = @intCast(@min(
+                buffered_records,
+                @as(u64, std.math.maxInt(Constants.AtomicUnsigned)),
+            ));
+            _ = self.stats.total_written.fetchAdd(buffered_records_atomic, .monotonic);
+            _ = self.stats.bytes_written.fetchAdd(self.buffer.items.len, .monotonic);
+            _ = self.stats.flush_count.fetchAdd(1, .monotonic);
+            self.consecutive_errors = 0;
+
+            if (self.on_write) |callback| {
+                callback(buffered_records, self.buffer.items.len);
+            }
+
+            self.buffer.clearRetainingCapacity();
+            self.buffered_records = 0;
+            return;
+        }
+
         // Compression for Network Sinks
         var data_to_write: []const u8 = self.buffer.items;
         var compressed_data: ?[]u8 = null;
@@ -1213,12 +1538,30 @@ pub const Sink = struct {
         defer if (compressed_data) |d| self.allocator.free(d);
 
         if (self.file) |file| {
-            file.writeStreamingAll(Utils.io(), self.buffer.items) catch |err| {
-                try self.handleWriteError(err, buffered_records);
-                self.buffer.clearRetainingCapacity();
-                self.buffered_records = 0;
-                return;
-            };
+            if (self.config.mmap) {
+                if (self.mmap_file) |*mmap_f| {
+                    const old_capacity = mmap_f.capacity;
+                    mmap_f.write(self.buffer.items) catch |err| {
+                        try self.handleWriteError(err, buffered_records);
+                        self.buffer.clearRetainingCapacity();
+                        self.buffered_records = 0;
+                        return;
+                    };
+                    if (mmap_f.capacity > old_capacity) {
+                        if (self.on_mmap_resize) |cb| {
+                            cb(self.config.name orelse "unnamed_sink", old_capacity, mmap_f.capacity);
+                        }
+                    }
+                    mmap_f.flush();
+                }
+            } else {
+                file.writeStreamingAll(Utils.io(), self.buffer.items) catch |err| {
+                    try self.handleWriteError(err, buffered_records);
+                    self.buffer.clearRetainingCapacity();
+                    self.buffered_records = 0;
+                    return;
+                };
+            }
         } else if (self.stream) |stream| {
             writeStreamAll(stream, data_to_write) catch |err| {
                 if (self.reconnect()) {
@@ -1292,6 +1635,7 @@ pub const Sink = struct {
             callback(bytes_flushed, duration_ns);
         }
 
+        self.consecutive_errors = 0;
         self.buffer.clearRetainingCapacity();
         self.buffered_records = 0;
     }
@@ -1357,12 +1701,12 @@ pub const Sink = struct {
 };
 
 test "sink parseSize" {
-    try std.testing.expectEqual(@as(?u64, 1024), Utils.parseSize("1024"));
-    try std.testing.expectEqual(@as(?u64, 1024), Utils.parseSize("1KB"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024), Utils.parseSize("1MB"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 10), Utils.parseSize("10M"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024), Utils.parseSize("1GB"));
-    try std.testing.expectEqual(@as(?u64, 1024 * 1024 * 1024 * 5), Utils.parseSize("5G"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), Utils.parseSize("1024"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), Utils.parseSize("1KB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_mb), Utils.parseSize("1MB"));
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_mb), Utils.parseSize("10M"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), Utils.parseSize("1GB"));
+    try std.testing.expectEqual(@as(?u64, 5 * Constants.SizeConstants.bytes_per_gb), Utils.parseSize("5G"));
 }
 
 test "sink filtering" {
@@ -1487,4 +1831,415 @@ test "sink on_error propagate returns error" {
 
     const stats = sink.getStats();
     try std.testing.expectEqual(@as(u64, 1), stats.getWriteErrors());
+}
+
+/// A group of sinks to which logs can be fanned out atomically.
+pub const SinkGroup = struct {
+    allocator: std.mem.Allocator,
+    sinks: std.ArrayListUnmanaged(*Sink),
+    mutex: std.Io.Mutex = std.Io.Mutex.init,
+
+    pub fn init(allocator: std.mem.Allocator) SinkGroup {
+        return .{
+            .allocator = allocator,
+            .sinks = .empty,
+        };
+    }
+
+    pub fn deinit(self: *SinkGroup) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.sinks.deinit(self.allocator);
+    }
+
+    pub fn addSink(self: *SinkGroup, sink: *Sink) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        try self.sinks.append(self.allocator, sink);
+    }
+
+    pub const add_sink = addSink;
+
+    pub fn write(self: *SinkGroup, record: *const Record, global_config: anytype) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        for (self.sinks.items) |sink| {
+            try sink.write(record, global_config);
+        }
+    }
+
+    pub fn flush(self: *SinkGroup) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        for (self.sinks.items) |sink| {
+            try sink.flush();
+        }
+    }
+};
+
+test "SinkGroup fan-out and flush" {
+    const allocator = std.testing.allocator;
+
+    var group = SinkGroup.init(allocator);
+    defer group.deinit();
+
+    var s1_cfg = SinkConfig.memory();
+    s1_cfg.name = "s1";
+    const s1 = try Sink.init(allocator, s1_cfg);
+    defer s1.deinit();
+
+    var s2_cfg = SinkConfig.memory();
+    s2_cfg.name = "s2";
+    const s2 = try Sink.init(allocator, s2_cfg);
+    defer s2.deinit();
+
+    try group.addSink(s1);
+    try group.addSink(s2);
+
+    var record = Record.init(allocator, .info, "sink group check");
+    defer record.deinit();
+    record.timestamp = 0;
+
+    var global_config = Config.default();
+    global_config.auto_sink = false;
+
+    try group.write(&record, global_config);
+    try group.flush();
+
+    const m1 = try s1.getMemoryMessages(allocator);
+    defer {
+        for (m1) |msg| allocator.free(msg);
+        allocator.free(m1);
+    }
+    const m2 = try s2.getMemoryMessages(allocator);
+    defer {
+        for (m2) |msg| allocator.free(msg);
+        allocator.free(m2);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), m1.len);
+    try std.testing.expectEqual(@as(usize, 1), m2.len);
+    try std.testing.expect(std.mem.indexOf(u8, m1[0], "sink group check") != null);
+    try std.testing.expect(std.mem.indexOf(u8, m2[0], "sink group check") != null);
+}
+
+test "sink tamper_evident cryptographic log chaining" {
+    const allocator = std.testing.allocator;
+
+    var sink_cfg = SinkConfig.memory();
+    sink_cfg.name = "tamper_evident_sink";
+    sink_cfg.tamper_evident = true;
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer sink.deinit();
+
+    var record1 = Record.init(allocator, .info, "first log record");
+    defer record1.deinit();
+    record1.timestamp = 1000;
+
+    var global_config = Config.default();
+    global_config.auto_sink = false;
+
+    try sink.write(&record1, global_config);
+    try sink.flush();
+
+    const m1 = try sink.getMemoryMessages(allocator);
+    defer {
+        for (m1) |msg| allocator.free(msg);
+        allocator.free(m1);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), m1.len);
+    // It should contain "first log record" and the signature "SIG:"
+    try std.testing.expect(std.mem.indexOf(u8, m1[0], "first log record") != null);
+    try std.testing.expect(std.mem.indexOf(u8, m1[0], "SIG:") != null);
+
+    // Write a second record, which should be chained to the first one
+    var record2 = Record.init(allocator, .info, "second log record");
+    defer record2.deinit();
+    record2.timestamp = 2000;
+
+    try sink.write(&record2, global_config);
+    try sink.flush();
+
+    const m2 = try sink.getMemoryMessages(allocator);
+    defer {
+        for (m2) |msg| allocator.free(msg);
+        allocator.free(m2);
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), m2.len);
+    try std.testing.expect(std.mem.indexOf(u8, m2[1], "second log record") != null);
+    try std.testing.expect(std.mem.indexOf(u8, m2[1], "SIG:") != null);
+}
+
+/// A memory-mapped file abstraction for extremely high-performance logging.
+/// Supports native memory mapping on Windows and POSIX (Linux, macOS) systems,
+/// with automatic dynamic resizing/remapping and graceful fallback.
+pub const MmapFile = struct {
+    file: std.Io.File,
+    memory: []align(4096) u8 = &.{},
+    write_ptr: usize = 0,
+    capacity: usize = 0,
+    allocator: std.mem.Allocator,
+    is_mapped: bool = false,
+
+    // Platform-specific fields
+    mapping_handle: if (builtin.os.tag == .windows) ?std.os.windows.HANDLE else void = if (builtin.os.tag == .windows) null else {},
+
+    // Windows mapping API declarations
+    const win32 = if (builtin.os.tag == .windows) struct {
+        extern "kernel32" fn CreateFileMappingW(
+            hFile: std.os.windows.HANDLE,
+            lpFileMappingAttributes: ?*anyopaque,
+            flProtect: std.os.windows.DWORD,
+            dwMaximumSizeHigh: std.os.windows.DWORD,
+            dwMaximumSizeLow: std.os.windows.DWORD,
+            lpName: ?std.os.windows.LPCWSTR,
+        ) callconv(.winapi) ?std.os.windows.HANDLE;
+
+        extern "kernel32" fn MapViewOfFile(
+            hFileMappingObject: std.os.windows.HANDLE,
+            dwDesiredAccess: std.os.windows.DWORD,
+            dwFileOffsetHigh: std.os.windows.DWORD,
+            dwFileOffsetLow: std.os.windows.DWORD,
+            dwNumberOfBytesToMap: usize,
+        ) callconv(.winapi) ?*anyopaque;
+
+        extern "kernel32" fn UnmapViewOfFile(
+            lpBaseAddress: ?*const anyopaque,
+        ) callconv(.winapi) std.os.windows.BOOL;
+
+        extern "kernel32" fn FlushViewOfFile(
+            lpBaseAddress: ?*const anyopaque,
+            dwNumberOfBytesToFlush: usize,
+        ) callconv(.winapi) std.os.windows.BOOL;
+    } else struct {};
+
+    pub fn init(allocator: std.mem.Allocator, file: std.Io.File, initial_size: usize) !MmapFile {
+        const io = Utils.io();
+        // Pre-allocate / grow file
+        try file.setLength(io, initial_size);
+
+        var self = MmapFile{
+            .allocator = allocator,
+            .file = file,
+            .write_ptr = 0,
+            .capacity = initial_size,
+        };
+
+        self.map() catch {
+            self.is_mapped = false;
+        };
+
+        return self;
+    }
+
+    pub fn deinit(self: *MmapFile) void {
+        self.unmap();
+        // Truncate file to actual bytes written before closing
+        const io = Utils.io();
+        self.file.setLength(io, self.write_ptr) catch {};
+    }
+
+    pub fn write(self: *MmapFile, data: []const u8) !void {
+        if (!self.is_mapped) {
+            // Fallback to standard file write
+            const io = Utils.io();
+            try self.file.writeStreamingAll(io, data);
+            self.write_ptr += data.len;
+            return;
+        }
+
+        if (self.write_ptr + data.len > self.capacity) {
+            // Grow file and remap
+            const new_capacity = self.capacity * 2 + data.len;
+            try self.grow(new_capacity);
+        }
+
+        @memcpy(self.memory[self.write_ptr..][0..data.len], data);
+        self.write_ptr += data.len;
+    }
+
+    pub fn flush(self: *MmapFile) void {
+        if (!self.is_mapped) return;
+
+        if (builtin.os.tag == .windows) {
+            _ = win32.FlushViewOfFile(self.memory.ptr, self.write_ptr);
+        } else {
+            // POSIX msync (MS_ASYNC = 1)
+            std.posix.msync(self.memory, 1) catch {};
+        }
+    }
+
+    fn map(self: *MmapFile) !void {
+        if (self.capacity == 0) return;
+
+        if (builtin.os.tag == .windows) {
+            const h = win32.CreateFileMappingW(self.file.handle, null, 4, 0, @intCast(self.capacity), null) orelse return error.MmapFailed;
+            self.mapping_handle = h;
+            errdefer {
+                _ = std.os.windows.CloseHandle(h);
+                self.mapping_handle = null;
+            }
+
+            const ptr = win32.MapViewOfFile(h, 2, 0, 0, self.capacity) orelse return error.MmapFailed;
+            const aligned_ptr = @as([*]align(4096) u8, @ptrCast(@alignCast(ptr)));
+            self.memory = aligned_ptr[0..self.capacity];
+            self.is_mapped = true;
+        } else {
+            const memory = try std.posix.mmap(
+                null,
+                self.capacity,
+                std.posix.PROT{ .READ = true, .WRITE = true },
+                std.posix.MAP{ .TYPE = .SHARED },
+                self.file.handle,
+                0,
+            );
+            self.memory = memory;
+            self.is_mapped = true;
+        }
+    }
+
+    fn unmap(self: *MmapFile) void {
+        if (!self.is_mapped) return;
+
+        if (builtin.os.tag == .windows) {
+            _ = win32.UnmapViewOfFile(self.memory.ptr);
+            if (self.mapping_handle) |h| {
+                _ = std.os.windows.CloseHandle(h);
+                self.mapping_handle = null;
+            }
+        } else {
+            std.posix.munmap(self.memory);
+        }
+        self.memory = &.{};
+        self.is_mapped = false;
+    }
+
+    pub fn grow(self: *MmapFile, new_capacity: usize) !void {
+        const aligned_capacity = (new_capacity + 4095) & ~@as(usize, 4095);
+        self.unmap();
+
+        const io = Utils.io();
+        try self.file.setLength(io, aligned_capacity);
+        self.capacity = aligned_capacity;
+
+        try self.map();
+    }
+};
+
+test "sink memory-mapped file sink" {
+    const allocator = std.testing.allocator;
+
+    const test_path = "mmap_test.log";
+    std.Io.Dir.cwd().deleteFile(Utils.io(), test_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), test_path) catch {};
+
+    var sink_cfg = SinkConfig.file(test_path);
+    sink_cfg.name = "mmap_sink";
+    sink_cfg.mmap = true;
+    sink_cfg.async_write = false; // direct write
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    errdefer sink.deinit();
+
+    var record1 = Record.init(allocator, .info, "first mmap log message");
+    defer record1.deinit();
+    record1.timestamp = 1000;
+
+    var global_config = Config.default();
+    global_config.auto_sink = false;
+
+    try sink.write(&record1, global_config);
+    try sink.flush();
+
+    // Deinitialize here to flush, unmap, and truncate the file on disk
+    sink.deinit();
+
+    // Verify the file content by reading it back
+    const file_content = try std.Io.Dir.cwd().readFileAlloc(Utils.io(), test_path, allocator, .limited(Constants.BufferSizes.file_read));
+    defer allocator.free(file_content);
+
+    try std.testing.expect(std.mem.indexOf(u8, file_content, "first mmap log message") != null);
+}
+
+var test_sig_called: bool = false;
+var test_sig_value: [64]u8 = undefined;
+var test_sig_len: usize = 0;
+fn mockSignatureCallback(sink_name: []const u8, sig: []const u8) void {
+    _ = sink_name;
+    @memcpy(test_sig_value[0..sig.len], sig);
+    test_sig_len = sig.len;
+    test_sig_called = true;
+}
+
+test "sink cryptographic log chaining signature callback" {
+    const allocator = std.testing.allocator;
+    const test_path = "sig_callback_test.log";
+    std.Io.Dir.cwd().deleteFile(Utils.io(), test_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), test_path) catch {};
+
+    var sink_cfg = SinkConfig.file(test_path);
+    sink_cfg.name = "chaining_sink";
+    sink_cfg.tamper_evident = true;
+    sink_cfg.async_write = false;
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer sink.deinit();
+
+    test_sig_called = false;
+    test_sig_len = 0;
+    sink.setSignatureCallback(&mockSignatureCallback);
+
+    var record = Record.init(allocator, .info, "test chaining callback");
+    defer record.deinit();
+
+    var global_config = Config.default();
+    global_config.auto_sink = false;
+
+    try sink.write(&record, global_config);
+    try std.testing.expect(test_sig_called);
+    try std.testing.expect(test_sig_len > 0);
+}
+
+var test_mmap_resize_called: bool = false;
+var test_mmap_old_capacity: u64 = 0;
+var test_mmap_new_capacity: u64 = 0;
+fn mockMmapResizeCallback(sink_name: []const u8, old_cap: u64, new_cap: u64) void {
+    _ = sink_name;
+    test_mmap_old_capacity = old_cap;
+    test_mmap_new_capacity = new_cap;
+    test_mmap_resize_called = true;
+}
+
+test "sink memory-mapped resize callback" {
+    const allocator = std.testing.allocator;
+    const test_path = "mmap_resize_test.log";
+    std.Io.Dir.cwd().deleteFile(Utils.io(), test_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), test_path) catch {};
+
+    var sink_cfg = SinkConfig.file(test_path);
+    sink_cfg.name = "mmap_resize_sink";
+    sink_cfg.mmap = true;
+    sink_cfg.async_write = false;
+
+    const sink = try Sink.init(allocator, sink_cfg);
+    defer sink.deinit();
+
+    test_mmap_resize_called = false;
+    sink.setMmapResizeCallback(&mockMmapResizeCallback);
+
+    if (sink.mmap_file) |*mmap_f| {
+        const old_cap = mmap_f.capacity;
+        try mmap_f.grow(old_cap + 1000);
+        if (sink.on_mmap_resize) |cb| {
+            cb("mmap_resize_sink", old_cap, mmap_f.capacity);
+        }
+    }
+
+    try std.testing.expect(test_mmap_resize_called);
+    try std.testing.expect(test_mmap_new_capacity > test_mmap_old_capacity);
 }

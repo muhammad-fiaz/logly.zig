@@ -39,6 +39,7 @@ Logly's telemetry module integrates with:
 | **Metric Name Controls** | Prefix and sanitize exported metric names |
 | **Export Modes** | Sync, async buffer, batch, and network export |
 | **Custom Providers** | Build your own exporter with callback interface |
+| **Event Batching** | Buffer and flush events periodically via `batch_size` and `flush_interval_ms` |
 | **Sampling Strategies** | always_on, always_off, trace_id_ratio, parent_based |
 | **Thread Safety** | Mutex-protected concurrent span/metric access |
 
@@ -136,6 +137,7 @@ Set `sanitize_metric_names = false` or call
 | **AWS X-Ray** | `TelemetryConfig.awsXray(region)` | `http://localhost:2000` |
 | **Azure** | `TelemetryConfig.azure(connection_string)` | Application Insights endpoint |
 | **OTEL Collector** | `TelemetryConfig.otelCollector(endpoint)` | Custom endpoint |
+| **Honeycomb** | `TelemetryConfig.honeycomb(api_key)` | `https://api.honeycomb.io/1/batch/dataset` |
 | **File** | `TelemetryConfig.file(path)` | Local JSONL file |
 
 ### Custom Provider
@@ -255,11 +257,9 @@ var config = logly.TelemetryConfig.development();
 config.metric_format = .prometheus; // or .json
 config.metrics_file_path = "telemetry_metrics.prom";
 
-var telemetry = try logly.Telemetry.init(allocator, config);
-defer telemetry.deinit();
-
-try telemetry.recordGauge("cpu.usage", 42.0);
-try telemetry.exportMetrics();
+// Event batching
+config.batch_size = 50;              // Export after 50 events
+config.flush_interval_ms = 5000;     // Or export every 5 seconds
 ```
 
 ### Metric Kinds

@@ -234,6 +234,18 @@ const files_compressed = try compressor.compressDirectory("logs/archive/");
 std.debug.print("Compressed {d} files\n", .{files_compressed});
 ```
 
+### Zstd Dictionary Support
+
+For highly repetitive logs, Zstd supports compression with a pre-trained dictionary, massively improving compression ratio and speed for small records:
+
+```zig
+var config = logly.Config.default().withZstdCompression();
+config.compression.zstd_dict = my_pre_trained_dict_bytes;
+
+var compressor = logly.Compression.initWithConfig(allocator, config.compression);
+defer compressor.deinit();
+```
+
 ## New Compression Algorithms (v0.1.8+)
 
 v0.1.8 introduces full compression and decompression support for six additional algorithms, providing flexibility for different use cases.
@@ -703,18 +715,25 @@ _ = try scheduler.addTask(.{
 try scheduler.start();
 ```
 
-### Background Mode
+### Background Mode (Asynchronous Compression)
 
-Offload compression to background threads:
+Offload compression to background threads using the `ThreadPool` so the main application thread doesn't block:
 
 ```zig
+var pool = try logly.ThreadPool.init(allocator, .{});
+try pool.start();
+defer pool.stop();
+
 var compression = logly.Compression.initWithConfig(allocator, .{
-    .background = true,  // Use thread pool
-    .level = .best,      // Can use higher levels without blocking
+    .algorithm = .zstd,
+    .thread_pool = &pool,
 });
 
-// Compression happens asynchronously
-const result = try compression.compressFile("large.log", null);
+// Compression is dispatched asynchronously to the thread pool
+try compression.asyncCompress("large.log", "archive/large.log.zst");
+
+// Or using aliases
+try compression.asyncPack("large.log", "archive/large.log.zst");
 ```
 
 ## Presets

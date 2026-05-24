@@ -608,6 +608,36 @@ pub const Formatter = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
+        if (self.configIsMsgpack(config)) {
+            const res = try self.formatMsgpackWithAllocator(record, config, scratch_allocator);
+            bytes_formatted = res.len;
+            return res;
+        }
+
+        if (self.configIsTui(config)) {
+            const res = try self.formatTuiWithAllocator(record, config, scratch_allocator);
+            bytes_formatted = res.len;
+            return res;
+        }
+
+        if (self.configIsNdjson(config)) {
+            const res = try self.formatJsonWithAllocator(record, config, scratch_allocator);
+            bytes_formatted = res.len;
+            return res;
+        }
+
+        if (self.configIsLogfmt(config)) {
+            const res = try self.formatLogfmtWithAllocator(record, config, scratch_allocator);
+            bytes_formatted = res.len;
+            return res;
+        }
+
+        if (self.configIsCef(config)) {
+            const res = try self.formatCefWithAllocator(record, config, scratch_allocator);
+            bytes_formatted = res.len;
+            return res;
+        }
+
         if (self.configIsJson(config)) {
             const res = try self.formatJsonWithAllocator(record, config, scratch_allocator);
             bytes_formatted = res.len;
@@ -637,6 +667,36 @@ pub const Formatter = struct {
     fn configIsJson(self: *Formatter, config: anytype) bool {
         _ = self;
         return if (@hasField(@TypeOf(config), "json")) config.json else false;
+    }
+
+    /// Internal helper to detect if Msgpack config is active.
+    fn configIsMsgpack(self: *Formatter, config: anytype) bool {
+        _ = self;
+        return if (@hasField(@TypeOf(config), "msgpack")) config.msgpack else false;
+    }
+
+    /// Internal helper to detect if TUI config is active.
+    fn configIsTui(self: *Formatter, config: anytype) bool {
+        _ = self;
+        return if (@hasField(@TypeOf(config), "tui")) config.tui else false;
+    }
+
+    /// Internal helper to detect if NDJSON config is active.
+    fn configIsNdjson(self: *Formatter, config: anytype) bool {
+        _ = self;
+        return if (@hasField(@TypeOf(config), "ndjson")) config.ndjson else false;
+    }
+
+    /// Internal helper to detect if Logfmt config is active.
+    fn configIsLogfmt(self: *Formatter, config: anytype) bool {
+        _ = self;
+        return if (@hasField(@TypeOf(config), "logfmt")) config.logfmt else false;
+    }
+
+    /// Internal helper to detect if CEF config is active.
+    fn configIsCef(self: *Formatter, config: anytype) bool {
+        _ = self;
+        return if (@hasField(@TypeOf(config), "cef")) config.cef else false;
     }
 
     /// Internal helper to detect if custom format is active.
@@ -753,7 +813,7 @@ pub const Formatter = struct {
             }
         }
 
-        // Check for custom log format
+        // Check if custom log format
         if (config.log_format) |fmt_str| {
             // Start color for entire line
             if (use_color) {
@@ -770,27 +830,61 @@ pub const Formatter = struct {
                     };
                     const tag = fmt_str[i + 1 .. end];
 
-                    if (std.mem.eql(u8, tag, "time")) {
+                    var field_name = tag;
+                    var format_spec: []const u8 = "";
+                    if (std.mem.indexOfScalar(u8, tag, ':')) |colon_idx| {
+                        field_name = tag[0..colon_idx];
+                        format_spec = tag[colon_idx + 1 ..];
+                    }
+
+                    if (std.mem.eql(u8, field_name, "time")) {
                         try self.writeTimestamp(writer, record.timestamp, config);
-                    } else if (std.mem.eql(u8, tag, "level")) {
-                        // Use custom level name if available
-                        try writer.writeAll(record.levelName());
-                    } else if (std.mem.eql(u8, tag, "message")) {
-                        try writer.writeAll(record.message);
-                    } else if (std.mem.eql(u8, tag, "module")) {
-                        if (record.module) |m| try writer.writeAll(m);
-                    } else if (std.mem.eql(u8, tag, "function")) {
-                        if (record.function) |f| try writer.writeAll(f);
-                    } else if (std.mem.eql(u8, tag, "file")) {
-                        if (record.filename) |f| try writer.writeAll(f);
-                    } else if (std.mem.eql(u8, tag, "line")) {
-                        if (record.line) |l| try Utils.writeInt(writer, l);
-                    } else if (std.mem.eql(u8, tag, "thread")) {
-                        if (record.thread_id) |tid| try Utils.writeInt(writer, tid);
-                    } else if (std.mem.eql(u8, tag, "trace_id")) {
-                        if (record.trace_id) |tid| try writer.writeAll(tid);
-                    } else if (std.mem.eql(u8, tag, "span_id")) {
-                        if (record.span_id) |sid| try writer.writeAll(sid);
+                    } else if (std.mem.eql(u8, field_name, "level")) {
+                        try writePadded(writer, record.levelName(), format_spec);
+                    } else if (std.mem.eql(u8, field_name, "message")) {
+                        try writePadded(writer, record.message, format_spec);
+                    } else if (std.mem.eql(u8, field_name, "module")) {
+                        try writePadded(writer, record.module orelse "", format_spec);
+                    } else if (std.mem.eql(u8, field_name, "function")) {
+                        try writePadded(writer, record.function orelse "", format_spec);
+                    } else if (std.mem.eql(u8, field_name, "file")) {
+                        try writePadded(writer, record.filename orelse "", format_spec);
+                    } else if (std.mem.eql(u8, field_name, "line")) {
+                        if (record.line) |l| {
+                            var num_buf: [32]u8 = undefined;
+                            const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{l}) catch "";
+                            try writePadded(writer, num_str, format_spec);
+                        } else {
+                            try writePadded(writer, "", format_spec);
+                        }
+                    } else if (std.mem.eql(u8, field_name, "thread")) {
+                        if (record.thread_id) |tid| {
+                            var num_buf: [32]u8 = undefined;
+                            const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{tid}) catch "";
+                            try writePadded(writer, num_str, format_spec);
+                        } else {
+                            try writePadded(writer, "", format_spec);
+                        }
+                    } else if (std.mem.eql(u8, field_name, "trace_id")) {
+                        try writePadded(writer, record.trace_id orelse "", format_spec);
+                    } else if (std.mem.eql(u8, field_name, "span_id")) {
+                        try writePadded(writer, record.span_id orelse "", format_spec);
+                    } else if (std.mem.eql(u8, field_name, "fields")) {
+                        var it = record.context.iterator();
+                        var first = true;
+                        while (it.next()) |entry| {
+                            if (!first) try writer.writeByte(' ');
+                            try writer.writeAll(entry.key_ptr.*);
+                            try writer.writeByte('=');
+                            switch (entry.value_ptr.*) {
+                                .string => |s| try writeLogfmtValue(writer, s),
+                                .integer => |in| try writer.print("{d}", .{in}),
+                                .float => |fl| try writer.print("{d}", .{fl}),
+                                .bool => |b| try writer.writeAll(if (b) "true" else "false"),
+                                else => try writer.writeAll("null"),
+                            }
+                            first = false;
+                        }
                     } else {
                         // Unknown tag, print as is
                         try writer.writeAll(fmt_str[i .. end + 1]);
@@ -1442,7 +1536,500 @@ pub const Formatter = struct {
     /// Alias for resetStats
     pub const clearStats = resetStats;
     pub const resetStatistics = resetStats;
+
+    /// Formats a log record as logfmt.
+    pub fn formatLogfmt(self: *Formatter, record: *const Record, config: anytype) ![]u8 {
+        return self.formatLogfmtWithAllocator(record, config, null);
+    }
+
+    /// Formats a log record as logfmt using the provided allocator.
+    pub fn formatLogfmtWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        const alloc = scratch_allocator orelse self.allocator;
+        var buf = std.Io.Writer.Allocating.init(alloc);
+        errdefer buf.deinit();
+        try self.formatLogfmtToWriter(&buf.writer, record, config);
+        return buf.toOwnedSlice();
+    }
+
+    /// Formats a log record as logfmt directly to a writer.
+    pub fn formatLogfmtToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
+        // Write standard logfmt: ts=... level=... msg=... [optional fields] [context fields]
+        try writer.writeAll("ts=");
+        var ts_buf: [64]u8 = undefined;
+        var ts_writer = std.Io.Writer.fixed(&ts_buf);
+        try self.writeTimestamp(&ts_writer, record.timestamp, config);
+        try writeLogfmtValue(writer, ts_buf[0..ts_writer.end]);
+
+        try writer.writeAll(" level=");
+        try writeLogfmtValue(writer, record.levelName());
+
+        try writer.writeAll(" msg=");
+        try writeLogfmtValue(writer, record.message);
+
+        if (record.module) |m| {
+            try writer.writeAll(" module=");
+            try writeLogfmtValue(writer, m);
+        }
+        if (record.function) |f| {
+            try writer.writeAll(" function=");
+            try writeLogfmtValue(writer, f);
+        }
+        if (record.filename) |f| {
+            try writer.writeAll(" file=");
+            try writeLogfmtValue(writer, f);
+        }
+        if (record.line) |l| {
+            try writer.writeAll(" line=");
+            try writer.print("{d}", .{l});
+        }
+        if (config.include_pid) {
+            try writer.writeAll(" pid=");
+            try writer.print("{d}", .{self.pid});
+        }
+        if (config.include_hostname) {
+            try writer.writeAll(" hostname=");
+            if (self.hostname) |h| {
+                try writeLogfmtValue(writer, h);
+            } else {
+                try writer.writeAll("unknown-host");
+            }
+        }
+        if (record.trace_id) |tid| {
+            try writer.writeAll(" trace_id=");
+            try writeLogfmtValue(writer, tid);
+        }
+        if (record.span_id) |sid| {
+            try writer.writeAll(" span_id=");
+            try writeLogfmtValue(writer, sid);
+        }
+        if (record.parent_span_id) |pid| {
+            try writer.writeAll(" parent_span_id=");
+            try writeLogfmtValue(writer, pid);
+        }
+
+        if (@hasField(@TypeOf(config), "distributed") and config.distributed.enabled) {
+            if (config.distributed.service_name) |s| {
+                try writer.writeAll(" service=");
+                try writeLogfmtValue(writer, s);
+            }
+            if (config.distributed.service_version) |v| {
+                try writer.writeAll(" version=");
+                try writeLogfmtValue(writer, v);
+            }
+            if (config.distributed.environment) |e| {
+                try writer.writeAll(" env=");
+                try writeLogfmtValue(writer, e);
+            }
+            if (config.distributed.region) |r| {
+                try writer.writeAll(" region=");
+                try writeLogfmtValue(writer, r);
+            }
+            if (config.distributed.datacenter) |d| {
+                try writer.writeAll(" datacenter=");
+                try writeLogfmtValue(writer, d);
+            }
+            if (config.distributed.instance_id) |i| {
+                try writer.writeAll(" instance_id=");
+                try writeLogfmtValue(writer, i);
+            }
+        }
+
+        var it = record.context.iterator();
+        while (it.next()) |entry| {
+            try writer.writeByte(' ');
+            try writer.writeAll(entry.key_ptr.*);
+            try writer.writeByte('=');
+            switch (entry.value_ptr.*) {
+                .string => |s| try writeLogfmtValue(writer, s),
+                .integer => |i| try writer.print("{d}", .{i}),
+                .float => |f| try writer.print("{d}", .{f}),
+                .bool => |b| try writer.writeAll(if (b) "true" else "false"),
+                else => try writer.writeAll("null"),
+            }
+        }
+    }
+
+    /// Formats a log record as CEF.
+    pub fn formatCef(self: *Formatter, record: *const Record, config: anytype) ![]u8 {
+        return self.formatCefWithAllocator(record, config, null);
+    }
+
+    /// Formats a log record as CEF using the provided allocator.
+    pub fn formatCefWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        const alloc = scratch_allocator orelse self.allocator;
+        var buf = std.Io.Writer.Allocating.init(alloc);
+        errdefer buf.deinit();
+        try self.formatCefToWriter(&buf.writer, record, config);
+        return buf.toOwnedSlice();
+    }
+
+    /// Formats a log record as CEF directly to a writer.
+    pub fn formatCefToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
+        const escapeCefField = struct {
+            fn escape(w: anytype, s: []const u8) !void {
+                for (s) |c| {
+                    switch (c) {
+                        '\\' => try w.writeAll("\\\\"),
+                        '|' => try w.writeAll("\\|"),
+                        '\n' => try w.writeAll("\\n"),
+                        '\r' => try w.writeAll("\\r"),
+                        else => try w.writeByte(c),
+                    }
+                }
+            }
+        }.escape;
+
+        const escapeCefExtensionValue = struct {
+            fn escape(w: anytype, s: []const u8) !void {
+                for (s) |c| {
+                    switch (c) {
+                        '\\' => try w.writeAll("\\\\"),
+                        '=' => try w.writeAll("\\="),
+                        '\n' => try w.writeAll("\\n"),
+                        '\r' => try w.writeAll("\\r"),
+                        else => try w.writeByte(c),
+                    }
+                }
+            }
+        }.escape;
+
+        try writer.writeAll("CEF:0|");
+
+        const vendor = if (@hasField(@TypeOf(config), "cef_vendor")) config.cef_vendor else "logly";
+        const product = if (@hasField(@TypeOf(config), "cef_product")) config.cef_product else "logly.zig";
+        const version = if (@hasField(@TypeOf(config), "cef_version")) config.cef_version else "0.2.0";
+        const signature_id = if (record.correlation_id) |cid| cid else "log";
+
+        try escapeCefField(writer, vendor);
+        try writer.writeByte('|');
+        try escapeCefField(writer, product);
+        try writer.writeByte('|');
+        try escapeCefField(writer, version);
+        try writer.writeByte('|');
+        try escapeCefField(writer, signature_id);
+        try writer.writeByte('|');
+
+        try escapeCefField(writer, record.message);
+        try writer.writeByte('|');
+
+        const severity_num: u8 = switch (record.level) {
+            .trace => 1,
+            .debug => 2,
+            .info => 3,
+            .notice => 4,
+            .success => 5,
+            .warning => 6,
+            .err => 7,
+            .fail => 8,
+            .critical => 9,
+            .fatal => 10,
+        };
+        try writer.print("{d}|", .{severity_num});
+
+        try writer.writeAll("rt=");
+        var ts_buf: [64]u8 = undefined;
+        var ts_writer = std.Io.Writer.fixed(&ts_buf);
+        try self.writeTimestamp(&ts_writer, record.timestamp, config);
+        try escapeCefExtensionValue(writer, ts_buf[0..ts_writer.end]);
+
+        if (record.module) |m| {
+            try writer.writeAll(" module=");
+            try escapeCefExtensionValue(writer, m);
+        }
+        if (record.function) |f| {
+            try writer.writeAll(" function=");
+            try escapeCefExtensionValue(writer, f);
+        }
+        if (record.filename) |f| {
+            try writer.writeAll(" file=");
+            try escapeCefExtensionValue(writer, f);
+        }
+        if (record.line) |l| {
+            try writer.print(" line={d}", .{l});
+        }
+        if (config.include_pid) {
+            try writer.print(" pid={d}", .{self.pid});
+        }
+        if (config.include_hostname) {
+            try writer.writeAll(" hostname=");
+            if (self.hostname) |h| {
+                try escapeCefExtensionValue(writer, h);
+            } else {
+                try writer.writeAll("unknown-host");
+            }
+        }
+        if (record.trace_id) |tid| {
+            try writer.writeAll(" traceId=");
+            try escapeCefExtensionValue(writer, tid);
+        }
+        if (record.span_id) |sid| {
+            try writer.writeAll(" spanId=");
+            try escapeCefExtensionValue(writer, sid);
+        }
+
+        var it = record.context.iterator();
+        while (it.next()) |entry| {
+            try writer.writeByte(' ');
+            try writer.writeAll(entry.key_ptr.*);
+            try writer.writeByte('=');
+            switch (entry.value_ptr.*) {
+                .string => |s| try escapeCefExtensionValue(writer, s),
+                .integer => |i| try writer.print("{d}", .{i}),
+                .float => |f| try writer.print("{d}", .{f}),
+                .bool => |b| try writer.writeAll(if (b) "true" else "false"),
+                else => try writer.writeAll("null"),
+            }
+        }
+    }
+
+    /// Represents a snapshot of the Formatter state and statistics.
+    pub const Snapshot = struct {
+        total_records_formatted: u64,
+        json_formats: u64,
+        custom_formats: u64,
+        format_errors: u64,
+        total_bytes_formatted: u64,
+        hostname: ?[]const u8 = null,
+        pid: Constants.NativeUint,
+        allocator: std.mem.Allocator,
+
+        pub fn deinit(self: *Snapshot) void {
+            if (self.hostname) |h| {
+                self.allocator.free(h);
+            }
+        }
+    };
+
+    /// Takes a snapshot of the Formatter statistics and state.
+    pub fn getSnapshot(self: *Formatter, allocator: std.mem.Allocator) !Snapshot {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        const hostname_copy = if (self.hostname) |h| try allocator.dupe(u8, h) else null;
+        return Snapshot{
+            .total_records_formatted = Utils.atomicLoadU64(&self.stats.total_records_formatted),
+            .json_formats = Utils.atomicLoadU64(&self.stats.json_formats),
+            .custom_formats = Utils.atomicLoadU64(&self.stats.custom_formats),
+            .format_errors = Utils.atomicLoadU64(&self.stats.format_errors),
+            .total_bytes_formatted = Utils.atomicLoadU64(&self.stats.total_bytes_formatted),
+            .hostname = hostname_copy,
+            .pid = self.pid,
+            .allocator = allocator,
+        };
+    }
+
+    /// Frees resources associated with a snapshot.
+    pub fn freeSnapshot(self: *Formatter, snapshot: Snapshot) void {
+        _ = self;
+        var snap = snapshot;
+        snap.deinit();
+    }
+
+    /// Formats a log record as MessagePack binary format.
+    pub fn formatMsgpackWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        _ = config;
+        const alloc = scratch_allocator orelse self.allocator;
+
+        var buf = std.Io.Writer.Allocating.init(alloc);
+        errdefer buf.deinit();
+        const writer = &buf.writer;
+
+        // 7 fields: timestamp, level, message, module, filename, line, context
+        try writer.writeByte(0x87);
+
+        // 1. timestamp
+        try writeMsgpackStr(writer, "timestamp");
+        try writeMsgpackInt(writer, record.timestamp);
+
+        // 2. level
+        try writeMsgpackStr(writer, "level");
+        try writeMsgpackStr(writer, record.level.asString());
+
+        // 3. message
+        try writeMsgpackStr(writer, "message");
+        try writeMsgpackStr(writer, record.message);
+
+        // 4. module
+        try writeMsgpackStr(writer, "module");
+        try writeMsgpackStr(writer, record.module orelse "");
+
+        // 5. filename
+        try writeMsgpackStr(writer, "filename");
+        try writeMsgpackStr(writer, record.filename orelse "");
+
+        // 6. line
+        try writeMsgpackStr(writer, "line");
+        try writeMsgpackInt(writer, @intCast(record.line orelse 0));
+
+        // 7. context
+        try writeMsgpackStr(writer, "context");
+        const ctx_count = record.context.count();
+        if (ctx_count <= 15) {
+            try writer.writeByte(0x80 | @as(u8, @intCast(ctx_count)));
+        } else {
+            try writer.writeByte(0xde); // map 16
+            try writer.writeInt(u16, @intCast(ctx_count), .big);
+        }
+
+        var it = record.context.iterator();
+        while (it.next()) |entry| {
+            try writeMsgpackStr(writer, entry.key_ptr.*);
+            switch (entry.value_ptr.*) {
+                .string => |s| try writeMsgpackStr(writer, s),
+                .integer => |i| try writeMsgpackInt(writer, i),
+                .float => |f| {
+                    // Pack float as double (0xcb)
+                    try writer.writeByte(0xcb);
+                    try writer.writeInt(u64, @bitCast(f), .big);
+                },
+                .bool => |b| try writer.writeByte(if (b) 0xc3 else 0xc2),
+                else => try writeMsgpackStr(writer, ""),
+            }
+        }
+
+        return buf.toOwnedSlice();
+    }
+
+    /// Formats a log record as a premium Terminal UI Dashboard card.
+    pub fn formatTuiWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
+        _ = config;
+        const alloc = scratch_allocator orelse self.allocator;
+        var buf = std.Io.Writer.Allocating.init(alloc);
+        errdefer buf.deinit();
+        const writer = &buf.writer;
+
+        const count = self.stats.getTotalFormatted();
+        const lvl_str = record.level.asString();
+        const color = record.level.defaultColor();
+
+        try writer.print("\x1b[36m┌── [LOGLY TUI MONITOR] ──[Count: {d}]──────────────────────────\x1b[0m\n", .{count});
+        try writer.print("\x1b[36m│\x1b[0m [\x1b[{s};1m{s:<8}\x1b[0m] Message: {s}\n", .{ color, lvl_str, record.message });
+        if (record.module) |mod| {
+            try writer.print("\x1b[36m│\x1b[0m Module: \x1b[35m{s}\x1b[0m", .{mod});
+            if (record.filename) |file| {
+                try writer.print(" | Location: \x1b[92m{s}:{d}\x1b[0m", .{ file, record.line orelse 0 });
+            }
+            try writer.writeAll("\n");
+        } else if (record.filename) |file| {
+            try writer.print("\x1b[36m│\x1b[0m Location: \x1b[92m{s}:{d}\x1b[0m\n", .{ file, record.line orelse 0 });
+        }
+
+        if (record.context.count() > 0) {
+            try writer.writeAll("\x1b[36m│\x1b[0m Context: ");
+            var it = record.context.iterator();
+            var first = true;
+            while (it.next()) |entry| {
+                if (!first) try writer.writeAll(", ");
+                first = false;
+                try writer.print("\x1b[33m{s}\x1b[0m=", .{entry.key_ptr.*});
+                switch (entry.value_ptr.*) {
+                    .string => |s| try writer.print("\"{s}\"", .{s}),
+                    .integer => |i| try writer.print("{d}", .{i}),
+                    .float => |f| try writer.print("{d:.2}", .{f}),
+                    .bool => |b| try writer.print("{}", .{b}),
+                    else => try writer.writeAll("null"),
+                }
+            }
+            try writer.writeAll("\n");
+        }
+
+        try writer.writeAll("\x1b[36m└──────────────────────────────────────────────────────────────\x1b[0m\n");
+
+        return buf.toOwnedSlice();
+    }
 };
+
+fn writePadded(writer: anytype, value: []const u8, spec: []const u8) !void {
+    if (spec.len == 0) {
+        try writer.writeAll(value);
+        return;
+    }
+
+    var align_dir: enum { left, right, center } = .left;
+    var width_str = spec;
+
+    if (spec[0] == '>') {
+        align_dir = .right;
+        width_str = spec[1..];
+    } else if (spec[0] == '<') {
+        align_dir = .left;
+        width_str = spec[1..];
+    } else if (spec[0] == '^') {
+        align_dir = .center;
+        width_str = spec[1..];
+    }
+
+    const width = std.fmt.parseInt(usize, width_str, 10) catch {
+        try writer.writeAll(value);
+        return;
+    };
+
+    if (value.len >= width) {
+        try writer.writeAll(value);
+    } else {
+        const diff = width - value.len;
+        switch (align_dir) {
+            .left => {
+                try writer.writeAll(value);
+                var k: usize = 0;
+                while (k < diff) : (k += 1) {
+                    try writer.writeByte(' ');
+                }
+            },
+            .right => {
+                var k: usize = 0;
+                while (k < diff) : (k += 1) {
+                    try writer.writeByte(' ');
+                }
+                try writer.writeAll(value);
+            },
+            .center => {
+                const left_padding = diff / 2;
+                const right_padding = diff - left_padding;
+                var k: usize = 0;
+                while (k < left_padding) : (k += 1) {
+                    try writer.writeByte(' ');
+                }
+                try writer.writeAll(value);
+                k = 0;
+                while (k < right_padding) : (k += 1) {
+                    try writer.writeByte(' ');
+                }
+            },
+        }
+    }
+}
+
+fn writeLogfmtValue(writer: anytype, value: []const u8) !void {
+    var needs_quoting = false;
+    if (value.len == 0) {
+        needs_quoting = true;
+    } else {
+        for (value) |c| {
+            if (c == ' ' or c == '=' or c == '"' or c == '\\' or c == '\n' or c == '\r' or c == '\t') {
+                needs_quoting = true;
+                break;
+            }
+        }
+    }
+
+    if (needs_quoting) {
+        try writer.writeByte('"');
+        for (value) |c| {
+            switch (c) {
+                '\\' => try writer.writeAll("\\\\"),
+                '"' => try writer.writeAll("\\\""),
+                '\n' => try writer.writeAll("\\n"),
+                '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"),
+                else => try writer.writeByte(c),
+            }
+        }
+        try writer.writeByte('"');
+    } else {
+        try writer.writeAll(value);
+    }
+}
 
 /// Fetches the current hostname using platform-specific APIs.
 fn fetchHostname(allocator: std.mem.Allocator) ![]const u8 {
@@ -1966,4 +2553,70 @@ test "color style enum" {
     const style = Formatter.ColorStyle.bright;
     try std.testing.expect(style == .bright);
     try std.testing.expect(Formatter.ColorStyle.default != .neon);
+}
+
+fn writeMsgpackInt(writer: anytype, val: i64) !void {
+    if (val >= 0 and val <= 127) {
+        try writer.writeByte(@intCast(val));
+    } else if (val >= -32 and val < 0) {
+        try writer.writeByte(@bitCast(@as(i8, @intCast(val))));
+    } else if (val >= -128 and val <= 127) {
+        try writer.writeByte(0xd0);
+        try writer.writeByte(@bitCast(@as(i8, @intCast(val))));
+    } else if (val >= -32768 and val <= 32767) {
+        try writer.writeByte(0xd1);
+        try writer.writeInt(i16, @intCast(val), .big);
+    } else if (val >= -2147483648 and val <= 2147483647) {
+        try writer.writeByte(0xd2);
+        try writer.writeInt(i32, @intCast(val), .big);
+    } else {
+        try writer.writeByte(0xd3);
+        try writer.writeInt(i64, val, .big);
+    }
+}
+
+fn writeMsgpackStr(writer: anytype, str: []const u8) !void {
+    const len = str.len;
+    if (len <= 31) {
+        try writer.writeByte(0xa0 | @as(u8, @intCast(len)));
+    } else if (len <= 255) {
+        try writer.writeByte(0xd9);
+        try writer.writeByte(@intCast(len));
+    } else if (len <= 65535) {
+        try writer.writeByte(0xda);
+        try writer.writeInt(u16, @intCast(len), .big);
+    } else {
+        try writer.writeByte(0xdb);
+        try writer.writeInt(u32, @intCast(len), .big);
+    }
+    try writer.writeAll(str);
+}
+
+test "formatter Msgpack and TUI" {
+    const allocator = std.testing.allocator;
+    var formatter = Formatter.init(allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(allocator, .info, "msgpack and tui test message");
+    defer record.deinit();
+    record.module = "test_binary";
+
+    // Test Msgpack
+    var config = Config.default();
+    config.msgpack = true;
+    const msgpack_data = try formatter.format(&record, config);
+    defer allocator.free(msgpack_data);
+
+    try std.testing.expect(msgpack_data.len > 0);
+    // Map header 0x87
+    try std.testing.expectEqual(@as(u8, 0x87), msgpack_data[0]);
+
+    // Test TUI
+    config.msgpack = false;
+    config.tui = true;
+    const tui_str = try formatter.format(&record, config);
+    defer allocator.free(tui_str);
+
+    try std.testing.expect(tui_str.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, tui_str, "LOGLY TUI MONITOR") != null);
 }

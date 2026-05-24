@@ -164,6 +164,22 @@ Sets retention count and max age in one call.
 pub fn setRetentionPolicy(self: *Rotation, retention_count: ?usize, max_age_seconds: ?i64) void
 ```
 
+#### `setMaxTotalSize`
+
+Sets a maximum total size across all rotated archive files. When the total size of all rotated logs exceeds this threshold, the oldest logs are deleted to free space.
+
+```zig
+pub fn setMaxTotalSize(self: *Rotation, bytes: u64) void
+```
+
+#### `setOnRotateCallback`
+
+Registers a custom callback invoked each time a rotation successfully completes.
+
+```zig
+pub fn setOnRotateCallback(self: *Rotation, callback: *const fn ([]const u8) void) void
+```
+
 #### `withArchiveDir`
 Sets a specific directory to move rotated files into.
 
@@ -305,6 +321,18 @@ pub const RotationConfig = struct {
 | `compress_on_retention` | `bool` | `false` | Compress instead of delete |
 | `delete_after_retention_compress` | `bool` | `true` | Delete after retention compression |
 | `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
+| `max_total_size` | `?u64` | `null` | Max combined size of all rotated files |
+| `on_rotate` | `?*const fn ([]const u8) void` | `null` | Custom callback invoked after rotation |
+
+### Parsing Helpers
+
+`RotationConfig` provides convenient parsers to convert strings into configuration limits:
+
+#### `fromSize(size_str: []const u8) !u64`
+Parses size strings like `"10MB"`, `"2.5GB"`, `"500KB"` into bytes.
+
+#### `fromInterval(dur_str: []const u8) !i64`
+Parses duration strings like `"30d"`, `"12h"`, `"45m"` into seconds.
 
 ## Enums
 

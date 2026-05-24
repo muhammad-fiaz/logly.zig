@@ -94,6 +94,16 @@ Enable threads to steal work from other threads' queues:
 
 This improves load balancing when some threads finish faster than others.
 
+### Thread Naming
+
+Set a custom prefix for worker threads to make debugging easier:
+
+```zig
+.thread_name_prefix = "logly-worker"
+```
+
+Threads will be named automatically (e.g., `logly-worker-0`, `logly-worker-1`).
+
 ### Arena Allocation
 
 Enable per-worker arena allocation for efficient memory usage:
@@ -134,8 +144,10 @@ const high = logly.ThreadPoolPresets.highThroughput();
 
 ### Basic Task Submission
 
+Tasks are submitted and return a `TaskHandle` which can be used to cancel them before execution:
+
 ```zig
-try pool.submit(.{
+const handle = try pool.submit(.{
     .func = myTaskFunction,
     .context = @ptrCast(&myData),
     .priority = .normal,
@@ -145,6 +157,20 @@ try pool.submit(.{
 fn myTaskFunction(ctx: *anyopaque) void {
     const data: *MyData = @alignCast(@ptrCast(ctx));
     // Process data...
+}
+```
+
+### Task Cancellation
+
+You can cancel pending tasks using their handle:
+
+```zig
+const handle = pool.submitFnWithHandle(myFunction, @ptrCast(&data));
+
+// Later, before it executes:
+const cancelled = pool.cancel(handle);
+if (cancelled) {
+    std.debug.print("Task was successfully cancelled before execution!\n", .{});
 }
 ```
 

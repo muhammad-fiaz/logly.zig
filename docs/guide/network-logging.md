@@ -116,6 +116,22 @@ try Network.sendSyslogUdp(
 *   **Buffering**: The async writer buffers logs and sends them in batches, improving network efficiency.
 *   **Reconnection**: TCP sinks handle reconnection logic automatically.
 
+## Syslog over TCP (RFC 6587) (v0.2.0)
+
+Logly `v0.2.0` introduces complete support for connection-oriented, reliable Syslog forwarding over TCP (conforming to RFC 6587). This completes the remote Syslog RFC 5424 suite by providing guaranteed delivery of secure event streams, whereas traditional UDP Syslog is "fire-and-forget" and prone to packet loss under congestion.
+
+### Configuration
+
+To send logs to a remote Syslog TCP daemon:
+```zig
+var syslog_sink = logly.SinkConfig.syslog("tcp://syslog-collector:514");
+syslog_sink.facility = .local0;
+syslog_sink.severity = .info;
+_ = try logger.addSink(syslog_sink);
+```
+
+Logly automatically takes care of packet framing (e.g. octet counting or non-transparent framing via newlines) and maintains robust reconnection loops to ensure zero log loss during brief collector downtime.
+
 ## Security
 
 Currently, Logly supports plain TCP and UDP. For secure logging over public networks, consider using:
@@ -123,3 +139,7 @@ Currently, Logly supports plain TCP and UDP. For secure logging over public netw
 *   VPNs
 *   Stunnel
 *   A local log collector agent (e.g., Vector, Fluent Bit) that handles TLS encryption.
+
+## See Also
+- [Network API](/api/network) - Network reference API
+- [Network Advanced Example](/examples/network-advanced) - High performance network logs example

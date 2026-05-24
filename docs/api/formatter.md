@@ -101,6 +101,31 @@ Formats a log record as JSON using an optional scratch allocator.
 const json = try formatter.formatJsonWithAllocator(record, config, logger.scratchAllocator());
 ```
 
+#### `formatNdjson(record: *const Record, config: anytype) ![]u8`
+
+Formats a log record as Newline Delimited JSON (NDJSON). This guarantees one JSON object per line with a trailing newline, optimizing ingestion for streaming parsers.
+
+#### `formatLogfmt(record: *const Record, config: anytype) ![]u8`
+
+Formats a log record in `logfmt` style (`key=value` pairs). Ideal for ingestion into Grafana Loki and Splunk.
+
+#### `formatCef(record: *const Record, config: anytype) ![]u8`
+
+Formats a log record into ArcSight Common Event Format (CEF) for robust SIEM tool ingestion.
+
+#### `formatMsgpackWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Formats a log record into MessagePack (`msgpack`) binary format. It packs all standard attributes (timestamp, level, message, module, context, etc.) into a highly compact binary array, suitable for high-volume network and storage sinks.
+
+#### `formatTuiWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+
+Formats a log record into a beautiful, color-coded, border-framed real-time terminal UI card. Displays live log counters, execution contexts, and level status badges in a structured table.
+
+#### `formatTemplate(record: *const Record, template: []const u8, config: anytype) ![]u8`
+
+Formats a log record based on a custom layout template.
+Example template: `"{time} [{level}] {message} {fields}"`
+
 #### `formatJsonToWriter(writer: anytype, record: *const Record, config: anytype) !void`
 
 Writes a log record as JSON directly to a writer without intermediate allocation.
@@ -141,6 +166,10 @@ Why `ZZZ` and `ZZ` are needed:
 #### `setTheme(theme: Theme) void`
 
 Sets a custom color theme for the formatter.
+
+#### `getSnapshot() Formatter.Snapshot`
+
+Returns a thread-safe snapshot of the current formatter configuration, enabling safe config introspection without locking.
 
 #### `getStats() FormatterStats`
 

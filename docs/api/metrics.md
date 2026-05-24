@@ -120,6 +120,36 @@ Available controls:
 | `withAlerts()` / `alerts()` | Configure error/drop thresholds |
 | `withLatencyHistogram()` / `histogram()` | Enable latency histogram collection |
 
+### MetricsConfig
+
+Global configuration for metrics collection and export.
+
+```zig
+pub const MetricsConfig = struct {
+    enabled: bool = false,
+    track_levels: bool = true,
+    track_sinks: bool = true,
+    track_latency: bool = false,
+    enable_histogram: bool = false,
+    histogram_buckets: usize = 20,
+    export_format: ExportFormat = .none,
+    export_interval_ms: u64 = 60000,
+    export_level_breakdown: bool = true,
+    export_sink_breakdown: bool = true,
+    metric_prefix: []const u8 = "logly",
+    metric_separator: []const u8 = "_",
+    statsd_separator: []const u8 = ".",
+    sanitize_names: bool = true,
+    
+    pub const ExportFormat = enum {
+        none,
+        json,
+        prometheus,
+        statsd,
+    };
+};
+```
+
 ## Types
 
 ### Metrics

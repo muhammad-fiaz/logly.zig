@@ -133,6 +133,30 @@ fn onRotation(old_file: []const u8, new_file: []const u8) void {
 sink.setRotationCallback(&onRotation);
 ```
 
+### Signature Callback
+
+Called when a cryptographic signature is generated for a log record (under cryptographic log chaining):
+
+```zig
+fn onSignature(sink_name: []const u8, signature: []const u8) void {
+    std.debug.print("Sink '{s}' computed SHA-256 signature: {s}\n", .{sink_name, signature});
+}
+
+sink.setSignatureCallback(&onSignature);
+```
+
+### Mmap Resize Callback
+
+Called when a memory-mapped sink grows in virtual memory capacity:
+
+```zig
+fn onMmapResize(sink_name: []const u8, old_size: u64, new_size: u64) void {
+    std.debug.print("Sink '{s}' virtual map grown: {d} -> {d} bytes\n", .{sink_name, old_size, new_size});
+}
+
+sink.setMmapResizeCallback(&onMmapResize);
+```
+
 ## Async Logging Callbacks
 
 ### Buffer Overflow Callback

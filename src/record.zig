@@ -100,12 +100,31 @@ pub const Record = struct {
     /// Owned stack trace that needs to be freed.
     owned_stack_trace: ?*std.builtin.StackTrace = null,
 
+    pub const ErrorCategory = enum {
+        io,
+        network,
+        logic,
+        oom,
+        unknown,
+
+        pub fn asString(self: ErrorCategory) []const u8 {
+            return switch (self) {
+                .io => "io",
+                .network => "network",
+                .logic => "logic",
+                .oom => "oom",
+                .unknown => "unknown",
+            };
+        }
+    };
+
     /// Error information structure.
     pub const ErrorInfo = struct {
         name: []const u8,
         message: []const u8,
         stack_trace: ?[]const u8 = null,
         code: ?i32 = null,
+        error_category: ?ErrorCategory = null,
     };
 
     /// Rule message structure (re-exported from rules.zig).
@@ -220,6 +239,10 @@ pub const Record = struct {
         if (self.rule_messages) |messages| {
             self.allocator.free(messages);
         }
+
+        if (self.tags) |t| {
+            self.allocator.free(t);
+        }
     }
 
     /// Alias for deinit().
@@ -280,6 +303,18 @@ pub const Record = struct {
         stack_trace: ?[]const u8,
         code: ?i32,
     ) !void {
+        try self.setErrorWithCategory(name, message, stack_trace, code, null);
+    }
+
+    /// Sets error information with a specific category.
+    pub fn setErrorWithCategory(
+        self: *Record,
+        name: []const u8,
+        message: []const u8,
+        stack_trace: ?[]const u8,
+        code: ?i32,
+        category: ?ErrorCategory,
+    ) !void {
         const owned_name = try self.allocator.dupe(u8, name);
         try self.owned_strings.append(self.allocator, owned_name);
 
@@ -297,7 +332,214 @@ pub const Record = struct {
             .message = owned_message,
             .stack_trace = owned_stack,
             .code = code,
+            .error_category = category,
         };
+    }
+
+    /// Adds a category tag to the record.
+    pub fn addTag(self: *Record, tag: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, tag);
+        errdefer self.allocator.free(owned);
+
+        var list: std.ArrayList([]const u8) = .empty;
+        defer list.deinit(self.allocator);
+
+        if (self.tags) |existing| {
+            try list.appendSlice(self.allocator, existing);
+        }
+        try list.append(self.allocator, owned);
+
+        const old_tags = self.tags;
+        self.tags = try list.toOwnedSlice(self.allocator);
+        if (old_tags) |ot| {
+            self.allocator.free(ot);
+        }
+        try self.owned_strings.append(self.allocator, owned);
+    }
+
+    /// Returns a numeric severity (0-100) derived from level priority.
+    pub fn severity(self: *const Record) u8 {
+        return switch (self.level) {
+            .trace => 10,
+            .debug => 20,
+            .info => 40,
+            .notice => 45,
+            .success => 50,
+            .warning => 60,
+            .err => 80,
+            .fail => 85,
+            .critical => 90,
+            .fatal => 100,
+        };
+    }
+
+    /// Helper to check if severity is at or above a threshold.
+    pub fn isHighSeverity(self: *const Record, threshold: Level) bool {
+        return @intFromEnum(self.level) >= @intFromEnum(threshold);
+    }
+
+    fn writeLogfmtString(writer: anytype, value: []const u8) !void {
+        var needs_quoting = false;
+        if (value.len == 0) {
+            needs_quoting = true;
+        } else {
+            for (value) |c| {
+                if (c == ' ' or c == '=' or c == '"' or c == '\\' or c == '\n' or c == '\r' or c == '\t') {
+                    needs_quoting = true;
+                    break;
+                }
+            }
+        }
+
+        if (needs_quoting) {
+            try writer.writeByte('"');
+            for (value) |c| {
+                switch (c) {
+                    '\\' => try writer.writeAll("\\\\"),
+                    '"' => try writer.writeAll("\\\""),
+                    '\n' => try writer.writeAll("\\n"),
+                    '\r' => try writer.writeAll("\\r"),
+                    '\t' => try writer.writeAll("\\t"),
+                    else => try writer.writeByte(c),
+                }
+            }
+            try writer.writeByte('"');
+        } else {
+            try writer.writeAll(value);
+        }
+    }
+
+    /// Serializes the record as a logfmt string.
+    pub fn toLogfmt(self: *const Record, writer: anytype) !void {
+        try writer.writeAll("ts=");
+        try writer.print("{d}", .{self.timestamp});
+        try writer.writeAll(" level=");
+        try writer.writeAll(self.levelName());
+        try writer.writeAll(" msg=");
+        try writeLogfmtString(writer, self.message);
+
+        if (self.module) |m| {
+            try writer.writeAll(" module=");
+            try writeLogfmtString(writer, m);
+        }
+        if (self.function) |f| {
+            try writer.writeAll(" function=");
+            try writeLogfmtString(writer, f);
+        }
+        if (self.filename) |f| {
+            try writer.writeAll(" file=");
+            try writeLogfmtString(writer, f);
+        }
+        if (self.line) |l| {
+            try writer.print(" line={d}", .{l});
+        }
+        if (self.trace_id) |tid| {
+            try writer.writeAll(" trace_id=");
+            try writeLogfmtString(writer, tid);
+        }
+        if (self.span_id) |sid| {
+            try writer.writeAll(" span_id=");
+            try writeLogfmtString(writer, sid);
+        }
+
+        var it = self.context.iterator();
+        while (it.next()) |entry| {
+            try writer.print(" {s}=", .{entry.key_ptr.*});
+            var val_buf: std.ArrayList(u8) = .empty;
+            defer val_buf.deinit(self.allocator);
+            var list_writer = Utils.ArrayListWriter.init(&val_buf, self.allocator);
+            try std.json.stringify(entry.value_ptr.*, .{}, &list_writer.writer);
+            try writeLogfmtString(writer, val_buf.items);
+        }
+    }
+
+    fn escapeCefField(w: anytype, s: []const u8) !void {
+        for (s) |c| {
+            switch (c) {
+                '\\' => try w.writeAll("\\\\"),
+                '|' => try w.writeAll("\\|"),
+                '\n' => try w.writeAll("\\n"),
+                '\r' => try w.writeAll("\\r"),
+                else => try w.writeByte(c),
+            }
+        }
+    }
+
+    fn escapeCefExtensionValue(w: anytype, s: []const u8) !void {
+        for (s) |c| {
+            switch (c) {
+                '\\' => try w.writeAll("\\\\"),
+                '=' => try w.writeAll("\\="),
+                '\n' => try w.writeAll("\\n"),
+                '\r' => try w.writeAll("\\r"),
+                else => try w.writeByte(c),
+            }
+        }
+    }
+
+    /// Serializes the record in CEF (Common Event Format).
+    pub fn toCef(self: *const Record, writer: anytype) !void {
+        try writer.writeAll("CEF:0|");
+        try escapeCefField(writer, "logly");
+        try writer.writeByte('|');
+        try escapeCefField(writer, "logly.zig");
+        try writer.writeByte('|');
+        try escapeCefField(writer, "0.2.0");
+        try writer.writeByte('|');
+        try escapeCefField(writer, self.correlation_id orelse "log");
+        try writer.writeByte('|');
+        try escapeCefField(writer, self.message);
+        try writer.writeByte('|');
+
+        const severity_num: u8 = switch (self.level) {
+            .trace => 1,
+            .debug => 2,
+            .info => 3,
+            .notice => 4,
+            .success => 5,
+            .warning => 6,
+            .err => 7,
+            .fail => 8,
+            .critical => 9,
+            .fatal => 10,
+        };
+        try writer.print("{d}|rt={d}", .{ severity_num, self.timestamp });
+
+        if (self.module) |m| {
+            try writer.writeAll(" module=");
+            try escapeCefExtensionValue(writer, m);
+        }
+        if (self.function) |f| {
+            try writer.writeAll(" function=");
+            try escapeCefExtensionValue(writer, f);
+        }
+        if (self.filename) |f| {
+            try writer.writeAll(" file=");
+            try escapeCefExtensionValue(writer, f);
+        }
+        if (self.line) |l| {
+            try writer.print(" line={d}", .{l});
+        }
+        if (self.trace_id) |tid| {
+            try writer.writeAll(" traceId=");
+            try escapeCefExtensionValue(writer, tid);
+        }
+        if (self.span_id) |sid| {
+            try writer.writeAll(" spanId=");
+            try escapeCefExtensionValue(writer, sid);
+        }
+
+        var it = self.context.iterator();
+        while (it.next()) |entry| {
+            try writer.writeByte(' ');
+            try writer.writeAll(entry.key_ptr.*);
+            try writer.writeByte('=');
+            var val_buf: std.ArrayList(u8) = .empty;
+            defer val_buf.deinit(self.allocator);
+            var list_writer = Utils.ArrayListWriter.init(&val_buf, self.allocator);
+            try std.json.stringify(entry.value_ptr.*, .{}, &list_writer.writer);
+            try escapeCefExtensionValue(writer, val_buf.items);
+        }
     }
 
     /// Sets the duration for timing logs.
@@ -389,6 +631,40 @@ pub const Record = struct {
         if (self.trace_id) |tid| try new_record.setTraceId(tid);
         if (self.span_id) |sid| try new_record.setSpanId(sid);
         if (self.correlation_id) |cid| try new_record.setCorrelationId(cid);
+        if (self.parent_span_id) |psid| try new_record.setParentSpanId(psid);
+        if (self.request_id) |rid| try new_record.setRequestId(rid);
+        if (self.session_id) |sid| try new_record.setSessionId(sid);
+        if (self.user_id) |uid| try new_record.setUserId(uid);
+
+        if (self.tags) |tgs| {
+            var list: std.ArrayList([]const u8) = .empty;
+            errdefer list.deinit(allocator);
+            for (tgs) |tag| {
+                const owned = try allocator.dupe(u8, tag);
+                try list.append(allocator, owned);
+                try new_record.owned_strings.append(allocator, owned);
+            }
+            new_record.tags = try list.toOwnedSlice(allocator);
+        }
+
+        if (self.error_info) |err_i| {
+            const owned_name = try allocator.dupe(u8, err_i.name);
+            try new_record.owned_strings.append(allocator, owned_name);
+            const owned_msg = try allocator.dupe(u8, err_i.message);
+            try new_record.owned_strings.append(allocator, owned_msg);
+            var owned_stack: ?[]const u8 = null;
+            if (err_i.stack_trace) |st| {
+                owned_stack = try allocator.dupe(u8, st);
+                try new_record.owned_strings.append(allocator, owned_stack.?);
+            }
+            new_record.error_info = .{
+                .name = owned_name,
+                .message = owned_msg,
+                .stack_trace = owned_stack,
+                .code = err_i.code,
+                .error_category = err_i.error_category,
+            };
+        }
 
         if (self.stack_trace) |st| {
             const new_st = try allocator.create(std.builtin.StackTrace);

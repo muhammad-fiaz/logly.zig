@@ -236,6 +236,11 @@ pub const Redactor = struct {
             suffix,
             contains,
             regex,
+            regex_replace,
+            email,
+            ip,
+            jwt,
+            luhn,
         };
     };
 
@@ -250,7 +255,7 @@ pub const Redactor = struct {
 
         pub fn apply(self: RedactionType, allocator: std.mem.Allocator, value: []const u8) ![]u8 {
             return switch (self) {
-                .full => try allocator.dupe(u8, "[REDACTED]"),
+                .full => try allocator.dupe(u8, Constants.RedactionDefaults.replacement),
                 .partial_start => blk: {
                     if (value.len <= 4) {
                         break :blk try allocator.dupe(u8, "****");
@@ -710,6 +715,137 @@ pub const Redactor = struct {
         };
     }
 
+    fn matchIpv6(input: []const u8) ?usize {
+        if (input.len < 3) return null;
+        var colons: usize = 0;
+        var hex_segments: usize = 0;
+        var i: usize = 0;
+        var last_was_colon = false;
+
+        // An IPv6 address can start with ::
+        if (std.mem.startsWith(u8, input, "::")) {
+            colons += 2;
+            i += 2;
+            last_was_colon = true;
+        }
+
+        while (i < input.len) {
+            const c = input[i];
+            if (std.ascii.isHex(c)) {
+                // Read hex segment (max 4 chars)
+                var seg_len: usize = 0;
+                while (i < input.len and std.ascii.isHex(input[i])) : (i += 1) {
+                    seg_len += 1;
+                }
+                if (seg_len > 4) return null; // Invalid segment length
+                hex_segments += 1;
+                last_was_colon = false;
+            } else if (c == ':') {
+                if (last_was_colon) {
+                    // Double colon `::`
+                    if (colons > 0 and i > 0 and input[i - 1] == ':') {
+                        // Allowed at most one double colon
+                        colons += 1;
+                        i += 1;
+                        last_was_colon = true;
+                    } else {
+                        return null;
+                    }
+                } else {
+                    colons += 1;
+                    i += 1;
+                    last_was_colon = true;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Valid IPv6 should have at least 2 colons and some hex segments/colons, and not end with a single colon (unless ::)
+        if (colons >= 2 and (hex_segments >= 1 or colons >= 2)) {
+            if (last_was_colon and !std.mem.endsWith(u8, input[0..i], "::")) {
+                return null; // Can't end with a single colon
+            }
+            return i;
+        }
+        return null;
+    }
+
+    fn matchJwt(input: []const u8) ?usize {
+        if (!std.mem.startsWith(u8, input, "eyJ")) return null;
+        var i: usize = 3;
+
+        // Part 1: Header (alphanumeric, _ or -)
+        while (i < input.len and (std.ascii.isAlphanumeric(input[i]) or input[i] == '_' or input[i] == '-')) : (i += 1) {}
+        if (i == 3 or i >= input.len or input[i] != '.') return null;
+        i += 1; // skip '.'
+
+        // Part 2: Payload
+        const payload_start = i;
+        while (i < input.len and (std.ascii.isAlphanumeric(input[i]) or input[i] == '_' or input[i] == '-')) : (i += 1) {}
+        if (i == payload_start or i >= input.len or input[i] != '.') return null;
+        i += 1; // skip '.'
+
+        // Part 3: Signature
+        const sig_start = i;
+        while (i < input.len and (std.ascii.isAlphanumeric(input[i]) or input[i] == '_' or input[i] == '-')) : (i += 1) {}
+        if (i == sig_start) return null;
+
+        return i;
+    }
+
+    fn isStartOfNumber(input: []const u8, idx: usize) bool {
+        if (idx == 0) return true;
+        if (std.ascii.isDigit(input[idx - 1])) return false;
+        if (input[idx - 1] == ' ' or input[idx - 1] == '-') {
+            var k = idx - 1;
+            while (k > 0) {
+                k -= 1;
+                const c = input[k];
+                if (std.ascii.isDigit(c)) return false;
+                if (c != ' ' and c != '-') break;
+            }
+        }
+        return true;
+    }
+
+    fn matchLuhn(input: []const u8) ?usize {
+        if (input.len < 13) return null;
+        if (!std.ascii.isDigit(input[0])) return null;
+
+        var digit_buf: [32]u8 = undefined;
+        var digit_count: usize = 0;
+        var i: usize = 0;
+        var last_digit_idx: usize = 0;
+
+        while (i < input.len) : (i += 1) {
+            const c = input[i];
+            if (std.ascii.isDigit(c)) {
+                if (digit_count < 32) {
+                    digit_buf[digit_count] = c;
+                    digit_count += 1;
+                }
+                last_digit_idx = i;
+            } else if (c == ' ' or c == '-') {
+                // separator allowed
+            } else {
+                break;
+            }
+
+            if (digit_count > 19) {
+                break;
+            }
+        }
+
+        if (digit_count >= 13 and digit_count <= 19) {
+            if (Utils.isLuhnValid(digit_buf[0..digit_count])) {
+                return last_digit_idx + 1;
+            }
+        }
+
+        return null;
+    }
+
     fn applyPattern(self: *Redactor, input: []u8, pattern: RedactionPattern) ![]u8 {
         return self.applyPatternWithAllocator(input, pattern, self.allocator);
     }
@@ -755,7 +891,7 @@ pub const Redactor = struct {
                 }
                 return input;
             },
-            .regex => {
+            .regex, .regex_replace => {
                 // Simple regex-like pattern matching for common cases
                 // Supports: * (any chars), ? (single char), \d (digit), \w (word char), \s (whitespace)
                 var result: std.ArrayList(u8) = .empty;
@@ -775,6 +911,91 @@ pub const Redactor = struct {
                 alloc.free(input);
                 return try result.toOwnedSlice(alloc);
             },
+            .email => {
+                var result: std.ArrayList(u8) = .empty;
+                defer result.deinit(alloc);
+
+                var i: usize = 0;
+                while (i < input.len) {
+                    if (Utils.matchRegexPattern(input[i..], "\\w+@\\w+\\.\\w+")) |match_len| {
+                        if (match_len > 0) {
+                            try result.appendSlice(alloc, pattern.replacement);
+                            i += match_len;
+                            continue;
+                        }
+                    }
+                    try result.append(alloc, input[i]);
+                    i += 1;
+                }
+
+                alloc.free(input);
+                return try result.toOwnedSlice(alloc);
+            },
+            .ip => {
+                var result: std.ArrayList(u8) = .empty;
+                defer result.deinit(alloc);
+
+                var i: usize = 0;
+                while (i < input.len) {
+                    if (Utils.matchRegexPattern(input[i..], "\\d+\\.\\d+\\.\\d+\\.\\d+")) |match_len| {
+                        if (match_len > 0) {
+                            try result.appendSlice(alloc, pattern.replacement);
+                            i += match_len;
+                            continue;
+                        }
+                    }
+                    if (matchIpv6(input[i..])) |match_len| {
+                        if (match_len > 0) {
+                            try result.appendSlice(alloc, pattern.replacement);
+                            i += match_len;
+                            continue;
+                        }
+                    }
+                    try result.append(alloc, input[i]);
+                    i += 1;
+                }
+
+                alloc.free(input);
+                return try result.toOwnedSlice(alloc);
+            },
+            .jwt => {
+                var result: std.ArrayList(u8) = .empty;
+                defer result.deinit(alloc);
+
+                var i: usize = 0;
+                while (i < input.len) {
+                    if (matchJwt(input[i..])) |match_len| {
+                        try result.appendSlice(alloc, pattern.replacement);
+                        i += match_len;
+                        continue;
+                    }
+                    try result.append(alloc, input[i]);
+                    i += 1;
+                }
+
+                alloc.free(input);
+                return try result.toOwnedSlice(alloc);
+            },
+            .luhn => {
+                var result: std.ArrayList(u8) = .empty;
+                defer result.deinit(alloc);
+
+                var i: usize = 0;
+                while (i < input.len) {
+                    if (isStartOfNumber(input, i)) {
+                        if (matchLuhn(input[i..])) |match_len| {
+                            try result.appendSlice(alloc, pattern.replacement);
+                            i += match_len;
+                            continue;
+                        }
+                    }
+                    try result.append(alloc, input[i]);
+                    i += 1;
+                }
+
+                alloc.free(input);
+                return try result.toOwnedSlice(alloc);
+            },
         }
     }
 
@@ -785,7 +1006,37 @@ pub const Redactor = struct {
             .prefix => std.mem.startsWith(u8, message, pattern.pattern),
             .suffix => std.mem.endsWith(u8, message, pattern.pattern),
             .exact => std.mem.eql(u8, message, pattern.pattern),
-            .regex => Utils.findRegexPattern(message, pattern.pattern) != null,
+            .regex, .regex_replace => Utils.findRegexPattern(message, pattern.pattern) != null,
+            .email => Utils.findRegexPattern(message, "\\w+@\\w+\\.\\w+") != null,
+            .ip => (Utils.findRegexPattern(message, "\\d+\\.\\d+\\.\\d+\\.\\d+") != null) or blk: {
+                var i: usize = 0;
+                while (i < message.len) : (i += 1) {
+                    if (matchIpv6(message[i..])) |_| {
+                        break :blk true;
+                    }
+                }
+                break :blk false;
+            },
+            .jwt => blk: {
+                var i: usize = 0;
+                while (i < message.len) : (i += 1) {
+                    if (matchJwt(message[i..])) |_| {
+                        break :blk true;
+                    }
+                }
+                break :blk false;
+            },
+            .luhn => blk: {
+                var i: usize = 0;
+                while (i < message.len) : (i += 1) {
+                    if (isStartOfNumber(message, i)) {
+                        if (matchLuhn(message[i..])) |_| {
+                            break :blk true;
+                        }
+                    }
+                }
+                break :blk false;
+            },
         };
     }
 
@@ -990,6 +1241,19 @@ pub const Redactor = struct {
 
     /// Alias for resetStats
     pub const resetStatistics = resetStats;
+
+    /// Formats and dumps redaction statistics for compliance.
+    pub fn auditLog(self: *const Redactor, writer: anytype) !void {
+        try writer.print("=== REDACTION COMPLIANCE AUDIT LOG ===\n", .{});
+        try writer.print("Total values processed: {d}\n", .{self.stats.getTotalProcessed()});
+        try writer.print("Values redacted: {d}\n", .{self.stats.getValuesRedacted()});
+        try writer.print("Patterns matched: {d}\n", .{self.stats.getPatternsMatched()});
+        try writer.print("Fields redacted: {d}\n", .{self.stats.getFieldsRedacted()});
+        try writer.print("Redaction errors: {d}\n", .{self.stats.getRedactionErrors()});
+        try writer.print("Redaction rate: {d:.2}%\n", .{self.stats.redactionRate() * 100.0});
+        try writer.print("Success rate: {d:.2}%\n", .{self.stats.successRate() * 100.0});
+        try writer.print("======================================\n", .{});
+    }
 };
 
 /// Simple regex-like pattern matching.
@@ -1000,6 +1264,22 @@ fn matchRegexPattern(input: []const u8, pattern: []const u8) ?usize {
 
 /// Pre-built redaction patterns for common sensitive data.
 pub const RedactionPresets = struct {
+    /// Creates a redactor configured to redact emails for GDPR.
+    pub fn gdprEmail(allocator: std.mem.Allocator) !Redactor {
+        var redactor = Redactor.init(allocator);
+        errdefer redactor.deinit();
+        try redactor.addPattern("gdpr_email", .email, "", "[EMAIL REDACTED]");
+        return redactor;
+    }
+
+    /// Creates a redactor configured to redact credit cards using Luhn validation for PCI-DSS.
+    pub fn pciCard(allocator: std.mem.Allocator) !Redactor {
+        var redactor = Redactor.init(allocator);
+        errdefer redactor.deinit();
+        try redactor.addPattern("pci_card", .luhn, "", "[CARD REDACTED]");
+        return redactor;
+    }
+
     /// Creates a redactor with common sensitive data patterns.
     pub fn common(allocator: std.mem.Allocator) !Redactor {
         var redactor = Redactor.init(allocator);
@@ -1112,13 +1392,13 @@ test "redactor pattern" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    try redactor.addPattern("password_value", .contains, "password=secret123", "[REDACTED]");
+    try redactor.addPattern("password_value", .contains, "password=secret123", Constants.RedactionDefaults.replacement);
 
     const result = try redactor.redact("user login password=secret123 success");
     defer std.testing.allocator.free(result);
 
     try std.testing.expect(std.mem.indexOf(u8, result, "secret") == null);
-    try std.testing.expect(std.mem.indexOf(u8, result, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, Constants.RedactionDefaults.replacement) != null);
 }
 
 test "redactor batch fields and field rule checks" {
@@ -1138,7 +1418,7 @@ test "redactor preflight and preview helpers" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    try redactor.addPattern("token_pattern", .contains, "token=", "token=[REDACTED]");
+    try redactor.addPattern("token_pattern", .contains, "token=", "token=" ++ Constants.RedactionDefaults.replacement);
     try redactor.addField("password", .full);
 
     try std.testing.expect(redactor.wouldRedact("token=abc123"));
@@ -1158,8 +1438,8 @@ test "redactor batch patterns remove helpers and matching count" {
     defer redactor.deinit();
 
     const patterns = [_]Redactor.RedactionPattern{
-        .{ .name = "token_pattern", .pattern_type = .contains, .pattern = "token=", .replacement = "token=[REDACTED]" },
-        .{ .name = "password_pattern", .pattern_type = .contains, .pattern = "password=", .replacement = "password=[REDACTED]" },
+        .{ .name = "token_pattern", .pattern_type = .contains, .pattern = "token=", .replacement = "token=" ++ Constants.RedactionDefaults.replacement },
+        .{ .name = "password_pattern", .pattern_type = .contains, .pattern = "password=", .replacement = "password=" ++ Constants.RedactionDefaults.replacement },
     };
 
     const added = try redactor.addPatterns(patterns[0..]);
@@ -1182,14 +1462,14 @@ test "redactor preview message does not mutate stats" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    try redactor.addPattern("token_pattern", .contains, "token=", "token=[REDACTED]");
+    try redactor.addPattern("token_pattern", .contains, "token=", "token=" ++ Constants.RedactionDefaults.replacement);
 
     const before_processed = redactor.getStats().getTotalProcessed();
     const before_redacted = redactor.getStats().getValuesRedacted();
 
     const preview = try redactor.previewRedaction("token=abc");
     defer std.testing.allocator.free(preview);
-    try std.testing.expect(std.mem.indexOf(u8, preview, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, preview, Constants.RedactionDefaults.replacement) != null);
 
     const after_processed = redactor.getStats().getTotalProcessed();
     const after_redacted = redactor.getStats().getValuesRedacted();
@@ -1198,7 +1478,7 @@ test "redactor preview message does not mutate stats" {
 
     const actual = try redactor.redact("token=abc");
     defer std.testing.allocator.free(actual);
-    try std.testing.expect(std.mem.indexOf(u8, actual, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, actual, Constants.RedactionDefaults.replacement) != null);
     try std.testing.expect(redactor.getStats().getTotalProcessed() > after_processed);
 }
 
@@ -1227,4 +1507,54 @@ test "redactor hash algorithm selection" {
     defer std.testing.allocator.free(redacted);
 
     try std.testing.expect(std.mem.startsWith(u8, redacted, "[HASH:"));
+}
+
+test "redactor advanced patterns email, ip, jwt, luhn, presets and audit" {
+    var redactor = Redactor.init(std.testing.allocator);
+    defer redactor.deinit();
+
+    // 1. Email redaction
+    try redactor.addPattern("email_pat", .email, "", "[EMAIL]");
+    const email_res = try redactor.redact("Contact me at john_doe@example.com for info");
+    defer std.testing.allocator.free(email_res);
+    try std.testing.expectEqualStrings("Contact me at [EMAIL] for info", email_res);
+
+    // 2. IP address redaction
+    try redactor.addPattern("ip_pat", .ip, "", "[IP]");
+    const ip_res = try redactor.redact("IPs: 192.168.1.100 and 2001:0db8:85a3:0000:0000:8a2e:0370:7334 or ::1");
+    defer std.testing.allocator.free(ip_res);
+    try std.testing.expectEqualStrings("IPs: [IP] and [IP] or [IP]", ip_res);
+
+    // 3. JWT redaction
+    try redactor.addPattern("jwt_pat", .jwt, "", "[JWT]");
+    const jwt_res = try redactor.redact("Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c here");
+    defer std.testing.allocator.free(jwt_res);
+    try std.testing.expectEqualStrings("Token: [JWT] here", jwt_res);
+
+    // 4. Luhn (credit card) redaction
+    try redactor.addPattern("luhn_pat", .luhn, "", "[CARD]");
+    // 4111-1111-1111-1111 is a valid Luhn (Visa test card)
+    const luhn_res = try redactor.redact("Pay using 4111 1111 1111 1111 (valid) or 4111-1111-1111-1112 (invalid)");
+    defer std.testing.allocator.free(luhn_res);
+    try std.testing.expectEqualStrings("Pay using [CARD] (valid) or 4111-1111-1111-1112 (invalid)", luhn_res);
+
+    // 5. Presets
+    var gdpr_email_red = try RedactionPresets.gdprEmail(std.testing.allocator);
+    defer gdpr_email_red.deinit();
+    const gr = try gdpr_email_red.redact("email is test@domain.org");
+    defer std.testing.allocator.free(gr);
+    try std.testing.expectEqualStrings("email is [EMAIL REDACTED]", gr);
+
+    var pci_card_red = try RedactionPresets.pciCard(std.testing.allocator);
+    defer pci_card_red.deinit();
+    const pr = try pci_card_red.redact("card 4111-1111-1111-1111");
+    defer std.testing.allocator.free(pr);
+    try std.testing.expectEqualStrings("card [CARD REDACTED]", pr);
+
+    // 6. Audit Log
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(std.testing.allocator);
+    var writer_adapter = Utils.ArrayListWriter.init(&buf, std.testing.allocator);
+    try gdpr_email_red.auditLog(&writer_adapter.writer);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "REDACTION COMPLIANCE AUDIT LOG") != null);
 }

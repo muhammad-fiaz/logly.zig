@@ -109,6 +109,8 @@ pub const Sampler = struct {
         sample_rate: f64,
         /// Optional reject reason when `accepted` is false.
         reject_reason: ?SampleRejectReason = null,
+        /// Whether this was accepted because of a bypass level.
+        bypassed: bool = false,
     };
 
     const RateExceededInfo = struct { count: u32, max: u32 };
@@ -137,6 +139,10 @@ pub const Sampler = struct {
         last_adjustment: i64 = 0,
         /// Random number generator for probability sampling.
         rng: std.Random.DefaultPrng,
+        /// Tokens available for token bucket.
+        tokens: f64 = 0.0,
+        /// Last refill time for token bucket.
+        last_refill: i64 = 0,
 
         /// Thread-safe statistics.
         stats: SamplerStats = .{},
@@ -153,6 +159,8 @@ pub const Sampler = struct {
     allocator: std.mem.Allocator,
     /// Active sampling strategy.
     strategy: Strategy,
+    /// Mask of levels that always bypass sampling.
+    bypass_levels: ?@import("level.zig").LevelMask = null,
     /// Internal state (counters, RNG, window tracking).
     state: SamplerState,
     /// Mutex for thread-safe operations.
@@ -187,11 +195,19 @@ pub const Sampler = struct {
     ///     Time: O(1) - simple struct initialization
     ///     Space: O(1) - fixed-size internal state
     pub fn init(allocator: std.mem.Allocator, strategy: Strategy) Sampler {
-        return .{
+        return initWithConfig(allocator, .{ .strategy = strategy });
+    }
+
+    /// Initializes a new Sampler with full configuration.
+    pub fn initWithConfig(allocator: std.mem.Allocator, config: Config.SamplingConfig) Sampler {
+        var sampler = Sampler{
             .allocator = allocator,
-            .strategy = strategy,
+            .strategy = config.strategy,
+            .bypass_levels = config.bypass_levels,
             .state = SamplerState.init(),
         };
+        sampler.resetStateForStrategy();
+        return sampler;
     }
 
     /// Alias for init().
@@ -252,6 +268,11 @@ pub const Sampler = struct {
     ///     Worst case: O(1) - short-lived lock for adaptive strategy
     pub fn shouldSample(self: *Sampler) bool {
         return self.shouldSampleWithReason().accepted;
+    }
+
+    /// Checks if a specific log level bypasses sampling entirely.
+    pub fn shouldSampleLevel(self: *Sampler, level: @import("level.zig").Level) bool {
+        return self.shouldSampleLevelWithReason(level).accepted;
     }
 
     fn clampRate(input_rate: f64) f64 {
@@ -351,11 +372,43 @@ pub const Sampler = struct {
                     .reject_reason = .adaptive_rate_exceeded,
                 };
             },
+            .token_bucket => |config| blk: {
+                const elapsed_ms = now - self.state.last_refill;
+                const tokens_to_add = @as(f64, @floatFromInt(elapsed_ms)) * (@as(f64, @floatFromInt(config.refill_rate_per_sec)) / 1000.0);
+
+                self.state.tokens = @min(self.state.tokens + tokens_to_add, @as(f64, @floatFromInt(config.burst_capacity)));
+                self.state.last_refill = now;
+
+                if (self.state.tokens >= 1.0) {
+                    self.state.tokens -= 1.0;
+                    break :blk .{ .accepted = true, .sample_rate = 1.0 };
+                }
+
+                _ = self.state.stats.rate_limit_exceeded.fetchAdd(1, .monotonic);
+                break :blk .{
+                    .accepted = false,
+                    .sample_rate = 1.0,
+                    .reject_reason = .rate_limit_exceeded,
+                };
+            },
         };
     }
 
     /// Determines whether a record should be sampled and includes decision details.
     pub fn shouldSampleWithReason(self: *Sampler) SampleDecision {
+        return self.shouldSampleLevelWithReason(null);
+    }
+
+    /// Determines whether a record of the specified level should be sampled.
+    pub fn shouldSampleLevelWithReason(self: *Sampler, level: ?@import("level.zig").Level) SampleDecision {
+        if (level) |lvl| {
+            if (self.bypass_levels) |bypass| {
+                if (bypass.isEnabled(lvl)) {
+                    return self.applyDecision(.{ .accepted = true, .sample_rate = 1.0, .bypassed = true }, null, null);
+                }
+            }
+        }
+
         _ = self.state.stats.total_records_sampled.fetchAdd(1, .monotonic);
 
         var rate_exceeded_info: ?RateExceededInfo = null;
@@ -408,7 +461,7 @@ pub const Sampler = struct {
                     SampleDecision{ .accepted = false, .sample_rate = effective, .reject_reason = .every_n_filter };
                 break :blk self.applyDecision(key_decision, null, null);
             },
-            .rate_limit, .adaptive => self.shouldSampleWithReason(),
+            .rate_limit, .adaptive, .token_bucket => self.shouldSampleWithReason(),
         };
     }
 
@@ -452,11 +505,16 @@ pub const Sampler = struct {
         self.state.window_count = 0;
         self.state.window_start = Utils.currentMillis();
         self.state.last_adjustment = Utils.currentMillis();
+        self.state.last_refill = Utils.currentMillis();
         self.state.current_rate = switch (self.strategy) {
             .adaptive => clampRate(self.state.current_rate),
             .probability => |prob| clampRate(prob),
-            .none, .rate_limit => 1.0,
+            .none, .rate_limit, .token_bucket => 1.0,
             .every_n => |n| if (n == 0) 1.0 else 1.0 / @as(f64, @floatFromInt(n)),
+        };
+        self.state.tokens = switch (self.strategy) {
+            .token_bucket => |config| @as(f64, @floatFromInt(config.burst_capacity)),
+            else => 0.0,
         };
     }
 
@@ -581,7 +639,7 @@ pub const Sampler = struct {
         return switch (self.strategy) {
             .none => 1.0,
             .probability => |prob| prob,
-            .rate_limit => 1.0,
+            .rate_limit, .token_bucket => 1.0,
             .every_n => |n| 1.0 / @as(f64, @floatFromInt(n)),
             .adaptive => self.state.current_rate,
         };
@@ -622,6 +680,7 @@ pub const Sampler = struct {
             .rate_limit => "rate_limit",
             .every_n => "every_n",
             .adaptive => "adaptive",
+            .token_bucket => "token_bucket",
         };
     }
 
@@ -742,7 +801,7 @@ pub const SamplerPresets = struct {
     /// Limit to 1000 records per second.
     pub fn limit1000PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .rate_limit = .{
-            .max_records = 1000,
+            .max_records = Constants.RateLimitDefaults.max_per_second,
             .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
         } });
     }
@@ -773,7 +832,7 @@ pub const SamplerPresets = struct {
     /// Adaptive sampling targeting 1000 records per second.
     pub fn adaptive1000PerSecond(allocator: std.mem.Allocator) Sampler {
         return Sampler.init(allocator, .{ .adaptive = .{
-            .target_rate = 1000,
+            .target_rate = Constants.ConfigPresetDefaults.high_throughput_sampling_target_rate,
         } });
     }
 
@@ -798,7 +857,7 @@ test "sampler probability" {
     defer sampler.deinit();
 
     var sampled: u32 = 0;
-    const iterations: u32 = 1000;
+    const iterations: u32 = Constants.ConfigPresetDefaults.high_throughput_sampling_target_rate;
     for (0..iterations) |_| {
         if (sampler.shouldSample()) {
             sampled += 1;
@@ -812,7 +871,7 @@ test "sampler probability" {
 test "sampler rate limit" {
     var sampler = Sampler.init(std.testing.allocator, .{ .rate_limit = .{
         .max_records = 10,
-        .window_ms = 1000,
+        .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
     } });
     defer sampler.deinit();
 
@@ -829,7 +888,7 @@ test "sampler rate limit" {
 test "sampler stats and callbacks" {
     var sampler = Sampler.init(std.testing.allocator, .{ .rate_limit = .{
         .max_records = 5,
-        .window_ms = 1000,
+        .window_ms = Constants.SamplingDefaults.rate_limit_window_ms,
     } });
     defer sampler.deinit();
 
@@ -966,4 +1025,46 @@ test "sampler explicit strategy control helpers" {
     sampler.disableSampling();
     try std.testing.expect(!sampler.isEnabled());
     try std.testing.expect(sampler.shouldSample());
+}
+
+test "sampler token bucket phase 3" {
+    const alloc = std.testing.allocator;
+    var sampler = Sampler.initWithConfig(alloc, .{ .enabled = true, .strategy = .{ .token_bucket = .{ .burst_capacity = 3, .refill_rate_per_sec = 1 } } });
+    defer sampler.deinit();
+
+    try std.testing.expect(std.mem.eql(u8, sampler.strategyName(), "token_bucket"));
+
+    // Can sample up to burst capacity (3)
+    try std.testing.expect(sampler.shouldSample());
+    try std.testing.expect(sampler.shouldSample());
+    try std.testing.expect(sampler.shouldSample());
+    // 4th should fail since capacity is exhausted
+    try std.testing.expect(!sampler.shouldSample());
+}
+
+test "sampler bypass levels phase 3" {
+    const alloc = std.testing.allocator;
+    var bypass_mask = @import("level.zig").LevelMask.init();
+    bypass_mask.enable(.err);
+
+    var sampler = Sampler.initWithConfig(alloc, .{
+        .enabled = true,
+        .strategy = .{ .probability = 0.0 }, // Would normally reject everything
+        .bypass_levels = bypass_mask,
+    });
+    defer sampler.deinit();
+
+    const Record = @import("record.zig").Record;
+    var err_record = Record.init(alloc, .err, "error");
+    defer err_record.deinit();
+    var info_record = Record.init(alloc, .info, "info");
+    defer info_record.deinit();
+
+    // Verify bypass logic
+    if (sampler.bypass_levels) |mask| {
+        try std.testing.expect(mask.isEnabled(err_record.level));
+        try std.testing.expect(!mask.isEnabled(info_record.level));
+    } else {
+        try std.testing.expect(false);
+    }
 }

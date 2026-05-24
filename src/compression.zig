@@ -33,8 +33,8 @@ const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
-/// zstd compression backend.
 const zstd = @import("zstd");
+const ThreadPool = @import("thread_pool.zig").ThreadPool;
 
 /// Log compression utilities with callback support and comprehensive monitoring.
 ///
@@ -966,13 +966,30 @@ pub const Compression = struct {
         const compression_level = self.config.getEffectiveZstdLevel();
 
         // Compress directly into result buffer
-        const compressed_size = zstd.c.ZSTD_compress(
-            dest_ptr,
-            max_dst_size,
-            data.ptr,
-            data.len,
-            compression_level,
-        );
+        var compressed_size: usize = 0;
+        if (self.config.zstd_dict) |dict| {
+            const cctx = zstd.c.ZSTD_createCCtx();
+            if (cctx == null) return error.ZstdError;
+            defer _ = zstd.c.ZSTD_freeCCtx(cctx);
+            compressed_size = zstd.c.ZSTD_compress_usingDict(
+                cctx,
+                dest_ptr,
+                max_dst_size,
+                data.ptr,
+                data.len,
+                dict.ptr,
+                dict.len,
+                compression_level,
+            );
+        } else {
+            compressed_size = zstd.c.ZSTD_compress(
+                dest_ptr,
+                max_dst_size,
+                data.ptr,
+                data.len,
+                compression_level,
+            );
+        }
 
         // Check for errors
         if (zstd.c.ZSTD_isError(compressed_size) != 0) {
@@ -998,7 +1015,6 @@ pub const Compression = struct {
     /// Complexity: O(N) where N is decompressed data length.
     /// v0.1.5+
     fn decompressZstdWithAllocator(self: *Compression, data: []const u8, original_size: usize, alloc: std.mem.Allocator) ![]u8 {
-        _ = self;
         if (data.len == 0 or original_size == 0) {
             return alloc.alloc(u8, 0);
         }
@@ -1008,12 +1024,28 @@ pub const Compression = struct {
         errdefer alloc.free(dest_buffer);
 
         // Decompress the data
-        const decompressed_size = zstd.c.ZSTD_decompress(
-            dest_buffer.ptr,
-            original_size,
-            data.ptr,
-            data.len,
-        );
+        var decompressed_size: usize = 0;
+        if (self.config.zstd_dict) |dict| {
+            const dctx = zstd.c.ZSTD_createDCtx();
+            if (dctx == null) return error.ZstdError;
+            defer _ = zstd.c.ZSTD_freeDCtx(dctx);
+            decompressed_size = zstd.c.ZSTD_decompress_usingDict(
+                dctx,
+                dest_buffer.ptr,
+                original_size,
+                data.ptr,
+                data.len,
+                dict.ptr,
+                dict.len,
+            );
+        } else {
+            decompressed_size = zstd.c.ZSTD_decompress(
+                dest_buffer.ptr,
+                original_size,
+                data.ptr,
+                data.len,
+            );
+        }
 
         // Verify size matches expected
         if (decompressed_size != original_size) {
@@ -1952,6 +1984,46 @@ pub const Compression = struct {
         return result.toOwnedSlice(self.allocator);
     }
 
+    pub const AsyncCompressContext = struct {
+        comp: *Compression,
+        input_path: []const u8,
+        output_path: ?[]const u8,
+        alloc: std.mem.Allocator,
+
+        pub fn run(ctx_ptr: *anyopaque, _: ?std.mem.Allocator) void {
+            const ctx: *AsyncCompressContext = @ptrCast(@alignCast(ctx_ptr));
+            defer {
+                ctx.alloc.free(ctx.input_path);
+                if (ctx.output_path) |p| ctx.alloc.free(p);
+                ctx.alloc.destroy(ctx);
+            }
+            _ = ctx.comp.compressFile(ctx.input_path, ctx.output_path) catch {};
+        }
+    };
+
+    /// Submits a compression job to the background thread pool asynchronously instead of blocking.
+    pub fn asyncCompress(self: *Compression, input_path: []const u8, output_path: ?[]const u8) !void {
+        const pool = self.config.thread_pool orelse return error.NoThreadPool;
+
+        const ctx = try self.allocator.create(AsyncCompressContext);
+        errdefer self.allocator.destroy(ctx);
+
+        ctx.* = .{
+            .comp = self,
+            .input_path = try self.allocator.dupe(u8, input_path),
+            .output_path = if (output_path) |p| try self.allocator.dupe(u8, p) else null,
+            .alloc = self.allocator,
+        };
+        errdefer {
+            self.allocator.free(ctx.input_path);
+            if (ctx.output_path) |p| self.allocator.free(p);
+        }
+
+        if (!pool.submitCallback(AsyncCompressContext.run, ctx)) {
+            return error.ThreadPoolFull;
+        }
+    }
+
     /// Compresses a file from the filesystem.
     ///
     /// Reads the input file, compresses its contents in memory, and writes to the output path.
@@ -2288,6 +2360,9 @@ pub const Compression = struct {
 
     /// Alias for compressFile
     pub const packFile = compressFile;
+
+    /// Alias for asyncCompress
+    pub const asyncPack = asyncCompress;
 
     /// Alias for decompressFile
     pub const unpackFile = decompressFile;
@@ -2630,7 +2705,7 @@ pub const CompressionPresets = struct {
             .algorithm = .deflate,
             .level = .default,
             .mode = .on_size_threshold,
-            .size_threshold = threshold_mb * 1024 * 1024,
+            .size_threshold = threshold_mb * Constants.SizeConstants.bytes_per_mb,
         };
     }
 };
@@ -3255,7 +3330,7 @@ test "CompressionPresets struct" {
     // Test onSize preset
     const size_config = CompressionPresets.onSize(10);
     try std.testing.expectEqual(Compression.Mode.on_size_threshold, size_config.mode);
-    try std.testing.expectEqual(@as(u64, 10 * 1024 * 1024), size_config.size_threshold);
+    try std.testing.expectEqual(@as(u64, 10 * Constants.SizeConstants.bytes_per_mb), size_config.size_threshold);
 }
 
 var callback_test_start_called: bool = false;

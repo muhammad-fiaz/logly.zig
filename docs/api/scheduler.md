@@ -667,6 +667,30 @@ Get current scheduler statistics.
 pub fn getStats(self: *const Scheduler) SchedulerStats
 ```
 
+### pause
+
+Pauses background execution of all tasks. Tasks will not be executed until unpaused.
+
+```zig
+pub fn pause(self: *Scheduler) void
+```
+
+### unpause
+
+Resumes background execution of tasks.
+
+```zig
+pub fn unpause(self: *Scheduler) void
+```
+
+### isPaused
+
+Check if the scheduler is currently paused.
+
+```zig
+pub fn isPaused(self: *const Scheduler) bool
+```
+
 ### resetStats
 
 Reset all scheduler statistics to zero.

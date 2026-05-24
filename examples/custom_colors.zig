@@ -12,7 +12,7 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    std.debug.print("=== Color System Demo (v0.1.9) ===\n\n", .{});
+    std.debug.print("=== Color System Demo (v0.2.0) ===\n\n", .{});
 
     // Basic custom levels with ANSI codes
     try logger.addCustomLevel("NOTICE", 22, "36;1");
@@ -50,7 +50,7 @@ pub fn main() !void {
     try logger.custom("ALERT", "Alert (Red Underline)", @src());
     try logger.custom("HIGHLIGHT", "Highlight (Yellow Bold Reverse)", @src());
 
-    std.debug.print("\n=== Level Color Variants (v0.1.9) ===\n\n", .{});
+    std.debug.print("\n=== Level Color Variants (v0.2.0) ===\n\n", .{});
 
     // Demonstrate color variants available on each level
     const Level = logly.Level;
@@ -124,7 +124,7 @@ pub fn main() !void {
     std.debug.print("  trace={s} debug={s} info={s}\n", .{ neon.trace, neon.debug, neon.info });
     std.debug.print("  success={s} warning={s} err={s}\n", .{ neon.success, neon.warning, neon.err });
 
-    std.debug.print("\n=== Advanced CustomLevel (v0.1.9) ===\n\n", .{});
+    std.debug.print("\n=== Advanced CustomLevel (v0.2.0) ===\n\n", .{});
 
     // Demonstrate advanced CustomLevel creation
     const CustomLevel = logly.CustomLevel;

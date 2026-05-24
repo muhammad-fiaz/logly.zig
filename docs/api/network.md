@@ -225,6 +225,18 @@ The Network module provides convenience aliases:
 ## Network Sink Configuration
 
 ```zig
+pub const NetworkSinkConfig = struct {
+    uri: []const u8,
+    /// Enable TCP keepalive to maintain long-lived connections.
+    tcp_keepalive: bool = true,
+    /// Automatically reconnect on connection drop.
+    auto_reconnect: bool = true,
+    /// Use HTTP chunked transfer encoding for streaming data over HTTP.
+    http_chunked_streaming: bool = false,
+    /// Emit Syslog RFC-5424 formatted messages.
+    syslog_rfc5424: bool = false,
+};
+
 // TCP sink
 const tcp_sink = logly.SinkConfig{
     .network = "tcp://logserver.example.com:8080",
@@ -238,6 +250,10 @@ const udp_sink = logly.SinkConfig{
     .syslog = true,
 };
 ```
+
+### `NetworkSink.health()`
+
+For network sinks, the `health()` method actively checks the connection status. If `auto_reconnect` is enabled, it may trigger a reconnection attempt in the background before returning the health report.
 
 ## Example
 

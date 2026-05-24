@@ -227,7 +227,7 @@ fn getLinuxMemory() ?struct { total: u64, avail: u64 } {
     defer file.close(io);
 
     var buf: [Constants.BufferSizes.file_read]u8 = undefined;
-    var file_buffer: [4096]u8 = undefined;
+    var file_buffer: [Constants.BufferSizes.file_read]u8 = undefined;
     var reader = file.reader(io, &file_buffer);
     const len = reader.interface.readSliceShort(&buf) catch return null;
     const content = buf[0..len];
@@ -275,7 +275,7 @@ fn collectLinuxDrives(allocator: std.mem.Allocator, list: *std.ArrayList(DriveIn
     defer file.close(io);
 
     var buf: [Constants.BufferSizes.file_read_large]u8 = undefined;
-    var file_buffer: [4096]u8 = undefined;
+    var file_buffer: [Constants.BufferSizes.file_read]u8 = undefined;
     var reader = file.reader(io, &file_buffer);
     const len = reader.interface.readSliceShort(&buf) catch return;
     const content = buf[0..len];
@@ -515,3 +515,280 @@ pub const DiagnosticsPresets = struct {
     pub const complete = full;
     pub const comprehensive = full;
 };
+
+/// Health status of the logging system.
+pub const HealthStatus = enum {
+    /// System is operating normally.
+    healthy,
+    /// System is operating but with some degradation.
+    degraded,
+    /// System is unhealthy and may be losing data.
+    unhealthy,
+};
+
+/// Health report for the logging system.
+pub const HealthReport = struct {
+    /// Overall health status.
+    status: HealthStatus,
+    /// Queue utilization ratio (0.0–1.0).
+    queue_utilization: f64,
+    /// Error rate (0.0–1.0).
+    error_rate: f64,
+    /// Memory used in bytes (total - avail), 0 if unknown.
+    memory_used_bytes: u64,
+    /// Process uptime in milliseconds.
+    uptime_ms: i64,
+    /// Human-readable description of detected issues (empty if healthy).
+    issues: []const u8,
+
+    /// Returns true when status is healthy.
+    pub fn isHealthy(self: *const HealthReport) bool {
+        return self.status == .healthy;
+    }
+
+    /// Returns true when status is unhealthy.
+    pub fn isUnhealthy(self: *const HealthReport) bool {
+        return self.status == .unhealthy;
+    }
+};
+
+/// Lightweight snapshot of diagnostics state for diff comparisons.
+pub const DiagnosticsSnapshot = struct {
+    /// Unix timestamp in milliseconds when snapshot was taken.
+    timestamp_ms: i64,
+    /// Operating system tag.
+    os_tag: []const u8,
+    /// CPU architecture tag.
+    arch: []const u8,
+    /// Number of logical CPU cores.
+    logical_cores: usize,
+    /// Total physical memory in bytes (null if unknown).
+    total_mem: ?u64,
+    /// Available physical memory in bytes (null if unknown).
+    avail_mem: ?u64,
+    /// Number of drives collected.
+    drive_count: usize,
+};
+
+/// Emits the diagnostics as a compact JSON object to the given writer.
+///
+/// Arguments:
+///   - `diag`: Diagnostics instance.
+///   - `allocator`: Allocator for intermediate buffers.
+///   - `writer`: Any writer with a `writeAll` method.
+///
+/// Complexity: O(D) where D is number of drives.
+pub fn emitJson(diag: *const Diagnostics, allocator: std.mem.Allocator, writer: anytype) !void {
+    const json = try toJson(diag, allocator);
+    defer allocator.free(json);
+    try writer.writeAll(json);
+}
+
+/// Serializes the diagnostics as a compact JSON string.
+/// Caller must free the returned slice.
+///
+/// Complexity: O(D) where D is number of drives.
+pub fn toJson(diag: *const Diagnostics, allocator: std.mem.Allocator) ![]u8 {
+    const total_mb: u64 = if (diag.total_mem) |t| t / Constants.SizeConstants.bytes_per_mb else 0;
+    const avail_mb: u64 = if (diag.avail_mem) |a| a / Constants.SizeConstants.bytes_per_mb else 0;
+    const now_ms = Utils.currentMillis();
+
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    var list_writer = Utils.ArrayListWriter.init(&buf, allocator);
+    const w = &list_writer.writer;
+
+    try w.writeAll("{");
+    try w.print("\"timestamp_ms\":{d},", .{now_ms});
+    try w.print("\"os\":\"{s}\",", .{diag.os_tag});
+    try w.print("\"arch\":\"{s}\",", .{diag.arch});
+    try w.print("\"cpu\":\"{s}\",", .{diag.cpu_model});
+    try w.print("\"cores\":{d},", .{diag.logical_cores});
+    try w.print("\"total_mem_mb\":{d},", .{total_mb});
+    try w.print("\"avail_mem_mb\":{d},", .{avail_mb});
+    try w.print("\"drive_count\":{d},", .{diag.drives.len});
+    try w.writeAll("\"drives\":[");
+    for (diag.drives, 0..) |drive, i| {
+        if (i > 0) try w.writeByte(',');
+        const dtotal_gb: f64 = @as(f64, @floatFromInt(drive.total_bytes)) / (1024.0 * 1024.0 * 1024.0);
+        const dfree_gb: f64 = @as(f64, @floatFromInt(drive.free_bytes)) / (1024.0 * 1024.0 * 1024.0);
+        try w.print("{{\"{s}\":{{\"total_gb\":{d:.2},\"free_gb\":{d:.2}}}}}", .{ drive.name, dtotal_gb, dfree_gb });
+    }
+    try w.writeAll("]}");
+
+    return buf.toOwnedSlice(allocator);
+}
+
+/// Checks the health of the system based on available memory.
+///
+/// Health Rules:
+///   - avail_mem < 10% of total_mem → unhealthy
+///   - avail_mem < 20% of total_mem → degraded
+///   - Otherwise → healthy
+///
+/// Arguments:
+///   - `diag`: Diagnostics instance.
+///
+/// Return Value:
+///   - `HealthReport` with status, memory usage, and issues description.
+///
+/// Complexity: O(1)
+pub fn checkHealth(diag: *const Diagnostics) HealthReport {
+    var status: HealthStatus = .healthy;
+    var issues: []const u8 = "";
+    var memory_used: u64 = 0;
+
+    if (diag.total_mem) |total| {
+        if (diag.avail_mem) |avail| {
+            memory_used = if (total > avail) total - avail else 0;
+            const ratio = if (total == 0) 1.0 else @as(f64, @floatFromInt(avail)) / @as(f64, @floatFromInt(total));
+
+            if (ratio < 0.10) {
+                status = .unhealthy;
+                issues = "critical: available memory below 10%";
+            } else if (ratio < 0.20) {
+                status = .degraded;
+                issues = "warning: available memory below 20%";
+            }
+        }
+    }
+
+    return HealthReport{
+        .status = status,
+        .queue_utilization = 0.0,
+        .error_rate = 0.0,
+        .memory_used_bytes = memory_used,
+        .uptime_ms = Utils.currentMillis(),
+        .issues = issues,
+    };
+}
+
+/// Creates a lightweight snapshot of the current diagnostics state.
+///
+/// Complexity: O(1)
+pub fn takeSnapshot(diag: *const Diagnostics) DiagnosticsSnapshot {
+    return DiagnosticsSnapshot{
+        .timestamp_ms = Utils.currentMillis(),
+        .os_tag = diag.os_tag,
+        .arch = diag.arch,
+        .logical_cores = diag.logical_cores,
+        .total_mem = diag.total_mem,
+        .avail_mem = diag.avail_mem,
+        .drive_count = diag.drives.len,
+    };
+}
+
+/// Computes a human-readable diff between two diagnostic snapshots.
+/// Caller must free the returned slice.
+///
+/// Complexity: O(1)
+pub fn diff(snap1: DiagnosticsSnapshot, snap2: DiagnosticsSnapshot, allocator: std.mem.Allocator) ![]u8 {
+    const elapsed_ms = snap2.timestamp_ms - snap1.timestamp_ms;
+    const mem1_mb: u64 = if (snap1.avail_mem) |a| a / Constants.SizeConstants.bytes_per_mb else 0;
+    const mem2_mb: u64 = if (snap2.avail_mem) |a| a / Constants.SizeConstants.bytes_per_mb else 0;
+    const mem_delta: i64 = @as(i64, @intCast(mem2_mb)) - @as(i64, @intCast(mem1_mb));
+
+    return std.fmt.allocPrint(
+        allocator,
+        "DiagnosticsSnapshot diff:\n" ++
+            "  Elapsed: {d} ms\n" ++
+            "  Cores: {d} -> {d}\n" ++
+            "  Avail mem: {d} MB -> {d} MB (delta: {d} MB)\n" ++
+            "  Drives: {d} -> {d}\n",
+        .{
+            elapsed_ms,
+            snap1.logical_cores,
+            snap2.logical_cores,
+            mem1_mb,
+            mem2_mb,
+            mem_delta,
+            snap1.drive_count,
+            snap2.drive_count,
+        },
+    );
+}
+
+/// Alias for emitJson
+pub const writeJson = emitJson;
+pub const printJson = emitJson;
+
+/// Alias for toJson
+pub const asJson = toJson;
+pub const serializeJson = toJson;
+
+/// Alias for checkHealth
+pub const healthCheck = checkHealth;
+pub const getHealth = checkHealth;
+
+/// Alias for takeSnapshot
+pub const snapshot2 = takeSnapshot;
+
+/// Alias for diff
+pub const delta = diff;
+pub const compare = diff;
+
+test "HealthReport logic" {
+    var report = HealthReport{
+        .status = .healthy,
+        .queue_utilization = 0.0,
+        .error_rate = 0.0,
+        .memory_used_bytes = 1000,
+        .uptime_ms = 100,
+        .issues = "",
+    };
+    try std.testing.expect(report.isHealthy());
+    try std.testing.expect(!report.isUnhealthy());
+
+    report.status = .unhealthy;
+    try std.testing.expect(!report.isHealthy());
+    try std.testing.expect(report.isUnhealthy());
+}
+
+test "Diagnostics snapshot diff" {
+    const snap1 = DiagnosticsSnapshot{
+        .timestamp_ms = 1000,
+        .os_tag = "linux",
+        .arch = "x86_64",
+        .logical_cores = 4,
+        .total_mem = 8000000000,
+        .avail_mem = 4000000000,
+        .drive_count = 1,
+    };
+    const snap2 = DiagnosticsSnapshot{
+        .timestamp_ms = 2000,
+        .os_tag = "linux",
+        .arch = "x86_64",
+        .logical_cores = 4,
+        .total_mem = 8000000000,
+        .avail_mem = 3000000000,
+        .drive_count = 1,
+    };
+
+    const diff_str = try diff(snap1, snap2, std.testing.allocator);
+    defer std.testing.allocator.free(diff_str);
+    try std.testing.expect(std.mem.indexOf(u8, diff_str, "Elapsed: 1000 ms") != null);
+}
+
+test "Diagnostics checkHealth" {
+    var diag = Diagnostics{
+        .os_tag = "linux",
+        .arch = "x86_64",
+        .cpu_model = "test_cpu",
+        .logical_cores = 4,
+        .total_mem = 1000000,
+        .avail_mem = 50000, // 5%, should be unhealthy
+        .drives = &[_]DriveInfo{},
+    };
+
+    const report = checkHealth(&diag);
+    try std.testing.expectEqual(HealthStatus.unhealthy, report.status);
+    try std.testing.expect(std.mem.indexOf(u8, report.issues, "critical") != null);
+
+    diag.avail_mem = 150000; // 15%, should be degraded
+    const report2 = checkHealth(&diag);
+    try std.testing.expectEqual(HealthStatus.degraded, report2.status);
+
+    diag.avail_mem = 500000; // 50%, should be healthy
+    const report3 = checkHealth(&diag);
+    try std.testing.expectEqual(HealthStatus.healthy, report3.status);
+}

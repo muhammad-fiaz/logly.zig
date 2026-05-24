@@ -6,7 +6,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly Pipeline Controls (v0.1.9) ===\n\n", .{});
+    std.debug.print("=== Logly Pipeline Controls (v0.2.0) ===\n\n", .{});
 
     const config = logly.Config.default()
         .withHighThroughputPipeline()

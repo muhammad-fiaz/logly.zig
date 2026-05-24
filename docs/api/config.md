@@ -62,6 +62,22 @@ When emitting diagnostics, include per-drive totals and free space. Applies to s
 
 Use compact log format. Default: `false`.
 
+#### `msgpack: bool`
+
+Enable MessagePack binary formatting for extremely compact log serialization. Default: `false`.
+
+#### `tui: bool`
+
+Enable a beautiful, real-time developer terminal UI card layout featuring status badges and structured tables. Default: `false`.
+
+#### `tamper_evident: bool`
+
+Enable cryptographic log chaining where each record includes the SHA-256 hash signature of the preceding record to prevent log tampering. Default: `false`.
+
+#### `mmap: bool`
+
+Enable memory-mapped file sinks utilizing virtual RAM mappings to bypass file system call overhead for microsecond disk writes. Default: `false`.
+
 #### `use_arena_allocator: bool`
 
 Enable arena allocator for the main logger instance. When enabled, the logger uses an arena allocator for temporary record/format allocations, which can improve performance by reducing allocation overhead. Default: `false`.
@@ -653,7 +669,40 @@ Aliases: `withArenaAllocator()`, `withArena()`.
 
 Merges another configuration into the current one. Non-default values from `other` override the current values.
 
+## JSON Configuration Loading
 
+Logly v0.2.0 supports parsing and loading configuration dynamically from JSON files and slices. Standard configurations can be easily loaded using these helpers:
+
+### `loadFromJson(allocator: std.mem.Allocator, json_slice: []const u8) !Config`
+
+Parses a JSON configuration string and returns a complete `Config` object initialized with those values.
+
+- Handles case-insensitive level strings (e.g. `"DEBUG"`, `"debug"`).
+- Automatically maps custom levels, sinks, formats, and basic filters.
+
+**Example:**
+```zig
+const json_data = 
+    \\{
+    \\  "level": "debug",
+    \\  "json": true,
+    \\  "pretty_json": false,
+    \\  "msgpack": true,
+    \\  "tui": false
+    \\}
+;
+
+const config = try logly.Config.loadFromJson(allocator, json_data);
+```
+
+### `loadFromFile(allocator: std.mem.Allocator, file_path: []const u8) !Config`
+
+Reads a JSON file from disk and parses it into a `Config` object.
+
+**Example:**
+```zig
+const config = try logly.Config.loadFromFile(allocator, "config.json");
+```
 
 #### `enable_callbacks: bool`
 

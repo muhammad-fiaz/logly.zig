@@ -276,6 +276,21 @@ pub fn sendSyslogUdp(
     try sendUdp(socket, address, formatted);
 }
 
+/// Formats a syslog message and sends it via TCP.
+pub fn sendSyslogTcp(
+    allocator: std.mem.Allocator,
+    stream: std.Io.net.Stream,
+    facility: SyslogFacility,
+    severity: SyslogSeverity,
+    hostname: []const u8,
+    app_name: []const u8,
+    message: []const u8,
+) !void {
+    const formatted = try formatSyslog(allocator, facility, severity, hostname, app_name, message);
+    defer allocator.free(formatted);
+    try sendTcp(stream, formatted);
+}
+
 /// Alias for sendUdp
 pub const udpSend = sendUdp;
 pub const sendToUdp = sendUdp;
@@ -287,6 +302,7 @@ pub const sendToTcp = sendTcp;
 /// Alias for sendSyslogUdp
 pub const syslogSend = sendSyslogUdp;
 pub const sendSyslog = sendSyslogUdp;
+pub const sendSyslogTcp_ = sendSyslogTcp;
 
 /// Fetches a JSON response from a URL.
 /// Returns the parsed JSON value (caller must deinit).
@@ -517,11 +533,177 @@ pub fn resetStats() void {
     stats.reset();
 }
 
-/// Aliases for global network statistics functions
-pub const networkStats = getStats;
-pub const getNetworkStats = getStats;
-pub const clearStats = resetStats;
-pub const resetNetworkStats = resetStats;
+pub const ConnectionState = enum {
+    disconnected,
+    connecting,
+    connected,
+    failed,
+};
+
+/// An advanced network-based log sink manager.
+/// Manages TCP/UDP connections with automatic reconnect, retry budgets, keepalive, and specialized framing.
+pub const NetworkSink = struct {
+    allocator: std.mem.Allocator,
+    uri: []const u8,
+    state: ConnectionState = .disconnected,
+    stream: ?std.Io.net.Stream = null,
+    udp_socket: ?std.Io.net.Socket = null,
+    udp_addr: ?std.Io.net.IpAddress = null,
+    keepalive: bool = true,
+    http_chunked: bool = false,
+    syslog_format: bool = false,
+    max_retries: u32 = Constants.TimeDefaults.max_retries,
+    retry_delay_ms: u64 = Constants.TimeDefaults.retry_delay_ms,
+    consecutive_errors: u32 = 0,
+
+    pub fn init(allocator: std.mem.Allocator, uri: []const u8) !NetworkSink {
+        return .{
+            .allocator = allocator,
+            .uri = try allocator.dupe(u8, uri),
+        };
+    }
+
+    pub fn deinit(self: *NetworkSink) void {
+        self.disconnect();
+        self.allocator.free(self.uri);
+    }
+
+    pub fn disconnect(self: *NetworkSink) void {
+        if (self.stream) |s| {
+            s.close(Utils.io());
+            self.stream = null;
+        }
+        if (self.udp_socket) |s| {
+            s.close(Utils.io());
+            self.udp_socket = null;
+        }
+        self.state = .disconnected;
+    }
+
+    pub fn connect(self: *NetworkSink) !void {
+        self.state = .connecting;
+        self.consecutive_errors = 0;
+
+        var attempt: u32 = 0;
+        var delay = self.retry_delay_ms;
+
+        while (attempt < self.max_retries) : (attempt += 1) {
+            if (std.mem.startsWith(u8, self.uri, "tcp://")) {
+                if (connectTcp(self.allocator, self.uri)) |s| {
+                    self.stream = s;
+                    self.state = .connected;
+                    if (self.keepalive) {
+                        if (builtin.os.tag != .windows) {
+                            if (@hasField(std.Io.net.Stream, "socket")) {
+                                if (std.posix.setsockopt(s.socket.handle, std.posix.SOL.SOCKET, std.posix.SO.KEEPALIVE, &std.mem.toBytes(@as(c_int, 1)))) |_| {} else |_| {}
+                            }
+                        }
+                    }
+                    return;
+                } else |err| {
+                    self.consecutive_errors += 1;
+                    if (attempt + 1 == self.max_retries) {
+                        self.state = .failed;
+                        return err;
+                    }
+                }
+            } else if (std.mem.startsWith(u8, self.uri, "udp://")) {
+                if (createUdpSocket(self.allocator, self.uri)) |udp| {
+                    self.udp_socket = udp.socket;
+                    self.udp_addr = udp.address;
+                    self.state = .connected;
+                    return;
+                } else |err| {
+                    self.consecutive_errors += 1;
+                    if (attempt + 1 == self.max_retries) {
+                        self.state = .failed;
+                        return err;
+                    }
+                }
+            } else {
+                self.state = .failed;
+                return NetworkError.InvalidUri;
+            }
+
+            // Exponential backoff
+            Utils.sleepNs(delay * 1000 * 1000);
+            delay *= 2;
+        }
+        self.state = .failed;
+        return NetworkError.ConnectionFailed;
+    }
+
+    pub fn write(self: *NetworkSink, data: []const u8) !void {
+        if (self.state != .connected) {
+            try self.connect();
+        }
+
+        var data_to_send = data;
+        var allocated: ?[]u8 = null;
+        defer if (allocated) |slice| self.allocator.free(slice);
+
+        if (self.syslog_format) {
+            allocated = try formatSyslog(self.allocator, .user, .info, "localhost", "logly", data);
+            data_to_send = allocated.?;
+        }
+
+        if (self.http_chunked) {
+            // chunked format: <size_hex>\r\n<data>\r\n
+            var chunk_buf: [32]u8 = undefined;
+            const chunk_hdr = try std.fmt.bufPrint(&chunk_buf, "{x}\r\n", .{data_to_send.len});
+
+            var chunked_msg: std.ArrayList(u8) = .empty;
+            defer chunked_msg.deinit(self.allocator);
+            try chunked_msg.appendSlice(self.allocator, chunk_hdr);
+            try chunked_msg.appendSlice(self.allocator, data_to_send);
+            try chunked_msg.appendSlice(self.allocator, "\r\n");
+
+            try self.writeRaw(chunked_msg.items);
+        } else {
+            try self.writeRaw(data_to_send);
+        }
+    }
+
+    fn writeRaw(self: *NetworkSink, data: []const u8) !void {
+        var attempt: u32 = 0;
+        var delay = self.retry_delay_ms;
+
+        while (attempt < self.max_retries) : (attempt += 1) {
+            if (self.stream) |s| {
+                sendTcp(s, data) catch |err| {
+                    self.consecutive_errors += 1;
+                    if (attempt + 1 == self.max_retries) {
+                        self.state = .failed;
+                        return err;
+                    }
+                    // Try auto-reconnect
+                    self.disconnect();
+                    _ = self.connect() catch {};
+                };
+                return;
+            } else if (self.udp_socket) |s| {
+                if (self.udp_addr) |addr| {
+                    sendUdp(s, addr, data) catch |err| {
+                        self.consecutive_errors += 1;
+                        if (attempt + 1 == self.max_retries) {
+                            self.state = .failed;
+                            return err;
+                        }
+                    };
+                    return;
+                }
+            }
+            // Exponential backoff
+            Utils.sleepNs(delay * 1000 * 1000);
+            delay *= 2;
+        }
+        return NetworkError.SendFailed;
+    }
+
+    pub fn health(self: *const NetworkSink) ConnectionState {
+        return self.state;
+    }
+};
 
 test "syslog severity mapping" {
     try std.testing.expectEqual(SyslogSeverity.debug, SyslogSeverity.fromLogLevel(.debug));

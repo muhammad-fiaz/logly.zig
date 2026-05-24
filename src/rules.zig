@@ -484,13 +484,34 @@ pub const Rules = struct {
         level_match: ?LevelMatch = null,
         module: ?[]const u8 = null,
         function: ?[]const u8 = null,
+        /// Precise substring matching filter. The rule triggers only if the record's message strictly contains this string.
         message_contains: ?[]const u8 = null,
+        /// Wildcard pattern matching filter for complex matching semantics (supports simple asterisks, e.g. "auth*failed").
+        message_contains_pattern: ?[]const u8 = null,
+        /// Regex pattern matching filter for advanced diagnostic checks.
+        message_regex: ?[]const u8 = null,
+        /// Minimum duration in nanoseconds for timed operation logs.
+        min_duration_ns: ?u64 = null,
+        /// The sequence of conditional messages or payloads that will be evaluated or executed upon a successful rule match.
         messages: []const RuleMessage,
+        /// Execution priority index. Rules with lower numerical values (closer to 0) are evaluated first.
         priority: u8 = 100,
+        /// Minimum quiescent interval (in milliseconds) required between successive invocations of this rule, preventing event storms.
+        cooldown_ms: u64 = 0,
+        /// Atomic timestamp representing the chronological epoch of the most recent rule invocation.
+        last_fired_ms: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
 
         pub fn matches(self: *const Rule, record: *const Record) bool {
             if (!self.enabled) return false;
             if (self.once and self.fired.load(.monotonic)) return false;
+
+            if (self.min_duration_ns) |threshold| {
+                if (record.duration_ns) |dur| {
+                    if (dur < threshold) return false;
+                } else {
+                    return false;
+                }
+            }
 
             if (self.level_match) |lm| {
                 const matched = switch (lm) {
@@ -531,12 +552,54 @@ pub const Rules = struct {
                 }
             }
 
+            if (self.message_regex) |regex| {
+                if (Utils.findRegexPattern(record.message, regex) == null) {
+                    return false;
+                }
+            }
+
+            if (self.cooldown_ms > 0) {
+                const now: i64 = @intCast(Utils.currentMillis());
+                const last = self.last_fired_ms.load(.monotonic);
+                if (last > 0 and now - last < self.cooldown_ms) {
+                    return false;
+                }
+            }
+
+            if (self.message_contains_pattern) |pattern| {
+                var current_pos: usize = 0;
+                var search_start: usize = 0;
+                var match_failed = false;
+
+                while (search_start < pattern.len) {
+                    var next_star: usize = pattern.len;
+                    if (std.mem.indexOf(u8, pattern[search_start..], "*")) |idx| {
+                        next_star = search_start + idx;
+                    }
+
+                    const part = pattern[search_start..next_star];
+                    if (part.len > 0) {
+                        if (std.mem.indexOfPos(u8, record.message, current_pos, part)) |idx| {
+                            current_pos = idx + part.len;
+                        } else {
+                            match_failed = true;
+                            break;
+                        }
+                    }
+                    search_start = next_star + 1;
+                }
+                if (match_failed) return false;
+            }
+
             return true;
         }
 
         pub fn markFired(self: *Rule) void {
             if (self.once) {
                 self.fired.store(true, .monotonic);
+            }
+            if (self.cooldown_ms > 0) {
+                self.last_fired_ms.store(@intCast(Utils.currentMillis()), .monotonic);
             }
         }
 
@@ -2369,4 +2432,66 @@ test "rules concurrent stress loop" {
     try std.testing.expect(stats.getRulesMatched() > 0);
     try std.testing.expect(stats.getMessagesEmitted() > 0);
     try std.testing.expect(rules.wouldMatchAny(&final_record));
+}
+
+test "regex rule matching" {
+    const allocator = std.testing.allocator;
+    var rules = Rules.init(allocator);
+    defer rules.deinit();
+    rules.enabled = true;
+
+    const rule_msg = [_]Rules.RuleMessage{
+        Rules.RuleMessage.cause("Out of memory on heap"),
+        Rules.RuleMessage.fix("Increase standard buffer limits or check leaks"),
+    };
+
+    try rules.add(.{
+        .id = 9988,
+        .name = "oom_detector",
+        .level_match = .{ .exact = .err },
+        .message_regex = "out of memory \\d+",
+        .messages = &rule_msg,
+    });
+
+    var r1 = Record.init(allocator, .err, "fatal error: out of memory 4096 bytes");
+    defer r1.deinit();
+
+    var r2 = Record.init(allocator, .err, "some other general error");
+    defer r2.deinit();
+
+    try std.testing.expect(rules.wouldMatchAny(&r1));
+    try std.testing.expect(!rules.wouldMatchAny(&r2));
+
+    const matched_messages = rules.evaluateWithAllocator(&r1, allocator) orelse return error.TestUnexpectedResult;
+    defer allocator.free(matched_messages);
+    try std.testing.expectEqual(@as(usize, 2), matched_messages.len);
+}
+
+test "duration rule matching" {
+    const allocator = std.testing.allocator;
+    var rules = Rules.init(allocator);
+    defer rules.deinit();
+    rules.enabled = true;
+
+    const rule_msg = [_]Rules.RuleMessage{
+        Rules.RuleMessage.perf("Slow operation detected"),
+    };
+
+    try rules.add(.{
+        .id = 5566,
+        .name = "slow_op_detector",
+        .min_duration_ns = 500_000_000, // 500ms
+        .messages = &rule_msg,
+    });
+
+    var r1 = Record.init(allocator, .info, "query user data");
+    r1.duration_ns = 600_000_000; // 600ms (should match)
+    defer r1.deinit();
+
+    var r2 = Record.init(allocator, .info, "query user data fast");
+    r2.duration_ns = 100_000_000; // 100ms (should not match)
+    defer r2.deinit();
+
+    try std.testing.expect(rules.wouldMatchAny(&r1));
+    try std.testing.expect(!rules.wouldMatchAny(&r2));
 }
