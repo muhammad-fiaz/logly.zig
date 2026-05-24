@@ -211,7 +211,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ### Version 0.2.0
 
-Version `0.2.0` elevates Logly with enterprise-grade security controls, zero-copy high-performance memory-mapped logging, crash resilience, robust background processing, advanced observability, and dynamic configurability.
+This version includes enterprise-grade security controls, high-performance zero-copy memory-mapped logging, crash resilience, robust background processing, advanced observability, and dynamic configurability.
 
 **Enterprise Security & Extreme Performance:**
 * **Tamper-Evident Logs (Cryptographic Chaining)**: Secure your logs using SHA-256 cryptographic chaining. Each log entry is cryptographically linked to the previous one, rendering any manual edits immediately obvious.
@@ -1460,7 +1460,7 @@ zig build docs
 This will generate HTML documentation in the `zig-out/docs/` directory. Open `zig-out/docs/index.html` in your browser to view the documentation.
 
 >[!NOTE]
-> For projects using Zig 0.15, you can also generate the local documentation with `zig build docs` while using the matching `logly.zig` release (`0.1.7` or earlier). For Zig 0.16, use `0.1.8` or newer. See the official Zig downloads at [ziglang.org](https://ziglang.org/).
+> For projects using Zig 0.15, you can also generate the local documentation with `zig build docs` while using the matching `logly.zig` release (`0.1.7` or earlier).
 
 ## Contributing
 
