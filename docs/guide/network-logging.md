@@ -142,4 +142,4 @@ Currently, Logly supports plain TCP and UDP. For secure logging over public netw
 
 ## See Also
 - [Network API](/api/network) - Network reference API
-- [Network Advanced Example](/examples/network-advanced) - High performance network logs example
+- [Network Logging Example](/examples/network-logging) - High performance network logs example
