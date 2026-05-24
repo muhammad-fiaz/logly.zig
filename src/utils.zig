@@ -1610,3 +1610,338 @@ test "writePrometheusLabelValue escapes unsafe bytes" {
     try writePrometheusLabelValue(&buf.writer, "file\"sink\\main\nnext");
     try std.testing.expectEqualStrings("\"file\\\"sink\\\\main\\nnext\"", buf.written());
 }
+
+/// Truncates a string to at most `max_len` bytes, appending `suffix` if truncated.
+/// Returns a newly-allocated slice that the caller must free.
+pub fn truncateString(allocator: std.mem.Allocator, s: []const u8, max_len: usize, suffix: []const u8) ![]u8 {
+    if (s.len <= max_len) return allocator.dupe(u8, s);
+    const available = if (max_len > suffix.len) max_len - suffix.len else 0;
+    const result = try allocator.alloc(u8, available + suffix.len);
+    @memcpy(result[0..available], s[0..available]);
+    @memcpy(result[available..], suffix);
+    return result;
+}
+
+/// Truncates a string to at most `max_len` bytes writing to writer, appending `suffix` if truncated.
+pub fn writeTruncated(writer: anytype, s: []const u8, max_len: usize, suffix: []const u8) !void {
+    if (s.len <= max_len) {
+        try writer.writeAll(s);
+        return;
+    }
+    const available = if (max_len > suffix.len) max_len - suffix.len else 0;
+    try writer.writeAll(s[0..available]);
+    try writer.writeAll(suffix);
+}
+
+/// FNV-1a 32-bit hash of a byte slice. Fast non-cryptographic hash.
+/// Suitable for sampling keys, module name hashing, etc.
+pub fn hashFnv32a(data: []const u8) u32 {
+    const FNV_PRIME: u32 = 16777619;
+    const FNV_OFFSET: u32 = 2166136261;
+    var hash: u32 = FNV_OFFSET;
+    for (data) |byte| {
+        hash ^= @as(u32, byte);
+        hash *%= FNV_PRIME;
+    }
+    return hash;
+}
+
+/// FNV-1a 64-bit hash of a byte slice.
+pub fn hashFnv64a(data: []const u8) u64 {
+    const FNV_PRIME: u64 = 1099511628211;
+    const FNV_OFFSET: u64 = 14695981039346656037;
+    var hash: u64 = FNV_OFFSET;
+    for (data) |byte| {
+        hash ^= @as(u64, byte);
+        hash *%= FNV_PRIME;
+    }
+    return hash;
+}
+
+/// Normalizes a path for cross-platform use (replaces backslashes with forward slashes).
+pub fn sanitizePath(buf: []u8, path: []const u8) []u8 {
+    const len = @min(buf.len, path.len);
+    @memcpy(buf[0..len], path[0..len]);
+    for (buf[0..len]) |*c| {
+        if (c.* == '\\') c.* = '/';
+    }
+    return buf[0..len];
+}
+
+/// Builds a file path from a directory and filename, using the platform path separator.
+/// Returns allocated slice (caller must free).
+pub fn buildPath(allocator: std.mem.Allocator, dir: []const u8, file: []const u8) ![]u8 {
+    const sep = std.fs.path.sep_str;
+    return std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ dir, sep, file });
+}
+
+/// Converts a string to snake_case by replacing non-alphanumeric chars with underscores.
+/// Writes to the provided writer.
+pub fn writeSnakeCase(writer: anytype, s: []const u8) !void {
+    for (s) |c| {
+        if (std.ascii.isAlphanumeric(c)) {
+            try writer.writeByte(std.ascii.toLower(c));
+        } else {
+            try writer.writeByte('_');
+        }
+    }
+}
+
+/// Converts a string to camelCase: first word lowercase, subsequent words capitalized.
+/// Writes to the provided writer.
+pub fn writeCamelCase(writer: anytype, s: []const u8) !void {
+    var capitalize_next = false;
+    var first = true;
+    for (s) |c| {
+        if (c == '_' or c == '-' or c == ' ') {
+            capitalize_next = true;
+        } else if (first) {
+            try writer.writeByte(std.ascii.toLower(c));
+            first = false;
+            capitalize_next = false;
+        } else if (capitalize_next) {
+            try writer.writeByte(std.ascii.toUpper(c));
+            capitalize_next = false;
+            first = false;
+        } else {
+            try writer.writeByte(c);
+            first = false;
+        }
+    }
+}
+
+/// Writes a compact JSON object with key-value pairs to the writer.
+/// Opens '{', writes each pair as `"key":value`, closes '}'.
+/// `pairs` is a slice of [2][]const u8 where [0]=key and [1]=value (value is written as JSON string).
+pub fn writeJsonObject(writer: anytype, pairs: []const [2][]const u8) !void {
+    try writer.writeByte('{');
+    for (pairs, 0..) |pair, i| {
+        if (i > 0) try writer.writeByte(',');
+        try writer.writeByte('"');
+        try escapeJsonString(writer, pair[0]);
+        try writer.writeAll("\": \"");
+        try escapeJsonString(writer, pair[1]);
+        try writer.writeByte('"');
+    }
+    try writer.writeByte('}');
+}
+
+/// Pads a string to `width` characters on the right with `pad_char`.
+/// If the string is longer than width, it is written as-is.
+pub fn writePaddedRight(writer: anytype, s: []const u8, width: usize, pad_char: u8) !void {
+    try writer.writeAll(s);
+    if (s.len < width) {
+        const pad_len = width - s.len;
+        for (0..pad_len) |_| {
+            try writer.writeByte(pad_char);
+        }
+    }
+}
+
+/// Pads a string to `width` characters on the left with `pad_char`.
+/// If the string is longer than width, it is written as-is.
+pub fn writePaddedLeft(writer: anytype, s: []const u8, width: usize, pad_char: u8) !void {
+    if (s.len < width) {
+        const pad_len = width - s.len;
+        for (0..pad_len) |_| {
+            try writer.writeByte(pad_char);
+        }
+    }
+    try writer.writeAll(s);
+}
+
+/// Checks if a string looks like a valid email address (basic heuristic).
+/// Uses simple structural checks: has @, has dot after @, no spaces.
+pub fn isEmailLike(s: []const u8) bool {
+    if (s.len < 5) return false;
+    const at_pos = std.mem.indexOf(u8, s, "@") orelse return false;
+    if (at_pos == 0 or at_pos >= s.len - 2) return false;
+    const domain = s[at_pos + 1 ..];
+    if (std.mem.indexOf(u8, domain, ".") == null) return false;
+    for (s) |c| {
+        if (std.ascii.isWhitespace(c)) return false;
+    }
+    return true;
+}
+
+/// Checks if a string looks like an IPv4 address (e.g., "192.168.1.1").
+pub fn isIpv4Like(s: []const u8) bool {
+    var parts: u8 = 0;
+    var start: usize = 0;
+    for (s, 0..) |c, i| {
+        if (c == '.') {
+            if (i == start) return false; // empty segment
+            const seg = s[start..i];
+            if (seg.len > 3) return false;
+            const val = std.fmt.parseInt(u16, seg, 10) catch return false;
+            if (val > 255) return false;
+            parts += 1;
+            start = i + 1;
+        } else if (!std.ascii.isDigit(c)) {
+            return false;
+        }
+    }
+    if (start >= s.len) return false;
+    const last = s[start..];
+    if (last.len > 3) return false;
+    const val = std.fmt.parseInt(u16, last, 10) catch return false;
+    if (val > 255) return false;
+    parts += 1;
+    return parts == 4;
+}
+
+/// Checks if a string looks like a JWT token (starts with 'ey', has two '.' separators).
+pub fn isJwtLike(s: []const u8) bool {
+    if (s.len < 20) return false;
+    if (!std.mem.startsWith(u8, s, "ey")) return false;
+    var dot_count: u8 = 0;
+    for (s) |c| {
+        if (c == '.') dot_count += 1;
+    }
+    return dot_count == 2;
+}
+
+/// Validates a credit card number using the Luhn algorithm.
+/// Returns true if the number is valid according to Luhn checksum.
+pub fn isLuhnValid(digits: []const u8) bool {
+    var sum: u32 = 0;
+    var alternate = false;
+    var i: usize = digits.len;
+    while (i > 0) {
+        i -= 1;
+        const c = digits[i];
+        if (!std.ascii.isDigit(c)) continue;
+        var d: u32 = c - '0';
+        if (alternate) {
+            d *= 2;
+            if (d > 9) d -= 9;
+        }
+        sum += d;
+        alternate = !alternate;
+    }
+    return sum % 10 == 0;
+}
+
+/// Extracts only digits from a string into the provided buffer.
+/// Returns the slice of digits written.
+pub fn extractDigits(buf: []u8, s: []const u8) []u8 {
+    var len: usize = 0;
+    for (s) |c| {
+        if (std.ascii.isDigit(c) and len < buf.len) {
+            buf[len] = c;
+            len += 1;
+        }
+    }
+    return buf[0..len];
+}
+
+/// Safe increment of an atomic value, returns the new value.
+pub fn atomicIncrementSafe(atomic: anytype) u64 {
+    return @as(u64, atomic.fetchAdd(1, .monotonic)) + 1;
+}
+
+/// Safe add to an atomic value by delta, returns the new value.
+pub fn atomicAddSafe(atomic: anytype, delta: u64) u64 {
+    return @as(u64, atomic.fetchAdd(@intCast(delta), .monotonic)) + delta;
+}
+
+/// Writes RFC-5424 Syslog priority value: (facility * 8) + severity.
+pub fn writeSyslogPriority(writer: anytype, facility: u8, severity: u8) !void {
+    const priority: u32 = @as(u32, facility) * 8 + @as(u32, severity);
+    try writer.writeByte('<');
+    try writer.print("{d}", .{priority});
+    try writer.writeByte('>');
+}
+
+/// Returns the RFC-5424 severity code (0-7) for a log level priority.
+/// Maps: fatal->0 (Emergency), critical->2 (Critical), err->3 (Error),
+/// warning->4 (Warning), notice->5 (Notice), info->6 (Informational),
+/// debug/trace->7 (Debug)
+pub fn syslogSeverityFromPriority(level_priority: u8) u8 {
+    return if (level_priority >= 55) 0 // Emergency (fatal)
+    else if (level_priority >= 50) 2 // Critical
+    else if (level_priority >= 40) 3 // Error
+    else if (level_priority >= 30) 4 // Warning
+    else if (level_priority >= 22) 5 // Notice
+    else if (level_priority >= 20) 6 // Informational
+    else 7; // Debug
+}
+
+/// Computes the chained cryptographic hash (SHA-256) of a log record,
+/// linking it to the previous record hash.
+pub fn computeChainHash(last_hash: ?[32]u8, newly_written: []const u8) [32]u8 {
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+    if (last_hash) |lh| {
+        hasher.update(&lh);
+    } else {
+        // Use a default seed/IV for the first hash in the chain
+        const iv = [_]u8{0} ** 32;
+        hasher.update(&iv);
+    }
+    hasher.update(newly_written);
+    var out: [32]u8 = undefined;
+    hasher.final(&out);
+    return out;
+}
+
+test "truncateString" {
+    const allocator = std.testing.allocator;
+    const s = try truncateString(allocator, "Hello, World!", 5, "...");
+    defer allocator.free(s);
+    try std.testing.expectEqualStrings("He...", s);
+}
+
+test "truncateString no truncation" {
+    const allocator = std.testing.allocator;
+    const s = try truncateString(allocator, "Hi", 10, "...");
+    defer allocator.free(s);
+    try std.testing.expectEqualStrings("Hi", s);
+}
+
+test "hashFnv32a" {
+    const h1 = hashFnv32a("hello");
+    const h2 = hashFnv32a("hello");
+    const h3 = hashFnv32a("world");
+    try std.testing.expectEqual(h1, h2);
+    try std.testing.expect(h1 != h3);
+}
+
+test "hashFnv32a empty" {
+    const h = hashFnv32a("");
+    try std.testing.expectEqual(@as(u32, 2166136261), h); // FNV offset basis
+}
+
+test "isEmailLike" {
+    try std.testing.expect(isEmailLike("user@example.com"));
+    try std.testing.expect(!isEmailLike("notanemail"));
+    try std.testing.expect(!isEmailLike("@nodomain"));
+    try std.testing.expect(!isEmailLike("no@dot"));
+}
+
+test "isIpv4Like" {
+    try std.testing.expect(isIpv4Like("192.168.1.1"));
+    try std.testing.expect(isIpv4Like("0.0.0.0"));
+    try std.testing.expect(!isIpv4Like("256.1.1.1"));
+    try std.testing.expect(!isIpv4Like("not.an.ip"));
+    try std.testing.expect(!isIpv4Like("192.168.1"));
+}
+
+test "isJwtLike" {
+    try std.testing.expect(isJwtLike("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"));
+    try std.testing.expect(!isJwtLike("notajwt"));
+    try std.testing.expect(!isJwtLike("eyshort"));
+}
+
+test "isLuhnValid" {
+    // Visa test card
+    try std.testing.expect(isLuhnValid("4111111111111111"));
+    // Invalid number
+    try std.testing.expect(!isLuhnValid("4111111111111112"));
+}
+
+test "syslogSeverityFromPriority" {
+    try std.testing.expectEqual(@as(u8, 0), syslogSeverityFromPriority(55)); // fatal
+    try std.testing.expectEqual(@as(u8, 3), syslogSeverityFromPriority(40)); // error
+    try std.testing.expectEqual(@as(u8, 6), syslogSeverityFromPriority(20)); // info
+    try std.testing.expectEqual(@as(u8, 7), syslogSeverityFromPriority(5)); // trace
+}

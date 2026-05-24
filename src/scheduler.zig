@@ -48,6 +48,8 @@ pub const Scheduler = struct {
     tasks: std.ArrayList(ScheduledTask),
     /// Whether the scheduler is currently running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// Whether the scheduler is paused.
+    is_paused: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Background worker thread for task execution.
     worker_thread: ?std.Thread = null,
     /// Mutex for thread-safe access to tasks.
@@ -162,6 +164,10 @@ pub const Scheduler = struct {
             max_total_size: ?u64 = null,
             /// Minimum age in seconds (useful for compression - e.g. compress files older than 1 day)
             min_age_seconds: u64 = 0,
+            /// Maximum number of retries
+            max_retries: u32 = 0,
+            /// Retry backoff time in milliseconds
+            retry_backoff_ms: u64 = 0,
             /// File pattern to match (e.g., "*.log")
             file_pattern: ?[]const u8 = null,
             /// Compress files before cleanup (compress then delete)
@@ -609,7 +615,11 @@ pub const Scheduler = struct {
             .schedule = schedule,
             .next_run = schedule.nextRunTime(now),
             .config = owned_config,
-            .retries_remaining = 3, // Default retries
+            .retries_remaining = if (owned_config.max_retries > 0) owned_config.max_retries else 3,
+            .retry_policy = if (owned_config.max_retries > 0) .{
+                .max_retries = owned_config.max_retries,
+                .interval_ms = @as(u32, @intCast(owned_config.retry_backoff_ms)),
+            } else .{},
         };
 
         try self.tasks.append(self.allocator, task);
@@ -752,6 +762,38 @@ pub const Scheduler = struct {
             .schedule = schedule,
             .callback = callback,
             .next_run = schedule.nextRunTime(now),
+        };
+
+        try self.tasks.append(self.allocator, task);
+        return self.tasks.items.len - 1;
+    }
+
+    /// Adds a custom callback task with full configuration.
+    pub fn addCustomTaskWithConfig(
+        self: *Scheduler,
+        name: []const u8,
+        schedule: Schedule,
+        callback: *const fn (*ScheduledTask) anyerror!void,
+        config: ScheduledTask.TaskConfig,
+    ) !usize {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        const owned_name = try self.allocator.dupe(u8, name);
+        const now = Utils.currentMillis();
+
+        const task = ScheduledTask{
+            .name = owned_name,
+            .task_type = .custom,
+            .schedule = schedule,
+            .callback = callback,
+            .next_run = schedule.nextRunTime(now),
+            .config = config,
+            .retries_remaining = if (config.max_retries > 0) config.max_retries else 3,
+            .retry_policy = if (config.max_retries > 0) .{
+                .max_retries = config.max_retries,
+                .interval_ms = @as(u32, @intCast(config.retry_backoff_ms)),
+            } else .{},
         };
 
         try self.tasks.append(self.allocator, task);
@@ -1017,7 +1059,19 @@ pub const Scheduler = struct {
         self.stats.start_time.store(@truncate(Utils.currentMillis()), .monotonic);
 
         self.running.store(true, .release);
+        self.is_paused.store(false, .release);
         self.worker_thread = try std.Thread.spawn(.{}, schedulerLoop, .{self});
+    }
+
+    /// Pauses the scheduler.
+    pub fn pause(self: *Scheduler) void {
+        self.is_paused.store(true, .release);
+    }
+
+    /// Resumes the scheduler.
+    pub fn unpause(self: *Scheduler) void {
+        self.is_paused.store(false, .release);
+        self.condition.broadcast(Utils.io());
     }
 
     /// Stops the scheduler.
@@ -1171,7 +1225,7 @@ pub const Scheduler = struct {
                         .critical => .critical,
                     };
 
-                    if (!tp.submit(.{ .callback = .{ .func = TaskCtx.run, .context = ctx } }, tp_prio)) {
+                    if (!tp.submit(.{ .callback = .{ .func = TaskCtx.run, .context = ctx } }, tp_prio).isValid()) {
                         self.allocator.destroy(ctx);
                         self.executeTask(task) catch |err| {
                             self.handleTaskErrorLocked(i, err);
@@ -1239,7 +1293,9 @@ pub const Scheduler = struct {
 
     fn schedulerLoop(self: *Scheduler) void {
         while (self.running.load(.acquire)) {
-            self.runPending();
+            if (!self.is_paused.load(.acquire)) {
+                self.runPending();
+            }
 
             // Check every 500ms for more responsive scheduling
             var i: usize = 0;
@@ -2203,3 +2259,30 @@ extern "kernel32" fn GetDiskFreeSpaceExW(
     lpTotalNumberOfBytes: ?*u64,
     lpTotalNumberOfFreeBytes: ?*u64,
 ) callconv(.winapi) i32;
+
+test "scheduler phase 3 features (pause/resume)" {
+    var sched = try Scheduler.init(std.testing.allocator);
+    defer sched.deinit();
+
+    try std.testing.expect(!sched.is_paused.load(.acquire));
+    sched.pause();
+    try std.testing.expect(sched.is_paused.load(.acquire));
+    sched.unpause();
+    try std.testing.expect(!sched.is_paused.load(.acquire));
+}
+
+test "scheduler task retries and jitter" {
+    const task = Scheduler.ScheduledTask{
+        .name = "retry_task",
+        .task_type = .custom,
+        .schedule = .{ .interval = 1000 },
+        .retry_policy = .{
+            .max_retries = 3,
+            .interval_ms = 500,
+            .backoff_multiplier = 1.5,
+        },
+    };
+    try std.testing.expectEqual(@as(u32, 3), task.retry_policy.max_retries);
+    try std.testing.expectEqual(@as(u32, 500), task.retry_policy.interval_ms);
+    try std.testing.expectEqual(@as(f32, 1.5), task.retry_policy.backoff_multiplier);
+}

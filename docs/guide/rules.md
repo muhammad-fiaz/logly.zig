@@ -189,13 +189,29 @@ try rules.add(.{
 });
 ```
 
-### Message Content
+### Message Content & Wildcards
+
+Match logs based on text content. You can also use `*` wildcards for basic pattern matching (e.g., `*timeout*db*`).
 
 ```zig
 try rules.add(.{
     .id = 3,
-    .message_contains = "timeout",  // Only logs containing this text
+    .message_contains = "timeout",      // Basic substring match
+    .message_pattern = "*error*code*",  // Wildcard match (matches "error 500 code")
     .level_match = .{ .exact = .err },
+    .messages = &messages,
+});
+```
+
+### Rule Cooldowns
+
+Prevent rules from firing too often and spamming logs by setting a cooldown period. The rule will not trigger again until the cooldown has expired.
+
+```zig
+try rules.add(.{
+    .id = 4,
+    .cooldown_ms = 60000, // Only trigger this rule at most once per minute
+    .message_contains = "Connection lost",
     .messages = &messages,
 });
 ```

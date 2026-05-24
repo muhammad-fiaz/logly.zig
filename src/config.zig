@@ -24,6 +24,8 @@
 const std = @import("std");
 const Level = @import("level.zig").Level;
 const Constants = @import("constants.zig");
+const ThreadPool = @import("thread_pool.zig").ThreadPool;
+const Utils = @import("utils.zig");
 
 /// Configuration options for the Logger.
 pub const Config = struct {
@@ -50,6 +52,13 @@ pub const Config = struct {
     json: bool = false,
     pretty_json: bool = false,
     log_compact: bool = false,
+    ndjson: bool = false,
+    logfmt: bool = false,
+    cef: bool = false,
+    align_fields: bool = false,
+    tamper_evident: bool = false,
+    msgpack: bool = false,
+    tui: bool = false,
 
     /// Custom format string for log messages.
     /// Available placeholders: {time}, {level}, {message}, {module}, {function}, {file}, {line},
@@ -111,6 +120,9 @@ pub const Config = struct {
 
     /// Include process ID in logs.
     include_pid: bool = false,
+
+    /// Include trace ID in logs (useful for distributed tracing).
+    include_trace_id: bool = false,
 
     /// Capture stack traces for Error and Critical log levels.
     /// If false, stack traces will not be collected or displayed.
@@ -578,6 +590,10 @@ pub const Config = struct {
         enabled: bool = false,
         /// The sampling strategy to use.
         strategy: Strategy = .{ .probability = 1.0 },
+        /// Defines an exclusion mask of log levels that are categorically exempt from sampling logic.
+        /// Useful for guaranteeing that critical anomalies (e.g. fatal errors, panics) are deterministically logged
+        /// irrespective of the active rate-limiting or probability-based suppression rules.
+        bypass_levels: ?@import("level.zig").LevelMask = null,
 
         /// Sampling strategy configuration.
         pub const Strategy = union(enum) {
@@ -596,6 +612,9 @@ pub const Config = struct {
 
             /// Adaptive sampling based on throughput.
             adaptive: AdaptiveConfig,
+
+            /// Token bucket rate limiting (allows initial bursts).
+            token_bucket: TokenBucketConfig,
         };
 
         /// Configuration for rate limiting strategy.
@@ -619,6 +638,17 @@ pub const Config = struct {
             max_sample_rate: f64 = Constants.SamplingDefaults.adaptive_max_rate,
             /// How often to adjust rate (milliseconds).
             adjustment_interval_ms: u64 = Constants.SamplingDefaults.adaptive_adjustment_interval_ms,
+        };
+
+        /// Configuration for token bucket rate limiting strategy.
+        ///
+        /// The token bucket algorithm facilitates burstable sampling operations by allowing
+        /// transient spikes in log throughput while enforcing a long-term average rate limit.
+        pub const TokenBucketConfig = struct {
+            /// Maximum capacity of the token bucket, representing the permissible burst size.
+            burst_capacity: u32,
+            /// Steady-state replenishment rate for the token bucket (tokens accrued per second).
+            refill_rate_per_sec: u32,
         };
     };
 
@@ -1264,6 +1294,10 @@ pub const Config = struct {
         /// Custom naming pattern for compressed files.
         /// Placeholders: {base}, {ext}, {date}, {time}, {timestamp}, {index}
         naming_pattern: ?[]const u8 = null,
+        /// Zstd dictionary for compression.
+        zstd_dict: ?[]const u8 = null,
+        /// Thread pool for asynchronous compression tasks.
+        thread_pool: ?*ThreadPool = null,
 
         pub const CompressionAlgorithm = enum {
             none,
@@ -1852,6 +1886,16 @@ pub const Config = struct {
         /// Files older than this will be deleted during rotation.
         max_age_seconds: ?i64 = null,
 
+        /// Maximum total size of all rotated files in bytes.
+        /// Oldest rotated files will be deleted when total size exceeds this.
+        max_total_size: ?u64 = null,
+
+        /// Maximum total size as a string (e.g. "100MB").
+        max_total_size_str: ?[]const u8 = null,
+
+        /// Custom rotation callback.
+        on_rotate: ?*const fn (old_path: []const u8, new_path: []const u8) void = null,
+
         /// Strategy for naming rotated files.
         /// Strategy for naming rotated files.
         naming_strategy: NamingStrategy = .timestamp,
@@ -1916,12 +1960,28 @@ pub const Config = struct {
             };
         }
 
+        /// Returns a size-based rotation configuration parsed from a size string (e.g. "10MB").
+        pub fn fromSize(size_str: []const u8) RotationConfig {
+            return .{
+                .enabled = true,
+                .size_limit_str = size_str,
+            };
+        }
+
         /// Returns a time-based rotation configuration.
         pub fn byInterval(interval_name: []const u8, retention: usize) RotationConfig {
             return .{
                 .enabled = true,
                 .interval = interval_name,
                 .retention_count = retention,
+            };
+        }
+
+        /// Returns a time-based rotation configuration parsed from an interval name or duration string (e.g. "24h").
+        pub fn fromInterval(dur_str: []const u8) RotationConfig {
+            return .{
+                .enabled = true,
+                .interval = dur_str,
             };
         }
 
@@ -2130,6 +2190,8 @@ pub const Config = struct {
         backpressure_threshold: f64 = Constants.AsyncConstants.backpressure_threshold_ratio,
         /// Default timeout for explicit drain waits.
         drain_timeout_ms: u64 = Constants.AsyncConstants.drain_timeout_ms,
+        /// Shutdown grace period timeout in milliseconds.
+        shutdown_timeout_ms: u64 = Constants.AsyncConstants.drain_timeout_ms,
 
         pub const OverflowPolicy = enum {
             drop_oldest,
@@ -2366,6 +2428,15 @@ pub const Config = struct {
         if (other.level != .info) result.level = other.level;
         if (other.json) result.json = true;
         if (other.pretty_json) result.pretty_json = true;
+        if (other.ndjson) result.ndjson = true;
+        if (other.logfmt) result.logfmt = true;
+        if (other.cef) result.cef = true;
+        if (other.align_fields) result.align_fields = true;
+        if (other.msgpack) result.msgpack = true;
+        if (other.tui) result.tui = true;
+        if (other.include_trace_id) result.include_trace_id = true;
+        if (other.include_pid) result.include_pid = true;
+        if (other.include_hostname) result.include_hostname = true;
         if (other.log_format != null) result.log_format = other.log_format;
         if (other.app_name != null) result.app_name = other.app_name;
         if (other.app_version != null) result.app_version = other.app_version;
@@ -2773,7 +2844,88 @@ pub const Config = struct {
         result.auto_sink = auto_sink;
         return result;
     }
+
+    const JsonConfig = struct {
+        level: ?[]const u8 = null,
+        color: ?bool = null,
+        json: ?bool = null,
+        pretty_json: ?bool = null,
+        log_compact: ?bool = null,
+        ndjson: ?bool = null,
+        logfmt: ?bool = null,
+        cef: ?bool = null,
+        align_fields: ?bool = null,
+        tamper_evident: ?bool = null,
+        app_name: ?[]const u8 = null,
+        app_version: ?[]const u8 = null,
+        environment: ?[]const u8 = null,
+    };
+
+    /// Parses a JSON string to create a Config instance.
+    pub fn loadFromJson(allocator: std.mem.Allocator, json_bytes: []const u8) !Config {
+        const parsed = try std.json.parseFromSlice(JsonConfig, allocator, json_bytes, .{
+            .ignore_unknown_fields = true,
+        });
+        defer parsed.deinit();
+
+        var config = Config.default();
+        const j = parsed.value;
+
+        if (j.level) |lvl| {
+            config.level = if (std.mem.eql(u8, lvl, "trace") or std.mem.eql(u8, lvl, "TRACE")) .trace else if (std.mem.eql(u8, lvl, "debug") or std.mem.eql(u8, lvl, "DEBUG")) .debug else if (std.mem.eql(u8, lvl, "info") or std.mem.eql(u8, lvl, "INFO")) .info else if (std.mem.eql(u8, lvl, "notice") or std.mem.eql(u8, lvl, "NOTICE")) .notice else if (std.mem.eql(u8, lvl, "success") or std.mem.eql(u8, lvl, "SUCCESS")) .success else if (std.mem.eql(u8, lvl, "warning") or std.mem.eql(u8, lvl, "WARNING") or std.mem.eql(u8, lvl, "warn") or std.mem.eql(u8, lvl, "WARN")) .warning else if (std.mem.eql(u8, lvl, "err") or std.mem.eql(u8, lvl, "ERR") or std.mem.eql(u8, lvl, "error") or std.mem.eql(u8, lvl, "ERROR")) .err else if (std.mem.eql(u8, lvl, "fail") or std.mem.eql(u8, lvl, "FAIL")) .fail else if (std.mem.eql(u8, lvl, "critical") or std.mem.eql(u8, lvl, "CRITICAL") or std.mem.eql(u8, lvl, "crit") or std.mem.eql(u8, lvl, "CRIT")) .critical else if (std.mem.eql(u8, lvl, "fatal") or std.mem.eql(u8, lvl, "FATAL")) .fatal else Level.fromString(lvl) orelse .info;
+        }
+        if (j.color) |val| config.color = val;
+        if (j.json) |val| config.json = val;
+        if (j.pretty_json) |val| config.pretty_json = val;
+        if (j.log_compact) |val| config.log_compact = val;
+        if (j.ndjson) |val| config.ndjson = val;
+        if (j.logfmt) |val| config.logfmt = val;
+        if (j.cef) |val| config.cef = val;
+        if (j.align_fields) |val| config.align_fields = val;
+        if (j.tamper_evident) |val| config.tamper_evident = val;
+
+        return config;
+    }
+
+    /// Loads the configuration from a JSON file.
+    pub fn loadFromFile(allocator: std.mem.Allocator, file_path: []const u8) !Config {
+        const io = Utils.io();
+        const file = try std.Io.Dir.cwd().openFile(io, file_path, .{});
+        defer file.close(io);
+
+        // Read entire file (up to 64KB)
+        const buf = try allocator.alloc(u8, 65536);
+        defer allocator.free(buf);
+
+        var file_buffer: [4096]u8 = undefined;
+        var reader = file.reader(io, &file_buffer);
+        const len = try reader.interface.readSliceShort(buf);
+        const json_bytes = buf[0..len];
+
+        return try loadFromJson(allocator, json_bytes);
+    }
 };
+
+test "config JSON load and parse" {
+    const allocator = std.testing.allocator;
+
+    const json_str = "{\"level\": \"debug\", \"color\": false}";
+    const config = try Config.loadFromJson(allocator, json_str);
+    try std.testing.expectEqual(Level.debug, config.level);
+    try std.testing.expect(!config.color);
+
+    // Test writing and loading from file using std.Io
+    const test_file_path = "test_config_temp.json";
+    const io = Utils.io();
+    const file = try std.Io.Dir.cwd().createFile(io, test_file_path, .{});
+    try file.writeStreamingAll(io, json_str);
+    file.close(io);
+    defer std.Io.Dir.cwd().deleteFile(io, test_file_path) catch {};
+
+    const config2 = try Config.loadFromFile(allocator, test_file_path);
+    try std.testing.expectEqual(Level.debug, config2.level);
+    try std.testing.expect(!config2.color);
+}
 
 test "config default values" {
     const config = Config.default();
@@ -3369,10 +3521,13 @@ pub const TelemetryConfig = struct {
     metrics_file_path: ?[]const u8 = null,
 
     /// Batch span export size.
-    batch_size: usize = Constants.TelemetryDefaults.batch_size,
+    batch_size: usize = 1,
 
     /// Batch export timeout in milliseconds.
     batch_timeout_ms: u64 = Constants.TelemetryDefaults.batch_timeout_ms,
+
+    /// Flush interval in milliseconds.
+    flush_interval_ms: u64 = 0,
 
     /// Sampling strategy configuration.
     sampling_strategy: SamplingStrategy = .always_on,
@@ -3434,6 +3589,9 @@ pub const TelemetryConfig = struct {
     /// Baggage/Correlation context header name.
     baggage_header: []const u8 = Constants.TelemetryDefaults.baggage_header,
 
+    /// Export format configuration.
+    export_format: ExportFormat = .json,
+
     /// OpenTelemetry providers.
     pub const Provider = enum {
         /// No provider (disabled).
@@ -3490,6 +3648,14 @@ pub const TelemetryConfig = struct {
         prometheus,
         /// JSON format.
         json,
+    };
+
+    /// Export format for telemetry logs.
+    pub const ExportFormat = enum {
+        /// JSON format.
+        json,
+        /// Honeycomb specific event format.
+        honeycomb,
     };
 
     /// Returns default telemetry configuration (disabled).

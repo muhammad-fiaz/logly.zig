@@ -50,6 +50,8 @@ pub const ThreadPool = struct {
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Whether shutdown has completed.
     shutdown_complete: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// Next task ID generator.
+    next_task_id: std.atomic.Value(u64) = std.atomic.Value(u64).init(1),
 
     /// Callback invoked when worker thread starts.
     /// Parameters: (thread_id: usize)
@@ -235,8 +237,19 @@ pub const ThreadPool = struct {
         }
     };
 
+    /// Handle to a submitted task, allowing cancellation before execution.
+    pub const TaskHandle = struct {
+        id: u64,
+
+        /// Checks if this handle is valid.
+        pub fn isValid(self: TaskHandle) bool {
+            return self.id != 0;
+        }
+    };
+
     /// A work item in the queue.
     pub const WorkItem = struct {
+        id: u64 = 0,
         task: Task,
         submitted_at: i64,
         priority: Priority = .normal,
@@ -443,6 +456,38 @@ pub const ThreadPool = struct {
             self.tail = 0;
             self.count = 0;
         }
+
+        /// Removes an item by ID without locking.
+        pub fn removeByIdUnlocked(self: *WorkQueue, id: u64) bool {
+            if (self.count == 0) return false;
+
+            var i: usize = 0;
+            var found = false;
+            var remove_idx: usize = 0;
+
+            while (i < self.count) : (i += 1) {
+                const idx = (self.head + i) % self.capacity;
+                if (self.items[idx].id == id) {
+                    found = true;
+                    remove_idx = idx;
+                    break;
+                }
+            }
+
+            if (!found) return false;
+
+            // Shift elements to fill the gap.
+            var curr = remove_idx;
+            while (curr != self.head) {
+                const prev = if (curr == 0) self.capacity - 1 else curr - 1;
+                self.items[curr] = self.items[prev];
+                curr = prev;
+            }
+
+            self.head = (self.head + 1) % self.capacity;
+            self.count -= 1;
+            return true;
+        }
     };
 
     /// Worker thread state.
@@ -454,6 +499,8 @@ pub const ThreadPool = struct {
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         tasks_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         arena: ?std.heap.ArenaAllocator = null,
+        name: [64]u8 = undefined,
+        name_len: usize = 0,
     };
 
     /// Queue depth snapshot split by global and local queues.
@@ -570,6 +617,24 @@ pub const ThreadPool = struct {
         self.shutdown_complete.store(true, .release);
     }
 
+    /// Cancels a task if it hasn't started executing yet.
+    /// Returns true if successfully removed from queues.
+    pub fn cancel(self: *ThreadPool, handle: TaskHandle) bool {
+        if (!handle.isValid()) return false;
+
+        self.work_queue.mutex.lockUncancelable(Utils.io());
+        defer self.work_queue.mutex.unlock(Utils.io());
+
+        if (self.work_queue.removeByIdUnlocked(handle.id)) return true;
+
+        for (self.workers) |*worker| {
+            worker.local_queue.mutex.lockUncancelable(Utils.io());
+            defer worker.local_queue.mutex.unlock(Utils.io());
+            if (worker.local_queue.removeByIdUnlocked(handle.id)) return true;
+        }
+        return false;
+    }
+
     /// Submits a task for execution.
     ///
     /// Arguments:
@@ -577,11 +642,13 @@ pub const ThreadPool = struct {
     ///     priority: Task priority.
     ///
     /// Returns:
-    ///     true if submitted successfully.
-    pub fn submit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool {
-        if (!self.running.load(.acquire)) return false;
+    ///     TaskHandle if submitted successfully.
+    pub fn submit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) TaskHandle {
+        if (!self.running.load(.acquire)) return .{ .id = 0 };
 
+        const id = self.next_task_id.fetchAdd(1, .monotonic);
         const item = WorkItem{
+            .id = id,
             .task = task,
             .submitted_at = Utils.currentMillis(),
             .priority = priority,
@@ -589,36 +656,49 @@ pub const ThreadPool = struct {
 
         if (self.work_queue.push(item)) {
             _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
-            return true;
+            return .{ .id = id };
         }
 
-        // Do not increment `tasks_dropped` here: callers commonly retry on
-        // transient push failures (e.g., brief queue contention). Counting
-        // those transient attempts as "dropped" causes wait/timeout logic to
-        // incorrectly consider all work finished (completed + dropped >=
-        // submitted) even when some submitted tasks are still pending. Final
-        // or irrevocable drops are recorded at the batch/try paths where a
-        // task is deliberately skipped.
-        return false;
+        return .{ .id = 0 };
     }
 
     /// Submits a function for execution.
     pub fn submitFn(self: *ThreadPool, func: *const fn (?std.mem.Allocator) void) bool {
+        return self.submit(.{ .function = .{ .func = func } }, .normal).isValid();
+    }
+
+    /// Submits a function and returns a handle.
+    pub fn submitFnWithHandle(self: *ThreadPool, func: *const fn (?std.mem.Allocator) void) TaskHandle {
         return self.submit(.{ .function = .{ .func = func } }, .normal);
     }
 
     /// Submits a callback with context for execution.
     pub fn submitCallback(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool {
+        return self.submit(.{ .callback = .{ .func = func, .context = context } }, .normal).isValid();
+    }
+
+    /// Submits a callback and returns a handle.
+    pub fn submitCallbackWithHandle(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) TaskHandle {
         return self.submit(.{ .callback = .{ .func = func, .context = context } }, .normal);
     }
 
     /// Submits a callback with high priority for immediate execution.
     pub fn submitHighPriority(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool {
+        return self.submit(.{ .callback = .{ .func = func, .context = context } }, .high).isValid();
+    }
+
+    /// Submits a callback with high priority and returns a handle.
+    pub fn submitHighPriorityWithHandle(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) TaskHandle {
         return self.submit(.{ .callback = .{ .func = func, .context = context } }, .high);
     }
 
     /// Submits a callback with critical priority (processed first).
     pub fn submitCritical(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool {
+        return self.submit(.{ .callback = .{ .func = func, .context = context } }, .critical).isValid();
+    }
+
+    /// Submits a callback with critical priority and returns a handle.
+    pub fn submitCriticalWithHandle(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) TaskHandle {
         return self.submit(.{ .callback = .{ .func = func, .context = context } }, .critical);
     }
 
@@ -639,7 +719,9 @@ pub const ThreadPool = struct {
                 continue;
             }
 
+            const id = self.next_task_id.fetchAdd(1, .monotonic);
             const item = WorkItem{
+                .id = id,
                 .task = task,
                 .submitted_at = now,
                 .priority = priority,
@@ -673,7 +755,7 @@ pub const ThreadPool = struct {
         for (tasks) |task| {
             var attempts: u8 = 0;
             while (attempts < attempts_limit) : (attempts += 1) {
-                if (self.submit(task, priority)) {
+                if (self.submit(task, priority).isValid()) {
                     submitted += 1;
                     break;
                 }
@@ -687,22 +769,24 @@ pub const ThreadPool = struct {
         return submitted;
     }
 
-    /// Try to submit without blocking (fast path for non-contended cases).
-    pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool {
-        if (!self.running.load(.acquire)) return false;
+    /// Try to submit without blocking and returns a handle.
+    pub fn trySubmitWithHandle(self: *ThreadPool, task: Task, priority: WorkItem.Priority) TaskHandle {
+        if (!self.running.load(.acquire)) return .{ .id = 0 };
 
         // Try lock without blocking
         if (!self.work_queue.mutex.tryLock()) {
-            return false;
+            return .{ .id = 0 };
         }
         defer self.work_queue.mutex.unlock(Utils.io());
 
         if (self.work_queue.count >= self.work_queue.capacity) {
             _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
-            return false;
+            return .{ .id = 0 };
         }
 
+        const id = self.next_task_id.fetchAdd(1, .monotonic);
         const item = WorkItem{
+            .id = id,
             .task = task,
             .submitted_at = Utils.currentMillis(),
             .priority = priority,
@@ -714,15 +798,22 @@ pub const ThreadPool = struct {
 
         _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
         self.work_queue.condition.signal(Utils.io());
-        return true;
+        return .{ .id = id };
     }
 
-    /// Submit to a specific worker's local queue for better cache locality.
-    pub fn submitToWorker(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) bool {
-        if (!self.running.load(.acquire)) return false;
-        if (worker_id >= self.workers.len) return false;
+    /// Try to submit without blocking (fast path for non-contended cases).
+    pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool {
+        return self.trySubmitWithHandle(task, priority).isValid();
+    }
 
+    /// Submit to a specific worker's local queue for better cache locality. Returns a handle.
+    pub fn submitToWorkerWithHandle(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) TaskHandle {
+        if (!self.running.load(.acquire)) return .{ .id = 0 };
+        if (worker_id >= self.workers.len) return .{ .id = 0 };
+
+        const id = self.next_task_id.fetchAdd(1, .monotonic);
         const item = WorkItem{
+            .id = id,
             .task = task,
             .submitted_at = Utils.currentMillis(),
             .priority = priority,
@@ -730,11 +821,16 @@ pub const ThreadPool = struct {
 
         if (self.workers[worker_id].local_queue.push(item)) {
             _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
-            return true;
+            return .{ .id = id };
         }
 
         _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
-        return false;
+        return .{ .id = 0 };
+    }
+
+    /// Submit to a specific worker's local queue for better cache locality.
+    pub fn submitToWorker(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) bool {
+        return self.submitToWorkerWithHandle(worker_id, task, priority).isValid();
     }
 
     fn workerLoop(worker: *Worker) void {
@@ -745,6 +841,9 @@ pub const ThreadPool = struct {
             worker.arena = std.heap.ArenaAllocator.init(pool.allocator);
         }
         defer if (worker.arena) |*arena| arena.deinit();
+
+        const name_str = std.fmt.bufPrint(&worker.name, "{s}-{d}", .{ pool.config.thread_name_prefix, worker.id }) catch pool.config.thread_name_prefix;
+        worker.name_len = name_str.len;
 
         _ = pool.stats.active_threads.fetchAdd(1, .monotonic);
         defer _ = pool.stats.active_threads.fetchSub(1, .monotonic);
@@ -1782,7 +1881,7 @@ test "thread pool heavy concurrency stress loop" {
                     },
                 }, .normal);
 
-                if (accepted) {
+                if (accepted.isValid()) {
                     submitted += 1;
                 } else {
                     Utils.sleepNs(50 * Constants.TimeConstants.ns_per_us);

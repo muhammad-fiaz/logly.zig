@@ -153,6 +153,9 @@ pub const Logger = struct {
     enabled: bool = true,
     /// Atomic log level for thread-safe level checking.
     atomic_level: std.atomic.Value(u8) = std.atomic.Value(u8).init(@intFromEnum(Level.info)),
+    /// Temporary level override
+    temp_level: ?Level = null,
+    temp_level_expires_at: i64 = 0,
     /// Read-write lock for thread-safe access.
     mutex: std.Io.RwLock = std.Io.RwLock.init,
     /// Legacy callback for log events.
@@ -445,6 +448,15 @@ pub const Logger = struct {
 
         self.config = config;
         self.atomic_level.store(@intFromEnum(config.level), .monotonic);
+    }
+
+    /// Alias for configure.
+    pub const applyConfig = configure;
+
+    /// Reloads the logger configuration from a JSON file.
+    pub fn reloadFromFile(self: *Logger, file_path: []const u8) !void {
+        const new_config = try Config.loadFromFile(self.allocator, file_path);
+        self.configure(new_config);
     }
 
     /// Sets the filter for this logger.
@@ -1139,7 +1151,18 @@ pub const Logger = struct {
 
         // Fast path: check global level if no module is specified
         if (module == null) {
-            const min_val = self.atomic_level.load(.monotonic);
+            const now = Utils.currentMillis();
+            var min_val = self.atomic_level.load(.monotonic);
+
+            // Check temporary override
+            if (self.temp_level) |lvl| {
+                if (now < self.temp_level_expires_at) {
+                    min_val = @intFromEnum(lvl);
+                } else {
+                    self.temp_level = null; // Expired
+                }
+            }
+
             if (@intFromEnum(level) < min_val) {
                 return;
             }
@@ -1169,7 +1192,7 @@ pub const Logger = struct {
 
         // Apply sampling if configured (do early before record creation)
         if (self.sampler) |sampler| {
-            if (!sampler.shouldSample()) {
+            if (!sampler.shouldSampleLevel(level)) {
                 return;
             }
         }
@@ -1303,7 +1326,7 @@ pub const Logger = struct {
 
     /// Dispatches a record to the appropriate logging backend (async logger, thread pool, or direct sinks).
     /// This method handles the priority order: async_logger > thread_pool > direct sinks.
-    fn dispatchRecord(self: *Logger, record: *const Record) !void {
+    pub fn dispatchRecord(self: *Logger, record: *const Record) !void {
         // Dispatch to async logger if available (highest priority)
         if (self.async_logger) |al| {
             // Format the record using the logger's formatter
@@ -1436,6 +1459,13 @@ pub const Logger = struct {
             m.recordLog(level, message.len);
         }
 
+        // Evaluate rules if configured
+        if (self.config.rules.enabled and self.rules != null) {
+            if (self.rules.?.evaluate(&record)) |messages| {
+                record.rule_messages = messages;
+            }
+        }
+
         // Dispatch the record
         try self.dispatchRecord(&record);
 
@@ -1445,6 +1475,35 @@ pub const Logger = struct {
     /// Returns the total number of records logged.
     pub fn getRecordCount(self: *Logger) u64 {
         return @as(u64, self.record_count.load(.monotonic));
+    }
+
+    /// Returns the currently active minimum log level.
+    pub fn getLevel(self: *Logger) Level {
+        const now = Utils.currentMillis();
+        if (self.temp_level) |lvl| {
+            if (now < self.temp_level_expires_at) {
+                return lvl;
+            } else {
+                self.temp_level = null;
+            }
+        }
+        return @enumFromInt(self.atomic_level.load(.monotonic));
+    }
+
+    /// Temporarily overrides the minimum log level for a specified duration in milliseconds.
+    pub fn setTemporaryLevel(self: *Logger, temp_level: Level, duration_ms: u64) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.temp_level = temp_level;
+        self.temp_level_expires_at = Utils.currentMillis() + @as(i64, @intCast(duration_ms));
+    }
+
+    /// Clears any active temporary level override.
+    pub fn clearTemporaryLevel(self: *Logger) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.temp_level = null;
+        self.temp_level_expires_at = 0;
     }
 
     /// Returns uptime in seconds since logger initialization.
@@ -1586,6 +1645,30 @@ pub const Logger = struct {
         try self.log(.fatal, message, null, src);
     }
 
+    /// Logs a panic message directly and synchronously to all sinks, then flushes them.
+    /// Bypasses the asynchronous thread pool entirely to ensure the crash details are
+    /// written to disk before the process aborts.
+    pub fn logPanic(self: *Logger, message: []const u8) !void {
+        // Bypass lock to prevent deadlock if current thread already holds the lock
+        var record = Record.init(self.scratchAllocator(), .fatal, message);
+        defer record.deinit();
+
+        if (self.trace_id) |t| record.trace_id = t;
+        if (self.span_id) |s| record.span_id = s;
+
+        // Copy context
+        var it = self.context.iterator();
+        while (it.next()) |entry| {
+            record.context.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
+        }
+
+        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
+        for (self.sinks.items) |sink| {
+            sink.writeWithAllocator(&record, self.config, scratch_alloc) catch {};
+            sink.flush() catch {};
+        }
+    }
+
     /// Alias for notice() - alternative name.
     pub const note = notice;
 
@@ -1628,9 +1711,9 @@ pub const Logger = struct {
             return;
         }
 
-        // Apply sampling if configured
+        // Apply sampling
         if (self.sampler) |sampler| {
-            if (!sampler.shouldSample()) {
+            if (!sampler.shouldSampleLevel(level)) {
                 return;
             }
         }

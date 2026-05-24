@@ -180,6 +180,17 @@ Run once at a specific timestamp:
 },
 ```
 
+### Jitter
+
+Add optional random delay (jitter) to prevent thundering herd when multiple tasks are scheduled at the same time:
+
+```zig
+.schedule = .{
+    .interval = 60 * 1000,
+    .jitter_ms = 5000, // ±5 seconds random delay
+},
+```
+
 ## Task Types
 
 ### Cleanup Tasks
@@ -374,6 +385,16 @@ scheduler.disableTask(task_index);
 scheduler.enableTask(task_index);
 ```
 
+### Global Pause and Resume
+
+You can temporarily pause all background execution of tasks:
+
+```zig
+scheduler.pause();
+// ... no tasks will execute ...
+scheduler.unpause();
+```
+
 ### Running Tasks Manually
 
 ```zig
@@ -536,13 +557,25 @@ var scheduler = try logly.Scheduler.init(allocator, .{
 .retry_delay_ms = 5000,
 ```
 
-### Task Failure Handling
+### Task Failure Handling & Retries
 
-When a task fails:
+When a task fails (its callback returns an error):
 1. Error is logged (if `log_executions` is true)
 2. `failure_count` is incremented
-3. If `retry_failed` is true, retry is scheduled
-4. After `max_retries`, task remains enabled but marked as failed
+3. If `max_retries` is configured, the task is retried with exponential backoff: `delay = retry_backoff_ms * (2 ^ attempt)`
+4. After `max_retries` attempts, the task remains enabled but marked as failed until the next scheduled interval
+
+```zig
+_ = try scheduler.addTask(.{
+    .name = "my_task",
+    .task_type = .custom,
+    .schedule = logly.Schedule.daily(2, 0),
+    .config = .{
+        .max_retries = 3,         // Retry up to 3 times
+        .retry_backoff_ms = 1000, // Starts at 1s, then 2s, then 4s
+    },
+});
+```
 
 ### Monitoring Failures
 

@@ -491,10 +491,36 @@ const empty = filter.isEmpty();
 | `ruleCount` | `count` |
 | `length` | `count` |
 
+## Dot-Notation Context Filtering (v0.2.0)
+
+When using structured logging, records are bound with complex metadata key-value contexts (e.g. mapping `user.id` or `service.name` to strings or integers). Traditional filters are limited to standard level and message checks. Logly `v0.2.0` introduces deep structured log filtering using dot-notation keys.
+
+By using dot-notation, Logly recursively traverses nested structured JSON objects in your log records' contexts to execute precise allow/deny matching rules at runtime.
+
+### Example Configuration
+
+```zig
+var filter = logly.Filter.init(allocator);
+defer filter.deinit();
+
+// Only allow records where the context contains "user.id" matching "42"
+try filter.addContextPathMatch("user.id", "42", .allow);
+
+// Deny records where the context contains "service.name" matching "legacy"
+try filter.addContextPathMatch("service.name", "legacy", .deny);
+
+logger.setFilter(&filter);
+```
+
+### Context Evaluation Rules
+* **Dot-Notation Pathing**: You can query deep nested paths like `network.client.ip` or `transactions.details.amount`.
+* **Flexible Datatypes**: Integer, Float, Boolean, and String values are all converted to string representation during matching for maximum compatibility.
+
 ## See Also
 
 - [Filter API](/api/filter) - Full API reference
 - [Filtering Example](/examples/filtering) - Code examples
+- [Context Filter Example](/examples/context-filter) - Context path filtering code example
 - [Sampling](/guide/sampling) - Rate limiting and probability-based filtering
 - [Redaction](/guide/redaction) - Sensitive data masking
 - [Configuration](/guide/configuration) - Global configuration options

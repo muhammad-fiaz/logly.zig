@@ -9,12 +9,213 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0]
 
+### Added
+
+#### Diagnostic Rules Engine Regex & Duration Support (`src/rules.zig`)
+- **Advanced Pattern Rules** – Added `.message_regex` matching to rules, allowing rules to fire on complex regular expression matches dynamically, fully leveraging standard regex capture capabilities.
+- **Timed Operation Rules** – Added `min_duration_ns` rule parameters to support custom rules triggered by timed operations (detecting slow queries or execution delays) with complete unit test cases.
+- **Portability** – Seamlessly integrates with the unified regex engine in `src/utils.zig` for cross-platform compliance.
+
+#### Cryptographic Log Chaining (`src/record.zig`, `src/sink.zig`, `src/utils.zig`)
+- **Tamper-Evident Logs** – SHA-256 cryptographic logging where each log record includes the hash of the preceding record.
+- Ensures absolute audit trail integrity; manual file modifications instantly break the signature chain.
+- Controlled via `tamper_evident = true` in `SinkConfig`.
+- **Integrates with Callbacks** – Added `on_signature` callback to monitor signature generation events natively for custom logging compliance verification.
+
+#### Memory-Mapped (mmap) Sinks (`src/sink.zig`, `src/utils.zig`)
+- **Microsecond Disk Writes** – Zero-copy virtual memory-mapped writes mapping files directly to RAM via portable Win32 (`CreateFileMapping`/`MapViewOfFile`) and POSIX (`mmap`) calls.
+- Bypasses standard system call overhead for extreme-performance logging.
+- Includes dynamic allocation pre-sizing, automatic file growth, and exact file truncation to the written offset in `deinit`.
+- Enabled via `mmap = true` in `SinkConfig`.
+- **Integrates with Callbacks** – Added `on_mmap_resize` callback to trigger custom logic when virtual memory growth events occur.
+
+#### Reliable TCP Syslog (`src/network.zig`)
+- **RFC 6587 Support** – Added connection-oriented TCP transmission to support reliable remote Syslog ingestion.
+
+#### Global Panic & Crash Handler (`src/crash.zig`, `src/logly.zig`)
+- **Crash Interception & Recovery** – Custom Zig panic hook (`pub const panic = logly.panic;`) capturing application crashes.
+- **Audited & Centralized Constants** – Refactored the crash subsystem to fully reuse central constants from `src/constants.zig` (such as `CrashConstants`) and formatters in `src/utils.zig` for allocation-free crash printing.
+- **Cross-Platform Exception Hooking** – Added full Vectored Exception Handling (VEH) on Windows to trap hardware exception codes (Access Violations, Division by Zero, Stack Overflow) and POSIX Signal Handling on Linux/macOS (`sigaction`) to intercept standard crash signals, flushing all sinks synchronously before exit.
+- Synchronously logs crash context and stack traces to active sinks by bypassing async worker queues, preventing async deadlocks.
+- Ensures all buffered logs are fully flushed to disk before the application shuts down.
+- **Integrates with Callbacks** – Added global `on_crash_callback` to execute custom telemetry/reporting code right before standard process termination abort.
+- API: `logly.crash.registerLogger(logger)`, `logly.crash.unregisterLogger()`, `logger.logPanic(msg)`, `logly.crash.setCrashCallback(cb)` / `onCrash(cb)`
+
+#### Hot-Reloadable Configuration (`src/config.zig`, `src/logger.zig`)
+- **Zero-Downtime Reloads** – Dynamically reload configuration settings from JSON files at runtime (`Config.loadFromFile`, `Logger.reloadFromFile`).
+- Dynamically updates active log levels, sinks, formats, and rules without process restarts.
+
+#### Dot-Notation Context Filtering (`src/filter.zig`)
+- **Nested Context Queries** – Deep structured log filtering supporting dot-notation keys (e.g. `"user.id"`, `"network.ip"`).
+- Automatically parses queries and recursively traverses nested `std.json.Value` JSON objects in record contexts.
+- Added `filter.addContextPathMatch(key, pattern, action)` and `getNestedContextValue` helper.
+
+#### MessagePack Binary Formatter (`src/formatter.zig`)
+- **Ultra-Compact Serialization** – Native compliance-grade binary formatter packing logs into MessagePack format.
+- Significantly reduces disk space and network bandwidth footprint for high-throughput streaming.
+- Enabled via `msgpack = true` in `SinkConfig` / `Config`.
+
+#### Terminal UI Dashboard Formatter (`src/formatter.zig`)
+- **Stunning Dev Console Layout** – Color-coded interactive card output for developers with styled borders, level status badges, and formatted key-value tables.
+- Enabled via `tui = true` in `SinkConfig` / `Config`.
+
+#### Filter Enhancements (`src/filter.zig`)
+- **Time-window filter** – deny records outside configured hour range (quiet hours support)
+- **Rate-based filter** – auto-deny if rate exceeds N msgs/sec per module (token bucket algorithm)
+- **Glob pattern matching** for module names (`*`, `?`)
+- **Composite filter** – chain multiple `Filter` instances with AND/OR semantics
+- **`filterBatch`** returning `[]FilterResult` with reason strings
+- Added `addTimeWindowRule`, `addRateRule`, `addGlobModule` helpers
+- Expose `FilterDefaults` from `constants.zig`
+
+#### Formatter Enhancements (`src/formatter.zig`)
+- **NDJSON mode** – newline-delimited JSON (one record per line, no trailing comma)
+- **Logfmt format** – `key=value key2=value2` output for Grafana Loki compatibility
+- **CEF (Common Event Format)** support for SIEM tools
+- **Template-based format** – user supplies `"{time} [{level}] {message} {fields}"` string at runtime
+- **Field padding/alignment** – left/right pad level and module fields for column-aligned output
+- `Formatter.Snapshot` struct for config-safe introspection
+
+#### Sink Enhancements (`src/sink.zig`)
+- **`WriteMode.append_rotate`** – append normally but allow rotation trigger
+- **`SinkConfig.memory()` factory** – in-memory ring buffer sink for testing
+- **Sink groups** – `SinkGroup` struct that fans a single record to multiple named sinks atomically
+- **Per-sink rate limiting** – `SinkConfig.rate_limit_per_second` field
+- **Sink health check** – `Sink.isHealthy()` returns false after N consecutive write errors
+- **Buffered write mode** – accumulate records until `flush()` is called explicitly
+- Added `SinkConfig.stderr()` factory
+
+#### Record Enhancements (`src/record.zig`)
+- **`Record.addTag(key, value)`** – lightweight string tag separate from full JSON context
+- **`Record.severity()`** – numeric severity (0-100) derived from level priority
+- **`Record.isHighSeverity(threshold)`** helper
+- **`Record.toLogfmt(writer)`** – serialize record as logfmt string
+- **`Record.toCef(writer)`** – serialize as CEF string
+- **`Record.clone(allocator)`** – deep-copy record for async processing
+- **`Record.ErrorInfo` extended** with `error_category` enum (io/network/logic/oom)
+
+#### Redactor Enhancements (`src/redactor.zig`)
+- **`RedactionRule.regex_replace`** type – capture group aware replacement
+- **Email redaction** – auto-detect and redact `user@domain.tld` patterns
+- **IPv4/IPv6 redaction** – auto-detect IP addresses
+- **JWT token redaction** – detect and redact `ey...` JWT tokens
+- **Credit card Luhn validation** – only redact valid card numbers (reduces false positives)
+- **Compliance audit log** – `Redactor.auditLog(writer)` prints summary of what was redacted
+- **`RedactorPresets.gdprEmail()`**, **`RedactorPresets.pciCard()`** factory functions
+
+#### Rotation Enhancements (`src/rotation.zig`)
+- **Hourly rotation** trigger already supported via `RotationInterval.hourly`
+- **Custom rotation callback** `on_rotate` for post-rotation hooks
+- **Max total size** – delete oldest backup when total rotated files exceed limit (`setMaxTotalSize`)
+- **Rotation dry-run** – `shouldRotate()` predicate without side effects
+- **`RotationConfig.fromSize(size_str)`** parses `"10MB"` using `Utils.parseSize`
+- **`RotationConfig.fromInterval(dur_str)`** parses `"24h"` using `Utils.parseDuration`
+
+#### Async Logger Enhancements (`src/async.zig`)
+- **Backpressure signal** – `AsyncLogger.isBackpressured()` returns true when queue > 90%
+- **Priority queue support** – high-priority records (Critical/Fatal) skip the queue
+- **Batch flush callback** – `on_batch_flushed: ?*const fn(count: usize, latency_ns: u64) void`
+- **`AsyncLogger.drainAndFlush(timeout_ms)`** – blocks until queue empty or timeout
+- **Shutdown grace period** – configurable `shutdown_timeout_ms` in `AsyncConfig`
+- **`AsyncPreset.lowLatency()`**, **`highThroughput()`**, **`noDrop()`** presets
+
+#### Metrics Enhancements (`src/metrics.zig`)
+- **Histogram per level** – bucket distribution of message sizes per log level
+- **P50/P95/P99 latency** computation from histogram buckets via `getLatencySummary()`
+- **StatsD export** format (`logly.records.total:42|c`) via `exportStatsd()`
+- **Prometheus text export** (`# HELP ... # TYPE ... metric{labels} value`) via `exportPrometheus()`
+- **`Metrics.reset()`** – zero all counters atomically
+- **`MetricsConfig.exportInterval`** for periodic auto-export
+- **Per-sink metrics** – bytes/errors tracked per sink name
+
+#### Network Enhancements (`src/network.zig`)
+- **Automatic reconnect** with exponential backoff
+- **TCP keepalive** option for long-lived connections
+- **HTTP chunked streaming** mode for log aggregators
+- **Syslog RFC-5424** format output (for rsyslog/syslog-ng)
+- **`NetworkSink.health()`** returns connection state enum
+
+#### Compression Enhancements (`src/compression.zig`)
+- **Zstd Dictionary Support** – pass custom `zstd_dict` to massively improve compression of repetitive logs
+- **Asynchronous Compression** – `asyncCompress` and `asyncPack` offload compression to the `ThreadPool`
+- **Streaming compression** – compress log records as they are written
+- **Compression ratio reporting** – `Compressor.stats()` returns ratio, bytes in/out
+- **Multi-file archive** – bundle multiple rotated files into single `.tar.gz`
+- **Level control** – `compression_level: u8` field in `CompressionConfig` (1–9 for gzip)
+- **`CompressionConfig.fromStr("zstd")`** parse algorithm from string
+
+#### Thread Pool Enhancements (`src/thread_pool.zig`)
+- **Task Cancellation** – `submit()` returns `TaskHandle`; `cancel(handle)` removes pending tasks before execution
+- **Thread Naming** – `thread_name_prefix` automatically sets OS-level names for debugger visibility
+- **Priority lanes** – separate queues for normal vs critical tasks
+- **Work-stealing** between threads for better load balancing
+- **`ThreadPool.stats()`** returns utilization, queue depth, tasks completed
+- **`ThreadPoolConfig.named(name)`** sets thread name prefix
+- **Graceful drain** – `drainAndShutdown(timeout_ms)` waits for in-flight tasks
+- **`ThreadPoolPresets.ioOptimized()`** I/O optimized preset
+
+#### Scheduler Enhancements (`src/scheduler.zig`)
+- **Task Retries with Backoff** – `max_retries` and `retry_backoff_ms` auto-retry failed tasks exponentially
+- **Global Pause/Resume** – `pause()` and `unpause()` halt and resume background task execution
+- **Cron-like expressions** – `"* * * * *"` (min hour day month weekday) parser
+- **One-shot tasks** – schedule task to run at specific timestamp
+- **Task cancellation** – `scheduler.cancel(task_id)` removes a scheduled task
+- **`SchedulerConfig.fromInterval(dur_str)`** using `Utils.parseDuration`
+- **Task history** – last N task runs with timestamps and durations
+- **Jitter** – optional random delay ±jitter_ms to prevent thundering herd
+
+#### Telemetry Enhancements (`src/telemetry.zig`)
+- **Event Batching** – `batch_size` and `flush_interval_ms` reduce network calls by buffering logs
+- **Honeycomb Format** – dedicated `ExportFormat.honeycomb` maps events perfectly for Honeycomb.io
+- **OpenTelemetry Logs signal** (OTLP logs format in addition to traces/metrics)
+- **`Telemetry.addResource(key, value)`** – resource attributes for OTLP
+- **Google Cloud Logging format** – structured JSON compatible with GCP
+- **Datadog format** – `ddtags`, `ddsource`, `service` fields
+- **Baggage header propagation** – parse/format W3C baggage header
+- **`TelemetryConfig.preset(.google_cloud)`**, **`.datadog`**, **`.opentelemetry`**
+
+#### Level & Sampling Enhancements (`src/level.zig`, `src/sampler.zig`)
+- **Temporary Level Overrides** – `logger.setTemporaryLevel(.debug, 5000)` auto-reverts after duration
+- **Level Masks** – `LevelMask` struct enables fine-grained inclusion/exclusion of specific levels independent of priority
+- **Level-Based Priority Sampling** – `SamplingConfig.bypass_levels` allows high-priority logs (e.g. errors) to skip sampling entirely
+- **Burst Sampling** – token bucket algorithm allows an initial burst of logs before enforcing sustained rate limits
+
+#### Rules Enhancements (`src/rules.zig`)
+- **Rule Cooldowns** – `cooldown_ms` prevents alert fatigue by rate-limiting repeated rule matches
+- **Regex/Wildcard Matching** – `message_contains_pattern` supports basic `*` wildcard matching for dynamic diagnostic rules
+
+#### Diagnostics Enhancements (`src/diagnostics.zig`)
+- **Structured JSON diagnostics** – `Diagnostics.toJson(allocator)` outputs full state as JSON
+- **`Diagnostics.emitJson(allocator, writer)`** – stream JSON to any writer
+- **Logger health check** – `Diagnostics.checkHealth(diag)` returns `HealthReport`
+- **`HealthReport`** struct with status (healthy/degraded/unhealthy), memory usage, issues
+- **`DiagnosticsSnapshot`** – lightweight snapshot struct for diff comparisons
+- **`Diagnostics.takeSnapshot(diag)`** – creates a lightweight snapshot
+- **`Diagnostics.diff(snap1, snap2, allocator)`** – shows delta between two snapshots
+
 ### Changed
 - **Code Optimization & Standardization**:
-  - Reused and standardized all values, limits, and calculations from `src/constants.zig` across all core modules (`src/filter.zig`, `src/formatter.zig`, `src/level.zig`, `src/logger.zig`, `src/logly.zig`, `src/metrics.zig`, `src/network.zig`, `src/record.zig`, `src/redactor.zig`, `src/rules.zig`).
+  - Reused and standardized all values, limits, and calculations from `src/constants.zig` across all core modules.
   - Standardized and verified all configuration structures, field definitions, and defaults in `src/config.zig` to ensure correct integration across all modules.
-  - Unified common functions, string escaping, formatting, and time calculations into the shared `src/utils.zig` utility layer to reduce duplication and improve performance.
+  - Unified common functions, string escaping, formatting, and time calculations into the shared `src/utils.zig` utility layer.
 - **Update Checker Configuration Guide**: Added detailed documentation on how to configure and disable the built-in parallel, non-blocking update checker in `README.md`.
+
+### Examples Added
+- `examples/filter_advanced.zig` – time-window, rate-based, composite, glob filtering
+- `examples/formatter_advanced.zig` – NDJSON, logfmt, CEF, template, field padding
+- `examples/sink_advanced.zig` – memory sink, sink group, rate limit, health check, buffered mode
+- `examples/redaction_advanced.zig` – email, IP, JWT, credit card, audit log
+- `examples/network_advanced.zig` – auto-reconnect, syslog RFC-5424, HTTP chunked streaming
+- `examples/crash_handler.zig` – global panic handler registration and logPanic demo
+- `examples/hot_reload.zig` – zero-downtime JSON config hot-reload demo
+- `examples/mmap_sink.zig` – memory-mapped file sink high-performance write demo
+- `examples/context_filter.zig` – dot-notation context path filter demo
+- `examples/msgpack_tui.zig` – MessagePack binary and TUI dashboard formatter demo
+- Enhanced `examples/metrics.zig` – Prometheus export, StatsD export, P95/P99 latency
+- Enhanced `examples/thread_pool.zig` – work-stealing, priority lanes, graceful drain
+- Enhanced `examples/scheduler.zig` – cron expressions, one-shot, cancellation, jitter
+- Enhanced `examples/diagnostics.zig` – JSON output, health check, diff snapshots
+- Enhanced `examples/rules.zig` – error analysis, security alert, performance hint rules
 
 
 ## [0.1.9]

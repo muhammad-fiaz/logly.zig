@@ -42,3 +42,4 @@ logs_test_batch
 *.json
 *.jsonl
 *.zip
+*.prom

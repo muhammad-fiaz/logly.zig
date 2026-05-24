@@ -265,6 +265,77 @@ pub const Level = enum(u8) {
     }
 };
 
+/// A mask for enabling/disabling specific logging levels independently.
+/// Allows fine-grained control over which levels are logged, ignoring the standard priority hierarchy.
+pub const LevelMask = struct {
+    /// 16-bit mask storing the enabled state of standard levels.
+    mask: u16 = 0,
+
+    /// Returns the bit index for a given standard level.
+    fn bitIndex(lvl: Level) u4 {
+        return switch (lvl) {
+            .trace => 0,
+            .debug => 1,
+            .info => 2,
+            .notice => 3,
+            .success => 4,
+            .warning => 5,
+            .err => 6,
+            .fail => 7,
+            .critical => 8,
+            .fatal => 9,
+        };
+    }
+
+    /// Creates an empty mask (no levels enabled).
+    pub fn init() LevelMask {
+        return .{};
+    }
+
+    /// Creates a mask with all standard levels enabled.
+    pub fn all() LevelMask {
+        return .{ .mask = 0x03FF }; // First 10 bits
+    }
+
+    /// Creates a mask with only error/fatal levels enabled.
+    pub fn errorsOnly() LevelMask {
+        var m = LevelMask.init();
+        m.enable(.err);
+        m.enable(.fail);
+        m.enable(.critical);
+        m.enable(.fatal);
+        return m;
+    }
+
+    /// Enables a specific level in the mask.
+    pub fn enable(self: *LevelMask, lvl: Level) void {
+        self.mask |= (@as(u16, 1) << LevelMask.bitIndex(lvl));
+    }
+
+    /// Disables a specific level in the mask.
+    pub fn disable(self: *LevelMask, lvl: Level) void {
+        self.mask &= ~(@as(u16, 1) << LevelMask.bitIndex(lvl));
+    }
+
+    /// Toggles a specific level in the mask.
+    pub fn toggle(self: *LevelMask, lvl: Level) void {
+        self.mask ^= (@as(u16, 1) << LevelMask.bitIndex(lvl));
+    }
+
+    /// Returns true if the given level is enabled in this mask.
+    pub fn isEnabled(self: LevelMask, lvl: Level) bool {
+        return (self.mask & (@as(u16, 1) << LevelMask.bitIndex(lvl))) != 0;
+    }
+
+    /// Alias for isEnabled
+    pub const contains = isEnabled;
+    pub const has = isEnabled;
+
+    /// Alias for init
+    pub const empty = init;
+    pub const none = init;
+};
+
 /// User-defined logging level.
 pub const CustomLevel = struct {
     /// Name of the custom level (e.g. "AUDIT").

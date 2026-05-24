@@ -89,6 +89,25 @@ config.level = .info; // Ignore TRACE and DEBUG
 logger.configure(config);
 ```
 
+### Level Masks (Fine-Grained Filtering)
+
+Instead of a simple minimum level, you can use a `LevelMask` to selectively include or exclude specific levels regardless of their priority:
+
+```zig
+// Create a mask that includes INFO, WARNING, and ERROR
+var mask = logly.LevelMask.initEmpty();
+mask.set(.info);
+mask.set(.warning);
+mask.set(.err);
+
+// Or create a mask with all levels and remove some
+var prod_mask = logly.LevelMask.initAll();
+prod_mask.unset(.trace);
+prod_mask.unset(.debug);
+
+config.level_mask = mask;
+```
+
 ## Priority Order
 
 The levels follow this priority order (lowest to highest):
@@ -98,6 +117,19 @@ TRACE (5) < DEBUG (10) < INFO (20) < NOTICE (22) < SUCCESS (25) < WARNING (30) <
 ```
 
 When you set a minimum level, only messages at that level or higher will be logged.
+
+### Temporary Level Overrides
+
+Temporarily elevate or lower the log level across the entire application for a specific duration (useful for debugging live issues):
+
+```zig
+// Elevate to DEBUG for the next 5 minutes (300 seconds)
+logger.setTemporaryLevel(.debug, 300);
+
+// After 5 minutes, it automatically reverts to the original level.
+// You can also clear it manually:
+logger.clearTemporaryLevel();
+```
 
 ## Module Levels
 

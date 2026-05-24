@@ -84,6 +84,7 @@ pub const Strategy = union(enum) {
     rate_limit: RateLimitConfig,
     every_n: u32,                // 1 in N
     adaptive: AdaptiveConfig,
+    token_bucket: TokenBucketConfig, // Token bucket for burst sampling
 };
 ```
 
@@ -107,6 +108,29 @@ pub const AdaptiveConfig = struct {
     target_rate: u32,           // Target logs per second
     min_sampling_rate: f64,     // Minimum sampling probability
     adjustment_interval_ms: u64, // How often to adjust
+};
+```
+
+### TokenBucketConfig
+
+Configuration for token bucket (burst) sampling.
+
+```zig
+pub const TokenBucketConfig = struct {
+    capacity: u32,          // Maximum tokens (burst capacity)
+    refill_rate: u32,       // Tokens added per second
+    refill_interval_ms: u64, // How often to add tokens
+};
+```
+
+### SamplerConfig
+
+Configuration passed to the sampler.
+
+```zig
+pub const SamplerConfig = struct {
+    strategy: Strategy = .{ .none = {} },
+    bypass_levels: LevelMask = LevelMask.init(), // Levels that always bypass sampling
 };
 ```
 

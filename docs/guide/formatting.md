@@ -324,3 +324,34 @@ try logger.errorf("Failed to connect: {s} (Code: {d})", .{ "Connection Refused",
 ```
 
 This feature uses Zig's standard `std.fmt` syntax, so all standard format specifiers are supported.
+
+## MessagePack Binary Format (v0.2.0)
+
+For high-volume production logging or network sinks, Logly provides a native binary **MessagePack (msgpack)** formatter. It compresses key-value structured data, cutting typical JSON log footprint sizes in half while retaining full structured parsing compatibility.
+
+Enable globally:
+```zig
+config.msgpack = true;
+```
+
+Or on specific sinks:
+```zig
+_ = try logger.add(.{
+    .path = "logs/binary.mp",
+    .msgpack = true,
+});
+```
+
+## Terminal UI (TUI) Dashboard Cards (v0.2.0)
+
+To elevate your local development workflow, you can enable Logly's stunning **Terminal UI (TUI)** layout. Instead of flat scrolling lines, each log record is rendered inside a bordered console card frame with styled badges, organized files, and aligned metadata tables.
+
+Enable in development:
+```zig
+config.tui = true;
+```
+
+## See Also
+- [Formatter API](/api/formatter) - Formatter reference
+- [MessagePack & TUI Example](/examples/msgpack-tui) - Binary & Console cards example
+- [Formatted Logging Example](/examples/formatted-logging) - flat custom format example

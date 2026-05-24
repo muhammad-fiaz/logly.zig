@@ -150,6 +150,14 @@ pub const ErrorInfo = struct {
     message: []const u8,
     stack_trace: ?[]const u8 = null,
     code: ?i32 = null,
+    error_category: ErrorCategory = .logic,
+};
+
+pub const ErrorCategory = enum {
+    io,
+    network,
+    logic,
+    oom,
 };
 ```
 
@@ -253,6 +261,16 @@ defer allocator.free(span_id);
 // span_id: "a1b2c3d4e5f67890"
 ```
 
+## Serialization
+
+### `toLogfmt(self: *const Record, writer: anytype) !void`
+
+Serializes the record directly into logfmt (`key=value`) string format using the provided writer.
+
+### `toCef(self: *const Record, writer: anytype) !void`
+
+Serializes the record directly into ArcSight CEF (Common Event Format) using the provided writer.
+
 ## Custom Level Fields
 
 ### `custom_level_name: ?[]const u8`
@@ -332,12 +350,15 @@ The Record module provides convenience aliases:
 ## Context Methods
 
 - `addField(key: []const u8, value: json.Value) !void` - Add a context field
+- `addTag(key: []const u8, value: []const u8) !void` - Add a lightweight string tag
 - `setError(name, message, stack_trace, code) !void` - Set error information
 - `setDuration(duration_ns: u64) void` - Set operation duration
 - `setDurationSince(start_time: i128) void` - Set duration from timer start
 
 ## Query Methods
 
+- `severity() u8` - Get numeric severity (0-100) derived from level priority
+- `isHighSeverity(threshold: u8) bool` - Check if severity exceeds the numeric threshold
 - `hasTracing() bool` - Check if trace or span ID is set
 - `hasCustomLevel() bool` - Check if custom level is set
 - `hasContext() bool` - Check if context fields exist

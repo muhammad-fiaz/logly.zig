@@ -160,5 +160,61 @@ pub fn main() !void {
         std.debug.print("\n[OK] Colors applied to all output\n", .{});
     }
 
+    // ========== EXAMPLE 9: JSON diagnostics output ==========
+    std.debug.print("\n\nExample 9: JSON Diagnostics Output\n", .{});
+    std.debug.print("---------------------------------------------------------\n", .{});
+    {
+        var diagnostics = try logly.Diagnostics.collect(allocator, false);
+        defer diagnostics.deinit(allocator);
+
+        const json_str = try logly.Diagnostics.toJson(&diagnostics, allocator);
+        defer allocator.free(json_str);
+
+        std.debug.print("Diagnostics JSON:\n{s}\n", .{json_str});
+        std.debug.print("[OK] JSON diagnostics emitted\n", .{});
+    }
+
+    // ========== EXAMPLE 10: Health check ==========
+    std.debug.print("\n\nExample 10: Health Check\n", .{});
+    std.debug.print("---------------------------------------------------------\n", .{});
+    {
+        var diagnostics = try logly.Diagnostics.collect(allocator, false);
+        defer diagnostics.deinit(allocator);
+
+        const health = logly.Diagnostics.checkHealth(&diagnostics);
+        std.debug.print("Health status: {s}\n", .{@tagName(health.status)});
+        std.debug.print("Memory used: {d} MB\n", .{health.memory_used_bytes / (1024 * 1024)});
+        if (health.issues.len > 0) {
+            std.debug.print("Issues: {s}\n", .{health.issues});
+        } else {
+            std.debug.print("No issues detected\n", .{});
+        }
+        std.debug.print("[OK] Health check complete\n", .{});
+    }
+
+    // ========== EXAMPLE 11: Diagnostics diff between two snapshots ==========
+    std.debug.print("\n\nExample 11: Diagnostics Diff (Snapshot Comparison)\n", .{});
+    std.debug.print("---------------------------------------------------------\n", .{});
+    {
+        var diag1 = try logly.Diagnostics.collect(allocator, false);
+        defer diag1.deinit(allocator);
+
+        const snap1 = logly.Diagnostics.takeSnapshot(&diag1);
+
+        // Simulate some time passing
+        logly.Utils.sleepNs(1_000_000); // 1ms
+
+        var diag2 = try logly.Diagnostics.collect(allocator, false);
+        defer diag2.deinit(allocator);
+
+        const snap2 = logly.Diagnostics.takeSnapshot(&diag2);
+
+        const diff_str = try logly.Diagnostics.diff(snap1, snap2, allocator);
+        defer allocator.free(diff_str);
+
+        std.debug.print("{s}", .{diff_str});
+        std.debug.print("[OK] Diagnostics diff computed\n", .{});
+    }
+
     std.debug.print("\n", .{});
 }

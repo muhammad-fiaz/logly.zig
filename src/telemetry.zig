@@ -265,6 +265,12 @@ pub const Telemetry = struct {
         options: MetricOptions = .{},
     };
 
+    /// Input payload for batch log recording.
+    pub const TelemetryLog = struct {
+        time_ns: i64,
+        data_json: []const u8,
+    };
+
     allocator: std.mem.Allocator,
     config: TelemetryConfig,
     enabled: bool,
@@ -275,6 +281,9 @@ pub const Telemetry = struct {
 
     // Metrics storage
     metrics: std.ArrayList(Metric),
+
+    // Logs storage
+    logs: std.ArrayList(TelemetryLog),
 
     // Span counts
     active_span_count: usize = 0,
@@ -311,6 +320,7 @@ pub const Telemetry = struct {
     // Batch buffer for batch export mode
     batch_buffer: std.ArrayList(u8),
     last_batch_export: i64 = 0,
+    last_log_export: i64 = 0,
 
     /// Initializes OpenTelemetry telemetry system
     pub fn init(allocator: std.mem.Allocator, config: TelemetryConfig) !Telemetry {
@@ -321,6 +331,7 @@ pub const Telemetry = struct {
             .spans = .empty,
             .completed_spans = .empty,
             .metrics = .empty,
+            .logs = .empty,
             .batch_buffer = .empty,
             .resource = Resource.fromConfig(config),
             .sampler = TelemetrySampler.init(config),
@@ -334,6 +345,7 @@ pub const Telemetry = struct {
         telemetry.spans = std.ArrayList(Span).initCapacity(allocator, 32) catch .empty;
         telemetry.completed_spans = std.ArrayList(Span).initCapacity(allocator, 32) catch .empty;
         telemetry.metrics = std.ArrayList(Metric).initCapacity(allocator, 32) catch .empty;
+        telemetry.logs = std.ArrayList(TelemetryLog).initCapacity(allocator, 32) catch .empty;
         telemetry.batch_buffer = std.ArrayList(u8).initCapacity(allocator, Constants.BufferSizes.telemetry) catch .empty;
 
         // Initialize network connection if using network export
@@ -390,6 +402,12 @@ pub const Telemetry = struct {
             self.allocator.free(metric.name);
         }
         self.metrics.deinit(self.allocator);
+
+        // Free all logs
+        for (self.logs.items) |log| {
+            self.allocator.free(log.data_json);
+        }
+        self.logs.deinit(self.allocator);
 
         // Free batch buffer
         self.batch_buffer.deinit(self.allocator);
@@ -598,6 +616,83 @@ pub const Telemetry = struct {
         }
         self.completed_spans.clearRetainingCapacity();
         self.completed_span_count = 0;
+    }
+
+    /// Adds a log to the internal buffer for batching
+    pub fn addLog(self: *Telemetry, time_ns: i64, data_json: []const u8) !void {
+        if (!self.enabled) return;
+        self.mutex.lockUncancelable(utils.io());
+        defer self.mutex.unlock(utils.io());
+
+        try self.logs.append(self.allocator, .{
+            .time_ns = time_ns,
+            .data_json = try self.allocator.dupe(u8, data_json),
+        });
+
+        const now = utils.currentMillis();
+        const elapsed_ms: u64 = if (now > self.last_log_export)
+            @intCast(now - self.last_log_export)
+        else
+            0;
+
+        if (self.config.flush_interval_ms > 0 and elapsed_ms >= self.config.flush_interval_ms) {
+            try self.exportLogsInternal();
+            self.last_log_export = now;
+        } else if (self.logs.items.len >= self.config.batch_size) {
+            try self.exportLogsInternal();
+            self.last_log_export = now;
+        }
+    }
+
+    /// Exports batched logs
+    fn exportLogsInternal(self: *Telemetry) !void {
+        if (self.logs.items.len == 0) return;
+
+        switch (self.config.export_format) {
+            .honeycomb => try self.exportLogsToHoneycomb(),
+            .json => try self.exportLogsToJson(),
+        }
+
+        // Clean up
+        for (self.logs.items) |log| {
+            self.allocator.free(log.data_json);
+        }
+        self.logs.clearRetainingCapacity();
+    }
+
+    fn exportLogsToHoneycomb(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
+
+        try writer.writeByte('[');
+        for (self.logs.items, 0..) |log, i| {
+            if (i > 0) try writer.writeByte(',');
+            try writer.writeAll("{\"time\":");
+            const time_ms = utils.safeToUnsigned(u64, log.time_ns) / Constants.TimeConstants.ns_per_ms;
+            try utils.writeInt(writer, time_ms);
+            try writer.writeAll(",\"data\":");
+            try writer.writeAll(log.data_json);
+            try writer.writeAll("}");
+        }
+        try writer.writeByte(']');
+
+        try self.sendToEndpoint();
+    }
+
+    fn exportLogsToJson(self: *Telemetry) !void {
+        self.batch_buffer.clearRetainingCapacity();
+        var batch_writer = Utils.ArrayListWriter.init(&self.batch_buffer, self.allocator);
+        const writer = &batch_writer.writer;
+
+        try writer.writeByte('[');
+        for (self.logs.items, 0..) |log, i| {
+            if (i > 0) try writer.writeByte(',');
+            try writer.writeAll(log.data_json);
+        }
+        try writer.writeByte(']');
+
+        try self.sendToEndpoint();
     }
 
     /// Export spans in OTLP JSON format (OpenTelemetry Protocol)

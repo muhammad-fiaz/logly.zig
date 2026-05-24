@@ -46,6 +46,8 @@ Configuration for a sink.
 | `name` | `?[]const u8` | `null` | Sink identifier for metrics and debugging |
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
 | `event_log` | `bool` | `false` | Enable system event log output (Windows Event Log on Windows, Syslog on POSIX). See the Windows Event Log mapping below; constants are provided by `Constants.EventLogConstants`. |
+| `tamper_evident` | `bool` | `false` | Enable cryptographic SHA-256 chaining to produce tamper-evident log records. |
+| `mmap` | `bool` | `false` | Enable virtual memory-mapped zero-copy file logging for microsecond-latency writes. |
 
 ### Windows Event Log (Windows only)
 
@@ -98,6 +100,7 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `overwrite_mode` | `bool` | `false` | **Append mode (default)**: logs appended to existing files. **Overwrite mode**: logs overwrite files on each write (truncate at initialization). |
+| `append_rotate` | `bool` | `false` | Append normally but allow rotation trigger. Overrides `overwrite_mode`. |
 | `file_mode` | `?u32` | `null` | File permissions for created log files (Unix only). |
 
 ### File Rotation
@@ -117,6 +120,13 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 | `buffer_size` | `usize` | `8192` | Buffer size for async writing in bytes |
 | `max_buffer_records` | `usize` | `1000` | Maximum records to buffer before forcing a flush |
 | `flush_interval_ms` | `u64` | `1000` | Flush interval in milliseconds |
+| `buffered_write_mode` | `bool` | `false` | Accumulate records in buffer until `flush()` is explicitly called by the user |
+
+### Rate Limiting
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `rate_limit_per_second` | `?u32` | `null` | Maximum messages allowed per second. Extra messages are dropped. |
 
 ### Error Handling
 
@@ -143,6 +153,62 @@ For TCP sinks, reconnect attempts use centralized retry defaults:
 |-------|------|---------|-------------|
 | `compression` | `CompressionConfig` | `{}` | Compression settings for file and network sinks |
 | `filter` | `FilterConfig` | `{}` | Per-sink filter configuration |
+
+## Cryptographic Log Chaining
+
+To enforce strict, tamper-evident log integrity, Logly offers built-in SHA-256 cryptographic chaining. 
+
+### How It Works
+1. When a log record is written to a tamper-evident sink, Logly calculates a SHA-256 hash.
+2. The hash input is a combination of the current log record bytes and the hash of the *previous* log record written to that sink.
+3. The resulting hash signature is appended to the written log line in a standard `"SIG:<hash>"` format.
+4. If an attacker modifies or deletes any log line, the cryptographic chain is broken. Subsequent signatures will no longer match the calculated hashes, making tampering immediately detectable during log auditing.
+
+### Usage Example
+```zig
+var config = logly.Config.default();
+config.auto_sink = false;
+
+var sink_cfg = logly.SinkConfig.file("secure_audit.log");
+sink_cfg.tamper_evident = true; // Enable tamper-evident chaining
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+_ = try logger.addSink(sink_cfg);
+
+try logger.info("Critical user balance update", @src());
+try logger.flush();
+```
+
+---
+
+## Memory-Mapped Sinks (Mmap)
+
+For ultra-high-performance logging workloads, Logly provides portable memory-mapped file writing via POSIX `mmap` (on Linux and macOS) and Win32 Virtual Memory mapping APIs (on Windows).
+
+### How It Works
+- By mapping the log file directly into the process's virtual memory address space, Logly performs zero-copy logging directly to RAM, completely bypassing standard operating system write calls (`write` / `WriteFile`).
+- The OS kernel handles flushing memory pages to disk asynchronously in the background.
+- Logly manages mapping boundaries, handles dynamic pre-allocation growth when the file capacity is exceeded, and gracefully truncates the log file to its exact written offset during sink deinitialization.
+
+### Usage Example
+```zig
+var config = logly.Config.default();
+config.auto_sink = false;
+
+var mmap_sink = logly.SinkConfig.file("high_throughput.log");
+mmap_sink.mmap = true;         // Enable memory-mapped file sink
+mmap_sink.async_write = false; // direct zero-copy write
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+_ = try logger.addSink(mmap_sink);
+
+try logger.info("Microsecond-latency zero-copy write", @src());
+try logger.flush();
+```
 
 ## Write Mode Examples
 
@@ -245,6 +311,10 @@ Flushes buffered sink data to its destination.
 ### `isAsyncEnabled() bool`
 
 Returns `true` if async writing is enabled for this sink, `false` otherwise.
+
+### `isHealthy() bool`
+
+Returns `false` if the sink has encountered consecutive write errors exceeding its threshold or if the underlying connection/file handle is broken.
 
 ### `enableAsync() void`
 
@@ -510,6 +580,9 @@ pub const SinkConfig = struct {
     /// Returns a console sink configuration.
     pub fn console() SinkConfig;
     
+    /// Returns a standard error sink configuration.
+    pub fn stderr() SinkConfig;
+    
     /// Returns a file sink configuration.
     pub fn file(path: []const u8) SinkConfig;
 
@@ -524,8 +597,15 @@ pub const SinkConfig = struct {
     
     /// Returns a network sink configuration.
     pub fn network(uri: []const u8) SinkConfig;
+
+    /// Returns an in-memory ring buffer sink for testing/snapshots.
+    pub fn memory() SinkConfig;
 };
 ```
+
+## SinkGroup
+
+The `SinkGroup` struct enables atomic fan-out routing of a single log record to multiple named sinks efficiently. It is used when you need multiple outputs to share the identical formatted record representation simultaneously.
 
 ## See Also
 

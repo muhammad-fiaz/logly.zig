@@ -240,6 +240,10 @@ pub const Rotation = struct {
     retention: ?usize = null,
     /// Maximum age of rotated files in seconds.
     max_age_seconds: ?i64 = null,
+    /// Maximum total size of all rotated files in bytes.
+    max_total_size: ?u64 = null,
+    /// Custom rotation callback.
+    on_rotate: ?*const fn (old_path: []const u8, new_path: []const u8) void = null,
     /// Timestamp of last rotation.
     last_rotation: i64,
     /// Naming strategy for rotated files.
@@ -297,6 +301,8 @@ pub const Rotation = struct {
             .interval = interval,
             .size_limit = size_limit,
             .retention = retention,
+            .max_total_size = null,
+            .on_rotate = null,
             .last_rotation = Utils.currentSeconds(),
         };
 
@@ -375,6 +381,21 @@ pub const Rotation = struct {
         self.max_age_seconds = max_age_seconds;
     }
 
+    /// Sets max total size in bytes for all rotated files combined.
+    pub fn setMaxTotalSize(self: *Rotation, limit: ?u64) void {
+        self.max_total_size = limit;
+    }
+
+    /// Builder for setting max total size.
+    pub fn withMaxTotalSize(self: *Rotation, limit: u64) void {
+        self.max_total_size = limit;
+    }
+
+    /// Sets custom rotation callback.
+    pub fn withOnRotate(self: *Rotation, callback: ?*const fn (old_path: []const u8, new_path: []const u8) void) void {
+        self.on_rotate = callback;
+    }
+
     /// Sets archive directory for rotated files.
     pub fn withArchiveDir(self: *Rotation, dir: []const u8) !void {
         if (self.archive_dir) |d| self.allocator.free(d);
@@ -406,12 +427,27 @@ pub const Rotation = struct {
     /// Applies global rotation configuration where local settings are missing.
     pub fn applyConfig(self: *Rotation, config: RotationConfig) !void {
         if (self.interval == null and config.interval != null) {
-            self.interval = RotationInterval.fromString(config.interval.?);
+            const s = config.interval.?;
+            if (RotationInterval.fromString(s)) |inv| {
+                self.interval = inv;
+            } else if (Utils.parseDuration(s)) |dur_ms| {
+                self.max_age_seconds = @divTrunc(dur_ms, Constants.TimeConstants.ms_per_second);
+            }
         }
         if (self.size_limit == null) {
             if (config.size_limit) |l| self.size_limit = l else if (config.size_limit_str) |s| {
                 self.size_limit = Utils.parseSize(s);
             }
+        }
+        if (self.max_total_size == null) {
+            if (config.max_total_size) |l| {
+                self.max_total_size = l;
+            } else if (config.max_total_size_str) |s| {
+                self.max_total_size = Utils.parseSize(s);
+            }
+        }
+        if (self.on_rotate == null) {
+            self.on_rotate = config.on_rotate;
         }
         if (self.retention == null) self.retention = config.retention_count;
         if (self.max_age_seconds == null) self.max_age_seconds = config.max_age_seconds;
@@ -680,6 +716,7 @@ pub const Rotation = struct {
         const elapsed = @as(Constants.AtomicUnsigned, @intCast(Utils.currentMillis() - start_time));
         self.stats.last_rotation_time_ms.store(elapsed, .monotonic);
         if (self.on_rotation_complete) |cb| cb(self.base_path, rotated_path, @as(u64, @intCast(elapsed)));
+        if (self.on_rotate) |cb| cb(self.base_path, rotated_path);
 
         // 5. Compress if enabled
         var final_path = try self.allocator.dupe(u8, rotated_path);
@@ -903,7 +940,7 @@ pub const Rotation = struct {
         var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return;
         defer dir.close(Utils.io());
 
-        const FileInfo = struct { name: []u8, mtime: i128, is_compressed: bool };
+        const FileInfo = struct { name: []u8, mtime: i128, is_compressed: bool, size: u64 };
         var files: std.ArrayList(FileInfo) = .empty;
         defer {
             for (files.items) |f| self.allocator.free(f.name);
@@ -936,26 +973,49 @@ pub const Rotation = struct {
                     .name = try self.allocator.dupe(u8, entry.name),
                     .mtime = stat.mtime.toNanoseconds(),
                     .is_compressed = is_compressed,
+                    .size = stat.size,
                 });
             }
         }
 
+        // Sort by modification time (oldest first)
+        std.mem.sort(FileInfo, files.items, {}, struct {
+            fn lessThan(_: void, a: FileInfo, b: FileInfo) bool {
+                return a.mtime < b.mtime;
+            }
+        }.lessThan);
+
+        var remaining_start: usize = 0;
+
         // Retention check with count sorted by mtime
         if (self.retention) |max_files| {
             if (files.items.len > max_files) {
-                // Sort by modification time (oldest first)
-                std.mem.sort(FileInfo, files.items, {}, struct {
-                    fn lessThan(_: void, a: FileInfo, b: FileInfo) bool {
-                        return a.mtime < b.mtime;
-                    }
-                }.lessThan);
-
                 const to_delete = files.items.len - max_files;
                 for (files.items[0..to_delete]) |item| {
                     const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, item.name });
                     defer self.allocator.free(full_path);
                     try self.handleRetentionFile(full_path, item.is_compressed);
                 }
+                remaining_start = to_delete;
+            }
+        }
+
+        // Max total size check
+        if (self.max_total_size) |max_bytes| {
+            const remaining_files = files.items[remaining_start..];
+            var total_size: u64 = 0;
+            for (remaining_files) |item| {
+                total_size += item.size;
+            }
+
+            var idx: usize = 0;
+            while (idx < remaining_files.len and total_size > max_bytes) {
+                const item = remaining_files[idx];
+                const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, item.name });
+                defer self.allocator.free(full_path);
+                try self.handleRetentionFile(full_path, item.is_compressed);
+                total_size -= item.size;
+                idx += 1;
             }
         }
 

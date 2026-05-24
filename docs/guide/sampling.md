@@ -133,6 +133,18 @@ var sampler = Sampler.init(allocator, .{ .adaptive = .{
 defer sampler.deinit();
 ```
 
+### Token Bucket (Burst Sampling)
+
+Allows temporary bursts of logs over the limit, useful for startup sequences or sudden error spikes:
+
+```zig
+var sampler = Sampler.init(allocator, .{ .token_bucket = .{
+    .capacity = 1000,          // Max burst size
+    .refill_rate = 100,        // Tokens per second
+    .refill_interval_ms = 100, // Refill every 100ms
+}});
+```
+
 ```
 
 ### Deterministic Key Sampling
@@ -147,6 +159,21 @@ const should_log = sampler.shouldSampleKey("user-123");
 if (should_log) {
     std.debug.print("Sampled log for user-123\n", .{});
 }
+```
+
+### Bypass Levels
+
+You can configure the Sampler to always allow specific log levels regardless of sampling logic (e.g., always let `.err` and `.critical` pass through).
+
+```zig
+var config = logly.SamplerConfig{
+    .probability = 0.5,
+};
+config.bypass_levels.enable(.err);
+config.bypass_levels.enable(.critical);
+
+var sampler = Sampler.init(allocator, config);
+// Errors will skip sampling and return true instantly!
 ```
 ## Monitoring and Callbacks
 

@@ -210,6 +210,64 @@ config.log_format =
 ;
 ```
 
+## Advanced Features
+
+### JSON Serialization
+
+You can serialize the diagnostic data directly to JSON. This is incredibly useful for remote monitoring and analytics backends:
+
+```zig
+var diag = try logly.Diagnostics.collect(allocator, true);
+defer diag.deinit(allocator);
+
+const json_str = try diag.toJson(allocator);
+defer allocator.free(json_str);
+
+std.debug.print("Diagnostics JSON: {s}\n", .{json_str});
+
+// Or write directly to a stream (e.g., a file or HTTP response)
+// try diag.emitJson(allocator, my_writer);
+```
+
+### Health Checks
+
+Logly can compute a system health status based on resource utilization. By default, it checks available memory thresholds to determine if the system is `.healthy`, `.degraded` (under 20% memory), or `.unhealthy` (under 10% memory).
+
+```zig
+var diag = try logly.Diagnostics.collect(allocator, true);
+defer diag.deinit(allocator);
+
+const health = diag.checkHealth();
+std.debug.print("Status: {s}\n", .{@tagName(health.status)});
+
+if (health.isUnhealthy()) {
+    std.debug.print("Issues: {s}\n", .{health.issues});
+}
+```
+
+### Snapshots and Diffing
+
+To monitor how system resources change over time without re-allocating full strings, you can take lightweight snapshots. This is useful to see memory leaks or heavy drive usage.
+
+```zig
+var diag = try logly.Diagnostics.collect(allocator, true);
+defer diag.deinit(allocator);
+
+// Take first snapshot
+const snap1 = diag.takeSnapshot();
+
+// ... Do some work ...
+
+// Take second snapshot
+const snap2 = diag.takeSnapshot();
+
+// Compare snapshots
+const delta_str = try logly.Diagnostics.diff(snap1, snap2, allocator);
+defer allocator.free(delta_str);
+
+std.debug.print("{s}\n", .{delta_str});
+```
+
 ## Use Cases
 
 ### 1. Production Monitoring

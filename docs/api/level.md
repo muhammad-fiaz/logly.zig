@@ -247,6 +247,46 @@ const has_bg = custom.hasBackground();      // Returns false
 const has_style = custom.hasStyle();        // Returns false
 ```
 
+## LevelMask
+
+The `LevelMask` struct enables fine-grained inclusion/exclusion of specific levels independent of priority.
+
+```zig
+pub const LevelMask = struct {
+    mask: u16 = 0,
+
+    /// Creates an empty mask (no levels enabled).
+    pub fn init() LevelMask;
+
+    /// Creates a mask with all standard levels enabled.
+    pub fn all() LevelMask;
+
+    /// Creates a mask with only error/fatal levels enabled.
+    pub fn errorOnly() LevelMask;
+
+    /// Enables a specific level.
+    pub fn enable(self: *LevelMask, lvl: Level) void;
+
+    /// Disables a specific level.
+    pub fn disable(self: *LevelMask, lvl: Level) void;
+
+    /// Checks if a level is enabled.
+    pub fn isEnabled(self: *const LevelMask, lvl: Level) bool;
+};
+```
+
+### Basic Usage
+
+```zig
+var mask = LevelMask.init();
+mask.enable(.err);
+mask.enable(.critical);
+
+if (mask.isEnabled(level)) {
+    // Level is enabled
+}
+```
+
 ## Level Filtering
 
 Set minimum log level in config:

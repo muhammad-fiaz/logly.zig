@@ -1214,19 +1214,6 @@ pub const ParallelDefaults = struct {
     pub const reliable_max_retries: u3 = 5;
 };
 
-/// Sink configuration defaults.
-///
-/// Usage:
-///   Default values for sink configuration.
-///
-/// Complexity: O(1)
-pub const SinkDefaults = struct {
-    /// Default max buffer records.
-    pub const max_buffer_records: usize = 1000;
-    /// Default flush interval in milliseconds.
-    pub const flush_interval_ms: u64 = 1000;
-};
-
 test "atomic types exist" {
     // Verify atomic types are defined for cross-platform compatibility
     try std.testing.expect(@sizeOf(AtomicUnsigned) > 0);
@@ -1484,3 +1471,278 @@ test "color helpers produce valid prefixes" {
     try std.testing.expect(r.len >= 4);
     try std.testing.expectEqualStrings(r[0..4], "38;2");
 }
+
+/// Filter system defaults.
+pub const FilterDefaults = struct {
+    /// Default maximum rules per filter instance.
+    pub const max_rules: usize = 256;
+    /// Default time-window start hour (0-23).
+    pub const default_quiet_hour_start: u8 = 22;
+    /// Default time-window end hour (0-23).
+    pub const default_quiet_hour_end: u8 = 6;
+    /// Default rate-based filter max messages per second per module.
+    pub const default_rate_per_second: u32 = 1000;
+    /// Default deny-list initial capacity.
+    pub const deny_list_capacity: usize = 64;
+    /// Token bucket refill interval for rate-based filters (ms).
+    pub const token_bucket_interval_ms: u64 = 1000;
+};
+
+/// Formatter output format defaults.
+pub const FormatterDefaults = struct {
+    /// Default field separator for logfmt output.
+    pub const logfmt_separator: []const u8 = " ";
+    /// Default field assignment character for logfmt.
+    pub const logfmt_assign: []const u8 = "=";
+    /// Default level field width (padded to align output).
+    pub const level_field_width: usize = 8;
+    /// Default module field width.
+    pub const module_field_width: usize = 20;
+    /// Default padding character.
+    pub const pad_char: u8 = ' ';
+    /// NDJSON line terminator.
+    pub const ndjson_terminator: u8 = '\n';
+    /// CEF version string.
+    pub const cef_version: []const u8 = "CEF:0";
+    /// CEF default device vendor.
+    pub const cef_vendor: []const u8 = "logly";
+    /// CEF default device product.
+    pub const cef_product: []const u8 = "logly.zig";
+    /// CEF default device version (should match library version).
+    pub const cef_device_version: []const u8 = "0.2.0";
+    /// Template default format string.
+    pub const default_template: []const u8 = "{time} [{level}] {message}";
+    /// Maximum template field name length.
+    pub const max_template_field_len: usize = 32;
+};
+
+/// Sink system defaults.
+pub const SinkDefaults = struct {
+    /// Default max buffer records.
+    pub const max_buffer_records: usize = 1000;
+    /// Default flush interval in milliseconds.
+    pub const flush_interval_ms: u64 = 1000;
+    /// Default memory sink ring-buffer capacity (records).
+    pub const memory_ring_size: usize = 1024;
+    /// Default per-sink rate limit (messages per second, 0 = unlimited).
+    pub const rate_limit_per_second: u32 = 0;
+    /// Number of consecutive errors before a sink is considered unhealthy.
+    pub const unhealthy_error_threshold: u32 = 10;
+    /// Default flush period for buffered sinks (ms).
+    pub const flush_period_ms: u64 = TimeConstants.default_flush_interval_ms;
+    /// Stderr sink name.
+    pub const stderr_name: []const u8 = "stderr";
+    /// Stdout sink name.
+    pub const stdout_name: []const u8 = "stdout";
+    /// Memory sink name.
+    pub const memory_name: []const u8 = "memory";
+};
+
+/// Record field defaults.
+pub const RecordDefaults = struct {
+    /// Maximum number of context fields per record.
+    pub const max_context_fields: usize = 64;
+    /// Maximum stack trace depth.
+    pub const max_stack_depth: usize = 32;
+    /// Severity scale maximum.
+    pub const severity_max: u8 = 100;
+    /// Tag separator for multi-tag strings.
+    pub const tag_separator: []const u8 = ",";
+    /// Unknown module name placeholder.
+    pub const unknown_module: []const u8 = "unknown";
+    /// Error category names.
+    pub const ErrorCategoryNames = struct {
+        pub const io: []const u8 = "io";
+        pub const network: []const u8 = "network";
+        pub const logic: []const u8 = "logic";
+        pub const oom: []const u8 = "oom";
+        pub const unknown: []const u8 = "unknown";
+    };
+};
+
+/// Async system defaults (extended from AsyncConstants).
+pub const AsyncExtendedDefaults = struct {
+    /// Backoff base sleep in nanoseconds.
+    pub const backoff_base_ns: u64 = 100 * TimeConstants.ns_per_us;
+    /// Backoff maximum sleep in nanoseconds.
+    pub const backoff_max_ns: u64 = 10 * TimeConstants.ns_per_ms;
+    /// Backoff multiplier.
+    pub const backoff_multiplier: u64 = 2;
+    /// Priority queue fast-path levels (critical and above bypass normal queue).
+    pub const priority_bypass_threshold: u8 = 50; // maps to .critical priority
+    /// Default shutdown grace period (ms).
+    pub const shutdown_timeout_ms: u64 = 5000;
+    /// Default batch flush callback label.
+    pub const batch_flush_label: []const u8 = "batch_flush";
+};
+
+/// Redaction pattern defaults.
+pub const RedactionPatterns = struct {
+    /// Regex-like pattern for email addresses.
+    pub const email: []const u8 = "[\\w.+-]+@[\\w-]+\\.[\\w.]+";
+    /// Pattern prefix for JWT detection (base64url encoded JSON).
+    pub const jwt_prefix: []const u8 = "ey";
+    /// Minimum JWT token length (header.payload.sig).
+    pub const jwt_min_length: usize = 20;
+    /// IPv4 pattern approximation.
+    pub const ipv4_segment: []const u8 = "\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}";
+    /// Credit card minimum digit count.
+    pub const cc_min_digits: usize = 13;
+    /// Credit card maximum digit count.
+    pub const cc_max_digits: usize = 19;
+    /// Default redaction replacement for sensitive patterns.
+    pub const sensitive_replacement: []const u8 = "[REDACTED]";
+    /// Email redaction replacement.
+    pub const email_replacement: []const u8 = "[EMAIL]";
+    /// IP address redaction replacement.
+    pub const ip_replacement: []const u8 = "[IP]";
+    /// JWT redaction replacement.
+    pub const jwt_replacement: []const u8 = "[JWT]";
+    /// Credit card redaction replacement.
+    pub const cc_replacement: []const u8 = "[CARD]";
+};
+
+/// Network sink defaults (extended).
+pub const NetworkExtendedDefaults = struct {
+    /// Auto-reconnect initial delay (ms).
+    pub const reconnect_initial_delay_ms: u64 = 100;
+    /// Auto-reconnect max delay (ms).
+    pub const reconnect_max_delay_ms: u64 = 30_000;
+    /// Auto-reconnect backoff multiplier.
+    pub const reconnect_backoff_mult: u64 = 2;
+    /// TCP keepalive idle time (seconds).
+    pub const keepalive_idle_secs: u32 = 60;
+    /// TCP keepalive probe interval (seconds).
+    pub const keepalive_interval_secs: u32 = 10;
+    /// TCP keepalive max probe count.
+    pub const keepalive_max_probes: u32 = 6;
+    /// Default chunk size for HTTP chunked streaming (bytes).
+    pub const chunked_chunk_size: usize = 4096;
+    /// Syslog RFC-5424 version number.
+    pub const syslog_version: u8 = 1;
+    /// Syslog default facility (16 = local0).
+    pub const syslog_default_facility: u8 = 16;
+    /// Syslog default app name.
+    pub const syslog_app_name: []const u8 = "logly";
+    /// Syslog nilvalue.
+    pub const syslog_nilvalue: []const u8 = "-";
+};
+
+/// Scheduler system constants (extended).
+pub const SchedulerExtendedDefaults = struct {
+    /// Maximum jitter in milliseconds (added as random ±jitter to task intervals).
+    pub const max_jitter_ms: u64 = 5000;
+    /// Default jitter percentage of interval (0.0 = no jitter, 0.1 = ±10%).
+    pub const default_jitter_fraction: f64 = 0.0;
+    /// Cron-expression field count.
+    pub const cron_field_count: usize = 5;
+    /// Task history ring size (entries).
+    pub const task_history_size: usize = 32;
+    /// One-shot task min delay (ms).
+    pub const one_shot_min_delay_ms: u64 = 1;
+};
+
+/// Diagnostic system constants.
+pub const DiagnosticsDefaults = struct {
+    /// Maximum health-check entries per report.
+    pub const max_health_checks: usize = 64;
+    /// JSON report buffer initial size.
+    pub const json_report_buffer: usize = BufferSizes.format;
+    /// Health check name max length.
+    pub const health_check_name_len: usize = 64;
+    /// Default report interval (ms).
+    pub const report_interval_ms: u64 = 60_000;
+    /// Queue depth warning threshold (0.0-1.0).
+    pub const queue_depth_warn_threshold: f64 = 0.8;
+    /// Memory warning threshold (bytes, 512MB default).
+    pub const memory_warn_bytes: u64 = 512 * 1024 * 1024;
+};
+
+/// Telemetry extended constants.
+pub const TelemetryExtendedDefaults = struct {
+    /// OTLP Logs signal JSON content-type.
+    pub const otlp_content_type: []const u8 = "application/json";
+    /// Google Cloud Logging JSON severity field name.
+    pub const gcp_severity_field: []const u8 = "severity";
+    /// Google Cloud Logging timestamp field.
+    pub const gcp_timestamp_field: []const u8 = "timestamp";
+    /// Google Cloud Logging message field.
+    pub const gcp_message_field: []const u8 = "message";
+    /// Datadog log level field name.
+    pub const datadog_level_field: []const u8 = "status";
+    /// Datadog source field name.
+    pub const datadog_source_field: []const u8 = "ddsource";
+    /// Datadog service field name.
+    pub const datadog_service_field: []const u8 = "service";
+    /// Datadog tags field name.
+    pub const datadog_tags_field: []const u8 = "ddtags";
+    /// W3C Baggage header name.
+    pub const w3c_baggage_header: []const u8 = "baggage";
+    /// OTLP Logs resource attributes key.
+    pub const otlp_resource_key: []const u8 = "resource";
+    /// OTLP Logs attributes key.
+    pub const otlp_attrs_key: []const u8 = "attributes";
+};
+
+/// Compression level constants.
+pub const CompressionLevelDefaults = struct {
+    /// Default gzip/deflate compression level (1-9).
+    pub const gzip_default: u8 = 6;
+    /// Fast gzip/deflate compression level.
+    pub const gzip_fast: u8 = 1;
+    /// Maximum gzip/deflate compression level.
+    pub const gzip_max: u8 = 9;
+    /// Default zstd compression level (1-22).
+    pub const zstd_default: u8 = 3;
+    /// Fast zstd compression level.
+    pub const zstd_fast: u8 = 1;
+    /// Maximum zstd compression level.
+    pub const zstd_max: u8 = 22;
+};
+
+/// Default crash handler settings and strings.
+pub const CrashConstants = struct {
+    /// Prefix prepended to panics in the log.
+    pub const panic_message_prefix: []const u8 = "CRITICAL PANIC OCCURRED: ";
+    /// Stderr fallback message prefix.
+    pub const panic_interceptor_prefix: []const u8 = "Logly Panic Interceptor: ";
+    /// Prefix prepended to OS-level crashes in the log.
+    pub const crash_message_prefix: []const u8 = "CRITICAL CRASH: ";
+    /// Stderr fallback message prefix for OS-level crashes.
+    pub const crash_interceptor_prefix: []const u8 = "Logly Crash Interceptor: ";
+
+    /// Windows exception code mapping structure.
+    pub const WindowsException = struct {
+        code: u32,
+        name: []const u8,
+        is_fatal: bool,
+    };
+
+    /// List of Windows Vectored Exception codes, names, and whether they are fatal.
+    pub const windows_exceptions = [_]WindowsException{
+        .{ .code = 0xC0000005, .name = "STATUS_ACCESS_VIOLATION (Access Violation)", .is_fatal = true },
+        .{ .code = 0xC0000094, .name = "STATUS_INTEGER_DIVIDE_BY_ZERO (Integer Division by Zero)", .is_fatal = true },
+        .{ .code = 0xC000001D, .name = "STATUS_ILLEGAL_INSTRUCTION (Illegal Instruction)", .is_fatal = true },
+        .{ .code = 0xC00000FD, .name = "STATUS_STACK_OVERFLOW (Stack Overflow)", .is_fatal = true },
+        .{ .code = 0xC0000025, .name = "STATUS_NONCONTINUABLE_EXCEPTION (Noncontinuable Exception)", .is_fatal = true },
+        .{ .code = 0xC0000008, .name = "STATUS_INVALID_HANDLE (Invalid Handle)", .is_fatal = true },
+        .{ .code = 0x80000003, .name = "STATUS_BREAKPOINT (Breakpoint)", .is_fatal = false },
+    };
+
+    pub const unknown_windows_exception: []const u8 = "UNKNOWN_WINDOWS_EXCEPTION";
+    pub const windows_fallback_msg: []const u8 = "CRITICAL CRASH: Windows native exception triggered\n";
+    pub const windows_triggered_fmt: []const u8 = "Windows exception triggered: {s} (Code: 0x{X})\n";
+    pub const windows_stderr_fmt: []const u8 = "Process triggered fatal exception 0x{X}\n";
+
+    /// POSIX signal names mapping.
+    pub const posix_sigsegv: []const u8 = "SIGSEGV (Segmentation Fault)";
+    pub const posix_sigill: []const u8 = "SIGILL (Illegal Instruction)";
+    pub const posix_sigfpe: []const u8 = "SIGFPE (Floating Point Exception)";
+    pub const posix_sigabrt: []const u8 = "SIGABRT (Abort Signal)";
+    pub const posix_sigbus: []const u8 = "SIGBUS (Bus Error)";
+    pub const posix_unknown_signal: []const u8 = "Unknown Signal";
+
+    pub const posix_fallback_msg: []const u8 = "CRITICAL CRASH: Process received standard POSIX signal\n";
+    pub const posix_received_fmt: []const u8 = "Process received POSIX signal {s} ({d})\n";
+    pub const posix_stderr_fmt: []const u8 = "Process received standard POSIX signal {d}\n";
+};

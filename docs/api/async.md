@@ -117,6 +117,10 @@ pub const AsyncConfig = struct {
     background_worker: bool = true,
     /// Enable arena allocator for batch processing (reduces malloc overhead).
     use_arena: bool = false,
+    /// Shutdown grace period in milliseconds to allow remaining records to flush.
+    shutdown_timeout_ms: u64 = 1000,
+    /// Enable priority queue logic to handle high-priority levels first.
+    enable_priority_queue: bool = false,
 
     pub const OverflowPolicy = enum {
         drop_oldest,
@@ -291,6 +295,22 @@ Force flush all pending records.
 
 ```zig
 pub fn flush(self: *AsyncLogger) void
+```
+
+### drainAndFlush
+
+Wait up to `timeout_ms` for the queue to drain completely, then flush the buffer to ensure durability before shutting down.
+
+```zig
+pub fn drainAndFlush(self: *AsyncLogger, timeout_ms: u64) !void
+```
+
+### isBackpressured
+
+Alias for `isNearCapacity(0.9)`. Signals if the async system is struggling to keep up with the log volume.
+
+```zig
+pub fn isBackpressured(self: *AsyncLogger) bool
 ```
 
 ### getStats

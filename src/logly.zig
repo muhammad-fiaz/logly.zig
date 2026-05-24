@@ -77,6 +77,7 @@ pub const SpanContext = @import("logger.zig").SpanContext;
 pub const Config = @import("config.zig").Config;
 pub const Sink = @import("sink.zig").Sink;
 pub const SinkConfig = @import("sink.zig").SinkConfig;
+pub const SinkGroup = @import("sink.zig").SinkGroup;
 pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;
 pub const Rotation = @import("rotation.zig").Rotation;
@@ -126,6 +127,8 @@ pub const SchedulerPresets = @import("scheduler.zig").SchedulerPresets;
 pub const ThreadPool = @import("thread_pool.zig").ThreadPool;
 pub const ThreadPoolPresets = @import("thread_pool.zig").ThreadPoolPresets;
 pub const Network = @import("network.zig");
+pub const crash = @import("crash.zig");
+pub const panic = crash.panic;
 
 // Utility components
 pub const TelemetryConfig = @import("config.zig").TelemetryConfig;

@@ -108,6 +108,7 @@ pub const RedactionPattern = struct {
         suffix,
         contains,
         regex,
+        regex_replace,
     };
 };
 ```
@@ -379,6 +380,12 @@ Returns count of configured pattern rules that match this value.
 
 **Alias**: `matchingPatterns`, `matchedPatternCount`
 
+### Audit & Logging
+
+#### `auditLog(writer: anytype) !void`
+
+Writes a compliance audit log to the provided writer, detailing the configured fields, patterns, and configuration settings for compliance verification.
+
 ### Configuration
 
 #### `getConfig() RedactionConfig`
@@ -430,11 +437,11 @@ Returns true if any redaction rules are configured.
 ```zig
 pub const RedactionPresets = struct {
     /// Standard sensitive data redaction.
-    /// Includes: password, email, ssn, api_key fields
+    /// Includes: password, email (with robust format validation), ssn, api_key fields
     pub fn standard(allocator: std.mem.Allocator) !Redactor;
     
     /// PCI-DSS compliant redaction.
-    /// Includes: pan, cvv, pin, card_number, expiry fields
+    /// Includes: pan, cvv, pin, card_number, expiry fields. Card numbers are dynamically validated using the Luhn algorithm.
     pub fn pciDss(allocator: std.mem.Allocator) !Redactor;
     
     /// HIPAA compliant redaction.
@@ -442,11 +449,11 @@ pub const RedactionPresets = struct {
     pub fn hipaa(allocator: std.mem.Allocator) !Redactor;
     
     /// GDPR compliant redaction.
-    /// Includes: name, email, phone, address, ip, ip_address, user_id
+    /// Includes: name, email, phone, address, ip, ip_address, user_id. Supports advanced IPv4/IPv6 address masking.
     pub fn gdpr(allocator: std.mem.Allocator) !Redactor;
     
     /// API secrets redaction.
-    /// Includes: api_key, secret_key, access_token, refresh_token, bearer_token
+    /// Includes: api_key, secret_key, access_token, refresh_token, bearer_token, jwt (with JWT pattern validation).
     pub fn apiSecrets(allocator: std.mem.Allocator) !Redactor;
     
     /// Financial data redaction.
