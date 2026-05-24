@@ -174,8 +174,9 @@ Before installing Logly, ensure you have the following:
 | **Terminal** | Any modern terminal | For colored output support |
 
 > Verify your Zig installation by running `zig version` in your terminal.
-> - For Zig 0.16.0+, use logly.zig version 0.2.0
-> - For Zig 0.15.0, use logly.zig version 0.1.7
+> - For Zig 0.15.0, use logly.zig version 0.1.7 or earlier
+> - For Zig 0.16.0+, use logly.zig version 0.1.8 or newer
+> - See Zig releases and downloads at [ziglang.org](https://ziglang.org/)
 
 ---
 
@@ -260,13 +261,13 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 The easiest way to add Logly to your project:
 
-**For Zig 0.16.0+ (Latest stable `0.2.0`):**
+**For Zig 0.16.0+ (use `0.1.8` or newer):**
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
 ```
 
-**For Zig 0.15.0 (Use `0.1.7` or earlier):**
+**For Zig 0.15.0 (use `0.1.7` or earlier):**
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
@@ -286,7 +287,7 @@ This automatically adds the dependency with the correct hash to your `build.zig.
 
 Add to your `build.zig.zon`:
 
-**For Zig 0.16.0+:**
+**For Zig 0.16.0+ (use `0.1.8` or newer):**
 
 ```zig
 .dependencies = .{
@@ -297,7 +298,7 @@ Add to your `build.zig.zon`:
 },
 ```
 
-**For Zig 0.15.0:**
+**For Zig 0.15.0 (use `0.1.7` or earlier):**
 
 ```zig
 .dependencies = .{
@@ -464,6 +465,55 @@ All examples in the `examples/` directory use `std.heap.DebugAllocator` as the b
 When arena allocation is enabled, Logly automatically performs threshold-based arena resets between records to keep memory usage bounded while preserving high throughput.
 
 ## Usage Examples
+
+### Console-Only Logging
+
+Use this when you want Logly to write only to the console and keep file storage disabled:
+
+`global_console_display = true`, `global_file_storage = false`, `auto_sink = true`.
+
+```zig
+var config = logly.Config.withDisplayStorage(true, false, true);
+config.global_color_display = true;
+config.show_time = true;
+config.show_module = true;
+config.show_function = false;
+config.show_filename = false;
+config.show_lineno = false;
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+try logger.info("Console-only message", @src());
+try logger.warn("Another console log", @src());
+```
+
+### File-Only Logging
+
+Use this when you want Logly to store logs in files and not display console output:
+
+`global_console_display = false`, `global_file_storage = true`, `auto_sink = false`.
+
+```zig
+var config = logly.Config.logOnly();
+config.global_color_display = false;
+config.show_time = true;
+config.show_module = true;
+config.show_function = true;
+config.show_filename = true;
+config.show_lineno = true;
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+_ = try logger.add(.{
+    .path = "logs/app.log",
+});
+
+try logger.info("File-only message", @src());
+try logger.err("This is written to disk", @src());
+try logger.flush();
+```
 
 ### File Logging
 
@@ -1398,7 +1448,7 @@ zig build docs
 This will generate HTML documentation in the `zig-out/docs/` directory. Open `zig-out/docs/index.html` in your browser to view the documentation.
 
 >[!NOTE]
-> For projects using Zig 0.15, you can also generate the local documentation with `zig build docs` while using the matching `logly.zig` release (`0.1.7`). Ensure you select the appropriate repository tag or dependency version that targets Zig 0.15 before running the command.
+> For projects using Zig 0.15, you can also generate the local documentation with `zig build docs` while using the matching `logly.zig` release (`0.1.7` or earlier). For Zig 0.16, use `0.1.8` or newer. See the official Zig downloads at [ziglang.org](https://ziglang.org/).
 
 ## Contributing
 

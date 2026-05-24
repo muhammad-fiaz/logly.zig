@@ -7,11 +7,17 @@ supported with security updates.
 
 | Version   | Supported          |
 | --------- | ------------------ |
-| >= 0.1.0  | :white_check_mark: |
-| < 0.1.0  | :x:                |
+| 0.2.0     | :white_check_mark: |
+| < 0.2.0   | :x:                |
 
-⚠️ Versions below **0.1.0** are considered **end-of-life** and will not receive
+⚠️ Versions below **0.2.0** are considered **end-of-life** and will not receive
 security fixes or updates.
+
+## Zig Compatibility
+
+- **0.1.7 or earlier** supports **Zig 0.15.0**
+- **0.1.8 or newer** supports **Zig 0.16.0+**
+- Zig downloads and release notes: [ziglang.org](https://ziglang.org/)
 
 ---
 

@@ -20,13 +20,13 @@ This guide covers all available methods to install Logly.zig in your project.
 
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
-**For Zig 0.16.0+ (Latest stable `0.2.0`):**
+**For Zig 0.16.0+ (use `0.1.8` or newer):**
 
 ```bash
     zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
 ```
 
-**For Zig 0.15.0 (Use `0.1.7`):**
+**For Zig 0.15.0 (use `0.1.7` or earlier):**
 
 ```bash
     zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
@@ -47,7 +47,7 @@ This command automatically:
 
 If you prefer manual installation, add to your `build.zig.zon`:
 
-**For Zig 0.16.0+:**
+**For Zig 0.16.0+ (use `0.1.8` or newer):**
 
 ```zig
 .{
@@ -62,7 +62,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
 }
 ```
 
-**For Zig 0.15.0:**
+**For Zig 0.15.0 (use `0.1.7` or earlier):**
 
 ```zig
 .{
