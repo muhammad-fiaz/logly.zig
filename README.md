@@ -208,7 +208,7 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.2.0 (Massive Feature & Performance Update)
+### Version 0.2.0
 
 Version `0.2.0` elevates Logly with enterprise-grade security controls, zero-copy high-performance memory-mapped logging, crash resilience, robust background processing, advanced observability, and dynamic configurability.
 
