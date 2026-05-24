@@ -31,9 +31,11 @@ Logly provides comprehensive callback support across all major components:
 - **Rotation Callbacks**: File rotation lifecycle events
 - **Compression Callbacks**: Compression operations and errors
 - **Metrics Callbacks**: Metrics snapshots, threshold violations
-- **Thread Pool Callbacks**: Task lifecycle, work stealing
+- **Thread Pool Callbacks**: Task lifecycle, queue pressure, work stealing
 - **Scheduler Callbacks**: Scheduled task execution
 - **Rules Callbacks**: Rule matching, evaluation, diagnostic messages
+- **Crash Callbacks**: Panic and signal handling notifications
+- **Update Checker Callbacks**: Version status notifications
 
 ## Logger Callbacks
 
@@ -341,16 +343,45 @@ metrics.on_threshold_exceeded = &onThresholdExceeded;
 ## Thread Pool Callbacks
 
 ```zig
-fn onTaskExecuted(task_id: u64, execution_time_ns: u64) void {
-    metrics.histogram("threadpool.execution_time_us", execution_time_ns / 1000);
+fn onThreadStart(thread_id: usize) void {
+    std.debug.print("Thread {d} started\n", .{thread_id});
 }
 
-fn onWorkStolen(from_queue: u32, to_queue: u32, tasks_stolen: u32) void {
-    metrics.increment("threadpool.work_stealing", tasks_stolen);
+fn onThreadStop(thread_id: usize, tasks_processed: u64, uptime_ms: u64) void {
+    std.debug.print("Thread {d} stopped after {d} tasks in {d}ms\n", .{thread_id, tasks_processed, uptime_ms});
 }
 
-thread_pool.on_task_executed = &onTaskExecuted;
-thread_pool.on_work_stolen = &onWorkStolen;
+fn onTaskSubmitted(priority: u8, queue_depth: usize) void {
+    metrics.increment("threadpool.submitted", 1);
+    _ = priority;
+    _ = queue_depth;
+}
+
+fn onTaskDequeued(priority: u8, wait_time_us: u64) void {
+    metrics.histogram("threadpool.wait_time_us", wait_time_us);
+    _ = priority;
+}
+
+fn onTaskExecuted(exec_time_us: u64, success: bool) void {
+    metrics.histogram("threadpool.execution_time_us", exec_time_us);
+    _ = success;
+}
+
+fn onWorkStolen(victim_thread: usize, thief_thread: usize) void {
+    std.debug.print("Work stolen from {d} to {d}\n", .{victim_thread, thief_thread});
+}
+
+fn onQueueOverflow(queue_size: usize, capacity: usize) void {
+    std.debug.print("Thread pool full: {d}/{d}\n", .{queue_size, capacity});
+}
+
+thread_pool.setThreadStartCallback(&onThreadStart);
+thread_pool.setThreadStopCallback(&onThreadStop);
+thread_pool.setTaskSubmittedCallback(&onTaskSubmitted);
+thread_pool.setTaskDequeuedCallback(&onTaskDequeued);
+thread_pool.setTaskExecutedCallback(&onTaskExecuted);
+thread_pool.setWorkStolenCallback(&onWorkStolen);
+thread_pool.setQueueOverflowCallback(&onQueueOverflow);
 ```
 
 ## Scheduler Callbacks
@@ -439,6 +470,30 @@ fn onEvaluationError(error_msg: []const u8) void {
 rules.on_before_evaluate = &onBeforeEvaluate;
 rules.on_after_evaluate = &onAfterEvaluate;
 rules.on_evaluation_error = &onEvaluationError;
+```
+
+## Crash Callbacks
+
+```zig
+fn onCrash(message: []const u8) void {
+    std.debug.print("Crash callback: {s}\n", .{message});
+}
+
+logly.crash.setCrashCallback(&onCrash);
+```
+
+## Update Checker Callbacks
+
+```zig
+fn onUpdateResult(status: logly.UpdateChecker.UpdateCheckStatus, latest_tag: []const u8, current_version: []const u8) void {
+    std.debug.print("Update status: {s} ({s} -> {s})\n", .{
+        @tagName(status),
+        current_version,
+        latest_tag,
+    });
+}
+
+logly.UpdateChecker.setUpdateCallback(&onUpdateResult);
 ```
 
 ### Available Rules Callbacks

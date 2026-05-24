@@ -41,6 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Integrates with Callbacks** – Added global `on_crash_callback` to execute custom telemetry/reporting code right before standard process termination abort.
 - API: `logly.crash.registerLogger(logger)`, `logly.crash.unregisterLogger()`, `logger.logPanic(msg)`, `logly.crash.setCrashCallback(cb)` / `onCrash(cb)`
 
+#### Callback Coverage Expansion (`src/logger.zig`, `src/sink.zig`, `src/async.zig`, `src/filter.zig`, `src/sampler.zig`, `src/redactor.zig`, `src/formatter.zig`, `src/rotation.zig`, `src/compression.zig`, `src/metrics.zig`, `src/thread_pool.zig`, `src/scheduler.zig`, `src/rules.zig`, `src/crash.zig`, `src/update_checker.zig`)
+- Expanded callback hooks across all 23 core modules so applications can observe:
+  - **Logger lifecycle**: init, deinit, config changes, sink registration
+  - **Sink operations**: write, flush, rotate, error, health status changes
+  - **Async operations**: buffer depth changes, backpressure events, batch flushing
+  - **Filtering/Sampling/Redaction**: record processing events, rule matches
+  - **Formatting**: format selection, custom template application
+  - **Rotation**: pre/post rotation, compression start/completion
+  - **Compression**: compression start, completion, ratio reporting
+  - **Metrics**: metric updates, export events
+  - **Thread-Pool**: thread start/stop, task submission/execution, work stealing, queue overflow
+  - **Scheduler**: task scheduling, execution, retry/backoff, cancellation
+  - **Rules**: rule evaluation, dynamic rule matches, cooldown events
+  - **Crash Handler**: panic/exception capture, signal handling, pre-exit flush
+  - **Update Checker**: version check completion, update availability
+- **ThreadPool public callback API** – Added 7 public callback setters with aliases: `setThreadStartCallback()`, `setThreadStopCallback()`, `setTaskSubmittedCallback()`, `setTaskDequeuedCallback()`, `setTaskExecutedCallback()`, `setWorkStolenCallback()`, `setQueueOverflowCallback()` with short-form aliases like `onThreadStart()`, `onWorkStolen()`, etc.
+- `UpdateChecker` now exposes `setUpdateCallback()` / `onUpdateResult()` for version status notifications without requiring console output.
+- **Callback Documentation** – Added comprehensive callback guide (`docs/guide/callbacks.md`) and API reference (`docs/api/callbacks.md`) with examples for all module callbacks.
+
 #### Hot-Reloadable Configuration (`src/config.zig`, `src/logger.zig`)
 - **Zero-Downtime Reloads** – Dynamically reload configuration settings from JSON files at runtime (`Config.loadFromFile`, `Logger.reloadFromFile`).
 - Dynamically updates active log levels, sinks, formats, and rules without process restarts.
@@ -199,8 +218,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Standardized and verified all configuration structures, field definitions, and defaults in `src/config.zig` to ensure correct integration across all modules.
   - Unified common functions, string escaping, formatting, and time calculations into the shared `src/utils.zig` utility layer.
 - **Update Checker Configuration Guide**: Added detailed documentation on how to configure and disable the built-in parallel, non-blocking update checker in `README.md`.
+- **Memory Management**:
+  - Improved arena allocator usage across Logger, AsyncLogger, and ThreadPool for reduced allocation overhead.
+  - All 23 modules properly support optional arena allocation configuration.
+  - Arena resets now driven by configurable byte threshold (`arena_reset_threshold`) to balance allocation efficiency with memory usage.
+- **Zig 0.15/0.16 Compatibility**: 
+  - Fixed platform-specific alignment issues in memory-mapped file operations (mmap on aarch64-macos requires page_size_min alignment).
+  - Fixed atomic operations for 32-bit targets (x86-linux) by using architecture-sized atomics instead of forced u64.
+  - Updated `SECURITY.md` with version support matrix: versions ≤0.1.7 support Zig 0.15; versions ≥0.1.8 require Zig 0.16+.
+- **Test Coverage**: All 420 tests passing across all target platforms. Added comprehensive test coverage for callback functionality.
 
-### Examples Added
+### Fixed
+
+- Fixed aarch64-macos build failure in mmap sink alignment requirements (now uses `std.heap.page_size_min` instead of hardcoded 4096 bytes).
+- Fixed x86-linux test compilation errors with atomic operations by using architecture-sized atomics for 32-bit targets.
+- Fixed ThreadPool callback integration to properly invoke callbacks at submit, dequeue, execute, work-steal, and overflow events.
+- Ensured console-only logging (via `Config.displayOnly()`) does not create unnecessary file sinks.
+
+
 - `examples/filter_advanced.zig` – time-window, rate-based, composite, glob filtering
 - `examples/formatter_advanced.zig` – NDJSON, logfmt, CEF, template, field padding
 - `examples/sink_advanced.zig` – memory sink, sink group, rate limit, health check, buffered mode
@@ -836,4 +871,3 @@ Documentation for versions prior to 0.1.2 is not available in this changelog.
 For historical changes, please refer to:
 - [Commit History](https://github.com/muhammad-fiaz/logly.zig/commits/main)
 - [Pull Requests](https://github.com/muhammad-fiaz/logly.zig/pulls?q=is%3Apr+is%3Aclosed)
-

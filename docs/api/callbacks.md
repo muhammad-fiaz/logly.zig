@@ -13,6 +13,15 @@ The Callback API allows you to hook into the logging lifecycle for monitoring, t
 | `setSinkErrorCallback()` | - | Set sink error callback |
 | `setInitializedCallback()` | - | Set initialized callback |
 | `setDestroyedCallback()` | - | Set destroyed callback |
+| `setCrashCallback()` | `onCrash()` | Set crash callback |
+| `setUpdateCallback()` | - | Set update-check callback |
+| `setThreadStartCallback()` | `onThreadStart()` | Set thread pool start callback |
+| `setThreadStopCallback()` | `onThreadStop()` | Set thread pool stop callback |
+| `setTaskSubmittedCallback()` | `onTaskSubmitted()` | Set task submitted callback |
+| `setTaskDequeuedCallback()` | `onTaskDequeued()` | Set task dequeued callback |
+| `setTaskExecutedCallback()` | `onTaskExecuted()` | Set task executed callback |
+| `setWorkStolenCallback()` | `onWorkStolen()` | Set work stolen callback |
+| `setQueueOverflowCallback()` | `onQueueOverflow()` | Set queue overflow callback |
 | `setWriteCallback()` | `onWrite()` | Set write callback (Sink) |
 | `setFlushCallback()` | `onFlush()` | Set flush callback (Sink) |
 | `setErrorCallback()` | `onError()` | Set error callback (Sink) |
@@ -100,3 +109,31 @@ Invoked just before the logger is deinitialized.
 ```zig
 callback: *const fn(context: ?*anyopaque) void
 ```
+
+### `on_crash_callback`
+
+Invoked immediately when a panic, Windows VEH exception, or POSIX signal occurs.
+
+```zig
+callback: *const fn(message: []const u8) void
+```
+
+### `on_update_result`
+
+Invoked after the update checker compares the current version against the latest release.
+
+```zig
+callback: *const fn(status: UpdateCheckStatus, latest_tag: []const u8, current_version: []const u8) void
+```
+
+### `on_thread_pool_callback`
+
+Invoked by the thread pool for worker lifecycle and queue events:
+
+- `setThreadStartCallback(thread_id)`
+- `setThreadStopCallback(thread_id, tasks_processed, uptime_ms)`
+- `setTaskSubmittedCallback(priority, queue_depth)`
+- `setTaskDequeuedCallback(priority, wait_time_us)`
+- `setTaskExecutedCallback(execution_time_us, success)`
+- `setWorkStolenCallback(victim_thread, thief_thread)`
+- `setQueueOverflowCallback(queue_size, capacity)`

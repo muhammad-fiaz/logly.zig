@@ -23,6 +23,7 @@ When the `Logger` is initialized, it performs a non-blocking check for updates:
 3.  **Version Comparison**: It compares the current version (from `build.zig.zon`) with the latest release from the GitHub API.
 4.  **Silent Results**: If an update is available (or if running a nightly build), it prints a non-intrusive notification.
 5.  **Failure Tolerance**: It fails silently on network errors or API rate limits.
+6.  **Callback Support**: Use `UpdateChecker.setUpdateCallback()` to observe result status without relying on console output.
 
 ## Configuration
 
@@ -63,6 +64,7 @@ pub fn main() !void {
 | Function | Description |
 |----------|-------------|
 | `setEnabled(enabled: bool)` | Enable or disable update checking project-wide |
+| `setUpdateCallback(callback)` | Receive update-check results programmatically |
 | `isEnabled() bool` | Check if update checking is currently enabled |
 | `resetState()` | Reset update checker state (for testing only) |
 

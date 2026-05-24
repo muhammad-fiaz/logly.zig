@@ -63,6 +63,11 @@ pub fn setEnabled(enabled: bool) void {
     update_check_enabled = enabled;
 }
 
+/// Sets a callback that receives update-check results.
+pub fn setUpdateCallback(callback: ?*const fn (status: UpdateCheckStatus, latest_tag: []const u8, current_version: []const u8) void) void {
+    on_update_result = callback;
+}
+
 /// Returns whether update checking is enabled.
 pub fn isEnabled() bool {
     update_check_mutex.lockUncancelable(Utils.io());
@@ -103,6 +108,12 @@ const VersionRelation = enum {
     /// Version comparison failed (unknown format).
     unknown,
 };
+
+/// Public alias for update check status callbacks.
+pub const UpdateCheckStatus = VersionRelation;
+
+/// Optional callback invoked after an update check completes.
+pub var on_update_result: ?*const fn (status: UpdateCheckStatus, latest_tag: []const u8, current_version: []const u8) void = null;
 
 fn compareVersions(latest_raw: []const u8) VersionRelation {
     const latest = stripVersionPrefix(latest_raw);
@@ -179,7 +190,9 @@ fn checkWorker(allocator: std.mem.Allocator, global_console_display: bool) void 
 
     if (!global_console_display) return;
 
-    switch (compareVersions(latest_tag)) {
+    const status = compareVersions(latest_tag);
+
+    switch (status) {
         .remote_newer => {
             std.debug.print("\n{s}{s} [UPDATE] >> A newer release is available: {s} (current {s}) {s}\n", .{
                 bold_white,
@@ -209,6 +222,10 @@ fn checkWorker(allocator: std.mem.Allocator, global_console_display: bool) void 
             });
         },
         else => {},
+    }
+
+    if (on_update_result) |cb| {
+        cb(status, latest_tag, CURRENT_VERSION);
     }
 }
 

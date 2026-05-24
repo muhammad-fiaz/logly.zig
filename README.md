@@ -237,6 +237,7 @@ Version `0.2.0` elevates Logly with enterprise-grade security controls, zero-cop
 * **Metrics**: Histograms per log level, P50/P95/P99 latency calculations, StatsD export, and Prometheus text format export.
 * **Diagnostics**: JSON diagnostics export, lightweight snapshots, and memory-based `HealthReport` assessments.
 * **Telemetry**: Event batching (`batch_size`, `flush_interval_ms`), Honeycomb, Datadog/GCP formats, and OTLP integrations.
+* **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, rules, crash handling, and update checks.
 
 **Concurrency, Threading & Compression:**
 * **Thread Pool**: Task cancellation, thread naming, execution jitter, and graceful draining.

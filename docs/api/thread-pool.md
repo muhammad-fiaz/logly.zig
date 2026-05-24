@@ -41,6 +41,13 @@ The thread pool module provides parallel log processing capabilities with work s
 | `activeThreads()` | `workerCount()` | Get active thread count |
 | `clear()` | `discard()`, `flush()` | Clear pending tasks |
 | `getStats()` | `statistics()` | Get pool statistics |
+| `setThreadStartCallback()` | `onThreadStart()` | Set thread start callback |
+| `setThreadStopCallback()` | `onThreadStop()` | Set thread stop callback |
+| `setTaskSubmittedCallback()` | `onTaskSubmitted()` | Set task submitted callback |
+| `setTaskDequeuedCallback()` | `onTaskDequeued()` | Set task dequeued callback |
+| `setTaskExecutedCallback()` | `onTaskExecuted()` | Set task executed callback |
+| `setWorkStolenCallback()` | `onWorkStolen()` | Set work stolen callback |
+| `setQueueOverflowCallback()` | `onQueueOverflow()` | Set queue overflow callback |
 
 ## Overview
 
@@ -467,6 +474,18 @@ Get current pool statistics.
 pub fn getStats(self: *const ThreadPool) ThreadPoolStats
 ```
 
+### ThreadPool Callbacks
+
+| Method | Description |
+|--------|-------------|
+| `setThreadStartCallback()` | Called when a worker thread starts |
+| `setThreadStopCallback()` | Called when a worker thread stops |
+| `setTaskSubmittedCallback()` | Called when a task enters a queue |
+| `setTaskDequeuedCallback()` | Called when a task is dequeued |
+| `setTaskExecutedCallback()` | Called after a task runs |
+| `setWorkStolenCallback()` | Called when work stealing occurs |
+| `setQueueOverflowCallback()` | Called when a queue is full |
+
 ## ThreadPoolStats Methods
 
 ### Getter Methods
@@ -749,4 +768,3 @@ The ThreadPool module provides convenience aliases:
 - [Async API](async.md) - Async logging with ring buffers
 - [Scheduler API](scheduler.md) - Scheduled tasks
 - [Configuration Guide](../guide/configuration.md) - Full configuration options
-

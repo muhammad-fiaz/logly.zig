@@ -656,9 +656,11 @@ pub const ThreadPool = struct {
 
         if (self.work_queue.push(item)) {
             _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
+            self.emitTaskSubmitted(priority, self.work_queue.size());
             return .{ .id = id };
         }
 
+        self.emitQueueOverflow(self.work_queue.size(), self.work_queue.capacity);
         return .{ .id = 0 };
     }
 
@@ -708,35 +710,12 @@ pub const ThreadPool = struct {
         if (!self.running.load(.acquire)) return 0;
 
         var submitted: usize = 0;
-        const now = Utils.currentMillis();
-
-        self.work_queue.mutex.lockUncancelable(Utils.io());
-        defer self.work_queue.mutex.unlock(Utils.io());
-
         for (tasks) |task| {
-            if (self.work_queue.count >= self.work_queue.capacity) {
+            if (self.submit(task, priority).isValid()) {
+                submitted += 1;
+            } else if (self.running.load(.acquire)) {
                 _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
-                continue;
             }
-
-            const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
-            const item = WorkItem{
-                .id = id,
-                .task = task,
-                .submitted_at = now,
-                .priority = priority,
-            };
-
-            self.work_queue.items[self.work_queue.tail] = item;
-            self.work_queue.tail = (self.work_queue.tail + 1) % self.work_queue.capacity;
-            self.work_queue.count += 1;
-
-            submitted += 1;
-            _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
-        }
-
-        if (submitted > 0) {
-            self.work_queue.condition.broadcast(Utils.io());
         }
 
         return submitted;
@@ -777,28 +756,37 @@ pub const ThreadPool = struct {
         if (!self.work_queue.mutex.tryLock()) {
             return .{ .id = 0 };
         }
-        defer self.work_queue.mutex.unlock(Utils.io());
+        var queue_depth: usize = 0;
+        const handle: TaskHandle = blk: {
+            defer self.work_queue.mutex.unlock(Utils.io());
 
-        if (self.work_queue.count >= self.work_queue.capacity) {
-            _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
-            return .{ .id = 0 };
-        }
+            if (self.work_queue.count >= self.work_queue.capacity) {
+                _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+                break :blk .{ .id = 0 };
+            }
 
-        const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
-        const item = WorkItem{
-            .id = id,
-            .task = task,
-            .submitted_at = Utils.currentMillis(),
-            .priority = priority,
+            const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
+            const item = WorkItem{
+                .id = id,
+                .task = task,
+                .submitted_at = Utils.currentMillis(),
+                .priority = priority,
+            };
+
+            self.work_queue.items[self.work_queue.tail] = item;
+            self.work_queue.tail = (self.work_queue.tail + 1) % self.work_queue.capacity;
+            self.work_queue.count += 1;
+            queue_depth = self.work_queue.count;
+
+            _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
+            self.work_queue.condition.signal(Utils.io());
+            break :blk .{ .id = id };
         };
 
-        self.work_queue.items[self.work_queue.tail] = item;
-        self.work_queue.tail = (self.work_queue.tail + 1) % self.work_queue.capacity;
-        self.work_queue.count += 1;
-
-        _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
-        self.work_queue.condition.signal(Utils.io());
-        return .{ .id = id };
+        if (handle.id != 0) {
+            self.emitTaskSubmitted(priority, queue_depth);
+        }
+        return handle;
     }
 
     /// Try to submit without blocking (fast path for non-contended cases).
@@ -821,9 +809,11 @@ pub const ThreadPool = struct {
 
         if (self.workers[worker_id].local_queue.push(item)) {
             _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
+            self.emitTaskSubmitted(priority, self.workers[worker_id].local_queue.size());
             return .{ .id = id };
         }
 
+        self.emitQueueOverflow(self.workers[worker_id].local_queue.size(), self.workers[worker_id].local_queue.capacity);
         _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
         return .{ .id = 0 };
     }
@@ -835,6 +825,7 @@ pub const ThreadPool = struct {
 
     fn workerLoop(worker: *Worker) void {
         const pool = worker.pool;
+        const started_at_ms = Utils.currentMillis();
 
         // Initialize arena if enabled
         if (pool.config.enable_arena) {
@@ -846,6 +837,12 @@ pub const ThreadPool = struct {
         worker.name_len = name_str.len;
 
         _ = pool.stats.active_threads.fetchAdd(1, .monotonic);
+        pool.emitThreadStart(worker.id);
+        defer pool.emitThreadStop(
+            worker.id,
+            worker.tasks_processed.load(.monotonic),
+            @as(u64, @intCast(@max(0, Utils.currentMillis() - started_at_ms))),
+        );
         defer _ = pool.stats.active_threads.fetchSub(1, .monotonic);
 
         while (worker.running.load(.acquire) or pool.work_queue.size() > 0) {
@@ -864,6 +861,7 @@ pub const ThreadPool = struct {
                         if (other.local_queue.steal()) |stolen| {
                             item = stolen;
                             _ = pool.stats.tasks_stolen.fetchAdd(1, .monotonic);
+                            pool.emitWorkStolen(other.id, worker.id);
                             break;
                         }
                     }
@@ -874,6 +872,7 @@ pub const ThreadPool = struct {
                 const start_time = Utils.currentNanos();
                 const wait_time_ms = Utils.currentMillis() - work.submitted_at;
                 const wait_time_ns = @as(u64, @intCast(@max(0, wait_time_ms))) * Constants.TimeConstants.ns_per_ms;
+                pool.emitTaskDequeued(work.priority, wait_time_ns);
 
                 // Get arena allocator if available
                 var task_allocator: ?std.mem.Allocator = null;
@@ -893,6 +892,7 @@ pub const ThreadPool = struct {
                 _ = pool.stats.total_exec_time_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, exec_time)))), .monotonic);
                 _ = pool.stats.tasks_completed.fetchAdd(1, .monotonic);
                 _ = worker.tasks_processed.fetchAdd(1, .monotonic);
+                pool.emitTaskExecuted(@as(u64, @intCast(@max(0, exec_time))), true);
             }
         }
     }
@@ -900,6 +900,90 @@ pub const ThreadPool = struct {
     /// Gets current statistics.
     pub fn getStats(self: *const ThreadPool) ThreadPoolStats {
         return self.stats;
+    }
+
+    /// Sets the worker start callback.
+    pub fn setThreadStartCallback(self: *ThreadPool, callback: ?*const fn (usize) void) void {
+        self.on_thread_start = callback;
+    }
+
+    /// Alias for setThreadStartCallback.
+    pub const onThreadStart = setThreadStartCallback;
+
+    /// Sets the worker stop callback.
+    pub fn setThreadStopCallback(self: *ThreadPool, callback: ?*const fn (usize, u64, u64) void) void {
+        self.on_thread_stop = callback;
+    }
+
+    /// Alias for setThreadStopCallback.
+    pub const onThreadStop = setThreadStopCallback;
+
+    /// Sets the task submitted callback.
+    pub fn setTaskSubmittedCallback(self: *ThreadPool, callback: ?*const fn (u8, usize) void) void {
+        self.on_task_submitted = callback;
+    }
+
+    /// Alias for setTaskSubmittedCallback.
+    pub const onTaskSubmitted = setTaskSubmittedCallback;
+
+    /// Sets the task dequeued callback.
+    pub fn setTaskDequeuedCallback(self: *ThreadPool, callback: ?*const fn (u8, u64) void) void {
+        self.on_task_dequeued = callback;
+    }
+
+    /// Alias for setTaskDequeuedCallback.
+    pub const onTaskDequeued = setTaskDequeuedCallback;
+
+    /// Sets the task executed callback.
+    pub fn setTaskExecutedCallback(self: *ThreadPool, callback: ?*const fn (u64, bool) void) void {
+        self.on_task_executed = callback;
+    }
+
+    /// Alias for setTaskExecutedCallback.
+    pub const onTaskExecuted = setTaskExecutedCallback;
+
+    /// Sets the work stolen callback.
+    pub fn setWorkStolenCallback(self: *ThreadPool, callback: ?*const fn (usize, usize) void) void {
+        self.on_work_stolen = callback;
+    }
+
+    /// Alias for setWorkStolenCallback.
+    pub const onWorkStolen = setWorkStolenCallback;
+
+    /// Sets the queue overflow callback.
+    pub fn setQueueOverflowCallback(self: *ThreadPool, callback: ?*const fn (usize, usize) void) void {
+        self.on_queue_overflow = callback;
+    }
+
+    /// Alias for setQueueOverflowCallback.
+    pub const onQueueOverflow = setQueueOverflowCallback;
+
+    fn emitThreadStart(self: *ThreadPool, thread_id: usize) void {
+        if (self.on_thread_start) |cb| cb(thread_id);
+    }
+
+    fn emitThreadStop(self: *ThreadPool, thread_id: usize, tasks_processed: u64, uptime_ms: u64) void {
+        if (self.on_thread_stop) |cb| cb(thread_id, tasks_processed, uptime_ms);
+    }
+
+    fn emitTaskSubmitted(self: *ThreadPool, priority: WorkItem.Priority, queue_depth: usize) void {
+        if (self.on_task_submitted) |cb| cb(@intFromEnum(priority), queue_depth);
+    }
+
+    fn emitTaskDequeued(self: *ThreadPool, priority: WorkItem.Priority, wait_time_ns: u64) void {
+        if (self.on_task_dequeued) |cb| cb(@intFromEnum(priority), wait_time_ns / Constants.TimeConstants.ns_per_us);
+    }
+
+    fn emitTaskExecuted(self: *ThreadPool, exec_time_ns: u64, success: bool) void {
+        if (self.on_task_executed) |cb| cb(exec_time_ns / Constants.TimeConstants.ns_per_us, success);
+    }
+
+    fn emitWorkStolen(self: *ThreadPool, victim_thread: usize, thief_thread: usize) void {
+        if (self.on_work_stolen) |cb| cb(victim_thread, thief_thread);
+    }
+
+    fn emitQueueOverflow(self: *ThreadPool, queue_size: usize, capacity: usize) void {
+        if (self.on_queue_overflow) |cb| cb(queue_size, capacity);
     }
 
     /// Gets the number of pending tasks.

@@ -23,6 +23,7 @@ This module runs a background check against the GitHub API to see if a newer ver
 | Full Method | Alias(es) | Description |
 |-------------|-----------|-------------|
 | `setEnabled()` | `enable()` | Enable update checking |
+| `setUpdateCallback()` | - | Set update-check callback |
 | `isEnabled()` | `is_enabled()` | Check if update checking is enabled |
 | `resetState()` | `reset()`, `clear_state()` | Reset update checker state |
 | `checkForUpdates()` | `check()`, `update()` | Check for available updates |
@@ -85,8 +86,19 @@ Checks for updates in a background thread. Runs only once per process lifecycle.
 - **Behavior**:
     - Fetches the latest release tag from GitHub.
     - Compares it with the current version.
+    - Calls `setUpdateCallback()` if registered.
     - Logs an INFO message if a newer version is found.
     - Fails silently on network errors.
+
+### `setUpdateCallback(callback)`
+
+Registers a callback for update-check results.
+
+The callback receives:
+
+- `status`: `remote_newer`, `local_newer`, `equal`, or `unknown`
+- `latest_tag`: the latest release tag returned by GitHub
+- `current_version`: the currently compiled version string
 
 ### `getCurrentVersion() Version`
 
