@@ -85,7 +85,7 @@ Formats a log record using an optional scratch allocator. If provided, temporary
 
 **Example:**
 ```zig
-const formatted = try formatter.formatWithAllocator(record, config, logger.scratchAllocator());
+const formatted = try formatter.formatWithAllocator(record, config, logger.allocator);
 ```
 
 #### `formatJson(record: *const Record, config: anytype) ![]u8`
@@ -94,11 +94,11 @@ Formats a log record into a JSON string. Automatically includes cached hostname 
 
 #### `formatJsonWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
 
-Formats a log record as JSON using an optional scratch allocator.
+Formats a log record as JSON using an optional scratch allocator. Pass `null` to use the formatter's internal allocator.
 
 **Example:**
 ```zig
-const json = try formatter.formatJsonWithAllocator(record, config, logger.scratchAllocator());
+const json = try formatter.formatJsonWithAllocator(record, config, null);
 ```
 
 #### `formatNdjson(record: *const Record, config: anytype) ![]u8`

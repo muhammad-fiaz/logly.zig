@@ -346,7 +346,7 @@ Removes all disabled rules and returns number of removed rules.
 
 **Example:**
 ```zig
-const messages = rules.evaluateWithAllocator(record, logger.scratchAllocator());
+const messages = rules.evaluateWithAllocator(record, logger.allocator);
 // No need to free if using logger's scratch allocator (batch-freed)
 ```
 

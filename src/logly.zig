@@ -37,7 +37,6 @@
 //!
 //! ```zig
 //! var config = logly.Config.production();
-//! config.use_arena_allocator = true; // optional high-throughput scratch arena
 //! const logger = try logly.Logger.initWithConfig(allocator, config);
 //! ```
 //!

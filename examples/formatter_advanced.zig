@@ -10,7 +10,7 @@ pub fn main() !void {
     _ = logly.Terminal.enableAnsiColors();
 
     std.debug.print("============================================================\n", .{});
-    std.debug.print("  ADVANCED FORMATTING DEMO (v0.2.0)\n", .{});
+    std.debug.print("  ADVANCED FORMATTING DEMO (v0.2.1)\n", .{});
     std.debug.print("============================================================\n\n", .{});
 
     // Create a mock record to format

@@ -626,7 +626,7 @@ pub const NetworkSink = struct {
             }
 
             // Exponential backoff
-            Utils.sleepNs(delay * 1000 * 1000);
+            Utils.sleepMs(delay);
             delay *= 2;
         }
         self.state = .failed;
@@ -694,7 +694,7 @@ pub const NetworkSink = struct {
                 }
             }
             // Exponential backoff
-            Utils.sleepNs(delay * 1000 * 1000);
+            Utils.sleepMs(delay);
             delay *= 2;
         }
         return NetworkError.SendFailed;

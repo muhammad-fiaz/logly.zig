@@ -11,7 +11,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly v0.2.0 Advanced Rotation Demonstration ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Advanced Rotation Demonstration ===\n\n", .{});
 
     // 1. Configure the logger
     var config = logly.Config.default();

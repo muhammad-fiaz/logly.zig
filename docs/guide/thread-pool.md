@@ -104,15 +104,9 @@ Set a custom prefix for worker threads to make debugging easier:
 
 Threads will be named automatically (e.g., `logly-worker-0`, `logly-worker-1`).
 
-### Arena Allocation
+### Allocator
 
-Enable per-worker arena allocation for efficient memory usage:
-
-```zig
-.enable_arena = true
-```
-
-When enabled, each worker thread maintains its own arena allocator. This is particularly useful for formatting operations, as it reduces contention on the global allocator and improves cache locality. The arena is automatically reset after each task.
+The thread pool allocates through the allocator you pass to the logger. To get per-worker scratch arenas, wrap a thread-local `std.heap.ArenaAllocator` around your backing allocator in the calling code, or use a `std.heap.ArenaAllocator` once at startup.
 
 ### Priority Queues
 

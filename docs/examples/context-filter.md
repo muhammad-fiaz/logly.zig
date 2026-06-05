@@ -26,7 +26,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 Dot-Notation Context Filtering Example ===\\n\\n", .{});
+    std.debug.print("=== Logly v0.2.1 Dot-Notation Context Filtering Example ===\\n\\n", .{});
 
     // Create logger (display-only: no file writes)
     // Disable async writes so messages appear immediately for this demo
@@ -89,7 +89,7 @@ pub fn main() !void {
 When you compile and run this example with `zig build run-context_filter` or `zig build example-context_filter`, the console will display:
 
 ```text
-=== Logly v0.2.0 Dot-Notation Context Filtering Example ===
+=== Logly v0.2.1 Dot-Notation Context Filtering Example ===
 
 --- Filter rules configured ---
   Rule 1: allow   context['user.id'] == '42'

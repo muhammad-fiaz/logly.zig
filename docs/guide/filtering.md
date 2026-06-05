@@ -491,9 +491,9 @@ const empty = filter.isEmpty();
 | `ruleCount` | `count` |
 | `length` | `count` |
 
-## Dot-Notation Context Filtering (v0.2.0)
+## Dot-Notation Context Filtering (v0.2.1)
 
-When using structured logging, records are bound with complex metadata key-value contexts (e.g. mapping `user.id` or `service.name` to strings or integers). Traditional filters are limited to standard level and message checks. Logly `v0.2.0` introduces deep structured log filtering using dot-notation keys.
+When using structured logging, records are bound with complex metadata key-value contexts (e.g. mapping `user.id` or `service.name` to strings or integers). Traditional filters are limited to standard level and message checks. Logly `v0.2.1` introduces deep structured log filtering using dot-notation keys.
 
 By using dot-notation, Logly recursively traverses nested structured JSON objects in your log records' contexts to execute precise allow/deny matching rules at runtime.
 

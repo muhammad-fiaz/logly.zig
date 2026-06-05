@@ -65,12 +65,18 @@ pub const Rotation = struct {
 
         /// Parses an interval from string (e.g., "daily", "hourly").
         pub fn fromString(s: []const u8) ?RotationInterval {
-            if (std.mem.eql(u8, s, "minutely")) return .minutely;
-            if (std.mem.eql(u8, s, "hourly")) return .hourly;
-            if (std.mem.eql(u8, s, "daily")) return .daily;
-            if (std.mem.eql(u8, s, "weekly")) return .weekly;
-            if (std.mem.eql(u8, s, "monthly")) return .monthly;
-            if (std.mem.eql(u8, s, "yearly")) return .yearly;
+            const T = struct { name: []const u8, value: RotationInterval };
+            const table = [_]T{
+                .{ .name = "minutely", .value = .minutely },
+                .{ .name = "hourly", .value = .hourly },
+                .{ .name = "daily", .value = .daily },
+                .{ .name = "weekly", .value = .weekly },
+                .{ .name = "monthly", .value = .monthly },
+                .{ .name = "yearly", .value = .yearly },
+            };
+            inline for (table) |entry| {
+                if (std.ascii.eqlIgnoreCase(s, entry.name)) return entry.value;
+            }
             return null;
         }
 

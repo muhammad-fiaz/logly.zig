@@ -1,6 +1,6 @@
 ---
 title: System Diagnostics Example
-description: Example of emitting system diagnostics with Logly.zig. Log OS, CPU, memory, and storage info at startup or on-demand. Includes JSON export, health check, and snapshot diff (v0.2.0).
+description: Example of emitting system diagnostics with Logly.zig. Log OS, CPU, memory, and storage info at startup or on-demand. Includes JSON export, health check, and snapshot diff (v0.2.1).
 head:
   - - meta
     - name: keywords
@@ -43,7 +43,7 @@ pub fn main() !void {
 - Total and available RAM (MB)
 - Per-drive totals/free space when `include_drive_diagnostics = true`
 
-## JSON Export (v0.2.0)
+## JSON Export (v0.2.1)
 
 Serialize diagnostics as a compact JSON string:
 
@@ -56,7 +56,7 @@ defer allocator.free(json);
 std.debug.print("{s}\n", .{json});
 ```
 
-## Health Check (v0.2.0)
+## Health Check (v0.2.1)
 
 Check system health based on available memory:
 
@@ -71,7 +71,7 @@ if (health.issues.len > 0) {
 }
 ```
 
-## Snapshot Diff (v0.2.0)
+## Snapshot Diff (v0.2.1)
 
 Compare two diagnostic snapshots to detect changes:
 

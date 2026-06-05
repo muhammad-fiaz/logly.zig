@@ -73,8 +73,6 @@ logger.configure(config);
 | `log_format`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
 | `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss.SSS"` | Timestamp format                                 |
 | `timezone`               | `enum`        | `.local`                | Timezone for timestamps (`.local` or `.utc`)         |
-| `use_arena_allocator`    | `bool`        | `false`                 | Enable arena allocator for temporary allocations     |
-| `arena_reset_threshold`  | `usize`       | `64 * 1024`             | Scratch arena reset threshold in bytes               |
 | `emit_system_diagnostics_on_init` | `bool` | `false`           | Emit system diagnostics on logger initialization     |
 | `include_drive_diagnostics` | `bool`     | `true`                  | Include drive information in diagnostics             |
 | `auto_flush`             | `bool`        | `false`                 | Auto-flush sinks (set true only when immediate output is critical) |
@@ -207,36 +205,16 @@ var config4 = logly.Config.default().withScheduler(.{
     .cleanup_max_age_days = 7,
 });
 
-// Enable arena allocation
-var config5 = logly.Config.default().withArenaAllocation();
-
 // Chain multiple features
-var config6 = logly.Config.default()
+var config5 = logly.Config.default()
     .withAsync(.{ .enabled = true, .buffer_size = 8192 })
     .withCompression(logly.CompressionConfig.production())
-    .withThreadPool(.{ .enabled = true, .thread_count = 0 }) // Auto-detect CPU cores
-    .withArenaAllocation();
+    .withThreadPool(.{ .enabled = true, .thread_count = 0 }); // Auto-detect CPU cores
 ```
 
-### Allocator Configuration (Explicit vs Builder)
+### Allocator Configuration
 
-Both forms are valid and supported:
-
-```zig
-var config = logly.Config.default();
-config.use_arena_allocator = true;
-
-// Equivalent builder aliases
-config = config.withArenaAllocation();
-config = config.withArenaAllocator();
-config = config.withArena();
-```
-
-Difference:
-- Field assignment mutates your existing `config` variable in place.
-- Builder/alias methods return a modified copy (reassign to keep changes).
-
-You can also run your application/request scratch allocations in your own arena that is backed by GPA, independently of Logly's internal arena:
+The logger uses the `std.mem.Allocator` you pass to `Logger.init(allocator)` / `Logger.initWithConfig(allocator, …)` directly. There is no internal arena or scratch allocator; the choice of allocator is entirely yours.
 
 ```zig
 const std = @import("std");
@@ -247,12 +225,8 @@ defer _ = gpa.deinit();
 var app_arena = std.heap.ArenaAllocator.init(gpa.allocator());
 defer app_arena.deinit();
 
-const request_alloc = app_arena.allocator();
-const tmp = try request_alloc.alloc(u8, 256);
-_ = tmp;
-
-// Release request-scoped allocations in one step
-_ = app_arena.reset(.retain_capacity);
+const logger = try logly.Logger.initWithConfig(app_arena.allocator(), logly.Config.default());
+defer logger.deinit();
 ```
 
 ## Configuration Presets
@@ -587,47 +561,21 @@ logger.configure(config);
 
 ## Performance Configuration
 
-### Arena Allocator
+### Allocator
 
-For high-throughput logging scenarios, enable the arena allocator to reduce allocation overhead:
+Logly uses the `std.mem.Allocator` you pass to `Logger.init(allocator)` / `Logger.initWithConfig(allocator, …)` for every allocation. There is no implicit internal arena layer, so the choice is entirely yours.
+
+For high-throughput logging, wrap a long-lived `std.heap.ArenaAllocator` around your backing allocator and pass the wrapped handle to the logger. Reclaim all temporary allocations in a single `defer arena.deinit()`.
 
 ```zig
-var config = logly.Config.default();
+var gpa = std.heap.DebugAllocator(.{}){};
+defer _ = gpa.deinit();
 
-// Enable arena allocator for temporary allocations
-config.use_arena_allocator = true;
+var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+defer arena.deinit();
 
-// Optionally set the reset threshold (default: 64KB)
-config.arena_reset_threshold = 128 * 1024;  // 128KB
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
+const logger = try logly.Logger.init(arena.allocator());
 defer logger.deinit();
-```
-
-Or use the convenience method:
-
-```zig
-const config = logly.Config.default().withArenaAllocation();
-const logger = try logly.Logger.initWithConfig(allocator, config);
-```
-
-Both `config.use_arena_allocator = true` and `config = config.withArenaAllocator()` enable the same logger behavior.
-The difference is mutation style:
-- Field assignment updates an existing config value.
-- Builder aliases return a modified copy.
-
-**Benefits:**
-- Reduces allocation overhead for formatting operations
-- Better cache locality for temporary buffers
-- Faster logging in high-frequency scenarios
-
-**Manual Arena Reset:**
-
-For long-running applications, you can manually reset the arena to prevent memory growth:
-
-```zig
-// Reset periodically in high-throughput scenarios
-logger.resetArena();
 ```
 
 ### Cross-Platform Colors

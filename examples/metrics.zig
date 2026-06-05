@@ -6,7 +6,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly v0.2.0 Metrics Collection Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Metrics Collection Example ===\n\n", .{});
 
     // Create logger with metrics enabled
     var config = logly.Config.default();

@@ -227,13 +227,6 @@ pub const Config = struct {
     /// OpenTelemetry telemetry configuration.
     telemetry: TelemetryConfig = .{},
 
-    /// Use arena allocator for internal temporary allocations.
-    /// Improves performance by batching allocations and reducing malloc overhead.
-    use_arena_allocator: bool = false,
-
-    /// Arena reset threshold in bytes. When arena reaches this size, it resets.
-    arena_reset_threshold: usize = Constants.ConfigDefaults.arena_reset_threshold,
-
     /// Optional global root path for all log files.
     /// If set, file sinks will be stored relative to this path.
     /// The directory will be auto-created if it doesn't exist.
@@ -838,8 +831,6 @@ pub const Config = struct {
         stack_size: usize = Constants.ThreadDefaults.stack_size,
         /// Enable work stealing between threads.
         work_stealing: bool = true,
-        /// Enable per-worker arena allocator for temporary allocations.
-        enable_arena: bool = false,
         /// Thread naming prefix.
         thread_name_prefix: []const u8 = Constants.ThreadDefaults.thread_name_prefix,
         /// Keep alive time for idle threads (milliseconds).
@@ -909,19 +900,10 @@ pub const Config = struct {
             return cfg;
         }
 
-        /// Returns a copy with per-worker arenas enabled or disabled.
-        pub fn withArena(self: ThreadPoolConfig, enabled: bool) ThreadPoolConfig {
-            var cfg = self;
-            cfg.enable_arena = enabled;
-            return cfg;
-        }
-
         /// Alias for `withThreadCount`.
         pub const threads = withThreadCount;
         /// Alias for `withQueueSize`.
         pub const queue = withQueueSize;
-        /// Alias for `withArena`.
-        pub const arena = ThreadPoolConfig.withArena;
     };
 
     /// Parallel sink writing configuration.
@@ -2184,8 +2166,6 @@ pub const Config = struct {
         overflow_policy: OverflowPolicy = .drop_oldest,
         /// Auto-start worker thread.
         background_worker: bool = true,
-        /// Use arena allocator for batch processing (reduces malloc overhead).
-        use_arena: bool = false,
         /// Queue utilization ratio that records a backpressure event.
         backpressure_threshold: f64 = Constants.AsyncConstants.backpressure_threshold_ratio,
         /// Default timeout for explicit drain waits.
@@ -2772,30 +2752,6 @@ pub const Config = struct {
         return result;
     }
 
-    /// Returns a configuration with arena allocator hint enabled.
-    ///
-    /// Optimization helper. When enabled, the logger may use an arena allocator
-    /// for request-scoped or temporary allocations to improve performance.
-    ///
-    /// Arguments:
-    ///   - None
-    ///
-    /// Return Value:
-    ///   - Modified `Config` with `use_arena_allocator` set to true.
-    ///
-    /// Complexity: O(1)
-    pub fn withArenaAllocation(self: Config) Config {
-        var result = self;
-        result.use_arena_allocator = true;
-        return result;
-    }
-
-    /// Alias for withArenaAllocation.
-    pub const withArenaAllocator = withArenaAllocation;
-
-    /// Short alias for withArenaAllocation.
-    pub const withArena = withArenaAllocation;
-
     /// Returns a configuration for log-only mode (no console display, only file storage).
     ///
     /// Disables console output while keeping file storage enabled.
@@ -2872,7 +2828,21 @@ pub const Config = struct {
         const j = parsed.value;
 
         if (j.level) |lvl| {
-            config.level = if (std.mem.eql(u8, lvl, "trace") or std.mem.eql(u8, lvl, "TRACE")) .trace else if (std.mem.eql(u8, lvl, "debug") or std.mem.eql(u8, lvl, "DEBUG")) .debug else if (std.mem.eql(u8, lvl, "info") or std.mem.eql(u8, lvl, "INFO")) .info else if (std.mem.eql(u8, lvl, "notice") or std.mem.eql(u8, lvl, "NOTICE")) .notice else if (std.mem.eql(u8, lvl, "success") or std.mem.eql(u8, lvl, "SUCCESS")) .success else if (std.mem.eql(u8, lvl, "warning") or std.mem.eql(u8, lvl, "WARNING") or std.mem.eql(u8, lvl, "warn") or std.mem.eql(u8, lvl, "WARN")) .warning else if (std.mem.eql(u8, lvl, "err") or std.mem.eql(u8, lvl, "ERR") or std.mem.eql(u8, lvl, "error") or std.mem.eql(u8, lvl, "ERROR")) .err else if (std.mem.eql(u8, lvl, "fail") or std.mem.eql(u8, lvl, "FAIL")) .fail else if (std.mem.eql(u8, lvl, "critical") or std.mem.eql(u8, lvl, "CRITICAL") or std.mem.eql(u8, lvl, "crit") or std.mem.eql(u8, lvl, "CRIT")) .critical else if (std.mem.eql(u8, lvl, "fatal") or std.mem.eql(u8, lvl, "FATAL")) .fatal else Level.fromString(lvl) orelse .info;
+            // Try canonical level names first via the case-insensitive parser
+            // (handles trace/debug/info/notice/success/warning/err/fail/critical/fatal).
+            // Then resolve historical aliases (warn/error/crit) that the canonical
+            // names do not cover.
+            if (Level.fromString(lvl)) |level| {
+                config.level = level;
+            } else if (std.ascii.eqlIgnoreCase(lvl, "warn")) {
+                config.level = .warning;
+            } else if (std.ascii.eqlIgnoreCase(lvl, "error")) {
+                config.level = .err;
+            } else if (std.ascii.eqlIgnoreCase(lvl, "crit")) {
+                config.level = .critical;
+            } else {
+                config.level = .info;
+            }
         }
         if (j.color) |val| config.color = val;
         if (j.json) |val| config.json = val;
@@ -3005,19 +2975,6 @@ test "config with display storage" {
     try std.testing.expect(both.global_file_storage);
 }
 
-test "config arena allocation aliases" {
-    const base = Config.default();
-
-    const arena_via_primary = base.withArenaAllocation();
-    try std.testing.expect(arena_via_primary.use_arena_allocator);
-
-    const arena_via_alias = base.withArenaAllocator();
-    try std.testing.expect(arena_via_alias.use_arena_allocator);
-
-    const arena_via_short_alias = base.withArena();
-    try std.testing.expect(arena_via_short_alias.use_arena_allocator);
-}
-
 test "config pipeline builders enable related features" {
     const cfg = Config.default()
         .withHighThroughputPipeline()
@@ -3063,11 +3020,10 @@ test "config async metrics and threadpool helper aliases" {
     try std.testing.expect(!metrics_cfg.export_level_breakdown);
     try std.testing.expect(metrics_cfg.export_sink_breakdown);
 
-    const pool_cfg = Config.ThreadPoolConfig.ioBound().threads(4).queue(256).arena(true);
+    const pool_cfg = Config.ThreadPoolConfig.ioBound().threads(4).queue(256);
     try std.testing.expect(pool_cfg.enabled);
     try std.testing.expectEqual(@as(usize, 4), pool_cfg.thread_count);
     try std.testing.expectEqual(@as(usize, 256), pool_cfg.queue_size);
-    try std.testing.expect(pool_cfg.enable_arena);
 }
 
 test "rules config default values" {

@@ -322,7 +322,7 @@ _ = try logger.addSink(.{
     .retention = 24,
 });
 
-## Memory-Mapped (mmap) Sinks (v0.2.0)
+## Memory-Mapped (mmap) Sinks (v0.2.1)
 
 To achieve extreme microsecond-level write performance, you can enable virtual memory mapping (`mmap`) on file sinks. This maps files directly to physical memory blocks, bypassing heavy filesystem context switches and kernel write system calls.
 
@@ -332,7 +332,7 @@ mmap_sink.mmap = true; // [!code hl] // Enable zero-copy mmap writes!
 _ = try logger.addSink(mmap_sink);
 ```
 
-## Cryptographic Tamper-Evident Chaining (v0.2.0)
+## Cryptographic Tamper-Evident Chaining (v0.2.1)
 
 For high-security audit log systems (PCI-DSS/GDPR compliance), you can protect files with native SHA-256 cryptographic chaining. Every log line is cryptographically signed with a SHA-256 hash containing its own message, timestamp, and the signature of the *preceding* line. Any unauthorized insertion, edit, or deletion breaks the signature chain instantly.
 

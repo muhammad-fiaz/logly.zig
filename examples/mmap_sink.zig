@@ -6,7 +6,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly v0.2.0 Memory-Mapped Sink Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Memory-Mapped Sink Example ===\n\n", .{});
 
     // Configure a sink with mmap enabled for high-performance writes
     const log_path = "mmap_example.log";

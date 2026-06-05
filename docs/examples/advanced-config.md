@@ -32,8 +32,7 @@ var config = logly.Config.default()
   .withThreadPool(.{ .enabled = true, .thread_count = 4 })
   .withScheduler(.{ .enabled = true, .cleanup_max_age_days = 7 })
   .withCompression(.{ .enabled = true, .level = .default })
-  .withAsync(.{ .enabled = true, .buffer_size = 4096 })
-  .withArenaAllocator();
+  .withAsync(.{ .enabled = true, .buffer_size = 4096 });
 ```
 
 ## Code Example
@@ -64,9 +63,7 @@ pub fn main() !void {
     config.log_format = "{time} | {level} | {message}";
     config.time_format = logly.Config.TimeFormat.default_pattern;
     config.timezone = .utc;
-    config.use_arena_allocator = true;
-    config.arena_reset_threshold = 64 * 1024;
-    
+
     logger.configure(config);
     
     try logger.info("Custom format with pipe separators", @src());

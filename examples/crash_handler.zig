@@ -11,7 +11,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 Crash Handler Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Crash Handler Example ===\n\n", .{});
 
     // Create a logger (display-only mode: no file writes)
     const config = logly.Config.displayOnly();

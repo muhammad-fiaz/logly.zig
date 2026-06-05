@@ -1029,7 +1029,7 @@ pub const Formatter = struct {
 
     fn writeNumericTimestamp(writer: anytype, timestamp_ms: i64, time_format: []const u8) !void {
         if (isUnixSecondsFormat(time_format)) {
-            const unix_seconds = @divFloor(timestamp_ms, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+            const unix_seconds = @divFloor(timestamp_ms, Utils.msPerSecond);
             try Utils.writeInt(writer, unix_seconds);
             return;
         }
@@ -1697,7 +1697,7 @@ pub const Formatter = struct {
 
         const vendor = if (@hasField(@TypeOf(config), "cef_vendor")) config.cef_vendor else "logly";
         const product = if (@hasField(@TypeOf(config), "cef_product")) config.cef_product else "logly.zig";
-        const version = if (@hasField(@TypeOf(config), "cef_version")) config.cef_version else "0.2.0";
+        const version = if (@hasField(@TypeOf(config), "cef_version")) config.cef_version else Constants.FormatterDefaults.cef_device_version;
         const signature_id = if (record.correlation_id) |cid| cid else "log";
 
         try escapeCefField(writer, vendor);

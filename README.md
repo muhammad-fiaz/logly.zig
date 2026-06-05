@@ -43,14 +43,14 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
 - [Recent Changes](#recent-changes)
-    - [Version 0.2.0](#version-020)
+    - [Version 0.2.1](#version-021)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
   - [Method 2: Manual Configuration](#method-2-manual-configuration)
   - [Method 3: Building from Source](#method-3-building-from-source)
   - [Prebuilt Library](#prebuilt-library)
 - [Quick Start](#quick-start)
-- [Allocator Strategies (GPA + Arena)](#allocator-strategies-gpa--arena)
+- [Allocator Strategies](#allocator-strategies)
 - [Usage Examples](#usage-examples)
   - [File Logging](#file-logging)
   - [File Rotation](#file-rotation)
@@ -209,47 +209,29 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
-### Version 0.2.0
+### Version 0.2.1
 
-This version includes enterprise-grade security controls, high-performance zero-copy memory-mapped logging, crash resilience, robust background processing, advanced observability, and dynamic configurability.
+This is a code-quality and efficiency release focused on tighter integration with Zig 0.16's standard library. No behavioural breaking changes were introduced.
 
-**Enterprise Security & Extreme Performance:**
-* **Tamper-Evident Logs (Cryptographic Chaining)**: Secure your logs using SHA-256 cryptographic chaining. Each log entry is cryptographically linked to the previous one, rendering any manual edits immediately obvious.
-* **Memory-Mapped (mmap) Sinks**: True zero-copy disk writes with microsecond latencies via portable RAM-to-disk mapping on Linux, macOS, and Windows.
-* **TCP Syslog**: Connection-oriented, reliable remote Syslog delivery (RFC 6587) for stable log aggregation.
-* **Global Panic Hook**: Intercept runtime crashes, produce synchronous stack dumps direct to all active sinks, and safely bypass async locks to avoid deadlocks.
-* **Dynamic Reloading**: Runtime JSON configuration reloading (`Logger.reloadFromFile`) to adapt levels, sinks, rules, and formatting on-the-fly.
-* **Dot-Notation Path Filtering**: Filter log records based on deep nested properties (e.g. `user.id` or `network.ip`) within the context metadata.
-* **Binary Serialization (MessagePack)**: Native support for compact binary MessagePack logging to minimize storage footprint and network overhead.
-* **ANSI Terminal Dev Dashboard**: Real-time interactive CLI dashboard format featuring styled borders, status badges, and structured tables.
+**Standard Library Adoption:**
+- **Compile-time Semantic Version parsing** – `version.parsed: std.SemanticVersion` is now exposed from `src/version.zig`, parsed once at compile time via `std.SemanticVersion.parse`.
+- **Update checker uses `std.SemanticVersion.order`** – `compareVersions` in `src/update_checker.zig` now delegates to the standard library's canonical SemVer comparator, correctly handling pre-release / build metadata per SemVer 2.0.0 §11.
+- **Standard-library FNV-1a hashing** – `Utils.hashFnv32a` / `hashFnv64a` now wrap `std.hash.Fnv1a_32` / `Fnv1a_64`, keeping the algorithm in sync with the standard library.
 
-**Advanced Filtering, Formatting & Redaction:**
-* **Filters**: Time-window quiet hours, rate-limiting rules (token bucket), glob matching (`*`, `?`), composite AND/OR chains, and batch processing.
-* **Formatters**: NDJSON, Logfmt (for Grafana Loki), CEF (Common Event Format for SIEM), and fully customizable Template-based alignment.
-* **Redaction**: Built-in Regex, Email, IPv4/IPv6, JWT, and Credit Card (Luhn validation) redaction patterns with GDPR/PCI presets and Compliance Audit Logs.
+**ASCII-aware Performance Wins (`std.ascii` & `std.fmt.digitToChar`):**
+- `Utils.write2Digits`, `write3Digits`, `write4Digits`, `write1Or2Digits`, and `write4Hex` build a small fixed-size buffer and call `std.fmt.digitToChar` once per digit, replacing manual `'0' + n` arithmetic.
+- `Utils.bytesToHexLowerAlloc`, `generateTraceId`, and `generateSpanId` use `std.fmt.digitToChar(_, .lower)` instead of indexing a hand-rolled lookup table.
+- `Utils.parseSize` and `Utils.parseDuration` now do a single `std.ascii.toLower` on the first unit byte and dispatch through a `switch`, eliminating the linear `eqlIgnoreCase` chain.
 
-**Robust Sink & Async Management:**
-* **Sinks**: Sink Groups (atomic fan-out), in-memory ring buffers, per-sink rate limiting, health checks, and buffered write modes.
-* **Async Engine**: Backpressure signals (queue utilization), priority queues (Critical/Fatal bypass), shutdown grace periods, and `drainAndFlush()` handling.
-* **Rotation & Archiving**: Hourly rotation, total maximum size bounds, and multi-file `.tar.gz` archiving capability.
+**Ergonomic String Parsing:**
+- `Level.fromString`, `RotationInterval.fromString`, and the JSON config `level` parser now use `std.ascii.eqlIgnoreCase` so `"info"`, `"INFO"`, and `"Info"` all parse identically. The aliases `warn`/`error`/`crit` keep working as before.
 
-**Metrics, Telemetry & Diagnostics:**
-* **Metrics**: Histograms per log level, P50/P95/P99 latency calculations, StatsD export, and Prometheus text format export.
-* **Diagnostics**: JSON diagnostics export, lightweight snapshots, and memory-based `HealthReport` assessments.
-* **Telemetry**: Event batching (`batch_size`, `flush_interval_ms`), Honeycomb, Datadog/GCP formats, and OTLP integrations.
-* **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, rules, crash handling, and update checks.
+**Centralised Time-Constant Helpers (`src/utils.zig`):**
+- New pre-cast compile-time constants — `msPerSecond`, `msPerMinute`, `msPerHour`, `msPerDay`, `secondsPerMinute`, `secondsPerHour`, `secondsPerDay`, `nsPerMs`, `nsPerUs`, `nsPerSecond` — eliminate the repeated `@as(i64, @intCast(Constants.TimeConstants.X))` boilerplate across `utils.zig`, `formatter.zig`, `scheduler.zig`, and `telemetry.zig`.
+- `Utils.sleepMs(delay)` replaces the hand-rolled `Utils.sleepNs(delay * 1000 * 1000)` exponential-backoff in `src/network.zig` for clarity and correctness.
 
-**Concurrency, Threading & Compression:**
-* **Thread Pool**: Task cancellation, thread naming, execution jitter, and graceful draining.
-* **Scheduler**: Task retries with exponential backoff, global pause/resume, and task dependencies.
-* **Compression**: Zstd Dictionary support for highly repetitive logs, and asynchronous compression offloading.
-* **Sampling**: Token bucket burst sampling, granular `LevelMask` overrides, and temporary level bypassing.
-
-**Internal Improvements:**
-* Standardized constants and config defaults across all core modules.
-* Moved shared formatting, escaping, and time utilities into `src/utils.zig`.
-* Removed hardcoded values in favor of centralized `Constants.*` usage.
-* Unified common utility operations such as atomic loads, JSON escaping, size parsing, throughput calculations, duration formatting, and traceparent parsing.
+**Tests:**
+- 423/423 tests passing across all supported platforms. The implicit internal arena allocator was removed in favour of a single user-provided allocator: `Config.use_arena_allocator`, `Config.arena_reset_threshold`, the `withArena*` builder helpers, `ThreadPoolConfig.enable_arena`, and `AsyncConfig.use_arena` are gone. `Logger.scratchAllocator()`, `Logger.resetArena()`, and the `arena` field on `ThreadPool.Worker` and `AsyncLogger` are also gone. New tests (`level from string is case-insensitive`, `parseSize case insensitive`, `parseSize invalid string`, `parseDuration case insensitive`, `time helpers are typed i64`) lock in the new behaviour.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -265,7 +247,7 @@ The easiest way to add Logly to your project:
 **For Zig 0.16.0+ (use `0.1.8` or newer):**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
 ```
 
 **For Zig 0.15.0 (use `0.1.7` or earlier):**
@@ -293,7 +275,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -412,17 +394,19 @@ pub fn main() !void {
 > [!NOTE]
 > To enable auto-flush globally, set `config.auto_flush = true` or call `logger.enableAutoFlush()`. Auto-flush trades throughput for immediate output.
 
-## Allocator Strategies (GPA + Arena)
+## Allocator Strategies
 
-Logly works with any `std.mem.Allocator` implementation.
+Logly uses the `std.mem.Allocator` you pass directly. There is no implicit internal arena or hidden state — what you pass is exactly what the logger uses for every allocation (records, formatted output, sinks, async buffers, and the optional thread pool).
 
-Default behavior:
+Pick any allocator that matches your workload:
 
-- Logger allocation strategy is the allocator you pass to `Logger.init(...)` / `Logger.initWithConfig(...)`.
-- `Config.use_arena_allocator` defaults to `false`.
-- The recommended default in applications is `std.heap.DebugAllocator`.
+- `std.heap.DebugAllocator` — production-safe default with leak, double-free, and reuse tracking.
+- `std.heap.ArenaAllocator` — wrap a long-lived buffer when temporary churn dominates.
+- `std.heap.page_allocator` — fastest in benchmarks; use only in short-lived utilities.
+- `std.heap.GeneralPurposeAllocator` — Zig's general-purpose heap allocator (debug build in 0.16).
+- Any custom `std.mem.Allocator` you implement for your service.
 
-Use `DebugAllocator` as a production-safe default with leak tracking:
+The recommended default is `DebugAllocator` for application code:
 
 ```zig
 var gpa = std.heap.DebugAllocator(.{}){};
@@ -432,38 +416,20 @@ const logger = try logly.Logger.init(gpa.allocator());
 defer logger.deinit();
 ```
 
-For high-throughput workloads with lots of temporary formatting allocations, enable arena-backed scratch allocation:
+For high-throughput workloads you can wrap an arena around the same allocator and pass the wrapped handle:
 
 ```zig
-var config = logly.Config.production();
-config.use_arena_allocator = true;
-config.arena_reset_threshold = 128 * 1024; // reset scratch arena after ~128KB of temporary allocations
+var gpa = std.heap.DebugAllocator(.{}){};
+defer _ = gpa.deinit();
 
-const logger = try logly.Logger.initWithConfig(allocator, config);
+var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+defer arena.deinit();
+
+const logger = try logly.Logger.init(arena.allocator());
 defer logger.deinit();
 ```
 
-Equivalent builder-style configuration:
-
-```zig
-var config = logly.Config.production().withArenaAllocator();
-config.arena_reset_threshold = 128 * 1024; // reset scratch arena after ~128KB of temporary allocations
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
-defer logger.deinit();
-
-// Optional manual reset hook for long-running loops
-logger.resetArena();
-```
-
-Field-vs-builder difference:
-
-- `config.use_arena_allocator = true` mutates your existing config variable.
-- `config = config.withArenaAllocator()` (or `withArenaAllocation()` / `withArena()`) returns a modified copy and requires reassignment.
-
-All examples in the `examples/` directory use `std.heap.DebugAllocator` as the base allocator and then optionally enable logger arena scratch allocation per config.
-
-When arena allocation is enabled, Logly automatically performs threshold-based arena resets between records to keep memory usage bounded while preserving high throughput.
+All examples in the `examples/` directory use `std.heap.DebugAllocator` as the base allocator.
 
 ## Usage Examples
 
@@ -1199,10 +1165,10 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| Simple log (no color) | 117,334 | 8,523 | Plain text output |
-| Formatted log (no color) | 37,341 | 26,781 | Printf-style formatting |
-| Simple log (with color) | 116,864 | 8,557 | ANSI color codes |
-| Formatted log (with color) | 34,903 | 28,651 | Colored + formatting |
+| Simple log (no color) | 1,255,241 | 797 | Plain text output |
+| Formatted log (no color) | 19,632 | 50,937 | Printf-style formatting |
+| Simple log (with color) | 1,626,201 | 615 | ANSI color codes |
+| Formatted log (with color) | 20,039 | 49,903 | Colored + formatting |
 
 </details>
 
@@ -1211,10 +1177,10 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| JSON compact | 53,149 | 18,815 | Compact JSON output |
-| JSON formatted | 30,426 | 32,867 | JSON with formatting |
-| JSON pretty | 15,963 | 62,643 | Indented JSON output |
-| JSON with color | 29,633 | 33,746 | JSON with ANSI colors |
+| JSON compact | 29,127 | 34,332 | Compact JSON output |
+| JSON formatted | 13,697 | 73,007 | JSON with formatting |
+| JSON pretty | 5,877 | 170,143 | Indented JSON output |
+| JSON with color | 33,569 | 29,789 | JSON with ANSI colors |
 
 </details>
 
@@ -1223,14 +1189,14 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| TRACE level | 54,073 | 18,494 | Lowest priority level |
-| DEBUG level | 28,247 | 35,402 | Debug information |
-| INFO level | 62,796 | 15,925 | General information |
-| SUCCESS level | 45,301 | 22,074 | Success messages |
-| WARNING level | 49,987 | 20,005 | Warning messages |
-| ERROR level | 48,143 | 20,771 | Error messages |
-| FAIL level | 48,729 | 20,522 | Failure messages |
-| CRITICAL level | 49,209 | 20,322 | Critical messages |
+| TRACE level | 31,721 | 31,525 | Lowest priority level |
+| DEBUG level | 27,657 | 36,157 | Debug information |
+| INFO level | 31,145 | 32,108 | General information |
+| SUCCESS level | 31,061 | 32,194 | Success messages |
+| WARNING level | 28,011 | 35,701 | Warning messages |
+| ERROR level | 30,710 | 32,563 | Error messages |
+| FAIL level | 26,915 | 37,154 | Failure messages |
+| CRITICAL level | 30,959 | 32,300 | Critical messages |
 
 </details>
 
@@ -1239,11 +1205,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| Custom level (AUDIT) | 56,116 | 17,820 | User-defined log level |
-| Custom log format | 56,488 | 17,703 | `{time} \| {level} \| {message}` |
-| Custom time format | 52,964 | 18,881 | DD/MM/YYYY HH:mm:ss |
-| ISO8601 time format | 47,387 | 21,103 | ISO 8601 standard format |
-| Unix timestamp (ms) | 58,943 | 16,966 | Millisecond Unix timestamp |
+| Custom level (AUDIT) | 30,718 | 32,554 | User-defined log level |
+| Custom log format | 31,005 | 32,253 | `{time} \| {level} \| {message}` |
+| Custom time format | 29,485 | 33,916 | DD/MM/YYYY HH:mm:ss |
+| ISO8601 time format | 24,124 | 41,452 | ISO 8601 standard format |
+| Unix timestamp (ms) | 26,447 | 37,812 | Millisecond Unix timestamp |
 
 </details>
 
@@ -1252,13 +1218,13 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| Full metadata config | 57,684 | 17,336 | Time + module + file + line |
-| Minimal config | 114,176 | 8,758 | No timestamp or module |
-| Production preset | 35,363 | 28,278 | JSON + sampling + metrics |
-| Development preset | 52,771 | 18,950 | Debug + source location |
-| High throughput preset | 36,483,035 | 27 | Async + thread pool + sampling |
-| Secure preset | 54,322 | 18,409 | Redaction enabled |
-| Multiple sinks (3) | 62,815 | 15,920 | Text + JSON + Pretty |
+| Full metadata config | 30,269 | 33,038 | Time + module + file + line |
+| Minimal config | 26,531 | 37,692 | No timestamp or module |
+| Production preset | 28,304 | 35,331 | JSON + sampling + metrics |
+| Development preset | 31,005 | 32,252 | Debug + source location |
+| High throughput preset | 4,531,448 | 221 | Async + thread pool + sampling |
+| Secure preset | 30,850 | 32,415 | Redaction enabled |
+| Multiple sinks (3) | 20,352 | 49,135 | Text + JSON + Pretty |
 
 </details>
 
@@ -1267,11 +1233,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| Standard allocator (GPA) | 55,929 | 17,880 | Default allocation |
-| Standard allocator (formatted) | 32,885 | 30,409 | GPA with formatting |
-| Arena allocator | 92,368 | 10,826 | Reduced alloc overhead |
-| Arena allocator (formatted) | 34,596 | 28,905 | Arena with formatting |
-| Page allocator | 69,599 | 14,368 | System page allocator |
+| Standard allocator (GPA) | 28,319 | 35,312 | Default allocation |
+| Standard allocator (formatted) | 13,322 | 75,062 | GPA with formatting |
+| User arena allocator | 30,910 | 32,352 | User-wrapped arena |
+| User arena allocator (formatted) | 31,280 | 31,969 | User arena with formatting |
+| Page allocator | 30,974 | 32,285 | System page allocator |
 
 </details>
 
@@ -1280,10 +1246,10 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| With context (3 fields) | 59,076 | 16,927 | Bound context data |
-| With trace context | 46,864 | 21,338 | Trace ID + Span ID |
-| With metrics enabled | 55,463 | 18,030 | Performance monitoring |
-| Structured logging | 38,205 | 26,174 | JSON structured output |
+| With context (3 fields) | 20,498 | 48,785 | Bound context data |
+| With trace context | 32,303 | 30,957 | Trace ID + Span ID |
+| With metrics enabled | 30,386 | 32,910 | Performance monitoring |
+| Structured logging | 28,867 | 34,641 | JSON structured output |
 
 </details>
 
@@ -1292,12 +1258,12 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| Sampling (50% probability) | 54,118 | 18,478 | Probability sampling |
-| Sampling (rate limit) | 53,695 | 18,624 | Rate-based sampling |
-| Sampling (adaptive) | 44,584 | 22,429 | Adaptive sampling |
-| Sampling (every-N) | 54,704 | 18,280 | Every-N message sampling |
-| Rate limiting (10K/sec) | 44,143 | 22,654 | Max 10K logs per second |
-| With redaction enabled | 53,361 | 18,740 | Sensitive data masking |
+| Sampling (50% probability) | 28,840 | 34,674 | Probability sampling |
+| Sampling (rate limit) | 29,787 | 33,572 | Rate-based sampling |
+| Sampling (adaptive) | 31,014 | 32,243 | Adaptive sampling |
+| Sampling (every-N) | 31,856 | 31,392 | Every-N message sampling |
+| Rate limiting (10K/sec) | 31,025 | 32,232 | Max 10K logs per second |
+| With redaction enabled | 30,850 | 32,415 | Sensitive data masking |
 
 </details>
 
@@ -1306,8 +1272,50 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| Filter (allowed) | 40,731 | 24,552 | Message passes filter |
-| Filter (rejected) | 23,304,591 | 43 | Message blocked by filter |
+| Filter (allowed) | 31,137 | 32,116 | Message passes filter |
+| Filter (rejected) | 4,651,163 | 215 | Message blocked by filter |
+
+</details>
+
+<details>
+<summary><strong>Rules Engine</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Rules engine (enabled) | 31,155 | 32,097 | Rule evaluation |
+| Rules engine (disabled) | 31,323 | 31,925 | No rule evaluation |
+
+</details>
+
+<details>
+<summary><strong>Redaction</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Redaction (pattern match) | 21,199 | 47,172 | 2 patterns matched |
+| Redaction (no match) | 48,539 | 20,602 | No patterns matched |
+| Field redaction (full) | 65,353 | 15,301 | Full field masking |
+
+</details>
+
+<details>
+<summary><strong>Metrics</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Metrics recordLog | 4,144,562 | 241 | Atomic counter update |
+| Metrics with latency | 4,114,888 | 243 | With latency tracking |
+| Metrics snapshot | 3,113,422 | 321 | Get current snapshot |
+| Metrics (full config) | 3,544,088 | 282 | All tracking enabled |
+
+</details>
+
+<details>
+<summary><strong>Rotation</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+|-----------|----------------------------|------------------------------------|-------|
+| Rotation (size check) | 28,734 | 34,802 | Size-based check |
 
 </details>
 
@@ -1316,7 +1324,7 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| System Diagnostics (basic) | 24,566 | 40,706 | OS/CPU/Mem info |
+| System Diagnostics (basic) | 15,551 | 64,303 | OS/CPU/Mem info |
 
 </details>
 
@@ -1325,15 +1333,14 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| Single thread baseline | 63,592 | 15,725 | 1 thread sequential |
-| 2 threads concurrent | 55,268 | 18,094 | 2 threads parallel |
-| 4 threads concurrent | 51,211 | 19,527 | 4 threads parallel |
-| 8 threads concurrent | 43,571 | 22,951 | 8 threads parallel |
-| 16 threads concurrent | 48,274 | 20,715 | 16 threads parallel |
-| 4 threads JSON | 37,412 | 26,730 | Parallel JSON logging |
-| 4 threads colored | 54,558 | 18,329 | Parallel colored logging |
-| 4 threads formatted | 51,787 | 19,310 | Parallel formatted logging |
-| 4 threads arena allocator | 51,039 | 19,593 | Parallel with arena alloc |
+| Single thread baseline | 20,826 | 48,016 | 1 thread sequential |
+| 2 threads concurrent | 30,947 | 32,313 | 2 threads parallel |
+| 4 threads concurrent | 26,770 | 37,356 | 4 threads parallel |
+| 8 threads concurrent | 28,506 | 35,081 | 8 threads parallel |
+| 16 threads concurrent | 29,233 | 34,208 | 16 threads parallel |
+| 4 threads JSON | 33,189 | 30,131 | Parallel JSON logging |
+| 4 threads colored | 25,015 | 39,976 | Parallel colored logging |
+| 4 threads formatted | 28,747 | 34,786 | Parallel formatted logging |
 
 </details>
 
@@ -1342,10 +1349,10 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 |-----------|----------------------------|------------------------------------|-------|
-| File output (plain) | 83,878 | 11,922 | Null device output |
-| File output (error) | 39,494 | 25,321 | Error to file |
-| No sampling (baseline) | 62,077 | 16,109 | Sampling disabled |
-| Compression enabled (fast) | 43,747 | 22,859 | Deflate compression |
+| File output (plain) | 29,994 | 33,340 | Null device output |
+| File output (error) | 30,738 | 32,533 | Error to file |
+| No sampling (baseline) | 30,677 | 32,598 | Sampling disabled |
+| Compression enabled (fast) | 31,075 | 32,180 | Deflate compression |
 
 </details>
 
@@ -1353,11 +1360,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Metric | Value |
 |--------|-------|
-| **Total Benchmarks** | 59 |
-| **Average Throughput** | ~1,064,399 ops/sec |
-| **Maximum Throughput** | 36,483,035 ops/sec (High throughput preset) |
-| **Minimum Throughput** | 15,963 ops/sec (JSON pretty) |
-| **Average Latency** | ~939 ns |
+| **Total Benchmarks** | 67 |
+| **Average Throughput** | ~427,885 ops/sec |
+| **Maximum Throughput** | 4,651,163 ops/sec (Filter (rejected)) |
+| **Minimum Throughput** | 5,877 ops/sec (JSON pretty) |
+| **Average Latency** | ~2,337 ns |
 
 > [!NOTE]
 > Benchmark results may vary based on operating system, environment, Zig version, hardware specifications, and software configurations.

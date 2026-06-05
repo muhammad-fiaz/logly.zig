@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Note:** Documentation for versions below 0.1.2 is not available. Please refer to commit history or pull requests for those versions.
 
+## [0.2.1]
+
+### Added
+
+- **Compile-time parsed Semantic Version** (`src/version.zig`) – The current logly version is now parsed at compile time via `std.SemanticVersion.parse`, exposing a `version.parsed: std.SemanticVersion` constant. Update-check helpers can use the canonical ordering implementation in the standard library, avoiding a duplicate, hand-rolled comparator.
+- **Case-insensitive level name parsing** (`src/level.zig`) – `Level.fromString` now uses `std.ascii.eqlIgnoreCase` so callers can pass `"info"`, `"INFO"`, or `"Info"` interchangeably.
+- **Case-insensitive rotation interval parsing** (`src/rotation.zig`) – `RotationInterval.fromString` now accepts any case combination (`"Daily"`, `"HOURLY"`, …).
+- **Case-insensitive JSON config level parsing** (`src/config.zig`) – `Config.loadFromJson` accepts lowercase, uppercase, and mixed-case level names plus the existing aliases (`warn`/`error`/`crit`).
+- **Optimised `parseSize` / `parseDuration`** (`src/utils.zig`) – Both helpers now perform a single `std.ascii.toLower` on the first unit byte and dispatch via `switch`, removing the linear `eqlIgnoreCase` chain.
+- **Optimised digit writers** (`src/utils.zig`) – `write2Digits`, `write3Digits`, `write4Digits`, `write1Or2Digits`, and `write4Hex` now build their output into a small fixed-size buffer and use `std.fmt.digitToChar`, removing manual `'0' + n` arithmetic and producing fewer `writeByte` calls.
+- **Standard-library FNV-1a hashing** (`src/utils.zig`) – `hashFnv32a` and `hashFnv64a` are now thin wrappers around `std.hash.Fnv1a_32` / `std.hash.Fnv1a_64`, ensuring the library stays in lock-step with the standard library implementation (and any future SIMD/vectorised optimisations).
+- **`update_checker` uses `SemanticVersion.order`** (`src/update_checker.zig`) – Version comparison now delegates to `std.SemanticVersion.order`, the canonical zig implementation. This handles pre-release identifiers, build metadata, and SemVer 2.0.0 §11 precedence correctly instead of relying on a custom major/minor/patch compare.
+- **Test coverage** – Added `level from string is case-insensitive`, `parseSize case insensitive`, `parseSize invalid string`, `parseDuration case insensitive`, and `time helpers are typed i64` to lock in the new behaviour.
+
+### Changed
+
+- **Lowercase hex encoding via `std.fmt.digitToChar`** (`src/utils.zig`) – `bytesToHexLowerAlloc`, `generateTraceId`, and `generateSpanId` now use `std.fmt.digitToChar(_, .lower)` instead of indexing a hand-rolled `hex_chars` lookup table. This is shorter, allocation-equivalent, and reduces the chance of typos producing non-conformant W3C trace IDs.
+- **Typed time-constant helpers in `Utils`** (`src/utils.zig`) – New compile-time constants `msPerSecond`, `msPerMinute`, `msPerHour`, `msPerDay`, `secondsPerMinute`, `secondsPerHour`, `secondsPerDay`, `nsPerMs`, `nsPerUs`, and `nsPerSecond` are pre-cast to `i64` so call sites in `utils.zig`, `formatter.zig`, `scheduler.zig`, and `telemetry.zig` no longer need repeated `@as(i64, @intCast(Constants.TimeConstants.X))` boilerplate.
+- **`Utils.sleepMs` for network backoff** (`src/network.zig`) – The two hand-rolled `Utils.sleepNs(delay * 1000 * 1000)` exponential-backoff sites now call `Utils.sleepMs(delay)`, removing the magic number and unit confusion.
+- **`Level.fromString` table-driven** (`src/level.zig`) – Replaced the long if-else chain with an `inline for` over a name→level table for clarity; semantics unchanged.
+- **`RotationInterval.fromString` table-driven** (`src/rotation.zig`) – Replaced the long if-else chain with an `inline for` over a name→interval table.
+- **`Config.loadFromJson` level parsing** (`src/config.zig`) – The JSON level parser now delegates to the case-insensitive `Level.fromString` first and only resolves the historical aliases (`warn`/`error`/`crit`) as a fall-through, removing the duplicated case-insensitive chain.
+- **Single user-provided allocator** (`src/logger.zig`, `src/async.zig`, `src/thread_pool.zig`, `src/config.zig`, `src/constants.zig`) – The implicit internal arena allocator was removed. The logger, async logger, and thread-pool workers now allocate exclusively through the `std.mem.Allocator` passed to `Logger.init(allocator)` / `Logger.initWithConfig(allocator, …)`. The `Config.use_arena_allocator`, `Config.arena_reset_threshold`, `Config.withArenaAllocation()` / `withArenaAllocator()` / `withArena`, `Config.ThreadPoolConfig.enable_arena`, and `Config.AsyncConfig.use_arena` fields (and the matching builder helpers / aliases) are gone, along with `Logger.scratchAllocator()`, `Logger.resetArena()`, `Logger.maybeResetArenaBeforeRecord()`, `Logger.accountArenaUsage()`, the `Logger.arena_state` / `Logger.parent_allocator` / `Logger.arena_bytes_since_reset` fields, `AsyncLogger.scratchAllocator()`, `AsyncLogger.resetArena()`, the `AsyncLogger.arena` field, and the per-worker `arena` field on `ThreadPool.Worker`. Callers who want a scratch arena can wrap an `std.heap.ArenaAllocator` around their backing allocator and pass that in; behaviour is now driven entirely by the caller.
+
+### Fixed
+
+- **Equality fallback in `update_checker.compareVersions`** – When parsing fails for either side, the textual fallback now uses `std.ascii.eqlIgnoreCase` for consistency with the rest of the ASCII-aware code paths and to avoid false negatives caused by case differences in tag names.
+- **Hard-coded `0.2.0` in CEF device version** (`src/constants.zig`, `src/record.zig`, `src/formatter.zig`) – `FormatterDefaults.cef_device_version` is now `version_info.version` so the CEF payload, library version, and package metadata stay in lock-step from a single source of truth (`src/version.zig`).
+
 ## [0.2.0]
 
 ### Added

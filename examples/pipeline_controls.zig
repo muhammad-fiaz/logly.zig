@@ -6,13 +6,13 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly Pipeline Controls (v0.2.0) ===\n\n", .{});
+    std.debug.print("=== Logly Pipeline Controls (v0.2.1) ===\n\n", .{});
 
     const config = logly.Config.default()
         .withHighThroughputPipeline()
         .withObservability("checkout.api")
         .withAsync(logly.AsyncConfig.lowLatency().buffer(256).batch(8).backpressure(0.75))
-        .withThreadPool(logly.ThreadPoolConfig.ioBound().threads(4).queue(512).arena(true))
+        .withThreadPool(logly.ThreadPoolConfig.ioBound().threads(4).queue(512))
         .withRotation(logly.Config.RotationConfig.daily(7).withCompression(.zstd))
         .withScheduler(logly.SchedulerConfig.maintenance("logs/archive").cleanupDays(14).retainFiles(100));
 

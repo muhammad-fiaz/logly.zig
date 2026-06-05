@@ -78,53 +78,6 @@ Enable cryptographic log chaining where each record includes the SHA-256 hash si
 
 Enable memory-mapped file sinks utilizing virtual RAM mappings to bypass file system call overhead for microsecond disk writes. Default: `false`.
 
-#### `use_arena_allocator: bool`
-
-Enable arena allocator for the main logger instance. When enabled, the logger uses an arena allocator for temporary record/format allocations, which can improve performance by reducing allocation overhead. Default: `false`.
-
-```zig
-var config = logly.Config.default();
-config.use_arena_allocator = true;
-config.arena_reset_threshold = 64 * 1024;
-```
-
-Equivalent builder aliases:
-
-```zig
-var config = logly.Config.default().withArenaAllocation();
-// or
-config = config.withArenaAllocator();
-// or
-config = config.withArena();
-```
-
-All three builder names are behavior-equivalent and set `use_arena_allocator = true`.
-
-Difference from direct field assignment:
-- `config.use_arena_allocator = true` mutates an existing `config` value.
-- `config = config.withArenaAllocator()` (or aliases) returns a modified copy and requires reassignment.
-
-You can also use your own application/request arena backed by GPA independently of Logly's internal scratch arena:
-
-```zig
-const std = @import("std");
-
-var gpa = std.heap.DebugAllocator(.{}){};
-defer _ = gpa.deinit();
-
-var request_arena = std.heap.ArenaAllocator.init(gpa.allocator());
-defer request_arena.deinit();
-
-const tmp_alloc = request_arena.allocator();
-const buf = try tmp_alloc.alloc(u8, 512);
-_ = buf;
-_ = request_arena.reset(.retain_capacity);
-```
-
-#### `arena_reset_threshold: usize`
-
-Arena reset threshold in bytes. When approximate temporary arena usage reaches this value, the logger resets the arena before processing the next record. Default: `64 * 1024`.
-
 #### `logs_root_path: ?[]const u8`
 
 Optional global root path for all log files. If set, file sinks will be stored relative to this path. Default: `null`.
@@ -446,7 +399,6 @@ Async logging configuration.
 - `max_latency_ms`: Maximum latency before forcing a flush.
 - `overflow_policy`: Overflow policy (`.drop_oldest`, `.drop_newest`, `.block`).
 - `background_worker`: Auto-start worker thread.
-- `use_arena`: Enable arena allocator for batch processing. Default: `false`.
 
 #### `rules: RulesConfig`
 
@@ -506,7 +458,6 @@ Thread pool configuration.
 - `queue_size`: Maximum queue size.
 - `stack_size`: Stack size per thread.
 - `work_stealing`: Enable work stealing.
-- `enable_arena`: Enable per-worker arena allocator.
 - `thread_name_prefix`: Thread naming prefix.
 - `keep_alive_ms`: Keep alive time for idle threads.
 - `thread_affinity`: Enable thread affinity.
@@ -659,19 +610,13 @@ Enables thread pool with the provided configuration.
 
 Enables scheduler with the provided configuration.
 
-### `withArenaAllocation() Config`
-
-Enables arena allocator for internal temporary allocations to improve performance.
-
-Aliases: `withArenaAllocator()`, `withArena()`.
-
 ### `merge(other: Config) Config`
 
 Merges another configuration into the current one. Non-default values from `other` override the current values.
 
 ## JSON Configuration Loading
 
-Logly v0.2.0 supports parsing and loading configuration dynamically from JSON files and slices. Standard configurations can be easily loaded using these helpers:
+Logly v0.2.1 supports parsing and loading configuration dynamically from JSON files and slices. Standard configurations can be easily loaded using these helpers:
 
 ### `loadFromJson(allocator: std.mem.Allocator, json_slice: []const u8) !Config`
 
@@ -802,8 +747,6 @@ pub const ThreadPoolConfig = struct {
     stack_size: usize = 1024 * 1024,
     /// Enable work stealing between threads.
     work_stealing: bool = true,
-    /// Enable per-worker arena allocator for efficient memory usage.
-    enable_arena: bool = false,
 };
 ```
 
@@ -1038,8 +981,6 @@ pub const AsyncConfig = struct {
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
     background_worker: bool = true,
-    /// Enable arena allocator for batch processing.
-    use_arena: bool = false,
 
     pub const OverflowPolicy = enum {
         drop_oldest,
@@ -1160,17 +1101,6 @@ Returns a configuration with scheduler enabled.
 const config = logly.Config.default().withScheduler(.{
     .cleanup_max_age_days = 7,
 });
-```
-
-### `withArenaAllocation() Config`
-
-Returns a configuration with arena allocator support enabled for logger scratch allocations.
-
-Aliases: `withArenaAllocator()`, `withArena()`.
-
-```zig
-var config = logly.Config.default().withArenaAllocator();
-config.arena_reset_threshold = 128 * 1024;
 ```
 
 ### `merge(other) Config`

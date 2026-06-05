@@ -173,16 +173,21 @@ pub const Level = enum(u8) {
 
     pub fn fromString(s: []const u8) ?Level {
         const N = Constants.MetricsConstants.level_names;
-        if (std.mem.eql(u8, s, N[0])) return .trace;
-        if (std.mem.eql(u8, s, N[1])) return .debug;
-        if (std.mem.eql(u8, s, N[2])) return .info;
-        if (std.mem.eql(u8, s, N[3])) return .notice;
-        if (std.mem.eql(u8, s, N[4])) return .success;
-        if (std.mem.eql(u8, s, N[5])) return .warning;
-        if (std.mem.eql(u8, s, N[6])) return .err;
-        if (std.mem.eql(u8, s, N[7])) return .fail;
-        if (std.mem.eql(u8, s, N[8])) return .critical;
-        if (std.mem.eql(u8, s, N[9])) return .fatal;
+        const table = .{
+            .{ N[0], Level.trace },
+            .{ N[1], Level.debug },
+            .{ N[2], Level.info },
+            .{ N[3], Level.notice },
+            .{ N[4], Level.success },
+            .{ N[5], Level.warning },
+            .{ N[6], Level.err },
+            .{ N[7], Level.fail },
+            .{ N[8], Level.critical },
+            .{ N[9], Level.fatal },
+        };
+        inline for (table) |entry| {
+            if (std.ascii.eqlIgnoreCase(s, entry[0])) return entry[1];
+        }
         return null;
     }
 
@@ -614,6 +619,13 @@ test "level from string" {
     try std.testing.expectEqual(Level.critical, Level.fromString(N[8]).?);
     try std.testing.expectEqual(Level.fatal, Level.fromString(N[9]).?);
     try std.testing.expectEqual(@as(?Level, null), Level.fromString("INVALID"));
+}
+
+test "level from string is case-insensitive" {
+    try std.testing.expectEqual(Level.info, Level.fromString("info").?);
+    try std.testing.expectEqual(Level.info, Level.fromString("INFO").?);
+    try std.testing.expectEqual(Level.info, Level.fromString("Info").?);
+    try std.testing.expectEqual(Level.warning, Level.fromString("Warning").?);
 }
 
 test "level colors" {

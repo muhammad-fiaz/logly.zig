@@ -290,7 +290,6 @@ Logly also supports a fluent builder pattern for configuration:
 
 ```zig
 var config = logly.Config.default()
-    .withArenaAllocation()
     .withAsync()
     .withThreadPool(4);
 

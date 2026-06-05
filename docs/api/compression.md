@@ -753,7 +753,7 @@ Compresses data using an optional scratch allocator. If provided, temporary allo
 
 **Example:**
 ```zig
-const compressed = try compression.compressWithAllocator(data, logger.scratchAllocator());
+const compressed = try compression.compressWithAllocator(data, logger.allocator);
 ```
 
 **Features:**

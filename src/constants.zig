@@ -15,6 +15,7 @@
 //! - Rules System: Diagnostic rules formatting
 
 const std = @import("std");
+const version_info = @import("version.zig");
 
 // Internal buffer pool used by color formatting helpers (fg256/bg256/fgRgb/bgRgb).
 // Uses a small ring of static buffers to avoid heap allocations and return stable slices.
@@ -1121,8 +1122,6 @@ pub const RotationDefaults = struct {
 pub const ConfigDefaults = struct {
     /// Default stack size for stack trace capturing (1MB).
     pub const stack_size: usize = 1024 * 1024;
-    /// Default arena reset threshold (64KB).
-    pub const arena_reset_threshold: usize = 64 * 1024;
     /// Default distributed trace header name.
     pub const distributed_trace_header: []const u8 = "X-Trace-ID";
     /// Default distributed span header name.
@@ -1508,8 +1507,9 @@ pub const FormatterDefaults = struct {
     pub const cef_vendor: []const u8 = "logly";
     /// CEF default device product.
     pub const cef_product: []const u8 = "logly.zig";
-    /// CEF default device version (should match library version).
-    pub const cef_device_version: []const u8 = "0.2.0";
+    /// CEF default device version (reused from `version_info.version` so the
+    /// CEF payload, library version, and package metadata stay in lock-step).
+    pub const cef_device_version: []const u8 = version_info.version;
     /// Template default format string.
     pub const default_template: []const u8 = "{time} [{level}] {message}";
     /// Maximum template field name length.

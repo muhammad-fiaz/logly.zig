@@ -341,7 +341,7 @@ Applies redaction using an optional scratch allocator. If provided, temporary al
 
 ```zig
 // Use with arena allocator from logger
-const result = try redactor.redactWithAllocator(message, logger.scratchAllocator());
+const result = try redactor.redactWithAllocator(message, logger.allocator);
 ```
 
 #### `previewRedaction(value: []const u8) ![]u8`

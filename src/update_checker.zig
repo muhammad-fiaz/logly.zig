@@ -24,7 +24,6 @@ const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
 /// GitHub repository owner for update checks.
-/// GitHub repository owner for update checks.
 const REPO_OWNER = Constants.UpdateCheckerConstants.repo_owner;
 
 /// GitHub repository name for update checks.
@@ -121,14 +120,15 @@ fn compareVersions(latest_raw: []const u8) VersionRelation {
 
     if (parseSemver(current)) |cur| {
         if (parseSemver(latest)) |lat| {
-            if (lat.major != cur.major) return if (lat.major > cur.major) .remote_newer else .local_newer;
-            if (lat.minor != cur.minor) return if (lat.minor > cur.minor) .remote_newer else .local_newer;
-            if (lat.patch != cur.patch) return if (lat.patch > cur.patch) .remote_newer else .local_newer;
-            return .equal;
+            return switch (lat.order(cur)) {
+                .eq => .equal,
+                .lt => .local_newer,
+                .gt => .remote_newer,
+            };
         }
     }
 
-    if (std.mem.eql(u8, current, latest)) return .equal;
+    if (std.ascii.eqlIgnoreCase(current, latest)) return .equal;
     return .unknown;
 }
 

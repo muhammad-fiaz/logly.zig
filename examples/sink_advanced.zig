@@ -9,7 +9,7 @@ pub fn main() !void {
     _ = logly.Terminal.enableAnsiColors();
 
     std.debug.print("============================================================\n", .{});
-    std.debug.print("  ADVANCED SINK DEMO (v0.2.0)\n", .{});
+    std.debug.print("  ADVANCED SINK DEMO (v0.2.1)\n", .{});
     std.debug.print("============================================================\n\n", .{});
 
     // 1. Memory Sink Demo

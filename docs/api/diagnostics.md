@@ -406,7 +406,7 @@ pub const DiagnosticsPresets = struct {
 };
 ```
 
-## New Features in v0.2.0
+## New Features in v0.2.1
 
 ### HealthStatus
 

@@ -30,7 +30,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 Crash Handler Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Crash Handler Example ===\n\n", .{});
 
     // Create a logger (display-only mode: no file writes)
     const config = logly.Config.displayOnly();
@@ -72,7 +72,7 @@ pub fn main() !void {
 When you compile and run this example with `zig build run-crash_handler` or `zig build example-crash_handler`, the console will display:
 
 ```text
-=== Logly v0.2.0 Crash Handler Example ===
+=== Logly v0.2.1 Crash Handler Example ===
 
 2026-05-24 10:55:00.123 [INFO] Logger registered as crash/panic handler. (examples/crash_handler.zig:28)
 2026-05-24 10:55:00.124 [FATAL] Simulated panic: out of memory (test - not a real panic)

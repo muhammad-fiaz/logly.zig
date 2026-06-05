@@ -116,9 +116,9 @@ try Network.sendSyslogUdp(
 *   **Buffering**: The async writer buffers logs and sends them in batches, improving network efficiency.
 *   **Reconnection**: TCP sinks handle reconnection logic automatically.
 
-## Syslog over TCP (RFC 6587) (v0.2.0)
+## Syslog over TCP (RFC 6587) (v0.2.1)
 
-Logly `v0.2.0` introduces complete support for connection-oriented, reliable Syslog forwarding over TCP (conforming to RFC 6587). This completes the remote Syslog RFC 5424 suite by providing guaranteed delivery of secure event streams, whereas traditional UDP Syslog is "fire-and-forget" and prone to packet loss under congestion.
+Logly `v0.2.1` introduces complete support for connection-oriented, reliable Syslog forwarding over TCP (conforming to RFC 6587). This completes the remote Syslog RFC 5424 suite by providing guaranteed delivery of secure event streams, whereas traditional UDP Syslog is "fire-and-forget" and prone to packet loss under congestion.
 
 ### Configuration
 

@@ -8,7 +8,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 Dot-Notation Context Filtering Example ===\\n\\n", .{});
+    std.debug.print("=== Logly v0.2.1 Dot-Notation Context Filtering Example ===\\n\\n", .{});
 
     // Create logger (display-only: no file writes)
     // Disable async writes so messages appear immediately for this demo

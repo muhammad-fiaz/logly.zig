@@ -20,7 +20,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly v0.2.0 Callbacks Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Callbacks Example ===\n\n", .{});
 
     // 1. Basic Logger Callback
     const logger = try logly.Logger.init(allocator);

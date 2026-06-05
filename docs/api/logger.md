@@ -101,23 +101,21 @@ Initializes a new `Logger` instance with a specific configuration preset.
 
 ### Allocator Strategy
 
-`Logger.init(...)` and `Logger.initWithConfig(...)` accept any allocator implementing `std.mem.Allocator`.
+`Logger.init(...)` and `Logger.initWithConfig(...)` accept any allocator implementing `std.mem.Allocator`. Logly uses exactly that allocator for every allocation — there is no implicit internal arena layer.
 
-- Use `std.heap.DebugAllocator` for robust general-purpose ownership and leak detection.
-- Enable arena scratch allocation with `Config.withArenaAllocation()` (aliases: `withArenaAllocator()`, `withArena()`) for high-throughput temporary allocations.
+- `std.heap.DebugAllocator` is the recommended default in production application code.
+- For high-throughput temporary churn, wrap an `std.heap.ArenaAllocator` around your backing allocator and pass the wrapped handle to Logly.
 
 ```zig
 var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
-var config = logly.Config.production().withArenaAllocator();
-config.arena_reset_threshold = 128 * 1024;
+var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+defer arena.deinit();
 
-const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
+const logger = try logly.Logger.initWithConfig(arena.allocator(), logly.Config.production());
 defer logger.deinit();
 ```
-
-`configure(...)` can also toggle arena allocation at runtime (`use_arena_allocator`) without recreating the logger.
 
 ### `deinit() void`
 
@@ -173,33 +171,6 @@ Formats the current global logger trace context as a W3C `traceparent` header st
 ### `clearTraceContext() void`
 
 **Legacy**. Clears the global trace context.
-
-## Arena Allocator Methods
-
-When `use_arena_allocator` is enabled in config, the logger uses an arena allocator for temporary allocations, improving performance.
-
-The logger tracks approximate temporary usage and automatically resets the arena between records when usage reaches `Config.arena_reset_threshold`.
-
-### `scratchAllocator() std.mem.Allocator`
-
-Returns the arena allocator if enabled, otherwise returns the main allocator. Use for temporary allocations that can be batch-freed.
-
-```zig
-const allocator = logger.scratchAllocator();
-const temp = try allocator.alloc(u8, 1024);
-defer allocator.free(temp);
-```
-
-### `resetArena() void`
-
-Resets the arena allocator, freeing all temporary allocations at once. Call periodically in high-throughput scenarios.
-
-```zig
-// Reset every 1000 logs to prevent memory growth
-if (i % 1000 == 0) {
-    logger.resetArena();
-}
-```
 
 ## Callbacks
 

@@ -637,7 +637,6 @@ pub fn main() !void {
         defer loggerStd.deinit();
 
         var configStd = Config.default();
-        configStd.use_arena_allocator = false;
         configStd.auto_sink = false;
         configStd.auto_flush = false;
         loggerStd.configure(configStd);
@@ -650,20 +649,24 @@ pub fn main() !void {
     }
 
     {
-        // Arena allocator
-        const loggerArena = try Logger.initWithConfig(allocator, Config.default().withArenaAllocation());
+        // Arena allocator (wrapping the user allocator) — user-controlled option
+        var arena_state = std.heap.ArenaAllocator.init(allocator);
+        defer arena_state.deinit();
+        const arena_alloc = arena_state.allocator();
+
+        const loggerArena = try Logger.init(arena_alloc);
         defer loggerArena.deinit();
 
-        var configArena = loggerArena.config;
+        var configArena = Config.default();
         configArena.auto_sink = false;
         configArena.auto_flush = false;
         loggerArena.configure(configArena);
 
         _ = try loggerArena.addSink(.{ .path = NULL_PATH });
 
-        const ctxArena = BenchContext{ .logger = loggerArena, .allocator = allocator };
-        try results.append(allocator, runBenchmark("Arena allocator", benchSimpleLog, &ctxArena, "Reduced alloc overhead", "Allocator Comparison"));
-        try results.append(allocator, runBenchmark("Arena allocator (formatted)", benchFormattedLog, &ctxArena, "Arena with formatting", "Allocator Comparison"));
+        const ctxArena = BenchContext{ .logger = loggerArena, .allocator = arena_alloc };
+        try results.append(allocator, runBenchmark("User arena allocator", benchSimpleLog, &ctxArena, "User-wrapped arena", "Allocator Comparison"));
+        try results.append(allocator, runBenchmark("User arena allocator (formatted)", benchFormattedLog, &ctxArena, "User arena with formatting", "Allocator Comparison"));
     }
 
     {
@@ -851,23 +854,6 @@ pub fn main() !void {
 
         const ctxRL = BenchContext{ .logger = loggerRL, .allocator = allocator };
         try results.append(allocator, runBenchmark("Rate limiting (10K/sec)", benchSimpleLog, &ctxRL, "Max 10K logs per second", "Sampling & Rate Limiting"));
-    }
-
-    {
-        // Redaction
-        const loggerRedact = try Logger.init(allocator);
-        defer loggerRedact.deinit();
-
-        var configRedact = Config.default();
-        configRedact.redaction = .{ .enabled = true, .replacement = "[REDACTED]" };
-        configRedact.auto_sink = false;
-        configRedact.auto_flush = false;
-        loggerRedact.configure(configRedact);
-
-        _ = try loggerRedact.addSink(.{ .path = NULL_PATH });
-
-        const ctxRedact = BenchContext{ .logger = loggerRedact, .allocator = allocator };
-        try results.append(allocator, runBenchmark("With redaction enabled", benchSimpleLog, &ctxRedact, "Sensitive data masking", "Sampling & Rate Limiting"));
     }
 
     //
@@ -1334,29 +1320,6 @@ pub fn main() !void {
             "Multi-Threading",
             allocator,
             multiThreadWorkerFormatted,
-        ));
-    }
-
-    {
-        // Multi-thread with arena allocator
-        const loggerArena = try Logger.initWithConfig(allocator, Config.default().withArenaAllocation());
-        defer loggerArena.deinit();
-
-        var configArena = loggerArena.config;
-        configArena.auto_sink = false;
-        configArena.auto_flush = false;
-        loggerArena.configure(configArena);
-
-        _ = try loggerArena.addSink(.{ .path = NULL_PATH });
-
-        try results.append(allocator, runMultiThreadBenchmark(
-            "4 threads arena allocator",
-            loggerArena,
-            4,
-            "Parallel with arena alloc",
-            "Multi-Threading",
-            allocator,
-            multiThreadWorker,
         ));
     }
 

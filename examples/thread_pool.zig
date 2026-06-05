@@ -11,7 +11,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("\n=== Logly v0.2.0 Thread Pool Example ===\n\n", .{});
+    std.debug.print("\n=== Logly v0.2.1 Thread Pool Example ===\n\n", .{});
 
     // Example 1: Basic thread pool
     std.debug.print("1. Basic Thread Pool Setup\n", .{});

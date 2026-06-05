@@ -129,8 +129,6 @@ pub const ThreadPoolConfig = struct {
     stack_size: usize = 1024 * 1024,
     /// Enable work stealing between threads.
     work_stealing: bool = true,
-    /// Enable per-worker arena allocator.
-    enable_arena: bool = false,
     /// Thread naming prefix.
     thread_name_prefix: []const u8 = "logly-worker",
     /// Keep alive time for idle threads (milliseconds).

@@ -174,8 +174,6 @@ Default values shared by top-level config and distributed logging configuration.
 pub const ConfigDefaults = struct {
     /// Default stack size for stack trace capturing.
     pub const stack_size: usize = 1024 * 1024;
-    /// Default arena reset threshold.
-    pub const arena_reset_threshold: usize = 64 * 1024;
     /// Default distributed trace header name.
     pub const distributed_trace_header: []const u8 = "X-Trace-ID";
     /// Default distributed span header name.
@@ -530,8 +528,6 @@ General configuration defaults.
 pub const ConfigDefaults = struct {
     /// Default stack size for stack trace capturing (1MB)
     pub const stack_size: usize = 1024 * 1024;
-    /// Default arena reset threshold (64KB)
-    pub const arena_reset_threshold: usize = 64 * 1024;
 };
 ```
 

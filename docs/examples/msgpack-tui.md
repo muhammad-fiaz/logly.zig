@@ -26,7 +26,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 MessagePack & TUI Formatter Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 MessagePack & TUI Formatter Example ===\n\n", .{});
 
     // Create a sample log record
     var record = logly.Record.init(allocator, .warning, "High memory utilisation detected");
@@ -98,7 +98,7 @@ pub fn main() !void {
 When you compile and run this example with `zig build run-msgpack_tui` or `zig build example-msgpack_tui`, the console will display:
 
 ```text
-=== Logly v0.2.0 MessagePack & TUI Formatter Example ===
+=== Logly v0.2.1 MessagePack & TUI Formatter Example ===
 
 --- 1. MessagePack Binary Format ---
 Encoded 128 bytes of MessagePack binary data.

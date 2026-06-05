@@ -152,7 +152,7 @@ pub const ExporterStats = struct {
     pub fn getLastExportTimeNs(self: *const ExporterStats) i64 {
         const val = self.last_export_time_ns.load(.monotonic);
         if (Constants.AtomicSigned == i32) {
-            return @as(i64, val) * @as(i64, @intCast(Constants.TimeConstants.ns_per_second));
+            return @as(i64, val) * utils.nsPerSecond;
         }
         return val;
     }
@@ -1037,7 +1037,7 @@ pub const Telemetry = struct {
         try writer.writeAll("-");
         try writer.writeAll(span.trace_id[8..@min(32, span.trace_id.len)]);
         try writer.writeAll("\",\"start_time\":");
-        const ns_per_sec_f = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
+        const ns_per_sec_f = @as(f64, @floatFromInt(utils.nsPerSecond));
         const start_s = @as(f64, @floatFromInt(utils.safeToUnsigned(u64, span.start_time))) / ns_per_sec_f;
         try writer.print("{d:.6}", .{start_s});
         if (span.end_time > 0) {

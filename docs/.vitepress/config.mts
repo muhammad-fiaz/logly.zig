@@ -273,7 +273,7 @@ gtag('config', '${GA_ID}');`,
           priceCurrency: "USD",
         },
         downloadUrl: "https://github.com/muhammad-fiaz/logly.zig",
-        softwareVersion: "0.2.0",
+        softwareVersion: "0.2.1",
         license: "https://opensource.org/licenses/MIT",
       });
     } else {
@@ -360,10 +360,10 @@ gtag('config', '${GA_ID}');`,
         items: [
           {
             text: "💖 Sponsor",
-                        link: "https://github.com/sponsors/muhammad-fiaz",
+            link: "https://github.com/sponsors/muhammad-fiaz",
           },
           { text: "☕ Donate", link: "https://pay.muhammadfiaz.com" },
-                ],
+        ],
       },
       { text: "GitHub", link: "https://github.com/muhammad-fiaz/logly.zig" },
     ],
@@ -487,7 +487,10 @@ gtag('config', '${GA_ID}');`,
           { text: "Async Logging", link: "/examples/async-logging" },
           { text: "Network Logging", link: "/examples/network-logging" },
           { text: "Advanced Config", link: "/examples/advanced-config" },
-          { text: "Allocator Strategies", link: "/examples/allocator-strategies" },
+          {
+            text: "Allocator Strategies",
+            link: "/examples/allocator-strategies",
+          },
           { text: "Module Levels", link: "/examples/module-levels" },
           { text: "Custom Levels Full", link: "/examples/custom-levels-full" },
           { text: "Sink Formats", link: "/examples/sink-formats" },
@@ -529,7 +532,7 @@ gtag('config', '${GA_ID}');`,
     footer: {
       message: "Released under the MIT License.",
       copyright: `Copyright © 2025-${new Date().getFullYear()} Muhammad Fiaz`,
-        },
+    },
 
     search: {
       provider: "local",

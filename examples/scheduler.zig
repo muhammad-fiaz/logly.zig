@@ -11,7 +11,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("\n=== Logly v0.2.0 Scheduler Example ===\n\n", .{});
+    std.debug.print("\n=== Logly v0.2.1 Scheduler Example ===\n\n", .{});
 
     // Example 1: Basic scheduler setup
     std.debug.print("1. Basic Scheduler Setup\n", .{});

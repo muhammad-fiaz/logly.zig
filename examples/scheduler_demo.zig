@@ -16,7 +16,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     std.debug.print("\n", .{});
-    std.debug.print("Logly Scheduler Demo v0.2.0\n", .{});
+    std.debug.print("Logly Scheduler Demo v0.2.1\n", .{});
     std.debug.print("Automated Tasks with Compression Integration\n\n", .{});
 
     // Create logs directory for testing

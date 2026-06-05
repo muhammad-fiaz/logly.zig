@@ -1,47 +1,44 @@
 const std = @import("std");
 const logly = @import("logly");
 
-fn runDefaultAllocatorExample(allocator: std.mem.Allocator) !void {
+fn runDebugAllocatorExample(allocator: std.mem.Allocator) !void {
     var config = logly.Config.default();
     config.check_for_updates = false;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    try logger.info("Default strategy: logger uses the allocator passed to init (GPA in this example)", @src());
-    try logger.info("Arena allocation is disabled by default", @src());
+    try logger.info("DebugAllocator: production-safe default with leak + double-free detection", @src());
 }
 
-fn runArenaAllocatorExample(allocator: std.mem.Allocator) !void {
-    var config = logly.Config.default();
-    config.use_arena_allocator = true;
-    config.check_for_updates = false;
-    config.arena_reset_threshold = 64 * 1024;
+fn runUserArenaExample(parent: std.mem.Allocator) !void {
+    var arena = std.heap.ArenaAllocator.init(parent);
+    defer arena.deinit();
 
-    const logger = try logly.Logger.initWithConfig(allocator, config);
+    var config = logly.Config.default();
+    config.check_for_updates = false;
+
+    const logger = try logly.Logger.initWithConfig(arena.allocator(), config);
     defer logger.deinit();
 
-    try logger.info("Arena strategy: temporary record/format allocations use logger scratch arena", @src());
+    try logger.info("User arena: logger allocates through the user-wrapped arena", @src());
 
     var i: usize = 0;
     while (i < 10) : (i += 1) {
         try logger.infof("Arena batch item {d}", .{i}, @src());
     }
 
-    // Optional explicit reset for known batch boundaries.
-    logger.resetArena();
-    try logger.success("Arena reset completed for current batch", @src());
+    try logger.success("All temporary allocations reclaimed by the arena", @src());
 }
 
-fn runArenaAllocatorAliasExample(allocator: std.mem.Allocator) !void {
-    var config = logly.Config.default().withArenaAllocator();
+fn runPageAllocatorExample() !void {
+    var config = logly.Config.default();
     config.check_for_updates = false;
-    config.arena_reset_threshold = 64 * 1024;
 
-    const logger = try logly.Logger.initWithConfig(allocator, config);
+    const logger = try logly.Logger.initWithConfig(std.heap.page_allocator, config);
     defer logger.deinit();
 
-    try logger.info("Alias strategy: withArenaAllocator() is equivalent to use_arena_allocator=true", @src());
+    try logger.info("Page allocator: fastest in benchmarks, no per-allocation frees", @src());
 }
 
 pub fn main() !void {
@@ -51,15 +48,16 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("\n=== Allocator Strategies Demo ===\n", .{});
-    std.debug.print("1) Default allocator path (GPA)\n", .{});
-    try runDefaultAllocatorExample(allocator);
+    std.debug.print("\n=== Allocator Strategies Demo (v0.2.1) ===\n", .{});
 
-    std.debug.print("\n2) Optional arena allocator path\n", .{});
-    try runArenaAllocatorExample(allocator);
+    std.debug.print("\n1) DebugAllocator (recommended default)\n", .{});
+    try runDebugAllocatorExample(allocator);
 
-    std.debug.print("\n3) Optional arena allocator alias path\n", .{});
-    try runArenaAllocatorAliasExample(allocator);
+    std.debug.print("\n2) User-wrapped ArenaAllocator (high-throughput)\n", .{});
+    try runUserArenaExample(allocator);
+
+    std.debug.print("\n3) page_allocator (short-lived utilities, benchmarks)\n", .{});
+    try runPageAllocatorExample();
 
     std.debug.print("\nDone.\n", .{});
 }

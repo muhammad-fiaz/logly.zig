@@ -18,6 +18,7 @@
 const std = @import("std");
 const Level = @import("level.zig").Level;
 const Utils = @import("utils.zig");
+const Constants = @import("constants.zig");
 
 /// Represents a single log event.
 pub const Record = struct {
@@ -484,7 +485,7 @@ pub const Record = struct {
         try writer.writeByte('|');
         try escapeCefField(writer, "logly.zig");
         try writer.writeByte('|');
-        try escapeCefField(writer, "0.2.0");
+        try escapeCefField(writer, Constants.FormatterDefaults.cef_device_version);
         try writer.writeByte('|');
         try escapeCefField(writer, self.correlation_id orelse "log");
         try writer.writeByte('|');

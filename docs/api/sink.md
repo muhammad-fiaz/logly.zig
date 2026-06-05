@@ -287,7 +287,7 @@ Writes a log record using an optional scratch allocator for formatting.
 
 **Example:**
 ```zig
-try sink.writeWithAllocator(record, config, logger.scratchAllocator());
+try sink.writeWithAllocator(record, config, null);
 ```
 
 ### `writeRaw(data: []const u8) !void`

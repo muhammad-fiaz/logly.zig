@@ -7,7 +7,6 @@
 //! - Auto CPU count detection
 //! - Work stealing for load balancing
 //! - Thread affinity support (pin to CPU cores)
-//! - Per-worker arena allocators
 //! - Priority queue support (low, normal, high, critical)
 //! - Batch task submission
 //!
@@ -19,7 +18,6 @@
 //! - thread_count: Number of worker threads (0 = auto-detect)
 //! - queue_size: Work queue capacity per thread
 //! - work_stealing: Enable task stealing between workers
-//! - enable_arena: Per-worker arena allocators
 //!
 //! Performance:
 //! - Lock-free fast path for task submission
@@ -498,7 +496,6 @@ pub const ThreadPool = struct {
         pool: *ThreadPool,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         tasks_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        arena: ?std.heap.ArenaAllocator = null,
         name: [64]u8 = undefined,
         name_len: usize = 0,
     };
@@ -827,12 +824,6 @@ pub const ThreadPool = struct {
         const pool = worker.pool;
         const started_at_ms = Utils.currentMillis();
 
-        // Initialize arena if enabled
-        if (pool.config.enable_arena) {
-            worker.arena = std.heap.ArenaAllocator.init(pool.allocator);
-        }
-        defer if (worker.arena) |*arena| arena.deinit();
-
         const name_str = std.fmt.bufPrint(&worker.name, "{s}-{d}", .{ pool.config.thread_name_prefix, worker.id }) catch pool.config.thread_name_prefix;
         worker.name_len = name_str.len;
 
@@ -874,18 +865,7 @@ pub const ThreadPool = struct {
                 const wait_time_ns = @as(u64, @intCast(@max(0, wait_time_ms))) * Constants.TimeConstants.ns_per_ms;
                 pool.emitTaskDequeued(work.priority, wait_time_ns);
 
-                // Get arena allocator if available
-                var task_allocator: ?std.mem.Allocator = null;
-                if (worker.arena) |*arena| {
-                    task_allocator = arena.allocator();
-                }
-
-                work.task.execute(task_allocator);
-
-                // Reset arena after task execution to free memory
-                if (worker.arena) |*arena| {
-                    _ = arena.reset(.retain_capacity);
-                }
+                work.task.execute(null);
 
                 const exec_time = Utils.currentNanos() - start_time;
                 _ = pool.stats.total_wait_time_ns.fetchAdd(@truncate(wait_time_ns), .monotonic);

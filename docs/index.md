@@ -116,7 +116,7 @@ The easiest way to add Logly to your project.
 For Zig 0.16 (use `0.1.8` or newer):
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
 ```
 
 For Zig 0.15.0 (use `0.1.7` or earlier):

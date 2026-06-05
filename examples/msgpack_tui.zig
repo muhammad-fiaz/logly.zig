@@ -8,7 +8,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 MessagePack & TUI Formatter Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 MessagePack & TUI Formatter Example ===\n\n", .{});
 
     // Create a sample log record
     var record = logly.Record.init(allocator, .warning, "High memory utilisation detected");

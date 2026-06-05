@@ -115,8 +115,6 @@ pub const AsyncConfig = struct {
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
     background_worker: bool = true,
-    /// Enable arena allocator for batch processing (reduces malloc overhead).
-    use_arena: bool = false,
     /// Shutdown grace period in milliseconds to allow remaining records to flush.
     shutdown_timeout_ms: u64 = 1000,
     /// Enable priority queue logic to handle high-priority levels first.
@@ -351,22 +349,6 @@ Wait for the queue to drain until timeout.
 
 ```zig
 pub fn waitUntilDrained(self: *AsyncLogger, timeout_ms: u64) bool
-```
-
-### scratchAllocator
-
-Returns the arena allocator if enabled, otherwise returns the main allocator. Use for temporary allocations that can be batch-freed.
-
-```zig
-pub fn scratchAllocator(self: *AsyncLogger) std.mem.Allocator
-```
-
-### resetArena
-
-Resets the arena allocator, freeing all temporary allocations. Call periodically after processing batches.
-
-```zig
-pub fn resetArena(self: *AsyncLogger) void
 ```
 
 ## AsyncStats Methods

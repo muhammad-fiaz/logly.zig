@@ -8,7 +8,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 Hot-Reload Config Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Hot-Reload Config Example ===\n\n", .{});
 
     // Start with display-only config (no files)
     const logger = try logly.Logger.initWithConfig(allocator, logly.Config.displayOnly());

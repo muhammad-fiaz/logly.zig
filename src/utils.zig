@@ -102,14 +102,18 @@ pub fn parseSize(s: []const u8) ?u64 {
 
     const unit = s[unit_start..];
 
-    // Supports B, KB, MB, GB, TB (case insensitive)
-    if (std.ascii.eqlIgnoreCase(unit, "B")) return num;
-    if (std.ascii.eqlIgnoreCase(unit, "K") or std.ascii.eqlIgnoreCase(unit, "KB")) return num * Constants.SizeConstants.bytes_per_kb;
-    if (std.ascii.eqlIgnoreCase(unit, "M") or std.ascii.eqlIgnoreCase(unit, "MB")) return num * Constants.SizeConstants.bytes_per_mb;
-    if (std.ascii.eqlIgnoreCase(unit, "G") or std.ascii.eqlIgnoreCase(unit, "GB")) return num * Constants.SizeConstants.bytes_per_gb;
-    if (std.ascii.eqlIgnoreCase(unit, "T") or std.ascii.eqlIgnoreCase(unit, "TB")) return num * Constants.SizeConstants.bytes_per_tb;
-
-    return num;
+    // Single dispatch on the first (case-folded) character so the hot
+    // path is one comparison per unit family.
+    if (unit.len == 0) return num;
+    const first = std.ascii.toLower(unit[0]);
+    return switch (first) {
+        'b' => if (unit.len == 1 or std.ascii.toLower(unit[1]) == 'b') num else num,
+        'k' => if (unit.len == 1 or std.ascii.toLower(unit[1]) == 'b') num * Constants.SizeConstants.bytes_per_kb else num,
+        'm' => if (unit.len == 1 or std.ascii.toLower(unit[1]) == 'b') num * Constants.SizeConstants.bytes_per_mb else num,
+        'g' => if (unit.len == 1 or std.ascii.toLower(unit[1]) == 'b') num * Constants.SizeConstants.bytes_per_gb else num,
+        't' => if (unit.len == 1 or std.ascii.toLower(unit[1]) == 'b') num * Constants.SizeConstants.bytes_per_tb else num,
+        else => num,
+    };
 }
 
 /// Writes a human-readable byte size to the writer.
@@ -165,32 +169,29 @@ pub fn parseDuration(s: []const u8) ?i64 {
 
     const unit = s[unit_start..];
 
-    if (std.ascii.eqlIgnoreCase(unit, "ms")) return num;
-    if (std.ascii.eqlIgnoreCase(unit, "s")) return num * @as(i64, @intCast(Constants.TimeConstants.ms_per_second));
-    if (std.ascii.eqlIgnoreCase(unit, "m")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second));
-    if (std.ascii.eqlIgnoreCase(unit, "h")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second));
-    if (std.ascii.eqlIgnoreCase(unit, "d")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
-
-    return num;
+    if (unit.len == 0) return num;
+    const first = std.ascii.toLower(unit[0]);
+    return switch (first) {
+        'm' => if (unit.len == 2 and std.ascii.toLower(unit[1]) == 's') num else num * msPerMinute,
+        's' => num * msPerSecond,
+        'h' => num * msPerHour,
+        'd' => num * msPerDay,
+        else => num,
+    };
 }
 
 /// Writes a human-readable duration to the writer.
 pub fn writeDuration(writer: anytype, ms: i64) !void {
-    const ms_per_sec = @as(i64, @intCast(Constants.TimeConstants.ms_per_second));
-    const ms_per_min = @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second));
-    const ms_per_hour = @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second));
-    const ms_per_day = @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
-
-    if (ms < ms_per_sec) {
+    if (ms < msPerSecond) {
         try writer.print("{d}ms", .{ms});
-    } else if (ms < ms_per_min) {
-        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_sec))});
-    } else if (ms < ms_per_hour) {
-        try writer.print("{d:.2}m", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_min))});
-    } else if (ms < ms_per_day) {
-        try writer.print("{d:.2}h", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_hour))});
+    } else if (ms < msPerMinute) {
+        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerSecond))});
+    } else if (ms < msPerHour) {
+        try writer.print("{d:.2}m", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerMinute))});
+    } else if (ms < msPerDay) {
+        try writer.print("{d:.2}h", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerHour))});
     } else {
-        try writer.print("{d:.2}d", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_day))});
+        try writer.print("{d:.2}d", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerDay))});
     }
 }
 
@@ -232,7 +233,7 @@ pub fn fromEpochSeconds(timestamp: i64) TimeComponents {
 
 /// Extracts time components from a millisecond timestamp.
 pub fn fromMilliTimestamp(timestamp: i64) TimeComponents {
-    return fromEpochSeconds(@divFloor(timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))));
+    return fromEpochSeconds(@divFloor(timestamp, msPerSecond));
 }
 
 /// Converts a civil date to days since Unix epoch (1970-01-01).
@@ -258,10 +259,10 @@ fn daysFromCivil(year: i32, month: u8, day: u8) i64 {
 /// Treats the components as a UTC-like civil instant.
 fn epochSecondsFromComponents(tc: TimeComponents) i64 {
     const days = daysFromCivil(tc.year, tc.month, tc.day);
-    const seconds_in_day: i64 = @as(i64, @intCast(tc.hour)) * @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour)) +
-        @as(i64, @intCast(tc.minute)) * @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute)) +
+    const seconds_in_day: i64 = @as(i64, @intCast(tc.hour)) * secondsPerHour +
+        @as(i64, @intCast(tc.minute)) * secondsPerMinute +
         @as(i64, @intCast(tc.second));
-    return days * @as(i64, @intCast(Constants.TimeConstants.seconds_per_day)) + seconds_in_day;
+    return days * secondsPerDay + seconds_in_day;
 }
 
 /// Converts epoch seconds to local-time components via libc.
@@ -300,7 +301,7 @@ fn localTimeComponentsFromLibc(timestamp_seconds: i64) ?TimeComponents {
 /// Extracts local-time components from a millisecond timestamp.
 /// Falls back to UTC conversion when libc localtime support is unavailable.
 pub fn fromMilliTimestampLocal(timestamp: i64) TimeComponents {
-    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, msPerSecond);
     if (localTimeComponentsFromLibc(safe_seconds)) |tc| {
         return tc;
     }
@@ -310,11 +311,11 @@ pub fn fromMilliTimestampLocal(timestamp: i64) TimeComponents {
 /// Returns local UTC offset in minutes for a millisecond timestamp.
 /// Returns 0 when local timezone conversion is unavailable.
 pub fn localUtcOffsetMinutes(timestamp: i64) i16 {
-    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, msPerSecond);
     const local_tc = localTimeComponentsFromLibc(safe_seconds) orelse return 0;
 
     const local_as_utc_seconds = epochSecondsFromComponents(local_tc);
-    const offset_minutes = @divTrunc(local_as_utc_seconds - safe_seconds, @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute)));
+    const offset_minutes = @divTrunc(local_as_utc_seconds - safe_seconds, secondsPerMinute);
 
     const min_offset = @as(i64, Constants.TimeConstants.min_utc_offset_minutes);
     const max_offset = @as(i64, Constants.TimeConstants.max_utc_offset_minutes);
@@ -409,13 +410,13 @@ pub fn isSameHour(ts1: i64, ts2: i64) bool {
 /// Returns the start of the current day (midnight) as epoch seconds.
 pub fn startOfDay(timestamp: i64) i64 {
     const tc = fromEpochSeconds(timestamp);
-    return timestamp - @as(i64, @intCast(tc.hour * Constants.TimeConstants.seconds_per_hour + tc.minute * Constants.TimeConstants.seconds_per_minute + tc.second));
+    return timestamp - @as(i64, @intCast(tc.hour * @as(u64, @intCast(secondsPerHour)) + tc.minute * @as(u64, @intCast(secondsPerMinute)) + tc.second));
 }
 
 /// Returns the start of the current hour as epoch seconds.
 pub fn startOfHour(timestamp: i64) i64 {
     const tc = fromEpochSeconds(timestamp);
-    return timestamp - @as(i64, @intCast(tc.minute * Constants.TimeConstants.seconds_per_minute + tc.second));
+    return timestamp - @as(i64, @intCast(tc.minute * @as(u64, @intCast(secondsPerMinute)) + tc.second));
 }
 
 /// Calculates elapsed time in milliseconds since start_time.
@@ -427,7 +428,7 @@ pub fn elapsedMs(start_time: i64) u64 {
 
 /// Calculates elapsed time in seconds since start_time.
 pub fn elapsedSeconds(start_time: i64) u64 {
-    return elapsedMs(start_time) / Constants.TimeConstants.ms_per_second;
+    return elapsedMs(start_time) / @as(u64, @intCast(msPerSecond));
 }
 
 /// Formats a date/time string based on a format pattern using granular tokens.
@@ -630,6 +631,32 @@ pub const format = formatDatePattern;
 /// Alias for formatDateToBuf
 pub const formatToBuf = formatDateToBuf;
 
+// Typed time-constant helpers. Pre-cast to `i64` so call sites can multiply,
+// divide, or compare without the repeated `@as(i64, @intCast(...))` cast that
+// the raw `Constants.TimeConstants.*` fields require. They are evaluated at
+// compile time and have zero runtime cost.
+
+/// Milliseconds in one second.
+pub const msPerSecond: i64 = @intCast(Constants.TimeConstants.ms_per_second);
+/// Seconds in one minute.
+pub const secondsPerMinute: i64 = @intCast(Constants.TimeConstants.seconds_per_minute);
+/// Seconds in one hour.
+pub const secondsPerHour: i64 = @intCast(Constants.TimeConstants.seconds_per_hour);
+/// Seconds in one day.
+pub const secondsPerDay: i64 = @intCast(Constants.TimeConstants.seconds_per_day);
+/// Milliseconds in one minute.
+pub const msPerMinute: i64 = secondsPerMinute * msPerSecond;
+/// Milliseconds in one hour.
+pub const msPerHour: i64 = secondsPerHour * msPerSecond;
+/// Milliseconds in one day.
+pub const msPerDay: i64 = secondsPerDay * msPerSecond;
+/// Nanoseconds in one millisecond.
+pub const nsPerMs: i64 = @intCast(Constants.TimeConstants.ns_per_ms);
+/// Nanoseconds in one microsecond.
+pub const nsPerUs: i64 = @intCast(Constants.TimeConstants.ns_per_us);
+/// Nanoseconds in one second.
+pub const nsPerSecond: i64 = @intCast(Constants.TimeConstants.ns_per_second);
+
 /// Escapes a string for safe inclusion in JSON output.
 /// Handles all JSON special characters including control characters.
 ///
@@ -806,6 +833,15 @@ test "parseSize with whitespace" {
 
 test "parseSize invalid" {
     try std.testing.expectEqual(@as(?u64, null), parseSize(""));
+}
+
+test "parseSize case insensitive" {
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), parseSize("1kb"));
+    try std.testing.expectEqual(@as(?u64, 5 * Constants.SizeConstants.bytes_per_mb), parseSize("5mb"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), parseSize("1gb"));
+}
+
+test "parseSize invalid string" {
     try std.testing.expectEqual(@as(?u64, null), parseSize("invalid"));
 }
 
@@ -816,6 +852,12 @@ test "parseDuration" {
     try std.testing.expectEqual(@as(?i64, @intCast(2 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second)), parseDuration("2h"));
     const one_day_ms = @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
     try std.testing.expectEqual(@as(?i64, one_day_ms), parseDuration("1d"));
+}
+
+test "parseDuration case insensitive" {
+    try std.testing.expectEqual(@as(?i64, @intCast(30 * Constants.TimeConstants.ms_per_second)), parseDuration("30S"));
+    try std.testing.expectEqual(@as(?i64, @intCast(5 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second)), parseDuration("5M"));
+    try std.testing.expectEqual(@as(?i64, @intCast(2 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second)), parseDuration("2H"));
 }
 
 test "fromEpochSeconds" {
@@ -840,8 +882,21 @@ test "localUtcOffsetMinutes is bounded" {
 }
 
 test "isSameDay" {
-    try std.testing.expect(isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour))));
-    try std.testing.expect(!isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.seconds_per_day))));
+    try std.testing.expect(isSameDay(1735689600, 1735689600 + secondsPerHour));
+    try std.testing.expect(!isSameDay(1735689600, 1735689600 + secondsPerDay));
+}
+
+test "time helpers are typed i64" {
+    try std.testing.expectEqual(@as(i64, 1000), msPerSecond);
+    try std.testing.expectEqual(@as(i64, 60), secondsPerMinute);
+    try std.testing.expectEqual(@as(i64, 3600), secondsPerHour);
+    try std.testing.expectEqual(@as(i64, 86_400), secondsPerDay);
+    try std.testing.expectEqual(@as(i64, 60_000), msPerMinute);
+    try std.testing.expectEqual(@as(i64, 3_600_000), msPerHour);
+    try std.testing.expectEqual(@as(i64, 86_400_000), msPerDay);
+    try std.testing.expectEqual(@as(i64, 1_000_000), nsPerMs);
+    try std.testing.expectEqual(@as(i64, 1_000), nsPerUs);
+    try std.testing.expectEqual(@as(i64, 1_000_000_000), nsPerSecond);
 }
 
 test "clamp" {
@@ -889,36 +944,42 @@ test "formatIsoDateTime basic" {
 
 /// Writes a value as exactly 2 decimal digits (zero-padded).
 pub fn write2Digits(writer: anytype, value: anytype) !void {
+    var buf: [2]u8 = undefined;
     const v: u64 = @intCast(value);
     const v2 = v % 100;
-    try writer.writeByte(@intCast('0' + (v2 / 10)));
-    try writer.writeByte(@intCast('0' + (v2 % 10)));
+    buf[0] = std.fmt.digitToChar(@as(u8, @intCast(v2 / 10)), .lower);
+    buf[1] = std.fmt.digitToChar(@as(u8, @intCast(v2 % 10)), .lower);
+    try writer.writeAll(&buf);
 }
 
 /// Writes a value as exactly 3 decimal digits (zero-padded).
 pub fn write3Digits(writer: anytype, value: anytype) !void {
+    var buf: [3]u8 = undefined;
     const v: u64 = @intCast(value);
     const v3 = v % 1000;
-    try writer.writeByte(@intCast('0' + (v3 / 100)));
-    try writer.writeByte(@intCast('0' + ((v3 / 10) % 10)));
-    try writer.writeByte(@intCast('0' + (v3 % 10)));
+    buf[0] = std.fmt.digitToChar(@as(u8, @intCast(v3 / 100)), .lower);
+    buf[1] = std.fmt.digitToChar(@as(u8, @intCast((v3 / 10) % 10)), .lower);
+    buf[2] = std.fmt.digitToChar(@as(u8, @intCast(v3 % 10)), .lower);
+    try writer.writeAll(&buf);
 }
 
 /// Writes a value as exactly 4 decimal digits (zero-padded).
 pub fn write4Digits(writer: anytype, value: anytype) !void {
+    var buf: [4]u8 = undefined;
     const v: u64 = @intCast(value);
     const v4 = v % 10000;
-    try writer.writeByte(@intCast('0' + (v4 / 1000)));
-    try writer.writeByte(@intCast('0' + ((v4 / 100) % 10)));
-    try writer.writeByte(@intCast('0' + ((v4 / 10) % 10)));
-    try writer.writeByte(@intCast('0' + (v4 % 10)));
+    buf[0] = std.fmt.digitToChar(@as(u8, @intCast(v4 / 1000)), .lower);
+    buf[1] = std.fmt.digitToChar(@as(u8, @intCast((v4 / 100) % 10)), .lower);
+    buf[2] = std.fmt.digitToChar(@as(u8, @intCast((v4 / 10) % 10)), .lower);
+    buf[3] = std.fmt.digitToChar(@as(u8, @intCast(v4 % 10)), .lower);
+    try writer.writeAll(&buf);
 }
 
 /// Writes a value using 1 or 2 decimal digits.
 pub fn write1Or2Digits(writer: anytype, value: anytype) !void {
     const v: u64 = @intCast(value);
     if (v < 10) {
-        try writer.writeByte(@intCast('0' + v));
+        try writer.writeByte(std.fmt.digitToChar(@as(u8, @intCast(v)), .lower));
     } else {
         try write2Digits(writer, v);
     }
@@ -926,11 +987,12 @@ pub fn write1Or2Digits(writer: anytype, value: anytype) !void {
 
 /// Writes a 16-bit value as 4 lowercase hexadecimal digits.
 pub fn write4Hex(writer: anytype, value: u16) !void {
-    const hex = "0123456789abcdef";
-    try writer.writeByte(hex[(value >> 12) & 0xF]);
-    try writer.writeByte(hex[(value >> 8) & 0xF]);
-    try writer.writeByte(hex[(value >> 4) & 0xF]);
-    try writer.writeByte(hex[value & 0xF]);
+    var buf: [4]u8 = undefined;
+    buf[0] = std.fmt.digitToChar(@as(u8, @intCast((value >> 12) & 0xF)), .lower);
+    buf[1] = std.fmt.digitToChar(@as(u8, @intCast((value >> 8) & 0xF)), .lower);
+    buf[2] = std.fmt.digitToChar(@as(u8, @intCast((value >> 4) & 0xF)), .lower);
+    buf[3] = std.fmt.digitToChar(@as(u8, @intCast(value & 0xF)), .lower);
+    try writer.writeAll(&buf);
 }
 /// Writes an integer value using decimal representation.
 pub fn writeInt(writer: anytype, value: anytype) !void {
@@ -942,11 +1004,10 @@ pub fn writeInt(writer: anytype, value: anytype) !void {
 pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
     var bytes: [16]u8 = undefined;
     io().random(&bytes);
-    const hex_chars = "0123456789abcdef";
     var result = try allocator.alloc(u8, 32);
     for (bytes, 0..) |b, i| {
-        result[i * 2] = hex_chars[b >> 4];
-        result[i * 2 + 1] = hex_chars[b & 0xF];
+        result[i * 2] = std.fmt.digitToChar(b >> 4, .lower);
+        result[i * 2 + 1] = std.fmt.digitToChar(b & 0xF, .lower);
     }
     return result;
 }
@@ -956,11 +1017,10 @@ pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
 pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
     var bytes: [8]u8 = undefined;
     io().random(&bytes);
-    const hex_chars = "0123456789abcdef";
     var result = try allocator.alloc(u8, 16);
     for (bytes, 0..) |b, i| {
-        result[i * 2] = hex_chars[b >> 4];
-        result[i * 2 + 1] = hex_chars[b & 0xF];
+        result[i * 2] = std.fmt.digitToChar(b >> 4, .lower);
+        result[i * 2 + 1] = std.fmt.digitToChar(b & 0xF, .lower);
     }
     return result;
 }
@@ -1423,11 +1483,10 @@ pub fn computeRedactionHash(allocator: std.mem.Allocator, value: []const u8) ![]
 
 /// Converts bytes to a lowercase hexadecimal string using the provided allocator.
 pub fn bytesToHexLowerAlloc(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
-    const hex_chars = "0123456789abcdef";
     const result = try allocator.alloc(u8, bytes.len * 2);
     for (bytes, 0..) |b, i| {
-        result[i * 2] = hex_chars[b >> 4];
-        result[i * 2 + 1] = hex_chars[b & 0x0f];
+        result[i * 2] = std.fmt.digitToChar(b >> 4, .lower);
+        result[i * 2 + 1] = std.fmt.digitToChar(b & 0x0f, .lower);
     }
     return result;
 }
@@ -1635,27 +1694,21 @@ pub fn writeTruncated(writer: anytype, s: []const u8, max_len: usize, suffix: []
 
 /// FNV-1a 32-bit hash of a byte slice. Fast non-cryptographic hash.
 /// Suitable for sampling keys, module name hashing, etc.
+///
+/// Implemented in terms of `std.hash.Fnv1a_32` so that the underlying algorithm
+/// stays consistent with the standard library and benefits from any future
+/// optimisations (SIMD, etc.).
 pub fn hashFnv32a(data: []const u8) u32 {
-    const FNV_PRIME: u32 = 16777619;
-    const FNV_OFFSET: u32 = 2166136261;
-    var hash: u32 = FNV_OFFSET;
-    for (data) |byte| {
-        hash ^= @as(u32, byte);
-        hash *%= FNV_PRIME;
-    }
-    return hash;
+    var hasher = std.hash.Fnv1a_32.init();
+    hasher.update(data);
+    return hasher.final();
 }
 
 /// FNV-1a 64-bit hash of a byte slice.
 pub fn hashFnv64a(data: []const u8) u64 {
-    const FNV_PRIME: u64 = 1099511628211;
-    const FNV_OFFSET: u64 = 14695981039346656037;
-    var hash: u64 = FNV_OFFSET;
-    for (data) |byte| {
-        hash ^= @as(u64, byte);
-        hash *%= FNV_PRIME;
-    }
-    return hash;
+    var hasher = std.hash.Fnv1a_64.init();
+    hasher.update(data);
+    return hasher.final();
 }
 
 /// Normalizes a path for cross-platform use (replaces backslashes with forward slashes).

@@ -4,7 +4,7 @@ const logly = @import("logly");
 const Compression = logly.Compression;
 const CompressionPresets = logly.CompressionPresets;
 
-/// Comprehensive compression demo for Logly v0.2.0
+/// Comprehensive compression demo for Logly v0.2.1
 /// Demonstrates all compression algorithms: deflate, gzip, zlib, zstd, lzma, lzma2, xz, zip, tar.gz, lz4
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -13,7 +13,7 @@ pub fn main() !void {
 
     std.debug.print("\n", .{});
     std.debug.print("=" ** 70 ++ "\n", .{});
-    std.debug.print("  Logly Compression Demo v0.2.0\n", .{});
+    std.debug.print("  Logly Compression Demo v0.2.1\n", .{});
     std.debug.print("  All Compression Algorithms: deflate, gzip, zstd, lzma, xz, zip, tar.gz, lz4\n", .{});
     std.debug.print("=" ** 70 ++ "\n\n", .{});
 

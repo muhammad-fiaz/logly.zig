@@ -26,7 +26,7 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 Hot-Reload Config Example ===\n\n", .{});
+    std.debug.print("=== Logly v0.2.1 Hot-Reload Config Example ===\n\n", .{});
 
     // Start with display-only config (no files)
     const logger = try logly.Logger.initWithConfig(allocator, logly.Config.displayOnly());
@@ -69,7 +69,7 @@ pub fn main() !void {
 When you compile and run this example with `zig build run-hot_reload` or `zig build example-hot_reload`, the console will display:
 
 ```text
-=== Logly v0.2.0 Hot-Reload Config Example ===
+=== Logly v0.2.1 Hot-Reload Config Example ===
 
 2026-05-24 11:00:00.123 [INFO] Logger started with display-only config. (examples/hot_reload.zig:17)
 [Hot-Reload] Config file written to: hot_reload_test.json
