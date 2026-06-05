@@ -11,6 +11,9 @@ head:
 
 This guide covers parallel log processing in Logly using thread pools, including configuration, task submission, batch processing, priority queues, work stealing, and best practices.
 
+> [!NOTE]
+> v0.2.1 adds auto-detection, validation against host cores, and per-worker start/stop callbacks. See [Dynamic Thread Pool](dynamic-thread-pool.md) for the new API.
+
 ## Overview
 
 The thread pool module enables parallel log processing for high-throughput scenarios. It provides configurable worker threads, priority queues, work stealing, and parallel sink writing.

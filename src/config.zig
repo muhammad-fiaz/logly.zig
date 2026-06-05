@@ -221,11 +221,27 @@ pub const Config = struct {
     /// Compression configuration.
     compression: CompressionConfig = .{},
 
+    /// Global file write mode for every file sink attached to this logger.
+    /// Mirrors `SinkConfig.write_mode`; if a sink has its own
+    /// `write_mode` it overrides the global one. Defaults to `.append`,
+    /// which preserves any existing file contents and adds new lines at
+    /// the end. Set to `.overwrite` to truncate the file on open
+    /// (useful for ephemeral run logs) or `.append_rotate` to let the
+    /// rotation scheduler take ownership of retention.
+    file_write_mode: @import("sink.zig").WriteMode = @import("sink.zig").WriteMode.append,
+
     /// Rotation configuration.
     rotation: RotationConfig = .{},
 
     /// OpenTelemetry telemetry configuration.
     telemetry: TelemetryConfig = .{},
+
+    /// Memory-tracker configuration. Used by
+    /// `MemoryTracker.initWithConfig` and propagated through
+    /// `Logger.attachMemoryTracker` so the per-event callbacks and
+    /// pressure threshold are configured from a single place. Default:
+    /// `MemoryConfig{}` (enabled, 90% pressure threshold, no callbacks).
+    memory: MemoryConfig = .{},
 
     /// Optional global root path for all log files.
     /// If set, file sinks will be stored relative to this path.
@@ -237,6 +253,17 @@ pub const Config = struct {
     /// If set, system diagnostics will be stored at this path.
     /// If null, diagnostics will use logs_root_path or default behavior.
     diagnostics_output_path: ?[]const u8 = null,
+
+    /// Minimum number of sinks the logger should keep alive at any time.
+    /// `removeSink` is rejected when the count would drop below this floor.
+    /// Set to `0` (the default) for no minimum; set to `null` to disable enforcement entirely.
+    min_sinks: ?usize = 0,
+
+    /// Maximum number of sinks the logger accepts. `addSink` is rejected
+    /// when the count would exceed this ceiling.
+    /// Defaults to `Constants.Limits.max_sinks`; pass `null` to disable enforcement
+    /// and allow the user to add as many sinks as memory permits.
+    max_sinks: ?usize = Constants.Limits.max_sinks,
 
     /// Custom format structure configuration.
     format_structure: FormatStructureConfig = .{},
@@ -797,6 +824,146 @@ pub const Config = struct {
         log_and_continue,
         fail_fast,
         callback,
+    };
+
+    /// Memory-tracker configuration. Used by `MemoryTracker.initWithConfig`
+    /// to set the pressure threshold, refresh interval, and per-event
+    /// callbacks. All fields have safe defaults so an empty
+    /// `MemoryConfig{}` produces the historical behaviour.
+    pub const MemoryConfig = struct {
+        /// Whether the memory tracker is enabled. `false` skips the
+        /// OS-level `detectAvailableMemory` probe on `init` and the
+        /// background refresh tick. Default: `true`.
+        enabled: bool = true,
+
+        /// Pressure fraction in `[0.0, 1.0]` used by
+        /// `MemoryReport.isPressureHigh` and the optional
+        /// `pressure_callback` event. Default: `0.9` (90% of
+        /// `bytes_capacity`).
+        pressure_threshold: f64 = 0.9,
+
+        /// Whether to fire `pressure_callback` whenever an allocation
+        /// pushes the live usage across `pressure_threshold`. Default:
+        /// `false` (the historical behaviour - the caller asks for
+        /// pressure via `MemoryReport.isPressureHigh`).
+        fire_callback_on_pressure: bool = false,
+
+        /// How often (in milliseconds) the tracker should refresh
+        /// `bytes_available` from the OS probe. `0` disables the
+        /// periodic refresh; the user can still call
+        /// `MemoryTracker.refreshAvailableMemory` on demand. Default:
+        /// `0` (no automatic refresh).
+        refresh_interval_ms: u64 = 0,
+
+        /// Pressure event callback. Receives the live `bytes_used`,
+        /// `bytes_peak`, `bytes_capacity`, the configured
+        /// `pressure_threshold`, and `user_data`. Fires after
+        /// `alloc` / `resize` / `remap` while the tracker mutex is
+        /// held; keep it short.
+        pressure_callback: ?*const fn (
+            bytes_used: usize,
+            bytes_peak: usize,
+            bytes_capacity: usize,
+            threshold: f64,
+            user_data: ?*anyopaque,
+        ) void = null,
+
+        /// OOM event callback. Receives the requested length and
+        /// alignment on allocation failure. The default logger
+        /// already surfaces OOMs through its error path; this is an
+        /// opt-in second hook.
+        oom_callback: ?*const fn (
+            requested_len: usize,
+            alignment: std.mem.Alignment,
+            user_data: ?*anyopaque,
+        ) void = null,
+
+        /// User data pointer passed to `pressure_callback` and
+        /// `oom_callback`. Must outlive the `MemoryTracker` if set.
+        user_data: ?*anyopaque = null,
+
+        /// Returns a copy with `pressure_threshold` clamped to
+        /// `[0.0, 1.0]`.
+        pub fn withThreshold(self: MemoryConfig, value: f64) MemoryConfig {
+            var cfg = self;
+            cfg.pressure_threshold = if (value < 0.0)
+                0.0
+            else if (value > 1.0)
+                1.0
+            else
+                value;
+            return cfg;
+        }
+
+        /// Returns a copy with `refresh_interval_ms` set.
+        pub fn withRefreshInterval(self: MemoryConfig, interval_ms: u64) MemoryConfig {
+            var cfg = self;
+            cfg.refresh_interval_ms = interval_ms;
+            return cfg;
+        }
+
+        /// Returns a copy with `pressure_callback` wired up.
+        pub fn withPressureCallback(
+            self: MemoryConfig,
+            cb: *const fn (
+                bytes_used: usize,
+                bytes_peak: usize,
+                bytes_capacity: usize,
+                threshold: f64,
+                user_data: ?*anyopaque,
+            ) void,
+            user_data: ?*anyopaque,
+        ) MemoryConfig {
+            var cfg = self;
+            cfg.pressure_callback = cb;
+            cfg.user_data = user_data;
+            cfg.fire_callback_on_pressure = true;
+            return cfg;
+        }
+
+        /// Returns a copy with `oom_callback` wired up.
+        pub fn withOomCallback(
+            self: MemoryConfig,
+            cb: *const fn (
+                requested_len: usize,
+                alignment: std.mem.Alignment,
+                user_data: ?*anyopaque,
+            ) void,
+            user_data: ?*anyopaque,
+        ) MemoryConfig {
+            var cfg = self;
+            cfg.oom_callback = cb;
+            cfg.user_data = user_data;
+            return cfg;
+        }
+
+        /// Returns a copy with `enabled` toggled.
+        pub fn withEnabled(self: MemoryConfig, on: bool) MemoryConfig {
+            var cfg = self;
+            cfg.enabled = on;
+            return cfg;
+        }
+
+        /// Returns a copy with `fire_callback_on_pressure` toggled.
+        pub fn withPressureEvents(self: MemoryConfig, on: bool) MemoryConfig {
+            var cfg = self;
+            cfg.fire_callback_on_pressure = on;
+            return cfg;
+        }
+
+        /// Aliases for ergonomic discovery without breaking existing
+        /// call sites.
+        pub const threshold = withThreshold;
+        pub const refreshInterval = withRefreshInterval;
+        pub const pressure = withPressureCallback;
+        pub const onPressure = withPressureCallback;
+        pub const setPressureCallback = withPressureCallback;
+        pub const oom = withOomCallback;
+        pub const onOom = withOomCallback;
+        pub const setOomCallback = withOomCallback;
+        pub const enable = withEnabled;
+        pub const disable = withEnabled;
+        pub const fireOnPressure = withPressureEvents;
     };
 
     /// Default field configuration.
@@ -2800,6 +2967,111 @@ pub const Config = struct {
         result.auto_sink = auto_sink;
         return result;
     }
+
+    /// Set both `min_sinks` and `max_sinks` on a config in one call.
+    /// Pass `null` for either argument to disable that limit entirely.
+    /// Defaults: min=0 (no minimum), max=Constants.Limits.max_sinks.
+    pub fn withSinkLimits(min: ?usize, max: ?usize) Config {
+        var result = Config.default();
+        result.min_sinks = min;
+        result.max_sinks = max;
+        return result;
+    }
+
+    /// Set `max_sinks` only; `min_sinks` is left at the default of 0.
+    pub fn withMaxSinks(max: ?usize) Config {
+        var result = Config.default();
+        result.max_sinks = max;
+        return result;
+    }
+
+    /// Set `min_sinks` only; `max_sinks` is left at the default.
+    pub fn withMinSinks(min: ?usize) Config {
+        var result = Config.default();
+        result.min_sinks = min;
+        return result;
+    }
+
+    /// Returns a config with the supplied `MemoryConfig` applied. The
+    /// memory tracker reads the pressure threshold, refresh interval,
+    /// and per-event callbacks from this struct.
+    pub fn withMemory(self: Config, memory: MemoryConfig) Config {
+        var result = self;
+        result.memory = memory;
+        return result;
+    }
+
+    /// Returns a config with the supplied `MemoryConfig` applied. Alias
+    /// for `withMemory` kept for discoverability next to the
+    /// `with*Config` family of builders.
+    pub fn withMemoryConfig(self: Config, memory: MemoryConfig) Config {
+        return self.withMemory(memory);
+    }
+
+    /// Returns a config with the pressure threshold clamped to
+    /// `[0.0, 1.0]`. Convenience wrapper around
+    /// `MemoryConfig.withThreshold`.
+    pub fn withMemoryPressureThreshold(self: Config, threshold: f64) Config {
+        var result = self;
+        result.memory = result.memory.withThreshold(threshold);
+        return result;
+    }
+
+    /// Returns a config with the periodic OS probe refresh interval set.
+    /// `0` disables the periodic refresh.
+    pub fn withMemoryRefreshInterval(self: Config, interval_ms: u64) Config {
+        var result = self;
+        result.memory = result.memory.withRefreshInterval(interval_ms);
+        return result;
+    }
+
+    /// Returns a config with the pressure-event callback wired up. Also
+    /// enables `fire_callback_on_pressure`.
+    pub fn withMemoryPressureCallback(
+        self: Config,
+        cb: *const fn (
+            bytes_used: usize,
+            bytes_peak: usize,
+            bytes_capacity: usize,
+            threshold: f64,
+            user_data: ?*anyopaque,
+        ) void,
+        user_data: ?*anyopaque,
+    ) Config {
+        var result = self;
+        result.memory = result.memory.withPressureCallback(cb, user_data);
+        return result;
+    }
+
+    /// Returns a config with the OOM callback wired up.
+    pub fn withMemoryOomCallback(
+        self: Config,
+        cb: *const fn (
+            requested_len: usize,
+            alignment: std.mem.Alignment,
+            user_data: ?*anyopaque,
+        ) void,
+        user_data: ?*anyopaque,
+    ) Config {
+        var result = self;
+        result.memory = result.memory.withOomCallback(cb, user_data);
+        return result;
+    }
+
+    /// Returns a config with the memory tracker enabled/disabled.
+    pub fn withMemoryEnabled(self: Config, on: bool) Config {
+        var result = self;
+        result.memory = result.memory.withEnabled(on);
+        return result;
+    }
+
+    /// Aliases for ergonomic discovery.
+    pub const memoryConfig = withMemoryConfig;
+    pub const memoryThreshold = withMemoryPressureThreshold;
+    pub const memoryRefresh = withMemoryRefreshInterval;
+    pub const memoryPressure = withMemoryPressureCallback;
+    pub const memoryOom = withMemoryOomCallback;
+    pub const memoryEnabled = withMemoryEnabled;
 
     const JsonConfig = struct {
         level: ?[]const u8 = null,

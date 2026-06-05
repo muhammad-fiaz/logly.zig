@@ -37,9 +37,21 @@ const Diagnostics = @import("diagnostics.zig");
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 const Rules = @import("rules.zig").Rules;
+const MemoryTracker = @import("memory_tracker.zig").MemoryTracker;
+const MemoryReport = @import("memory_tracker.zig").MemoryReport;
+const detectCurrentMemoryUsage = @import("memory_tracker.zig").detectCurrentMemoryUsage;
+const detectAvailableMemory = @import("memory_tracker.zig").detectAvailableMemory;
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
 pub const Logger = struct {
+    /// Error set returned by sink-management calls.
+    pub const Error = error{
+        /// The user-supplied `max_sinks` or `min_sinks` configuration was
+        /// violated (e.g. `addSink` past the configured ceiling, or
+        /// `removeSink` below the configured floor).
+        SinkLimitReached,
+    };
+
     /// Trace context for distributed request tracking.
     pub const TraceContext = struct {
         trace_id: ?[]const u8 = null,
@@ -206,6 +218,8 @@ pub const Logger = struct {
     update_thread: ?std.Thread = null,
     /// Rules engine for diagnostic messages.
     rules: ?*Rules = null,
+    /// Optional memory tracker wired to `allocator` for real-time telemetry.
+    memory_tracker: ?*MemoryTracker = null,
 
     /// Initialization timestamp for uptime tracking.
     init_timestamp: i64 = 0,
@@ -367,6 +381,69 @@ pub const Logger = struct {
 
     /// Alias for deinit().
     pub const destroy = deinit;
+
+    /// Attach a `MemoryTracker` to the logger so `getMemoryReport` returns
+    /// live data. The tracker is **not** owned by the logger; the caller
+    /// retains ownership and must keep the tracker alive for as long as
+    /// the logger is in use. Pass `null` to detach.
+    ///
+    /// The caller is responsible for ensuring the tracker wraps the same
+    /// underlying allocator that was passed to `Logger.init`; otherwise
+    /// the snapshot will not reflect logger allocations.
+    pub fn attachMemoryTracker(self: *Logger, tracker: ?*MemoryTracker) void {
+        self.memory_tracker = tracker;
+    }
+
+    /// Returns a snapshot of memory telemetry, or `null` if no
+    /// `MemoryTracker` is attached.
+    pub fn getMemoryReport(self: *Logger) ?MemoryReport {
+        const tracker = self.memory_tracker orelse return null;
+        return tracker.snapshot();
+    }
+
+    /// Returns the number of bytes currently live in the attached
+    /// memory tracker, or 0 if no tracker is attached.
+    pub fn getBytesUsed(self: *Logger) usize {
+        const tracker = self.memory_tracker orelse return 0;
+        return tracker.getBytesUsed();
+    }
+
+    /// Returns the peak high-water mark of bytes used by the attached
+    /// memory tracker, or 0 if no tracker is attached.
+    pub fn getBytesPeak(self: *Logger) usize {
+        const tracker = self.memory_tracker orelse return 0;
+        return tracker.getBytesPeak();
+    }
+
+    /// Returns the current process memory usage (RSS / working set), in
+    /// bytes, regardless of whether a tracker is attached. Returns 0 on
+    /// unsupported platforms.
+    pub fn getCurrentMemoryUsage(self: *Logger) usize {
+        _ = self;
+        return detectCurrentMemoryUsage();
+    }
+
+    /// Returns the OS-reported available process memory in bytes, or
+    /// 0 on unsupported platforms. Refreshes the snapshot on the
+    /// attached tracker as a side effect.
+    pub fn getAvailableMemory(self: *Logger) usize {
+        const available = detectAvailableMemory();
+        if (self.memory_tracker) |t| {
+            t.refreshAvailableMemory();
+        }
+        return available;
+    }
+
+    /// Forward `releaseMemory` to the attached `MemoryTracker`. Useful
+    /// for callers that wrap an `ArenaAllocator` - the tracker will
+    /// reset its peak and counter, but live `bytes_used` is unaffected
+    /// because the tracker does not own the arena state. Returns
+    /// `true` if a tracker was attached and the reset ran.
+    pub fn releaseMemory(self: *Logger) bool {
+        const tracker = self.memory_tracker orelse return false;
+        tracker.resetCounters();
+        return true;
+    }
 
     /// Updates the logger configuration.
     ///
@@ -571,9 +648,30 @@ pub const Logger = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
+        // Enforce max_sinks ceiling (configurable; null disables enforcement).
+        // Read the sink count directly from the slice because we already
+        // hold the mutex exclusive; calling getSinkCount() would
+        // re-acquire the lock and deadlock on the non-reentrant Io.Mutex.
+        if (self.config.max_sinks) |max_sinks| {
+            if (self.sinks.items.len >= max_sinks) {
+                return error.SinkLimitReached;
+            }
+        }
+
         // Handle logs_root_path: if set and config.path exists, prepend root to path
         var modified_config = config;
         var resolved_path: ?[]u8 = null;
+
+        // Propagate the global file write mode to any sink that did not
+        // explicitly override it. This keeps the "default = global default"
+        // semantic and lets a single Config rule apply to every file sink,
+        // async logger, scheduler-managed sink, and CustomSink wrapper.
+        if (modified_config.write_mode == .append and
+            self.config.file_write_mode != .append)
+        {
+            modified_config.write_mode = self.config.file_write_mode;
+            modified_config.overwrite_mode = self.config.file_write_mode == .overwrite;
+        }
 
         if (self.config.logs_root_path != null and config.path != null) {
             const root = self.config.logs_root_path.?;
@@ -612,13 +710,21 @@ pub const Logger = struct {
 
     /// Removes a sink by index.
     /// Thread-safe: Uses mutex for concurrent access protection.
-    pub fn removeSink(self: *Logger, id: usize) void {
+    pub fn removeSink(self: *Logger, id: usize) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
         if (self.async_logger != null) {
             // Async logger doesn't support removing sinks dynamically
             return;
+        }
+
+        // Enforce min_sinks floor (0 = no minimum, null = disabled).
+        // Read the sink count directly to avoid re-acquiring the lock.
+        if (self.config.min_sinks) |min_sinks| {
+            if (min_sinks > 0 and self.sinks.items.len <= min_sinks) {
+                return error.SinkLimitReached;
+            }
         }
 
         if (id < self.sinks.items.len) {
@@ -655,6 +761,21 @@ pub const Logger = struct {
     /// Alias for removeAllSinks() - shorter form.
     pub const removeAll = removeAllSinks;
     pub const clear = removeAllSinks;
+
+    /// Set the global file write mode at runtime. Affects every file sink
+    /// added afterwards (the global default is used as the source of truth
+    /// for sinks whose own `write_mode` is still the default `.append`).
+    /// Pass `.overwrite` to truncate the file on open, `.append` to keep
+    /// the existing contents and add lines at the end, or `.append_rotate`
+    /// to let the rotation scheduler take ownership.
+    pub fn setFileWriteMode(self: *Logger, mode: @import("sink.zig").WriteMode) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.config.file_write_mode = mode;
+    }
+
+    /// Alias for setFileWriteMode().
+    pub const setWriteMode = setFileWriteMode;
 
     /// Enables a sink by index.
     /// Thread-safe: Uses mutex for concurrent access protection.
@@ -2411,5 +2532,49 @@ test "logger supports GeneralPurposeAllocator" {
     defer logger.deinit();
 
     try logger.info("gpa-backed logger", null);
+}
+
+test "logger integrates with MemoryTracker" {
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var tracker = MemoryTracker.init(gpa.allocator());
+    const tracked = tracker.allocator();
+
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+
+    const logger = try Logger.initWithConfig(tracked, config);
+    logger.attachMemoryTracker(&tracker);
+    defer logger.deinit();
+
+    try std.testing.expect(logger.getMemoryReport() != null);
+    const baseline_count = logger.getMemoryReport().?.allocation_count;
+
+    try logger.info("first message", null);
+    try logger.info("second message", null);
+
+    const report = logger.getMemoryReport().?;
+    try std.testing.expect(report.allocation_count >= baseline_count);
+
+    try std.testing.expect(logger.releaseMemory());
+    try std.testing.expectEqual(@as(u64, 0), logger.getMemoryReport().?.allocation_count);
+}
+
+test "logger getMemoryReport returns null without tracker" {
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+
+    const logger = try Logger.initWithConfig(gpa.allocator(), config);
+    defer logger.deinit();
+
+    try std.testing.expect(logger.getMemoryReport() == null);
+    try std.testing.expectEqual(@as(usize, 0), logger.getBytesUsed());
+    try std.testing.expectEqual(@as(usize, 0), logger.getBytesPeak());
 }
 

@@ -32,6 +32,19 @@ A production-grade, high-performance structured logging library for Zig, designe
 > [!NOTE]
 > This Project aims to be production ready, while it is relatively new project you can find some interesting features which may simplify your zig project logging.
 
+> [!TIP]
+> **v0.2.1 integrates with `std.log` out of the box.** Add the following to your root file and every `std.log.{err,warn,info,debug}` call (and any third-party `std.log.scoped(...)` variant) is routed to your active logly logger:
+> ```zig
+> pub const std_options: std.Options = .{
+>     .log_level = .info,
+>     .logFn = logly.stdLogFn,
+> };
+> ```
+> Internal logly diagnostics (e.g. invalid thread counts, allocator pressure) are also captured through this bridge.
+
+> [!WARNING]
+> The `ThreadPool` rejects `thread_count` values larger than the host's hardware cores with `error.ThreadCountExceedsCores` and a `std.log.warn` (captured by your active logger when wired to `logly.stdLogFn`). Pass `0` for auto-detection.
+
 **⭐️ If you love `logly.zig`, make sure to give it a star! ⭐️**
 
 ---
@@ -231,7 +244,77 @@ This is a code-quality and efficiency release focused on tighter integration wit
 - `Utils.sleepMs(delay)` replaces the hand-rolled `Utils.sleepNs(delay * 1000 * 1000)` exponential-backoff in `src/network.zig` for clarity and correctness.
 
 **Tests:**
-- 423/423 tests passing across all supported platforms. The implicit internal arena allocator was removed in favour of a single user-provided allocator: `Config.use_arena_allocator`, `Config.arena_reset_threshold`, the `withArena*` builder helpers, `ThreadPoolConfig.enable_arena`, and `AsyncConfig.use_arena` are gone. `Logger.scratchAllocator()`, `Logger.resetArena()`, and the `arena` field on `ThreadPool.Worker` and `AsyncLogger` are also gone. New tests (`level from string is case-insensitive`, `parseSize case insensitive`, `parseSize invalid string`, `parseDuration case insensitive`, `time helpers are typed i64`) lock in the new behaviour.
+- 445/445 tests passing across all supported platforms. The implicit internal arena allocator was removed in favour of a single user-provided allocator: `Config.use_arena_allocator`, `Config.arena_reset_threshold`, the `withArena*` builder helpers, `ThreadPoolConfig.enable_arena`, and `AsyncConfig.use_arena` are gone. `Logger.scratchAllocator()`, `Logger.resetArena()`, and the `arena` field on `ThreadPool.Worker` and `AsyncLogger` are also gone. New tests (`level from string is case-insensitive`, `parseSize case insensitive`, `parseSize invalid string`, `parseDuration case insensitive`, `time helpers are typed i64`, `MemoryTracker basic alloc/free accounting`, `MemoryTracker resize updates accounting`, `MemoryTracker resetCounters keeps live bytes`, `MemoryTracker callback fires on alloc/free`, `MemoryTracker initWithConfig wires callbacks and threshold`, `MemoryTracker pressure edge detector fires once per crossing`, `MemoryTracker OOM callback fires on allocation failure`, `MemoryTracker setPressureThreshold clamps and aliases`, `MemoryConfig builder aliases`, `logger integrates with MemoryTracker`, `logger getMemoryReport returns null without tracker`, `escapeJsonString bulk safe runs`, `thread pool dynamic sizing helpers`, `thread pool worker start and stop callbacks`, `thread pool rejects thread_count above hardware cores`, `thread pool auto-detects when thread_count is zero`, `CustomSink user writer receives formatted bytes`, `MemoryReport isPressureHigh and format helpers`, `MemoryTracker aliases match originals`, `Diagnostics compact one-liner`, `stdLogFn forwards to active logger`, `std.log integration captures internal logly diagnostics`) lock in the new behaviour.
+
+**Real-Time Memory Telemetry (`src/memory_tracker.zig`, `src/config.zig`):**
+- New `logly.MemoryTracker` (aliases: `MemoryTelemetry`, `MemTracker`) wraps any `std.mem.Allocator` and tracks live bytes, peak bytes, allocation count, deallocation count, and live allocation count.
+- Optional `MemoryCallback` invoked on every alloc/free, plus `resetCounters` (keeps live bytes) / `resetAll` (wipes everything).
+- OS-level probes: `logly.detectAvailableMemory()` reads `/proc/meminfo` on Linux, calls `GlobalMemoryStatusEx` via direct FFI on Windows, and falls back to `/proc/meminfo` `MemFree` on the BSD family. `logly.detectCurrentMemoryUsage()` reads `/proc/self/status` `VmRSS` on Linux.
+- `MemoryReport` exposes `formatCompact` (single-line key=value), `formatHuman` (KiB/MiB/GiB), and `isPressureHigh(fraction)` helpers.
+- Example: `examples/memory_telemetry.zig`.
+
+> [!TIP]
+> **Memory-Tracker Configuration (`Config.MemoryConfig`).** Drive the tracker from `Config`:
+> ```zig
+> const cfg = logly.Config.default()
+>     .withMemoryPressureThreshold(0.85)
+>     .withMemoryRefreshInterval(2_000)
+>     .withMemoryPressureCallback(&on_pressure, null)
+>     .withMemoryOomCallback(&on_oom, null);
+> var tracker = logly.MemoryTracker.initWithConfig(gpa.allocator(), cfg.memory);
+> ```
+> The same struct is read by `MemoryTracker.initWithConfig`. Per-instance overrides are available via `MemoryTracker.setPressureCallback` / `setOomCallback` / `setPressureThreshold` / `setRefreshInterval` / `setFireOnPressure`, and the matching `onPressure` / `onOom` / `setThreshold` / `fireOnPressure` aliases. The pressure threshold is clamped to `[0.0, 1.0]`, and the edge detector fires the `pressure_callback` exactly once per crossing of `bytes_used / bytes_capacity >= pressure_threshold`. When `refresh_interval_ms > 0`, the tracker refreshes `bytes_available` from the OS probe on every `alloc` / `resize` / `remap` at the configured cadence.
+
+**Native `std.log` Integration (Zig 0.16):**
+- `logly.stdLogFn` is a drop-in `logFn` for the `std_options` struct in your root file. It maps `std.log.Level` → `logly.Level`, formats the message into a 4 KiB stack scratch (with a tail-format fallback for long messages, never allocating), and forwards to the active logger registered via `logly.crash.registerLogger`.
+- When no active logger is set the call is silently dropped, which is the safe default.
+- Internal `std.log.warn` calls emitted by logly (e.g. invalid thread count) are routed through `logly.stdLogFn` and land in the active logger when the user wires `std_options.logFn = logly.stdLogFn`.
+- Example: `examples/std_log_integration.zig`.
+
+**Thread Pool Auto-Scaling & Validation (`src/thread_pool.zig`):**
+- `ThreadPool.getMaxThreads()` returns the host's recommended thread count, `setThreadCount(n)` updates the configuration, and `maxThreads()` is the method form for `*ThreadPool`.
+- `setWorkerStartCallback` / `setWorkerStopCallback` register per-worker start/stop hooks.
+- `initWithConfig` now refuses to spin up more workers than the host can schedule in parallel; counts above `getMaxThreads()` return `error.ThreadCountExceedsCores` and emit a `std.log.warn` (which is captured by the active logger).
+- Example: `examples/dynamic_thread_pool.zig`.
+
+**Custom Format Sinks (`src/sink.zig`):**
+- New `logly.CustomSink` is a thin wrapper around a user-supplied `*const fn ([]const u8, *anyopaque) anyerror!void` write callback (plus optional flush / close callbacks). It tracks bytes written and records handled, surfaces write errors to the caller, and never assumes ownership of the user data. This is the supported way to route logly output to a backend the library does not ship with (custom binary encoder, database writer, Kafka producer, hardware serial port, remote syslog daemon with a proprietary wire format, ...).
+- Example: `examples/custom_sink.zig`.
+
+**Fast JSON Formatter (`src/formatter.zig`):**
+- `formatJsonWithAllocator` switched from `std.Io.Writer.Allocating` to a pre-sized `std.ArrayList(u8)` + `Utils.ArrayListWriter` + a `estimateJsonSize` heuristic, removing the exponential grow cost.
+- `escapeJsonString` now bulk-writes runs of safe bytes and only pays per-byte cost on actual escape characters.
+- Example: `examples/fast_json.zig`.
+
+**Crash & Diagnostics Hardening (`src/crash.zig`, `src/diagnostics.zig`):**
+- `crash.getActiveLogger`, `crash.isActive` / `hasActiveLogger` / `registered`, `crash.currentLogger` / `getLogger`, `crash.triggerPanic` / `testPanic` / `raisePanic`, `crash.describe` for introspection, and `install` / `remove` / `attach` / `detach` / `setActive` / `clearActive` aliases.
+- `Diagnostics.compact(allocator)` returns a single-line key=value description (`os=… arch=… cores=… mem_total=… mem_avail=… drives=…`).
+
+**`run-all-examples` build target (`build.zig`):**
+- New `zig build run-all-examples` step builds every non-skipped example in Debug mode and runs them serially, with a 4 GiB per-step RSS cap. Network-dependent and version-check examples are explicitly marked `skip_run_all`.
+
+**Per-sink file write mode (overwrite / append / append_rotate) (`src/sink.zig`, `src/config.zig`, `src/logger.zig`):**
+- New `SinkConfig.write_mode: WriteMode` field plus a global `Config.file_write_mode` that flows to every file sink, async logger, scheduler-managed sink, and CustomSink wrapper. Three modes: `.append` (default, preserves existing contents and writes at EOF), `.overwrite` (truncates the file on open for ephemeral run logs), and `.append_rotate` (lets the rotation scheduler own retention). Runtime control is exposed through `Logger.setFileWriteMode(mode)` (alias `setWriteMode`).
+
+**Sink ceiling & floor enforcement (`src/logger.zig`, `src/config.zig`):**
+- New `Config.min_sinks` and `Config.max_sinks` optional fields with builder helpers `Config.withSinkLimits(min, max)`, `Config.withMaxSinks(max)`, `Config.withMinSinks(min)`. `addSink` returns `error.SinkLimitReached` when the ceiling would be exceeded; `removeSink` returns the same error when the floor would be breached. Defaults preserve the historical behaviour: `min_sinks = 0` (no minimum) and `max_sinks = Constants.Limits.max_sinks` (64). Pass `null` to either field to disable enforcement entirely.
+
+**`Formatter.formatText` to a fixed-size buffer (`src/formatter.zig`):**
+- New `Formatter.formatText(record, buf, config) !usize` returns the number of bytes written into the caller-provided buffer, complementing `formatToWriter` (which writes to a writer) and `formatWithAllocator` (which allocates). The supported way to render a logly `Record` into a stack buffer before pushing the rendered bytes through a `CustomSink` user writer.
+
+**Code-Quality & Const Reuse (`src/memory_tracker.zig`, `src/sink.zig`, `src/diagnostics.zig`, `src/logly.zig`, `src/constants.zig`):**
+- `MemoryTracker.humanBytes` now reuses `Constants.SizeConstants.bytes_per_kb` / `bytes_per_mb` / `bytes_per_gb` / `bytes_per_tb` so the byte boundaries stay in sync with the rest of the library.
+- The OS memory probes (`detectAvailableMemoryLinux`, `detectAvailableMemoryUnix`, `detectCurrentMemoryUsageLinux`) read into a `[Constants.BufferSizes.file_read]u8` scratch instead of an inline `4096` literal.
+- The sink mmap initial size uses `Constants.SizeConstants.bytes_per_mb` instead of an inline `1024 * 1024` literal.
+- `Diagnostics.toJson` per-drive `total_gb` / `free_gb` math reuses `Constants.SizeConstants.bytes_per_gb`.
+- `logly.stdLogFn` scratch buffer is now `[Constants.BufferSizes.message]u8`, keeping the std-log integration in lock-step with the formatter's message buffer.
+
+**`Logger.Error` error set (`src/logger.zig`):**
+- New `Logger.Error = error{SinkLimitReached}` lets callers write `try logger.addSink(cfg)` against a single named error set rather than the historical anonymous `anyerror`.
+
+**Bug Fixes (`src/logger.zig`, `src/thread_pool.zig`):**
+- `addSink` / `removeSink` no longer re-acquire the non-reentrant `std.Io.Mutex` (Zig 0.16) by calling `getSinkCount()` while the lock is already held; they read `self.sinks.items.len` directly. The "logger with auto sink" smoke test, which hangs in v0.2.0, now passes in ~7 s wall time.
+- The "thread pool rejects thread_count above hardware cores" test now wraps the call with `std.testing.log_level = .err` so the library's `std.log.warn` diagnostic does not pollute the test output, restoring the clean `zig build test` log.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -966,6 +1049,99 @@ const tui_logger = try logly.Logger.initWithConfig(allocator, tui_config);
 defer tui_logger.deinit();
 ```
 
+### Custom Format Sinks
+
+Route logly output to any backend the library does not ship with (custom binary encoder, database writer, Kafka producer, hardware serial port, remote syslog daemon with a proprietary wire format, ...) by plugging a function pointer into `logly.CustomSink`.
+
+```zig
+const logly = @import("logly");
+
+const Backend = struct {
+    bytes: std.ArrayListUnmanaged(u8) = .empty,
+    alloc: std.mem.Allocator,
+
+    fn writer(data: []const u8, user_data: *anyopaque) anyerror!void {
+        const self: *@This() = @ptrCast(@alignCast(user_data));
+        try self.bytes.appendSlice(self.alloc, data);
+    }
+};
+
+var backend: Backend = .{ .alloc = allocator };
+var custom: logly.CustomSink = .{
+    .write_fn = Backend.writer,
+    .user_data = @ptrCast(&backend),
+    .name = "my-kafka-bridge",
+};
+defer custom.close();
+
+try custom.write("[kafka] hello from a custom sink\n");
+try custom.flush();
+
+std.debug.print("custom sink captured {d} bytes across {d} records\n", .{
+    custom.getBytesWritten(),
+    custom.getRecordsWritten(),
+});
+```
+
+> [!TIP]
+> `CustomSink` does not own `user_data`. The flush / close callbacks are optional and only fire if you set them; resource lifetime is the caller's responsibility.
+
+### Memory Telemetry
+
+Opt-in real-time memory/allocator telemetry. Wrap your user allocator once and the logger tracks every alloc/free without you instrumenting the call sites.
+
+```zig
+var tracker = logly.MemoryTracker.init(gpa.allocator());
+const logger = try logly.Logger.initWithConfig(tracker.allocator(), config);
+defer logger.deinit();
+logger.attachMemoryTracker(&tracker);
+
+const report = logger.getMemoryReport().?;
+std.debug.print("used={d} peak={d} avail={d} live={d}\n", .{
+    report.bytes_used,
+    report.bytes_peak,
+    logly.detectAvailableMemory(),
+    report.live_allocations,
+});
+```
+
+> [!NOTE]
+> `MemoryTracker` is optional. If you do not create one, logly allocates through your plain `std.mem.Allocator` and the telemetry hooks are simply not active. The tracker wraps the allocator you pass in, so anything allocated through `tracker.allocator()` is accounted for (logly internal allocations and your own allocations).
+
+### File Write Mode (overwrite / append)
+
+Logly file sinks, async loggers, scheduler-managed sinks, and `CustomSink` wrappers all respect a global file write mode. Choose `.append` (default) to keep existing file contents and add lines at the end, `.overwrite` to truncate the file on open (handy for ephemeral run logs), or `.append_rotate` to let the rotation scheduler own retention.
+
+```zig
+var config = logly.Config.default();
+config.file_write_mode = .overwrite; // truncate on open for ephemeral logs
+config.max_sinks = 16;               // cap how many sinks the logger accepts
+config.min_sinks = 1;                // require at least one sink alive
+
+const logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
+
+// Or change the mode at runtime:
+logger.setFileWriteMode(.append_rotate);
+```
+
+> [!TIP]
+> A sink that explicitly sets its own `SinkConfig.write_mode` (or `overwrite_mode = true`) overrides the global default, so per-sink overrides still work for the cases that need them.
+
+### Sink Ceiling & Floor
+
+Cap the number of sinks a logger will accept and require a minimum number to remain alive at all times.
+
+```zig
+var config = logly.Config.withSinkLimits(.{ .min = 1, .max = 8 });
+// or
+var config = logly.Config.default();
+config.min_sinks = 1;
+config.max_sinks = null; // null disables the ceiling
+```
+
+`addSink` and `removeSink` return `logly.Logger.Error.SinkLimitReached` when the limit is hit; pass `null` to either field to disable enforcement entirely (no limit; the user can add as many sinks as memory permits).
+
 ### Production Configuration
 
 ```zig
@@ -1361,13 +1537,13 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 | Metric | Value |
 |--------|-------|
 | **Total Benchmarks** | 67 |
-| **Average Throughput** | ~427,885 ops/sec |
-| **Maximum Throughput** | 4,651,163 ops/sec (Filter (rejected)) |
-| **Minimum Throughput** | 5,877 ops/sec (JSON pretty) |
-| **Average Latency** | ~2,337 ns |
+| **Average Throughput** | ~426,875 ops/sec |
+| **Maximum Throughput** | 4,590,104 ops/sec (Filter (rejected)) |
+| **Minimum Throughput** | 5,057 ops/sec (JSON pretty) |
+| **Average Latency** | ~2,343 ns |
 
 > [!NOTE]
-> Benchmark results may vary based on operating system, environment, Zig version, hardware specifications, and software configurations.
+> Benchmark results captured with `logly.zig v0.2.1` on Windows (Zig 0.16.0, Debug build, single process, `BENCHMARK_ITERATIONS = 10_000` / `MT_BENCHMARK_ITERATIONS = 5_000` / `WARMUP_ITERATIONS = 100`). To reproduce locally, run `zig build bench`; the per-benchmark rows above are produced verbatim by the benchmark executable and the summary line is taken from the same run.
 
 
 ### Reproducing the Benchmark Results

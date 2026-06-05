@@ -15,6 +15,9 @@ head:
 
 # OpenTelemetry Integration
 
+> [!NOTE]
+> v0.2.1 adds a separate `logly.MemoryTracker` for in-process allocator/host-memory telemetry. See [Memory Telemetry](memory-telemetry.md) for that guide.
+
 Logly.zig provides comprehensive OpenTelemetry (OTEL) support for distributed tracing, metrics collection, and observability integration with external monitoring systems.
 
 ## Overview

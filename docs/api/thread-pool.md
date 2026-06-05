@@ -766,3 +766,37 @@ The ThreadPool module provides convenience aliases:
 - [Async API](async.md) - Async logging with ring buffers
 - [Scheduler API](scheduler.md) - Scheduled tasks
 - [Configuration Guide](../guide/configuration.md) - Full configuration options
+
+---
+
+## v0.2.1 Additions
+
+> [!WARNING]
+> `initWithConfig` rejects `thread_count` values larger than the host's hardware cores with `error.ThreadCountExceedsCores` and a `std.log.warn`. Pass `0` for auto-detection.
+
+```zig
+pub const Error = error{ThreadCountExceedsCores};
+```
+
+```zig
+pub fn getMaxThreads() usize       // alias: maxHardwareThreads, detectCores, hardwareCores
+pub fn initWithConfig(cfg: ThreadPoolConfig) !ThreadPool
+pub fn setThreadCount(self: *ThreadPool, n: usize) !void  // aliases: resize, setSize
+pub fn setOnWorkerStart(self: *ThreadPool, cb: WorkerCallback) void
+pub fn setOnWorkerStop(self: *ThreadPool, cb: WorkerCallback) void
+pub fn isActive(self: *const ThreadPool) bool
+pub fn started(self: *const ThreadPool) bool
+pub fn numWorkers(self: *const ThreadPool) usize
+pub fn workerTotal(self: *const ThreadPool) usize
+pub fn loadFactor(self: *const ThreadPool) f64
+pub fn load(self: *const ThreadPool) f64
+pub fn clearStats(self: *ThreadPool) void
+pub fn zeroStats(self: *ThreadPool) void
+pub fn hasWork(self: *const ThreadPool) bool
+pub fn atCapacity(self: *const ThreadPool) bool
+pub fn open(cfg: ThreadPoolConfig) !ThreadPool
+```
+
+> [!TIP]
+> See the [Dynamic Thread Pool guide](../guide/dynamic-thread-pool.md) for end-to-end usage and a complete list of aliases.
+

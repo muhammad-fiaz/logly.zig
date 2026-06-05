@@ -9,6 +9,9 @@ In standard production operations, application crashes and unhandled panics repr
 
 Logly solves this problem using a dedicated **Global Panic Handler** that intercepts process-level crashes, bypasses standard asynchronous locks, flushes all active buffers, and synchronously logs crash context and stack traces to all active sinks before the process shuts down.
 
+> [!TIP]
+> v0.2.1 adds `crash.getActiveLogger`, `crash.isActive`, `crash.describe`, and `crash.triggerPanic` for testing and introspection. The same crash subsystem is the active-logger target used by `logly.stdLogFn`.
+
 ---
 
 ## Architecture Overview

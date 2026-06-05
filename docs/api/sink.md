@@ -615,3 +615,44 @@ The `SinkGroup` struct enables atomic fan-out routing of a single log record to 
 - [Compression API](compression.md) - Compression options
 - [Logger API](logger.md) - Logger sink management
 
+---
+
+## CustomSink (v0.2.1)
+
+> [!TIP]
+> For backends the library does not ship with (database writer, Kafka producer, custom binary encoder, hardware serial port, ...), use `logly.CustomSink` with a user-supplied function pointer.
+
+```zig
+const logly = @import("logly");
+
+pub const CustomSink = struct {
+    write_fn: *const fn ([]const u8, *anyopaque) anyerror!void,
+    flush_fn: ?*const fn (*anyopaque) anyerror!void = null,
+    close_fn: ?*const fn (*anyopaque) void = null,
+    user_data: *anyopaque = undefined,
+    name: []const u8 = "custom",
+    bytes_written: u64 = 0,
+    records_written: u64 = 0,
+
+    pub fn config(self: *CustomSink) SinkConfig
+    pub fn write(self: *CustomSink, formatted: []const u8) anyerror!void
+    pub fn writeBytes(self: *CustomSink, data: []const u8) anyerror!void
+    pub fn writeData(self: *CustomSink, data: []const u8) anyerror!void  // alias
+    pub fn send(self: *CustomSink, data: []const u8) anyerror!void         // alias
+    pub fn flush(self: *CustomSink) anyerror!void
+    pub fn close(self: *CustomSink) void
+    pub fn getBytesWritten(self: *const CustomSink) u64
+    pub fn bytesSent(self: *const CustomSink) u64
+    pub fn totalBytes(self: *const CustomSink) u64
+    pub fn getRecordsWritten(self: *const CustomSink) u64
+    pub fn recordsSent(self: *const CustomSink) u64
+    pub fn totalRecords(self: *const CustomSink) u64
+    pub fn resetCounters(self: *CustomSink) void
+    pub fn reset(self: *CustomSink) void
+};
+```
+
+> [!CAUTION]
+> `CustomSink` does not own `user_data`. The `close_fn` is only invoked when you call `custom.close()`; resource lifetime is the caller's responsibility.
+
+

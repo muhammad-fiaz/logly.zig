@@ -544,3 +544,11 @@ std.debug.print("{s}", .{delta});
 - [Formatting Guide](../guide/formatting.md) - Custom format strings
 - [Example Code](../../examples/diagnostics.zig) - Complete working example
 
+---
+
+## v0.2.1 Additions
+
+> [!NOTE]
+> `Diagnostics.compact(allocator)` returns a single-line key=value summary suitable for log headers and crash reports. The struct-level aliases `free` / `release` / `oneLine` / `brief` and the top-level aliases `gatherAll` / `getAll` / `fetch` / `get` / `buildReport` / `getSummary` are all available.
+
+

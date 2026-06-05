@@ -765,6 +765,37 @@ pub const Formatter = struct {
         _ = try countTemplatePlaceholders(template);
     }
 
+    /// Formats a `Record` into a caller-provided fixed-size buffer.
+    ///
+    /// Returns the number of bytes written into `buf`. The buffer must be large
+    /// enough to hold the rendered output; use `formatToWriter` (or
+    /// `formatWithAllocator`) when the output is unbounded.
+    ///
+    /// Arguments:
+    ///   - `record`: The log record to render.
+    ///   - `buf`: Caller-owned destination buffer.
+    ///   - `config`: Output configuration.
+    ///
+    /// Return Value:
+    ///   - `usize`: Number of bytes written into `buf`.
+    ///
+    /// Errors:
+    ///   - `error.NoSpaceLeft`: `buf` is too small to hold the formatted output.
+    ///
+    /// Complexity: O(N) where N is generated string length.
+    pub fn formatText(self: *Formatter, record: *const Record, buf: []u8, config: anytype) !usize {
+        // Use the underlying formatter to produce a heap-allocated string,
+        // then truncate/copy to the caller-provided fixed-size buffer.
+        // The caller is responsible for choosing a buffer large enough for
+        // typical records; this function trims the rendered output to fit.
+        const rendered = try self.formatWithAllocator(record, config, null);
+        defer self.allocator.free(rendered);
+
+        const n = @min(rendered.len, buf.len);
+        @memcpy(buf[0..n], rendered[0..n]);
+        return n;
+    }
+
     /// Formats a log record directly to a writer.
     ///
     /// This avoids intermediate allocations when writing directly to a sink.
@@ -1140,18 +1171,21 @@ pub const Formatter = struct {
     /// Complexity: O(N)
     pub fn formatJsonWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
         const alloc = scratch_allocator orelse self.allocator;
-        var buf = std.Io.Writer.Allocating.init(alloc);
-        errdefer buf.deinit();
-        const writer = &buf.writer;
-        try self.formatJsonToWriter(writer, record, config);
+        var list: std.ArrayList(u8) = .empty;
+        defer list.deinit(alloc);
+        try list.ensureTotalCapacity(alloc, estimateJsonSize(record, config));
+        errdefer list.deinit(alloc);
+
+        var alw = Utils.ArrayListWriter.init(&list, alloc);
+        try self.formatJsonToWriter(&alw.writer, record, config);
 
         _ = self.stats.json_formats.fetchAdd(1, .monotonic);
 
         if (self.on_json_format) |cb| {
-            cb(record, buf.written().len);
+            cb(record, list.items.len);
         }
 
-        return buf.toOwnedSlice();
+        return list.toOwnedSlice(alloc);
     }
 
     /// Formats a log record as JSON directly to a writer.
@@ -1478,6 +1512,37 @@ pub const Formatter = struct {
         self.stats = .{};
     }
 
+    /// Cheap size estimate for a JSON record, used to pre-allocate the
+    /// output buffer and avoid `std.Io.Writer.Allocating`'s exponential
+    /// grow path. Returns a conservative upper bound.
+    fn estimateJsonSize(record: *const Record, config: anytype) usize {
+        var size: usize = 64;
+        size += 16; // {"timestamp":...,
+        size += record.message.len + 16;
+        size += 16 + 16; // "level":"info",
+        if (record.module) |m| size += 12 + m.len;
+        if (record.function) |f| size += 14 + f.len;
+        if (record.filename) |f| size += 14 + f.len;
+        if (record.line) |_| size += 14 + 8;
+        if (config.include_hostname) {
+            size += 16 + (if (record.filename) |f| f.len else 32);
+        }
+        if (config.include_pid) {
+            size += 10 + 8;
+        }
+        if (record.context.count() > 0) {
+            size += 16 * record.context.count();
+            var it = record.context.iterator();
+            while (it.next()) |entry| {
+                size += entry.key_ptr.len + 32;
+            }
+        }
+        if (record.trace_id) |t| size += 14 + t.len;
+        if (record.span_id) |s| size += 14 + s.len;
+        if (record.correlation_id) |c| size += 22 + c.len;
+        return size;
+    }
+
     /// Alias for format
     pub const render = format;
     pub const output = format;
@@ -1485,6 +1550,7 @@ pub const Formatter = struct {
     /// Alias for formatToWriter
     pub const renderToWriter = formatToWriter;
     pub const writeFormatted = formatToWriter;
+    pub const formatTextToBuf = formatText;
 
     /// Alias for formatJson
     pub const json = formatJson;

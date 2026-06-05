@@ -4,6 +4,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // `run-all-examples` builds each example in Debug. Compiling
+    // ~60 examples in ReleaseFast/Safe can exceed 16 GiB peak RSS
+    // (LLVM + lld-link on Windows are very memory-hungry); Debug
+    // keeps per-build RSS to ~300 MiB.
+    const run_all_optimize: std.builtin.OptimizeMode = .Debug;
+
+    // Per-step RSS ceiling. A step that exceeds this is reported
+    // as out-of-memory so the build does not silently consume the
+    // entire system.
+    const run_all_max_rss: usize = 4 * 1024 * 1024 * 1024;
+
     // Resolve zstd dependency
     const zstd_dep = b.dependency("zstd", .{
         .target = target,
@@ -43,7 +54,9 @@ pub fn build(b: *std.Build) void {
         .{ .name = "time", .path = "examples/time.zig" },
         .{ .name = "filtering", .path = "examples/filtering.zig" },
         .{ .name = "sampling", .path = "examples/sampling.zig" },
+        .{ .name = "sampling_key", .path = "examples/sampling_key.zig" },
         .{ .name = "redaction", .path = "examples/redaction.zig" },
+        .{ .name = "redaction_truncate", .path = "examples/redaction_truncate.zig" },
         .{ .name = "metrics", .path = "examples/metrics.zig" },
         .{ .name = "tracing", .path = "examples/tracing.zig" },
         .{ .name = "production_config", .path = "examples/production_config.zig" },
@@ -63,30 +76,41 @@ pub fn build(b: *std.Build) void {
         .{ .name = "customizations", .path = "examples/customizations.zig" },
         .{ .name = "sink_write_modes", .path = "examples/sink_write_modes.zig" },
         .{ .name = "network_logging", .path = "examples/network_logging.zig", .skip_run_all = true },
+        .{ .name = "network_send_helpers", .path = "examples/network_send_helpers.zig", .skip_run_all = true },
+        .{ .name = "network_advanced", .path = "examples/network_advanced.zig", .skip_run_all = true },
         .{ .name = "version_checker", .path = "examples/update_check.zig", .skip_run_all = true },
         .{ .name = "advanced_features", .path = "examples/advanced_features.zig" },
         .{ .name = "custom_theme", .path = "examples/custom_theme.zig" },
         .{ .name = "config_presets", .path = "examples/config_presets.zig" },
         .{ .name = "rules", .path = "examples/rules.zig" },
         .{ .name = "telemetry", .path = "examples/telemetry.zig" },
+        .{ .name = "telemetry_mini", .path = "examples/telemetry_mini.zig" },
         .{ .name = "telemetry_metric_names", .path = "examples/telemetry_metric_names.zig" },
+        .{ .name = "telemetry_metrics_export", .path = "examples/telemetry_metrics_export.zig", .skip_run_all = true },
         .{ .name = "pipeline_controls", .path = "examples/pipeline_controls.zig" },
         .{ .name = "filter_advanced", .path = "examples/filter_advanced.zig" },
         .{ .name = "formatter_advanced", .path = "examples/formatter_advanced.zig" },
         .{ .name = "sink_advanced", .path = "examples/sink_advanced.zig" },
         .{ .name = "redaction_advanced", .path = "examples/redaction_advanced.zig" },
-        .{ .name = "network_advanced", .path = "examples/network_advanced.zig", .skip_run_all = true },
+        .{ .name = "rotation_helpers", .path = "examples/rotation_helpers.zig" },
         // v0.2.0 examples
         .{ .name = "crash_handler", .path = "examples/crash_handler.zig" },
         .{ .name = "hot_reload", .path = "examples/hot_reload.zig" },
         .{ .name = "mmap_sink", .path = "examples/mmap_sink.zig" },
         .{ .name = "context_filter", .path = "examples/context_filter.zig" },
         .{ .name = "msgpack_tui", .path = "examples/msgpack_tui.zig" },
+        // v0.2.1 examples
+        .{ .name = "memory_telemetry", .path = "examples/memory_telemetry.zig" },
+        .{ .name = "dynamic_thread_pool", .path = "examples/dynamic_thread_pool.zig" },
+        .{ .name = "fast_json", .path = "examples/fast_json.zig" },
+        .{ .name = "std_log_integration", .path = "examples/std_log_integration.zig" },
+        .{ .name = "custom_sink", .path = "examples/custom_sink.zig" },
     };
 
     // Create run-all-examples step that runs all examples sequentially
-    const run_all_examples = b.step("run-all-examples", "Run all examples sequentially");
+    const run_all_examples = b.step("run-all-examples", "Run all examples sequentially (builds each one in Debug to keep memory usage bounded)");
     var previous_run_step: ?*std.Build.Step = null;
+    var last_install_step: ?*std.Build.Step = null;
 
     inline for (examples) |example| {
         const exe = b.addExecutable(.{
@@ -106,6 +130,7 @@ pub fn build(b: *std.Build) void {
         }
 
         const install_exe = b.addInstallArtifact(exe, .{});
+        install_exe.step.max_rss = run_all_max_rss;
         const example_step = b.step("example-" ++ example.name, "Build " ++ example.name ++ " example");
         example_step.dependOn(&install_exe.step);
 
@@ -116,14 +141,39 @@ pub fn build(b: *std.Build) void {
         run_step.dependOn(&run_exe.step);
 
         if (!example.skip_run_all) {
-            // Re-use the same executable artifact for run-all sequence
-            const run_all_exe = b.addRunArtifact(exe);
-
-            // Make each run step depend on the previous run step to ensure sequential execution
-            if (previous_run_step) |prev| {
-                run_all_exe.step.dependOn(prev);
+            // Build a separate Debug-mode executable for the
+            // run-all chain. This avoids linking the entire test
+            // library in ReleaseSafe (which can blow past 1 GiB per
+            // example) and makes the chain run with a bounded RSS.
+            const run_all_exe = b.addExecutable(.{
+                .name = example.name ++ "-runall",
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(example.path),
+                    .target = target,
+                    .optimize = run_all_optimize,
+                    .link_libc = true,
+                }),
+            });
+            run_all_exe.root_module.addImport("logly", logly_module);
+            if (target.result.os.tag == .windows) {
+                run_all_exe.root_module.linkSystemLibrary("ws2_32", .{});
             }
-            previous_run_step = &run_all_exe.step;
+            const run_all_install = b.addInstallArtifact(run_all_exe, .{});
+            run_all_install.step.max_rss = run_all_max_rss;
+            const run_all_run = b.addRunArtifact(run_all_exe);
+            run_all_run.step.dependOn(&run_all_install.step);
+            run_all_run.step.max_rss = run_all_max_rss;
+
+            // Serialise: wait for the previous example to fully exit
+            // before starting the next. This caps RSS by preventing
+            // parallel compilations (LLVM + lld-link can exceed 1 GiB
+            // per Release build on Windows).
+            if (previous_run_step) |prev| {
+                run_all_install.step.dependOn(prev);
+                run_all_run.step.dependOn(prev);
+            }
+            last_install_step = &run_all_install.step;
+            previous_run_step = &run_all_run.step;
         }
     }
 

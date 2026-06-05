@@ -77,6 +77,7 @@ pub const Config = @import("config.zig").Config;
 pub const Sink = @import("sink.zig").Sink;
 pub const SinkConfig = @import("sink.zig").SinkConfig;
 pub const SinkGroup = @import("sink.zig").SinkGroup;
+pub const CustomSink = @import("sink.zig").CustomSink;
 pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;
 pub const Rotation = @import("rotation.zig").Rotation;
@@ -129,8 +130,70 @@ pub const Network = @import("network.zig");
 pub const crash = @import("crash.zig");
 pub const panic = crash.panic;
 
+/// Native integration with `std.log` (Zig 0.16+).
+///
+/// Wire logly into the standard library's log function in your
+/// root source file:
+///
+/// ```zig
+/// pub const std_options: std.Options = .{
+///     .log_level = .info,
+///     .logFn = logly.stdLogFn,
+/// };
+/// ```
+///
+/// All `std.log.{err,warn,info,debug}` calls (and any scoped
+/// variants) are routed to the active logger registered via
+/// `logly.crash.registerLogger`. When no active logger is set,
+/// the call is silently dropped, which is the safe default.
+pub fn stdLogFn(
+    comptime message_level: std.log.Level,
+    comptime scope: @EnumLiteral(),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const logger = crash.active_logger orelse return;
+
+    // Stack scratch sized to match BufferSizes.message; long messages get the
+    // trailing portion of the format string with an ellipsis so we never allocate.
+    var buf: [Constants.BufferSizes.message]u8 = undefined;
+    const msg: []const u8 = msg: {
+        if (std.fmt.bufPrint(&buf, format, args)) |m| {
+            break :msg m;
+        } else |_| {
+            const tail_off = format.len -| 64;
+            break :msg std.fmt.bufPrint(buf[buf.len - 80 ..], "...{s}", .{format[tail_off..]}) catch "logly: log message too long";
+        }
+    };
+
+    const level: Level = switch (message_level) {
+        .err => .err,
+        .warn => .warning,
+        .info => .info,
+        .debug => .debug,
+    };
+
+    const module: ?[]const u8 = if (scope == .default) null else @tagName(scope);
+    logger.logInternal(level, msg, module, null, null, null) catch {};
+}
+
 // Utility components
 pub const TelemetryConfig = @import("config.zig").TelemetryConfig;
+
+// Memory telemetry
+pub const MemoryTracker = @import("memory_tracker.zig").MemoryTracker;
+/// Alias for `MemoryTracker`.
+pub const MemoryTelemetry = MemoryTracker;
+/// Short alias for `MemoryTracker`.
+pub const MemTracker = MemoryTracker;
+pub const MemoryReport = @import("memory_tracker.zig").MemoryReport;
+/// Alias for `MemoryReport`.
+pub const MemReport = MemoryReport;
+pub const MemoryCallback = @import("memory_tracker.zig").MemoryCallback;
+/// Alias for `MemoryCallback`.
+pub const MemCallback = MemoryCallback;
+pub const detectAvailableMemory = @import("memory_tracker.zig").detectAvailableMemory;
+pub const detectCurrentMemoryUsage = @import("memory_tracker.zig").detectCurrentMemoryUsage;
 
 // OpenTelemetry integration
 pub const Telemetry = @import("telemetry.zig").Telemetry;
@@ -378,6 +441,61 @@ pub const Terminal = struct {
         return enableWindowsAnsi();
     }
 };
+
+test "stdLogFn forwards to active logger" {
+    const TestAllocator = std.heap.DebugAllocator(.{});
+    var gpa = TestAllocator{};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+    config.global_console_display = false;
+
+    var logger = try Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+    crash.registerLogger(logger);
+
+    // With a registered logger the function must not crash.
+    stdLogFn(.info, .default, "hello {d}", .{42});
+    stdLogFn(.err, .my_scope, "oops {s}", .{"world"});
+
+    crash.unregisterLogger();
+
+    // Without a registered logger the function is a no-op.
+    stdLogFn(.warn, .default, "dropped", .{});
+}
+
+test "std.log integration captures internal logly diagnostics" {
+    // This test verifies the recommended user setup:
+    //   pub const std_options: std.Options = .{
+    //       .logFn = logly.stdLogFn,
+    //   };
+    // When the user wires std.log into logly AND registers an
+    // active logger, internal `std.log.warn` calls emitted by
+    // logly (e.g. invalid thread count) are funnelled back into
+    // the active logger without any further plumbing.
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var config = Config.default();
+    config.auto_sink = false;
+    config.check_for_updates = false;
+    config.global_console_display = false;
+
+    var logger = try Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+    crash.registerLogger(logger);
+    defer crash.unregisterLogger();
+
+    // The active logger is now the destination for any std.log
+    // call. Library internals that emit std.log.warn are routed
+    // through `logly.stdLogFn` and land in this logger.
+    try std.testing.expect(crash.active_logger != null);
+    try std.testing.expect(crash.active_logger.? == logger);
+}
 
 test {
     std.testing.refAllDecls(@This());

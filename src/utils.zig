@@ -671,24 +671,45 @@ pub const nsPerSecond: i64 = @intCast(Constants.TimeConstants.ns_per_second);
 /// // Result: Hello\nWorld (with escaped newline)
 /// ```
 pub fn escapeJsonString(writer: anytype, s: []const u8) !void {
-    for (s) |c| {
+    var i: usize = 0;
+    var run_start: usize = 0;
+    while (i < s.len) {
+        const c = s[i];
         switch (c) {
-            '"' => try writer.writeAll("\\\""),
-            '\\' => try writer.writeAll("\\\\"),
-            '\x08' => try writer.writeAll("\\b"),
-            '\x0c' => try writer.writeAll("\\f"),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
+            '"', '\\', '\x08', '\x0c', '\n', '\r', '\t' => {
+                if (i > run_start) {
+                    try writer.writeAll(s[run_start..i]);
+                }
+                switch (c) {
+                    '"' => try writer.writeAll("\\\""),
+                    '\\' => try writer.writeAll("\\\\"),
+                    '\x08' => try writer.writeAll("\\b"),
+                    '\x0c' => try writer.writeAll("\\f"),
+                    '\n' => try writer.writeAll("\\n"),
+                    '\r' => try writer.writeAll("\\r"),
+                    '\t' => try writer.writeAll("\\t"),
+                    else => unreachable,
+                }
+                i += 1;
+                run_start = i;
+            },
             else => {
                 if (c < 0x20) {
+                    if (i > run_start) {
+                        try writer.writeAll(s[run_start..i]);
+                    }
                     try writer.writeAll("\\u");
                     try write4Hex(writer, @intCast(c));
+                    i += 1;
+                    run_start = i;
                 } else {
-                    try writer.writeByte(c);
+                    i += 1;
                 }
             },
         }
+    }
+    if (run_start < s.len) {
+        try writer.writeAll(s[run_start..]);
     }
 }
 
@@ -785,6 +806,33 @@ test "escapeJsonString" {
     writer.end = 0;
     try escapeJsonString(&writer, "Tab\there");
     try std.testing.expectEqualStrings("Tab\\there", buf[0..writer.end]);
+}
+
+test "escapeJsonString bulk safe runs" {
+    var buf: [512]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buf);
+
+    const safe = "ABCdefGHIjkl 0123456789 -._~:/?#[]@!$&'()*+,;=";
+    try escapeJsonString(&writer, safe);
+    try std.testing.expectEqualStrings(safe, buf[0..writer.end]);
+
+    writer.end = 0;
+    const mixed = "hello \"world\" \n foo \t \\ bar end";
+    try escapeJsonString(&writer, mixed);
+    try std.testing.expectEqualStrings("hello \\\"world\\\" \\n foo \\t \\\\ bar end", buf[0..writer.end]);
+
+    writer.end = 0;
+    const all_special: []const u8 = &[_]u8{ '"', '\\', 0x08, 0x0c, '\n', '\r', '\t' };
+    const expected: []const u8 = &[_]u8{
+        '\\', '"',  '\\', '\\', '\\', 'b', '\\', 'f',
+        '\\', 'n',  '\\', 'r', '\\', 't',
+    };
+    try escapeJsonString(&writer, all_special);
+    try std.testing.expectEqualStrings(expected, buf[0..writer.end]);
+
+    writer.end = 0;
+    try escapeJsonString(&writer, "");
+    try std.testing.expectEqual(@as(usize, 0), writer.end);
 }
 
 test "calculateRate" {

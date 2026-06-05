@@ -25,6 +25,47 @@ pub fn setCrashCallback(callback: ?*const fn (message: []const u8) void) void {
 // Ergonomic aliases
 pub const onCrash = setCrashCallback;
 pub const setCallback = setCrashCallback;
+pub const setOnCrash = setCrashCallback;
+pub const onCrashCallback = setCrashCallback;
+
+/// Returns the current active logger, or `null` if none is registered.
+pub fn getActiveLogger() ?*Logger {
+    return active_logger;
+}
+
+/// Alias for `getActiveLogger`.
+pub const currentLogger = getActiveLogger;
+pub const getLogger = getActiveLogger;
+
+/// Returns true when a logger is currently registered for crash/panic handling.
+pub fn isActive() bool {
+    return active_logger != null;
+}
+
+/// Alias for `isActive`.
+pub const hasActiveLogger = isActive;
+pub const registered = isActive;
+
+/// Triggers a clean panic with `message`. This is equivalent to
+/// `std.builtin.default_panic` but routes through the active
+/// logger first so the panic context is captured. Intended for
+/// tests and CLI tools that need to exercise the crash handler
+/// without raising a real OS signal.
+pub fn triggerPanic(message: []const u8) noreturn {
+    @panic(message);
+}
+
+/// Alias for `triggerPanic`.
+pub const testPanic = triggerPanic;
+pub const raisePanic = triggerPanic;
+
+/// Returns a short description of the active crash subsystem.
+/// Useful for startup banners and diagnostics output.
+pub fn describe() []const u8 {
+    if (active_logger == null) return "no active logger";
+    if (builtin.os.tag == .windows) return "windows VEH handler active";
+    return "POSIX signal handler active";
+}
 
 /// A flag to prevent re-entrant crashes during handler execution.
 var is_handling_crash: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
@@ -257,6 +298,12 @@ pub const init = registerLogger;
 pub const deinit = unregisterLogger;
 pub const setup = registerLogger;
 pub const reset = unregisterLogger;
+pub const install = registerLogger;
+pub const remove = unregisterLogger;
+pub const attach = registerLogger;
+pub const detach = unregisterLogger;
+pub const setActive = registerLogger;
+pub const clearActive = unregisterLogger;
 
 test "panic and crash handler registration" {
     const allocator = std.testing.allocator;

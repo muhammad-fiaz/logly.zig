@@ -730,7 +730,7 @@ pub const Sink = struct {
                 });
 
                 if (config.mmap) {
-                    sink.mmap_file = try MmapFile.init(allocator, sink.file.?, 1024 * 1024);
+                    sink.mmap_file = try MmapFile.init(allocator, sink.file.?, Constants.SizeConstants.bytes_per_mb);
                 }
 
                 // Write opening bracket for JSON array files
@@ -1973,6 +1973,130 @@ test "sink tamper_evident cryptographic log chaining" {
     try std.testing.expectEqual(@as(usize, 2), m2.len);
     try std.testing.expect(std.mem.indexOf(u8, m2[1], "second log record") != null);
     try std.testing.expect(std.mem.indexOf(u8, m2[1], "SIG:") != null);
+}
+
+/// Generic sink that delegates record formatting to a user-supplied
+/// callback. Use this to wire logly into any storage backend that
+/// has not been built into the library: a custom binary encoder,
+/// a database writer, a Kafka producer, a hardware serial port,
+/// a remote syslog daemon with a proprietary wire format, etc.
+///
+/// The user callback receives the already-formatted bytes for the
+/// configured format (plain, JSON, NDJSON, logfmt, CEF, ...). The
+/// sink never re-formats; it only transports the bytes.
+pub const CustomSink = struct {
+    /// User-supplied write function. Receives the formatted bytes
+    /// and the opaque `user_data` pointer. Return an error to
+    /// indicate a write failure (logly will route it through the
+    /// configured `ErrorBehavior`).
+    write_fn: *const fn (data: []const u8, user_data: *anyopaque) anyerror!void,
+    /// Optional flush function. Called when the sink is flushed
+    /// (e.g. on shutdown or before rotation).
+    flush_fn: ?*const fn (user_data: *anyopaque) anyerror!void = null,
+    /// Optional close function. Called when the sink is deinit'd.
+    close_fn: ?*const fn (user_data: *anyopaque) void = null,
+    /// Opaque user pointer. Pass any state needed by the callbacks
+    /// (a file handle, a network connection, a database pool, ...).
+    user_data: *anyopaque,
+    /// Optional sink name for metrics and debugging.
+    name: []const u8 = "custom",
+    /// Total bytes written by this sink.
+    bytes_written: u64 = 0,
+    /// Total records handled by this sink.
+    records_written: u64 = 0,
+
+    /// Build a `SinkConfig` that routes records to this custom sink.
+    /// Set the desired format flags (`json`, `ndjson`, `cef`, etc.) on
+    /// the returned `SinkConfig` before passing it to a logger.
+    pub fn config(self: *CustomSink) SinkConfig {
+        return .{
+            .path = "custom",
+            .name = self.name,
+            .async_write = false,
+            .color = false,
+            .enabled = true,
+        };
+    }
+
+    /// Writes a pre-formatted payload to the user backend.
+    pub fn write(self: *CustomSink, data: []const u8) anyerror!void {
+        try self.write_fn(data, self.user_data);
+        self.bytes_written += data.len;
+        self.records_written += 1;
+    }
+
+    /// Alias for `write`.
+    pub const writeBytes = write;
+    pub const writeData = write;
+    pub const send = write;
+
+    /// Calls the user flush function (if any).
+    pub fn flush(self: *CustomSink) anyerror!void {
+        if (self.flush_fn) |f| try f(self.user_data);
+    }
+
+    /// Calls the user close function (if any). The custom sink does
+    /// not own `user_data`; closing it is the caller's responsibility.
+    pub fn close(self: *CustomSink) void {
+        if (self.close_fn) |f| f(self.user_data);
+    }
+
+    /// Returns the number of bytes written by this sink.
+    pub fn getBytesWritten(self: *const CustomSink) u64 {
+        return self.bytes_written;
+    }
+
+    /// Alias for `getBytesWritten`.
+    pub const bytesSent = getBytesWritten;
+    pub const totalBytes = getBytesWritten;
+
+    /// Returns the number of records written by this sink.
+    pub fn getRecordsWritten(self: *const CustomSink) u64 {
+        return self.records_written;
+    }
+
+    /// Alias for `getRecordsWritten`.
+    pub const recordsSent = getRecordsWritten;
+    pub const totalRecords = getRecordsWritten;
+
+    /// Resets the internal counters.
+    pub fn resetCounters(self: *CustomSink) void {
+        self.bytes_written = 0;
+        self.records_written = 0;
+    }
+
+    /// Alias for `resetCounters`.
+    pub const reset = resetCounters;
+};
+
+test "CustomSink user writer receives formatted bytes" {
+    const TestState = struct {
+        captured: std.ArrayListUnmanaged(u8) = .empty,
+        fail_next: bool = false,
+
+        fn writer(data: []const u8, user_data: *anyopaque) anyerror!void {
+            const self: *@This() = @ptrCast(@alignCast(user_data));
+            if (self.fail_next) return error.WriteFailed;
+            try self.captured.appendSlice(std.testing.allocator, data);
+        }
+    };
+
+    var state: TestState = .{};
+    defer state.captured.deinit(std.testing.allocator);
+    var sink: CustomSink = .{
+        .write_fn = TestState.writer,
+        .user_data = @ptrCast(&state),
+    };
+    defer sink.close();
+
+    try sink.write("hello\n");
+    try sink.write("world\n");
+    try std.testing.expectEqualStrings("hello\nworld\n", state.captured.items);
+    try std.testing.expectEqual(@as(u64, 12), sink.getBytesWritten());
+    try std.testing.expectEqual(@as(u64, 2), sink.getRecordsWritten());
+
+    state.fail_next = true;
+    try std.testing.expectError(error.WriteFailed, sink.write("oops"));
 }
 
 /// A memory-mapped file abstraction for extremely high-performance logging.

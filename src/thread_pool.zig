@@ -521,7 +521,24 @@ pub const ThreadPool = struct {
     /// Alias for init().
     pub const create = init;
 
+    /// Error set returned by `initWithConfig` when an invalid thread
+    /// count is supplied (zero is replaced with the auto-detected
+    /// count, not rejected; only a count larger than the host's
+    /// hardware cores is rejected).
+    pub const Error = error{
+        /// Supplied `thread_count` exceeds the number of hardware
+        /// cores detected on the host. Either lower the count to at
+        /// most `getMaxThreads()` or set `thread_count = 0` to use
+        /// the auto-detected value.
+        ThreadCountExceedsCores,
+    };
+
     /// Initializes a ThreadPool with custom configuration.
+    ///
+    /// Thread count handling:
+    /// - `config.thread_count == 0`  → auto-detect (use `getMaxThreads()`).
+    /// - `1 <= thread_count <= cores` → honoured.
+    /// - `thread_count > cores` → returns `error.ThreadCountExceedsCores`.
     ///
     /// Arguments:
     ///     allocator: Memory allocator.
@@ -534,13 +551,24 @@ pub const ThreadPool = struct {
         errdefer allocator.destroy(self);
 
         // Determine thread count using Constants.ThreadDefaults
-        const num_threads = if (config.thread_count == 0)
-            Constants.ThreadDefaults.recommendedThreadCount()
-        else
-            config.thread_count;
+        const max_cores = Constants.ThreadDefaults.recommendedThreadCount();
+        const requested = if (config.thread_count == 0) max_cores else config.thread_count;
+
+        // Validate the requested count. The library refuses to spin
+        // up more workers than the host can schedule in parallel;
+        // the caller is expected to either lower the count or pass
+        // 0 for auto-detection.
+        if (requested > max_cores) {
+            std.log.warn(
+                "logly.ThreadPool: requested thread_count={d} exceeds host cores={d}; rejected",
+                .{ requested, max_cores },
+            );
+            // Self is freed by the errdefer above.
+            return error.ThreadCountExceedsCores;
+        }
 
         // Create workers
-        const workers = try allocator.alloc(Worker, num_threads);
+        const workers = try allocator.alloc(Worker, requested);
         errdefer allocator.free(workers);
 
         for (workers, 0..) |*worker, i| {
@@ -551,11 +579,16 @@ pub const ThreadPool = struct {
             };
         }
 
+        // Persist the effective thread count (in case 0 was passed
+        // and we resolved to the auto-detected value).
+        var effective_config = config;
+        if (config.thread_count == 0) effective_config.thread_count = requested;
+
         self.* = .{
             .allocator = allocator,
-            .config = config,
+            .config = effective_config,
             .workers = workers,
-            .work_queue = try WorkQueue.init(allocator, config.queue_size * num_threads),
+            .work_queue = try WorkQueue.init(allocator, config.queue_size * requested),
             .stats = .{},
         };
 
@@ -576,6 +609,54 @@ pub const ThreadPool = struct {
 
     /// Alias for deinit().
     pub const destroy = deinit;
+
+    /// Returns the maximum recommended thread count for the current
+    /// host. On Linux/macOS this queries `std.Thread.getCpuCount()`;
+    /// on Windows it falls back to the same path; on failure it
+    /// returns 4 as a safe default.
+    pub fn getMaxThreads() usize {
+        return Constants.ThreadDefaults.recommendedThreadCount();
+    }
+
+    /// Dynamically resize the thread pool's logical thread count.
+    /// The pool must be shut down (`shutdown()` then `start()`) for
+    /// the new size to take effect. Returns the previous
+    /// `thread_count` so the caller can log or restore it.
+    pub fn setThreadCount(self: *ThreadPool, new_count: usize) usize {
+        const old = self.config.thread_count;
+        self.config.thread_count = new_count;
+        return old;
+    }
+
+    /// Register a callback invoked once when a worker thread starts.
+    /// The worker id (0..N-1) is passed to the callback. The callback
+    /// runs on the worker thread, after the thread name has been
+    /// applied. Pass `null` to clear.
+    pub fn setWorkerStartCallback(
+        self: *ThreadPool,
+        callback: ?*const fn (usize) void,
+    ) void {
+        self.on_thread_start = callback;
+    }
+
+    /// Register a callback invoked when a worker thread stops. The
+    /// callback receives the worker id, the tasks processed by that
+    /// worker, and the total tasks processed by the pool. Pass
+    /// `null` to clear.
+    pub fn setWorkerStopCallback(
+        self: *ThreadPool,
+        callback: ?*const fn (usize, u64, u64) void,
+    ) void {
+        self.on_thread_stop = callback;
+    }
+
+    /// Returns the number of CPU cores detected at startup.
+    /// Equivalent to `getMaxThreads()`; provided as a method for
+    /// convenience when you already have a `*ThreadPool` reference.
+    pub fn maxThreads(self: *const ThreadPool) usize {
+        _ = self;
+        return getMaxThreads();
+    }
 
     /// Starts the thread pool.
     pub fn start(self: *ThreadPool) !void {
@@ -1182,9 +1263,53 @@ pub const ThreadPool = struct {
 
     /// Alias for start
     pub const begin = start;
+    pub const open = start;
 
     /// Alias for submit
     pub const add = submit;
+
+    /// Alias for initWithConfig
+    pub const createWithConfig = initWithConfig;
+
+    /// Alias for getMaxThreads
+    pub const maxHardwareThreads = getMaxThreads;
+    pub const detectCores = getMaxThreads;
+
+    /// Alias for setThreadCount
+    pub const resize = setThreadCount;
+    pub const setSize = setThreadCount;
+
+    /// Alias for maxThreads
+    pub const detectedCores = maxThreads;
+    pub const hardwareCores = maxThreads;
+
+    /// Alias for setWorkerStartCallback
+    pub const setOnWorkerStart = setWorkerStartCallback;
+    pub const onWorkerStart = setWorkerStartCallback;
+
+    /// Alias for setWorkerStopCallback
+    pub const setOnWorkerStop = setWorkerStopCallback;
+    pub const onWorkerStop = setWorkerStopCallback;
+
+    /// Alias for isRunning
+    pub const isActive = isRunning;
+    pub const started = isRunning;
+
+    /// Alias for threadCount
+    pub const numWorkers = threadCount;
+    pub const workerTotal = threadCount;
+
+    /// Alias for utilization
+    pub const loadFactor = utilization;
+    pub const load = utilization;
+
+    /// Alias for resetStats
+    pub const clearStats = resetStats;
+    pub const zeroStats = resetStats;
+
+    /// Alias for isEmpty / isFull
+    pub const hasWork = isEmpty;
+    pub const atCapacity = isFull;
 };
 
 /// Re-export ParallelConfig from global config for convenience.
@@ -1981,4 +2106,72 @@ test "thread pool heavy concurrency stress loop" {
 
     try std.testing.expect(pool.queueUtilization() <= 1.0);
     try std.testing.expect(pool.availableQueueCapacity() <= pool.queueCapacity());
+}
+
+test "thread pool dynamic sizing helpers" {
+    const max = ThreadPool.getMaxThreads();
+    try std.testing.expect(max > 0);
+
+    const pool = try ThreadPool.initWithConfig(std.testing.allocator, .{
+        .thread_count = 2,
+    });
+    defer pool.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), pool.config.thread_count);
+    try std.testing.expectEqual(@as(usize, 2), pool.setThreadCount(4));
+    try std.testing.expectEqual(@as(usize, 4), pool.config.thread_count);
+    try std.testing.expectEqual(max, pool.maxThreads());
+}
+
+test "thread pool rejects thread_count above hardware cores" {
+    const max = ThreadPool.getMaxThreads();
+    // Asking for 2x the available cores must be rejected. Suppress the
+    // library's std.log.warn so the test output stays clean — we already
+    // verify the rejection through the returned error below.
+    const prev_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = prev_level;
+
+    const too_many = max * 2 + 1;
+    const result = ThreadPool.initWithConfig(std.testing.allocator, .{
+        .thread_count = too_many,
+    });
+    try std.testing.expectError(error.ThreadCountExceedsCores, result);
+}
+
+test "thread pool auto-detects when thread_count is zero" {
+    const max = ThreadPool.getMaxThreads();
+    const pool = try ThreadPool.initWithConfig(std.testing.allocator, .{
+        .thread_count = 0,
+    });
+    defer pool.deinit();
+
+    // 0 is replaced with the auto-detected count (not kept as 0).
+    try std.testing.expectEqual(max, pool.config.thread_count);
+    try std.testing.expect(pool.workers.len == max);
+}
+
+test "thread pool worker start and stop callbacks" {
+    const StartCb = struct {
+        fn run(worker_id: usize) void {
+            _ = worker_id;
+        }
+    };
+    const StopCb = struct {
+        fn run(worker_id: usize, worker_processed: u64, pool_processed: u64) void {
+            _ = worker_id;
+            _ = worker_processed;
+            _ = pool_processed;
+        }
+    };
+
+    const pool = try ThreadPool.initWithConfig(std.testing.allocator, .{
+        .thread_count = 1,
+    });
+    defer pool.deinit();
+
+    pool.setWorkerStartCallback(StartCb.run);
+    pool.setWorkerStopCallback(StopCb.run);
+    pool.setWorkerStartCallback(null);
+    pool.setWorkerStopCallback(null);
 }

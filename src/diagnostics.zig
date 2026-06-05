@@ -107,6 +107,30 @@ pub const Diagnostics = struct {
     }
 
     pub const destroy = deinit;
+    pub const free = deinit;
+    pub const release = deinit;
+
+    /// Returns a compact single-line summary of the diagnostics.
+    /// Useful for inclusion in log messages.
+    pub fn compact(self: *const Diagnostics, allocator: std.mem.Allocator) ![]u8 {
+        return std.fmt.allocPrint(
+            allocator,
+            "os={s} arch={s} cpu={s} cores={d} mem_total={d} mem_avail={d} drives={d}",
+            .{
+                self.os_tag,
+                self.arch,
+                self.cpu_model,
+                self.logical_cores,
+                self.total_mem orelse 0,
+                self.avail_mem orelse 0,
+                self.drives.len,
+            },
+        );
+    }
+
+    /// Alias for `compact`.
+    pub const oneLine = compact;
+    pub const brief = compact;
 };
 
 /// Collects system diagnostics information.
@@ -610,8 +634,9 @@ pub fn toJson(diag: *const Diagnostics, allocator: std.mem.Allocator) ![]u8 {
     try w.writeAll("\"drives\":[");
     for (diag.drives, 0..) |drive, i| {
         if (i > 0) try w.writeByte(',');
-        const dtotal_gb: f64 = @as(f64, @floatFromInt(drive.total_bytes)) / (1024.0 * 1024.0 * 1024.0);
-        const dfree_gb: f64 = @as(f64, @floatFromInt(drive.free_bytes)) / (1024.0 * 1024.0 * 1024.0);
+        const gb_div: f64 = @floatFromInt(Constants.SizeConstants.bytes_per_gb);
+        const dtotal_gb: f64 = @as(f64, @floatFromInt(drive.total_bytes)) / gb_div;
+        const dfree_gb: f64 = @as(f64, @floatFromInt(drive.free_bytes)) / gb_div;
         try w.print("{{\"{s}\":{{\"total_gb\":{d:.2},\"free_gb\":{d:.2}}}}}", .{ drive.name, dtotal_gb, dfree_gb });
     }
     try w.writeAll("]}");
@@ -711,21 +736,21 @@ pub fn diff(snap1: DiagnosticsSnapshot, snap2: DiagnosticsSnapshot, allocator: s
 /// Alias for emitJson
 pub const writeJson = emitJson;
 pub const printJson = emitJson;
-
-/// Alias for toJson
 pub const asJson = toJson;
 pub const serializeJson = toJson;
-
-/// Alias for checkHealth
 pub const healthCheck = checkHealth;
 pub const getHealth = checkHealth;
-
-/// Alias for takeSnapshot
 pub const snapshot2 = takeSnapshot;
-
-/// Alias for diff
 pub const delta = diff;
 pub const compare = diff;
+
+// Ergonomic aliases for the public API
+pub const get = collect;
+pub const fetch = collect;
+pub const gatherAll = collect;
+pub const getAll = collect;
+pub const buildReport = summary;
+pub const getSummary = summary;
 
 test "HealthReport logic" {
     var report = HealthReport{
@@ -791,4 +816,20 @@ test "Diagnostics checkHealth" {
     diag.avail_mem = 500000; // 50%, should be healthy
     const report3 = checkHealth(&diag);
     try std.testing.expectEqual(HealthStatus.healthy, report3.status);
+}
+
+test "Diagnostics compact one-liner" {
+    const diag: Diagnostics = .{
+        .os_tag = "linux",
+        .arch = "x86_64",
+        .cpu_model = "test_cpu",
+        .logical_cores = 4,
+        .total_mem = 8000000000,
+        .avail_mem = 4000000000,
+        .drives = &[_]DriveInfo{},
+    };
+    const one = try diag.compact(std.testing.allocator);
+    defer std.testing.allocator.free(one);
+    try std.testing.expect(std.mem.indexOf(u8, one, "os=linux") != null);
+    try std.testing.expect(std.mem.indexOf(u8, one, "cores=4") != null);
 }

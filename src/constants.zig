@@ -90,7 +90,9 @@ pub const SizeConstants = struct {
     pub const bytes_per_mb: u64 = 1024 * 1024;
     /// Bytes per gigabyte (1024 * 1024 * 1024).
     pub const bytes_per_gb: u64 = 1024 * 1024 * 1024;
-    /// Bytes per terabyte (1024 * 1024 * 1024 * 1024).
+    /// Bytes per terabyte / tebibyte (1024 * 1024 * 1024 * 1024 = 2^40).
+    ///
+    /// Used as the boundary for the top "TiB+" bucket in `humanBytes`.
     pub const bytes_per_tb: u64 = 1024 * 1024 * 1024 * 1024;
 };
 

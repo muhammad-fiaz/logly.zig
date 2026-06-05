@@ -122,6 +122,42 @@ Key fields:
 *   `provider: Provider` - Provider enum (`.none`, `.jaeger`, `.zipkin`, `.datadog`, `.google_cloud`, `.google_analytics`, `.google_tag_manager`, `.aws_xray`, `.azure`, `.generic`, `.file`, `.custom`).
 *   `exporter_endpoint: ?[]const u8` -  Exporter endpoint URL for HTTP/gRPC exporters (e.g., `"http://localhost:4317"`).
 *   `api_key: ?[]const u8` -  API key for providers that require authentication.
+
+### Memory Tracker
+
+#### `memory: MemoryConfig`
+
+Real-time memory tracker configuration. The struct is read by `MemoryTracker.initWithConfig(inner, memory)` and by `Logger.attachMemoryTracker` so the per-event callbacks and pressure threshold are configured from a single `Config`.
+
+Key fields:
+*   `enabled: bool` - Whether the memory tracker is enabled. `false` skips the OS-level `detectAvailableMemory` probe on `init` and the background refresh tick (default: `true`).
+*   `pressure_threshold: f64` - Pressure fraction in `[0.0, 1.0]` used by `MemoryReport.isPressureHigh` and the optional `pressure_callback` event (default: `0.9`).
+*   `fire_callback_on_pressure: bool` - Whether to fire `pressure_callback` whenever an allocation pushes the live usage across `pressure_threshold` (default: `false`).
+*   `refresh_interval_ms: u64` - How often (in milliseconds) the tracker should refresh `bytes_available` from the OS probe. `0` disables the periodic refresh (default: `0`).
+*   `pressure_callback: ?*const fn (bytes_used: usize, bytes_peak: usize, bytes_capacity: usize, threshold: f64, user_data: ?*anyopaque) void` - Pressure event callback.
+*   `oom_callback: ?*const fn (requested_len: usize, alignment: std.mem.Alignment, user_data: ?*anyopaque) void` - OOM event callback.
+*   `user_data: ?*anyopaque` - User data pointer passed to the callbacks.
+
+Builders on `Config.MemoryConfig`:
+*   `withThreshold(value)` - returns a copy with `pressure_threshold` clamped to `[0.0, 1.0]`.
+*   `withRefreshInterval(interval_ms)` - returns a copy with `refresh_interval_ms` set.
+*   `withEnabled(on)` - returns a copy with `enabled` toggled.
+*   `withPressureEvents(on)` - returns a copy with `fire_callback_on_pressure` toggled.
+*   `withPressureCallback(cb, user_data)` - returns a copy with `pressure_callback` wired up (and `fire_callback_on_pressure` set to `true`).
+*   `withOomCallback(cb, user_data)` - returns a copy with `oom_callback` wired up.
+
+Builder aliases on `Config.MemoryConfig`: `threshold`, `refreshInterval`, `pressure`, `onPressure`, `setPressureCallback`, `oom`, `onOom`, `setOomCallback`, `enable`, `disable`, `fireOnPressure`.
+
+Builders on `Config`:
+*   `withMemory(memory)` - returns a copy with the supplied `MemoryConfig` applied.
+*   `withMemoryConfig(memory)` - alias for `withMemory`.
+*   `withMemoryPressureThreshold(threshold)` - returns a copy with `pressure_threshold` clamped to `[0.0, 1.0]`.
+*   `withMemoryRefreshInterval(interval_ms)` - returns a copy with `refresh_interval_ms` set.
+*   `withMemoryPressureCallback(cb, user_data)` - returns a copy with `pressure_callback` wired up.
+*   `withMemoryOomCallback(cb, user_data)` - returns a copy with `oom_callback` wired up.
+*   `withMemoryEnabled(on)` - returns a copy with the memory tracker enabled/disabled.
+
+Builder aliases on `Config`: `memoryConfig`, `memoryThreshold`, `memoryRefresh`, `memoryPressure`, `memoryOom`, `memoryEnabled`.
 *   `connection_string: ?[]const u8` -  Connection string for Azure Application Insights.
 *   `exporter_file_path: ?[]const u8` -  File path for JSONL file exporter.
 *   `metrics_file_path: ?[]const u8` -  File path override for JSON/Prometheus metric exports.
