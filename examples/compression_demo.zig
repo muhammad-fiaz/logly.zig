@@ -5,7 +5,7 @@ const Compression = logly.Compression;
 const CompressionPresets = logly.CompressionPresets;
 
 /// Comprehensive compression demo for Logly v0.2.0
-/// Demonstrates all compression algorithms: deflate, gzip, zlib, zstd, lzma, lzma2, xz, zip, tar.gz, lz4
+/// Demonstrates all compression algorithms: deflate, gzip, zlib, zstd, brotli, lzma, lzma2, xz, zip, tar.gz, lz4
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -14,7 +14,7 @@ pub fn main() !void {
     std.debug.print("\n", .{});
     std.debug.print("=" ** 70 ++ "\n", .{});
     std.debug.print("  Logly Compression Demo v0.2.0\n", .{});
-    std.debug.print("  All Compression Algorithms: deflate, gzip, zstd, lzma, xz, zip, tar.gz, lz4\n", .{});
+    std.debug.print("  All Compression Algorithms: deflate, gzip, zstd, brotli, lzma, xz, zip, tar.gz, lz4\n", .{});
     std.debug.print("=" ** 70 ++ "\n\n", .{});
 
     const log_dir = "logs";
@@ -253,6 +253,7 @@ pub fn main() !void {
     const algorithms = [_]struct { name: []const u8, factory: *const fn (std.mem.Allocator) Compression, ext: []const u8 }{
         .{ .name = "deflate", .factory = Compression.init, .ext = ".gz" },
         .{ .name = "zstd", .factory = Compression.zstdCompression, .ext = ".zst" },
+        .{ .name = "brotli", .factory = Compression.brotliCompression, .ext = ".br" },
         .{ .name = "lzma", .factory = Compression.lzmaCompression, .ext = ".lzma" },
         .{ .name = "xz", .factory = Compression.xzCompression, .ext = ".xz" },
         .{ .name = "zip", .factory = Compression.zipCompression, .ext = ".zip" },
