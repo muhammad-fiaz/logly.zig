@@ -212,13 +212,6 @@ fn benchFilterComplex(ctx: *const BenchContext) !void {
 }
 
 //
-// Diagnostics Benchmark Functions
-//
-fn benchDiagnostics(ctx: *const BenchContext) !void {
-    _ = ctx;
-}
-
-//
 // Multi-thread worker function
 //
 fn multiThreadWorker(ctx: *const BenchContext) void {

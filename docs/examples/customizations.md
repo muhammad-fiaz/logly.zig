@@ -1,10 +1,10 @@
 ---
 title: Customizations Example
-description: Complete example of Logly.zig customizations including global root path, format structure, color customization, diagnostics logging, and highlighter patterns.
+description: Complete example of Logly.zig customizations including global root path, format structure, color customization, and highlighter patterns.
 head:
   - - meta
     - name: keywords
-      content: customizations, root path, format structure, color customization, diagnostics, highlighters, alerts
+      content: customizations, root path, format structure, color customization, highlighters, alerts
   - - meta
     - property: og:title
       content: Customizations Example | Logly.zig
@@ -162,9 +162,6 @@ The example creates the following directory structure:
 ├── application.log      # From example 1
 ├── errors.log           # From example 1
 └── combined.log         # From example 6
-
-./diagnostics/
-└── system_info.log      # From example 4 (if configured)
 ```
 
 Each file contains the formatted log entries with custom colors (in ANSI format).

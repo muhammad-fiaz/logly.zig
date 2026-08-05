@@ -251,7 +251,7 @@ This version includes enterprise-grade security controls, high-performance zero-
 * **Async Engine**: Backpressure signals (queue utilization), priority queues (Critical/Fatal bypass), shutdown grace periods, and `drainAndFlush()` handling.
 * **Rotation & Archiving**: Hourly rotation, total maximum size bounds, and multi-file `.tar.gz` archiving capability.
 
-**Metrics, Telemetry & Diagnostics:**
+**Metrics, Telemetry & Observability:**
 * **Metrics**: Histograms per log level, P50/P95/P99 latency calculations, StatsD export, and Prometheus text format export.
 * **Telemetry**: Event batching (`batch_size`, `flush_interval_ms`), Honeycomb, Datadog/GCP formats, and OTLP integrations.
 * **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, rules, and crash handling.

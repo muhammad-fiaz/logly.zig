@@ -101,10 +101,6 @@ Built-in metrics collection for logging performance monitoring.
 
 OpenTelemetry-compatible trace context propagation with automatic span ID generation.
 
-### 🚀 Arena Allocator
-
-Optional arena allocator support for improved performance in high-throughput scenarios, reducing allocation overhead for temporary formatting operations.
-
 ### 🎨 Cross-Platform Colors
 
 Enhanced ANSI color support for Windows, Linux, macOS, and bare metal/freestanding targets.
