@@ -1829,6 +1829,8 @@ pub const Scheduler = struct {
 };
 
 fn matchPattern(name: []const u8, pattern: []const u8) bool {
+    // Wildcard matches everything
+    if (std.mem.eql(u8, pattern, "*")) return true;
     // Simple glob matching for *.ext patterns
     if (std.mem.startsWith(u8, pattern, "*.")) {
         const ext = pattern[1..];

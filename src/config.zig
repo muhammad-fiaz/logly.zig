@@ -41,13 +41,6 @@ pub const Config = struct {
     color: bool = true,
 
     /// Check for updates on startup.
-    check_for_updates: bool = true,
-
-    /// Emit system diagnostics on startup (OS, CPU, memory, drives).
-    emit_system_diagnostics_on_init: bool = false,
-    /// Include per-drive storage information when emitting diagnostics.
-    include_drive_diagnostics: bool = true,
-
     /// Output format settings.
     json: bool = false,
     pretty_json: bool = false,
@@ -58,7 +51,6 @@ pub const Config = struct {
     align_fields: bool = false,
     tamper_evident: bool = false,
     msgpack: bool = false,
-    tui: bool = false,
 
     /// Custom format string for log messages.
     /// Available placeholders: {time}, {level}, {message}, {module}, {function}, {file}, {line},
@@ -227,23 +219,11 @@ pub const Config = struct {
     /// OpenTelemetry telemetry configuration.
     telemetry: TelemetryConfig = .{},
 
-    /// Use arena allocator for internal temporary allocations.
-    /// Improves performance by batching allocations and reducing malloc overhead.
-    use_arena_allocator: bool = false,
-
-    /// Arena reset threshold in bytes. When arena reaches this size, it resets.
-    arena_reset_threshold: usize = Constants.ConfigDefaults.arena_reset_threshold,
-
     /// Optional global root path for all log files.
     /// If set, file sinks will be stored relative to this path.
     /// The directory will be auto-created if it doesn't exist.
     /// If the path cannot be created, a warning is emitted but logging continues.
     logs_root_path: ?[]const u8 = null,
-
-    /// Optional custom path for diagnostics logs.
-    /// If set, system diagnostics will be stored at this path.
-    /// If null, diagnostics will use logs_root_path or default behavior.
-    diagnostics_output_path: ?[]const u8 = null,
 
     /// Custom format structure configuration.
     format_structure: FormatStructureConfig = .{},
@@ -838,8 +818,6 @@ pub const Config = struct {
         stack_size: usize = Constants.ThreadDefaults.stack_size,
         /// Enable work stealing between threads.
         work_stealing: bool = true,
-        /// Enable per-worker arena allocator for temporary allocations.
-        enable_arena: bool = false,
         /// Thread naming prefix.
         thread_name_prefix: []const u8 = Constants.ThreadDefaults.thread_name_prefix,
         /// Keep alive time for idle threads (milliseconds).
@@ -909,19 +887,10 @@ pub const Config = struct {
             return cfg;
         }
 
-        /// Returns a copy with per-worker arenas enabled or disabled.
-        pub fn withArena(self: ThreadPoolConfig, enabled: bool) ThreadPoolConfig {
-            var cfg = self;
-            cfg.enable_arena = enabled;
-            return cfg;
-        }
-
         /// Alias for `withThreadCount`.
         pub const threads = withThreadCount;
         /// Alias for `withQueueSize`.
         pub const queue = withQueueSize;
-        /// Alias for `withArena`.
-        pub const arena = ThreadPoolConfig.withArena;
     };
 
     /// Parallel sink writing configuration.
@@ -1252,6 +1221,10 @@ pub const Config = struct {
         /// Use this for fine-grained control over zstd compression levels.
         /// v0.1.5+
         custom_zstd_level: ?i32 = null,
+        /// Custom Brotli level (0-11). If set, overrides the level enum for Brotli.
+        /// Use this for fine-grained control over Brotli compression levels.
+        /// v0.2.1+
+        custom_brotli_level: ?i32 = null,
         /// Compress on rotation.
         on_rotation: bool = true,
         /// Keep original file after compression.
@@ -1322,6 +1295,11 @@ pub const Config = struct {
             zip,
             /// LZ4 - Extremely fast compression/decompression
             lz4,
+            /// Brotli - Google's compression algorithm, excellent for text/log data
+            /// Provides very good compression ratios, especially for UTF-8 text.
+            /// Supports quality levels 0-11 (default 6, best 11).
+            /// v0.2.1+
+            brotli,
         };
 
         pub const CompressionLevel = enum {
@@ -1364,6 +1342,25 @@ pub const Config = struct {
                     .fast => 3, // Fast compression, good ratio
                     .default => 6, // Balanced (zstd default is 3, we use 6 for better ratio)
                     .best => 19, // High compression (below ultra threshold)
+                };
+            }
+
+            /// Converts the enum to its corresponding Brotli compression integer level (0-11).
+            /// Brotli supports levels 0-11, with higher levels providing better compression
+            /// at the cost of speed. Level 0 is fastest, 11 is best compression.
+            ///
+            /// Returns:
+            /// - i32 integer representation for Brotli (0-11).
+            ///
+            /// Complexity: O(1)
+            /// v0.2.1+
+            pub fn toBrotliLevel(self: CompressionLevel) i32 {
+                return switch (self) {
+                    .none => 0,
+                    .fastest => 1, // Fastest brotli compression
+                    .fast => 4, // Fast compression
+                    .default => 6, // Balanced (Brotli default is 6)
+                    .best => 11, // Maximum compression
                 };
             }
         };
@@ -1727,7 +1724,7 @@ pub const Config = struct {
         /// v0.1.5+
         pub fn zstdWithLevel(custom_level: i32) CompressionConfig {
             // Clamp to valid zstd range (1-22)
-            const clamped_level = @max(1, @min(22, custom_level));
+            const clamped_level = std.math.clamp(custom_level, 1, 22);
             return .{
                 .enabled = true,
                 .level = .default,
@@ -1809,6 +1806,33 @@ pub const Config = struct {
                 .algorithm = .lz4,
                 .extension = Constants.CompressionConstants.ArchivingExtensions.lz4,
             };
+        }
+
+        /// Returns a Brotli compression config.
+        /// Brotli provides excellent compression ratios, especially for UTF-8 text.
+        /// Supports quality levels 0-11 (default 6, best 11).
+        /// v0.2.1+
+        pub fn brotli() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .brotli,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.brotli,
+            };
+        }
+
+        /// Returns the effective Brotli compression level.
+        /// If custom_brotli_level is set, uses that; otherwise maps from level enum.
+        ///
+        /// Returns:
+        ///     - i32 Brotli compression level (0-11).
+        ///
+        /// Complexity: O(1)
+        /// v0.2.1+
+        pub fn getEffectiveBrotliLevel(self: *const CompressionConfig) i32 {
+            if (self.custom_brotli_level) |custom| {
+                return custom;
+            }
+            return self.level.toBrotliLevel();
         }
 
         /// Returns the effective zstd compression level.
@@ -2184,8 +2208,6 @@ pub const Config = struct {
         overflow_policy: OverflowPolicy = .drop_oldest,
         /// Auto-start worker thread.
         background_worker: bool = true,
-        /// Use arena allocator for batch processing (reduces malloc overhead).
-        use_arena: bool = false,
         /// Queue utilization ratio that records a backpressure event.
         backpressure_threshold: f64 = Constants.AsyncConstants.backpressure_threshold_ratio,
         /// Default timeout for explicit drain waits.
@@ -2433,7 +2455,6 @@ pub const Config = struct {
         if (other.cef) result.cef = true;
         if (other.align_fields) result.align_fields = true;
         if (other.msgpack) result.msgpack = true;
-        if (other.tui) result.tui = true;
         if (other.include_trace_id) result.include_trace_id = true;
         if (other.include_pid) result.include_pid = true;
         if (other.include_hostname) result.include_hostname = true;
@@ -2772,30 +2793,6 @@ pub const Config = struct {
         return result;
     }
 
-    /// Returns a configuration with arena allocator hint enabled.
-    ///
-    /// Optimization helper. When enabled, the logger may use an arena allocator
-    /// for request-scoped or temporary allocations to improve performance.
-    ///
-    /// Arguments:
-    ///   - None
-    ///
-    /// Return Value:
-    ///   - Modified `Config` with `use_arena_allocator` set to true.
-    ///
-    /// Complexity: O(1)
-    pub fn withArenaAllocation(self: Config) Config {
-        var result = self;
-        result.use_arena_allocator = true;
-        return result;
-    }
-
-    /// Alias for withArenaAllocation.
-    pub const withArenaAllocator = withArenaAllocation;
-
-    /// Short alias for withArenaAllocation.
-    pub const withArena = withArenaAllocation;
-
     /// Returns a configuration for log-only mode (no console display, only file storage).
     ///
     /// Disables console output while keeping file storage enabled.
@@ -2872,7 +2869,17 @@ pub const Config = struct {
         const j = parsed.value;
 
         if (j.level) |lvl| {
-            config.level = if (std.mem.eql(u8, lvl, "trace") or std.mem.eql(u8, lvl, "TRACE")) .trace else if (std.mem.eql(u8, lvl, "debug") or std.mem.eql(u8, lvl, "DEBUG")) .debug else if (std.mem.eql(u8, lvl, "info") or std.mem.eql(u8, lvl, "INFO")) .info else if (std.mem.eql(u8, lvl, "notice") or std.mem.eql(u8, lvl, "NOTICE")) .notice else if (std.mem.eql(u8, lvl, "success") or std.mem.eql(u8, lvl, "SUCCESS")) .success else if (std.mem.eql(u8, lvl, "warning") or std.mem.eql(u8, lvl, "WARNING") or std.mem.eql(u8, lvl, "warn") or std.mem.eql(u8, lvl, "WARN")) .warning else if (std.mem.eql(u8, lvl, "err") or std.mem.eql(u8, lvl, "ERR") or std.mem.eql(u8, lvl, "error") or std.mem.eql(u8, lvl, "ERROR")) .err else if (std.mem.eql(u8, lvl, "fail") or std.mem.eql(u8, lvl, "FAIL")) .fail else if (std.mem.eql(u8, lvl, "critical") or std.mem.eql(u8, lvl, "CRITICAL") or std.mem.eql(u8, lvl, "crit") or std.mem.eql(u8, lvl, "CRIT")) .critical else if (std.mem.eql(u8, lvl, "fatal") or std.mem.eql(u8, lvl, "FATAL")) .fatal else Level.fromString(lvl) orelse .info;
+            config.level = if (std.ascii.eqlIgnoreCase(lvl, "trace") or std.ascii.eqlIgnoreCase(lvl, "trc")) .trace
+                else if (std.ascii.eqlIgnoreCase(lvl, "debug") or std.ascii.eqlIgnoreCase(lvl, "dbg")) .debug
+                else if (std.ascii.eqlIgnoreCase(lvl, "info")) .info
+                else if (std.ascii.eqlIgnoreCase(lvl, "notice") or std.ascii.eqlIgnoreCase(lvl, "note")) .notice
+                else if (std.ascii.eqlIgnoreCase(lvl, "success") or std.ascii.eqlIgnoreCase(lvl, "ok")) .success
+                else if (std.ascii.eqlIgnoreCase(lvl, "warning") or std.ascii.eqlIgnoreCase(lvl, "warn")) .warning
+                else if (std.ascii.eqlIgnoreCase(lvl, "err") or std.ascii.eqlIgnoreCase(lvl, "error")) .err
+                else if (std.ascii.eqlIgnoreCase(lvl, "fail")) .fail
+                else if (std.ascii.eqlIgnoreCase(lvl, "critical") or std.ascii.eqlIgnoreCase(lvl, "crit")) .critical
+                else if (std.ascii.eqlIgnoreCase(lvl, "fatal") or std.ascii.eqlIgnoreCase(lvl, "panic")) .fatal
+                else Level.fromString(lvl) orelse .info;
         }
         if (j.color) |val| config.color = val;
         if (j.json) |val| config.json = val;
@@ -3005,19 +3012,6 @@ test "config with display storage" {
     try std.testing.expect(both.global_file_storage);
 }
 
-test "config arena allocation aliases" {
-    const base = Config.default();
-
-    const arena_via_primary = base.withArenaAllocation();
-    try std.testing.expect(arena_via_primary.use_arena_allocator);
-
-    const arena_via_alias = base.withArenaAllocator();
-    try std.testing.expect(arena_via_alias.use_arena_allocator);
-
-    const arena_via_short_alias = base.withArena();
-    try std.testing.expect(arena_via_short_alias.use_arena_allocator);
-}
-
 test "config pipeline builders enable related features" {
     const cfg = Config.default()
         .withHighThroughputPipeline()
@@ -3063,11 +3057,10 @@ test "config async metrics and threadpool helper aliases" {
     try std.testing.expect(!metrics_cfg.export_level_breakdown);
     try std.testing.expect(metrics_cfg.export_sink_breakdown);
 
-    const pool_cfg = Config.ThreadPoolConfig.ioBound().threads(4).queue(256).arena(true);
+    const pool_cfg = Config.ThreadPoolConfig.ioBound().threads(4).queue(256);
     try std.testing.expect(pool_cfg.enabled);
     try std.testing.expectEqual(@as(usize, 4), pool_cfg.thread_count);
     try std.testing.expectEqual(@as(usize, 256), pool_cfg.queue_size);
-    try std.testing.expect(pool_cfg.enable_arena);
 }
 
 test "rules config default values" {

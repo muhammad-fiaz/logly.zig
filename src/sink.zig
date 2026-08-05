@@ -38,8 +38,11 @@ const Utils = @import("utils.zig");
 
 /// File write mode.
 pub const WriteMode = enum {
+    /// Append to existing file (default).
     append,
+    /// Truncate file before writing.
     overwrite,
+    /// Append normally but trigger rotation when size/time limits are reached.
     append_rotate,
 };
 
@@ -287,7 +290,8 @@ pub const SinkConfig = struct {
     /// When true, existing files are truncated before writing.
     overwrite_mode: bool = false,
 
-    /// New File write mode.
+    /// File write mode. Controls whether files are appended to, overwritten, or
+    /// appended with rotation triggers.
     write_mode: WriteMode = .append,
 
     /// Whether this is an in-memory sink.

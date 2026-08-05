@@ -22,9 +22,8 @@ This example demonstrates all of Logly's advanced customization features.
 1. **Global Root Path** - Configure all logs to be stored in a single directory
 2. **Format Structure** - Customize message prefixes, suffixes, and field separators
 3. **Color Customization** - Define custom ANSI colors for each log level
-4. **Diagnostics Logging** - Emit system diagnostics with structured data
-5. **Highlighters & Alerts** - Configure pattern matching for special handling
-6. **Combined Configuration** - Use all features together
+4. **Highlighters & Alerts** - Configure pattern matching for special handling
+5. **Combined Configuration** - Use all features together
 
 ## Running the Example
 
@@ -80,17 +79,7 @@ config.level_colors = .{
 
 Each log level can have a unique color scheme.
 
-### 4. Diagnostics Custom Path
-
-```zig
-config.diagnostics_output_path = "./diagnostics/system_info.log";
-config.logs_root_path = "./logs";
-config.emit_system_diagnostics_on_init = true;
-```
-
-System information is logged with structured fields available for custom formats.
-
-### 5. Highlighter Patterns and Alerts
+### 4. Highlighter Patterns and Alerts
 
 ```zig
 config.highlighters = .{
@@ -103,15 +92,13 @@ config.highlighters = .{
 
 Matches patterns in log messages and triggers alerts.
 
-### 6. Combined Customizations
+### 5. Combined Customizations
 
 All features work together seamlessly:
 
 ```zig
 var config_combined = logly.Config.default();
 config_combined.logs_root_path = "./logs";
-config_combined.diagnostics_output_path = "./logs/diagnostics.log";
-config_combined.emit_system_diagnostics_on_init = true;
 
 config_combined.format_structure = .{
     .message_prefix = "[APP] ",
@@ -189,7 +176,6 @@ Each file contains the formatted log entries with custom colors (in ANSI format)
 | Root Path | `logs_root_path` | Set directory for all file sinks |
 | Format | `format_structure` | Customize message structure |
 | Colors | `level_colors` | Per-level ANSI color codes |
-| Diagnostics Path | `diagnostics_output_path` | Custom diagnostics file location |
 | Highlighters | `highlighters` | Pattern matching & alerts |
 
 ## Use Cases
@@ -205,14 +191,12 @@ config.highlighters.enabled = true;
 ```zig
 config.logs_root_path = "/var/log/myapp";
 config.level_colors.critical_color = "\x1b[1;31m";
-config.diagnostics_output_path = "/var/log/myapp/system.log";
 ```
 
 **Testing:**
 ```zig
 config.logs_root_path = "./test_output";
 config.highlighters.log_matches = true;
-config.emit_system_diagnostics_on_init = true;
 ```
 
 ## Learning Resources

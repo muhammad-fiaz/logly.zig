@@ -75,8 +75,7 @@ The configuration file is a simple, standard JSON structure that mirrors Logly's
   "color": true,
   "json": false,
   "auto_flush": true,
-  "msgpack": false,
-  "tui": true
+  "msgpack": false
 }
 ```
 
@@ -88,7 +87,6 @@ The configuration file is a simple, standard JSON structure that mirrors Logly's
 * **`color`**: Enable/disable colored CLI output.
 * **`json`**: Toggle structured JSON formatting.
 * **`msgpack`**: Enable MessagePack binary formatting for storage efficiency.
-* **`tui`**: Enable styled terminal cards for local development.
 
 ---
 

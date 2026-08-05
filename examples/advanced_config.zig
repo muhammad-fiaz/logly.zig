@@ -30,11 +30,7 @@ pub fn main() !void {
     config.capture_stack_trace = true;
     config.symbolize_stack_trace = true;
 
-    // 5. Optional logger arena scratch allocator for high-throughput temporary allocations
-    config.use_arena_allocator = true;
-    config.arena_reset_threshold = 64 * 1024;
-    // Equivalent builder style:
-    // config = config.withArenaAllocator();
+    // 5. Allocator: pass your own allocator to Logger.initWithConfig(allocator, config)
 
     logger.configure(config);
 

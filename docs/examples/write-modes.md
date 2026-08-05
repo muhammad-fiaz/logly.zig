@@ -15,18 +15,20 @@ head:
 
 # Sink Write Modes
 
-Learn how to control whether log files are appended to or overwritten using the `overwrite_mode` parameter.
+Learn how to control whether log files are appended to or overwritten using the `write_mode` field.
 
 ## Overview
 
-The `overwrite_mode` parameter in `SinkConfig` controls how files are written:
+The `write_mode` field in `SinkConfig` controls how files are written:
 
-- **Append Mode** (default, `overwrite_mode = false`): New logs are added to existing files, preserving history
-- **Overwrite Mode** (`overwrite_mode = true`): Files are truncated when the sink initializes, starting fresh
+- **Append Mode** (default, `write_mode = .append`): New logs are added to existing files, preserving history
+- **Overwrite Mode** (`write_mode = .overwrite`): Files are truncated when the sink initializes, starting fresh
+- **Append Rotate Mode** (`write_mode = .append_rotate`): Append with explicit rotation trigger
 
 This is useful for scenarios like:
 - **Append**: Permanent audit logs, error tracking, system history
 - **Overwrite**: Session logs, temporary debug output, test runs
+- **Append Rotate**: Logs that need explicit rotation control
 
 ## Append Mode (Default)
 

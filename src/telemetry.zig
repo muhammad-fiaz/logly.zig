@@ -1425,7 +1425,7 @@ pub const Telemetry = struct {
 
     fn clampSamplingRate(input_rate: f64) f64 {
         if (std.math.isNan(input_rate)) return 0.0;
-        return utils.clamp(f64, input_rate, 0.0, 1.0);
+        return std.math.clamp(input_rate, 0.0, 1.0);
     }
 
     /// Updates telemetry sampling strategy and effective sampling rate.

@@ -12,7 +12,6 @@
 //! - Sampling: Rate limiting and probabilistic sampling
 //! - Redaction: Sensitive data masking
 //! - Metrics: Performance and usage statistics
-//! - Arena Allocator: Optional memory pooling for performance
 //!
 //! Thread Safety:
 //! All public methods are thread-safe using RwLock.
@@ -32,8 +31,6 @@ const Redactor = @import("redactor.zig").Redactor;
 const Metrics = @import("metrics.zig").Metrics;
 const ThreadPool = @import("thread_pool.zig").ThreadPool;
 const AsyncLogger = @import("async.zig").AsyncLogger;
-const UpdateChecker = @import("update_checker.zig");
-const Diagnostics = @import("diagnostics.zig");
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 const Rules = @import("rules.zig").Rules;
@@ -202,8 +199,6 @@ pub const Logger = struct {
     thread_pool: ?*ThreadPool = null,
     /// Async logger for high-performance buffered logging.
     async_logger: ?*AsyncLogger = null,
-    /// Background thread for update checking.
-    update_thread: ?std.Thread = null,
     /// Rules engine for diagnostic messages.
     rules: ?*Rules = null,
 
@@ -216,48 +211,9 @@ pub const Logger = struct {
     /// Total records processed counter.
     record_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
-    /// Arena allocator for temporary allocations (optional).
-    /// When enabled, reduces allocation overhead for formatting operations.
-    arena_state: ?std.heap.ArenaAllocator = null,
-
-    /// The parent allocator used to create the arena (if applicable).
-    parent_allocator: ?std.mem.Allocator = null,
-
-    /// Approximate arena bytes consumed since the last reset.
-    arena_bytes_since_reset: usize = 0,
-
-    /// Returns the arena allocator if enabled, otherwise the main allocator.
+    /// Returns the allocator for scratch/temporary allocations.
     pub fn scratchAllocator(self: *Logger) std.mem.Allocator {
-        if (self.arena_state) |*arena| {
-            return arena.allocator();
-        }
         return self.allocator;
-    }
-
-    /// Resets the arena allocator if enabled, freeing temporary allocations.
-    /// Call this periodically in high-throughput scenarios to prevent memory growth.
-    pub fn resetArena(self: *Logger) void {
-        if (self.arena_state) |*arena| {
-            _ = arena.reset(.retain_capacity);
-            self.arena_bytes_since_reset = 0;
-        }
-    }
-
-    /// Resets arena state before processing a new record when threshold is exceeded.
-    fn maybeResetArenaBeforeRecord(self: *Logger) void {
-        if (!self.config.use_arena_allocator) return;
-        if (self.arena_state == null) return;
-        if (self.config.arena_reset_threshold == 0) return;
-        if (self.arena_bytes_since_reset < self.config.arena_reset_threshold) return;
-
-        self.resetArena();
-    }
-
-    /// Tracks approximate temporary bytes allocated through the arena.
-    fn accountArenaUsage(self: *Logger, approx_bytes: usize) void {
-        if (!self.config.use_arena_allocator) return;
-        if (self.arena_state == null) return;
-        self.arena_bytes_since_reset +%= approx_bytes;
     }
 
     /// Allocates and initializes a logger with common base state.
@@ -274,29 +230,13 @@ pub const Logger = struct {
             .atomic_level = std.atomic.Value(u8).init(@intFromEnum(config.level)),
         };
 
-        if (config.use_arena_allocator) {
-            logger.arena_state = std.heap.ArenaAllocator.init(allocator);
-            logger.parent_allocator = allocator;
-        }
-
         return logger;
     }
 
-    /// Creates the default console sink and startup diagnostics when enabled.
+    /// Creates the default console sink when enabled.
     fn setupStartupOutputs(self: *Logger) !void {
         if (self.config.auto_sink and self.config.global_console_display) {
             _ = try self.addSink(SinkConfig.console());
-        }
-
-        if (self.config.emit_system_diagnostics_on_init) {
-            self.logSystemDiagnostics(null) catch {};
-        }
-    }
-
-    /// Starts update checker thread when enabled.
-    fn maybeStartUpdateChecker(self: *Logger) void {
-        if (self.config.check_for_updates and self.config.global_console_display) {
-            self.update_thread = UpdateChecker.checkForUpdates(self.allocator, true);
         }
     }
 
@@ -316,7 +256,6 @@ pub const Logger = struct {
         errdefer logger.deinit();
 
         try logger.setupStartupOutputs();
-        logger.maybeStartUpdateChecker();
 
         return logger;
     }
@@ -355,17 +294,11 @@ pub const Logger = struct {
             logger.thread_pool = tp;
         }
 
-        logger.maybeStartUpdateChecker();
-
         return logger;
     }
 
     /// Deinitializes the logger and frees all associated resources.
     pub fn deinit(self: *Logger) void {
-        if (self.update_thread) |t| {
-            t.join();
-        }
-
         if (self.thread_pool) |tp| {
             tp.deinit();
         }
@@ -411,11 +344,6 @@ pub const Logger = struct {
         if (self.span_id) |s| self.allocator.free(s);
         if (self.correlation_id) |c| self.allocator.free(c);
 
-        // Deinitialize arena allocator if it was created
-        if (self.arena_state) |*arena| {
-            arena.deinit();
-        }
-
         self.allocator.destroy(self);
     }
 
@@ -429,22 +357,6 @@ pub const Logger = struct {
     pub fn configure(self: *Logger, config: Config) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-
-        const has_arena = self.arena_state != null;
-        const wants_arena = config.use_arena_allocator;
-
-        if (wants_arena and !has_arena) {
-            self.arena_state = std.heap.ArenaAllocator.init(self.allocator);
-            self.parent_allocator = self.allocator;
-            self.arena_bytes_since_reset = 0;
-        } else if (!wants_arena and has_arena) {
-            if (self.arena_state) |*arena| {
-                arena.deinit();
-            }
-            self.arena_state = null;
-            self.parent_allocator = null;
-            self.arena_bytes_since_reset = 0;
-        }
 
         self.config = config;
         self.atomic_level.store(@intFromEnum(config.level), .monotonic);
@@ -640,6 +552,13 @@ pub const Logger = struct {
     pub fn addSink(self: *Logger, config: SinkConfig) !usize {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
+
+        // Edge case: if adding a console sink (path == null, not file/network/memory),
+        // auto-disable auto_sink to prevent duplicate console output.
+        const is_console = config.path == null and !config.is_memory and !config.event_log;
+        if (is_console and self.config.auto_sink) {
+            self.config.auto_sink = false;
+        }
 
         // Handle logs_root_path: if set and config.path exists, prepend root to path
         var modified_config = config;
@@ -1129,7 +1048,6 @@ pub const Logger = struct {
         defer sinks_snapshot.deinit(logger.allocator);
 
         for (sinks_snapshot.items) |sink| {
-            // Use the worker's arena allocator if available for formatting
             sink.writeWithAllocator(&task_ctx.record, logger.config, allocator) catch |write_err| {
                 if (logger.config.debug_mode) {
                     std.debug.print("Async sink write error: {}\n", .{write_err});
@@ -1168,15 +1086,9 @@ pub const Logger = struct {
             }
         }
 
-        // Optimization: Use Shared lock if arena is not used, allowing concurrent logging.
-        // If arena is used, we must use exclusive lock because arena allocation modifies state.
-        const use_arena = self.config.use_arena_allocator;
-        if (use_arena) self.mutex.lockUncancelable(Utils.io()) else self.mutex.lockSharedUncancelable(Utils.io());
-        defer if (use_arena) self.mutex.unlock(Utils.io()) else self.mutex.unlockShared(Utils.io());
-
-        if (use_arena) {
-            self.maybeResetArenaBeforeRecord();
-        }
+        // Use shared lock for concurrent logging.
+        self.mutex.lockSharedUncancelable(Utils.io());
+        defer self.mutex.unlockShared(Utils.io());
 
         // Check level filtering
         var effective_min_level = self.config.level;
@@ -1318,10 +1230,6 @@ pub const Logger = struct {
 
         // Dispatch the record
         try self.dispatchRecord(&record);
-
-        if (use_arena) {
-            self.accountArenaUsage(final_message.len);
-        }
     }
 
     /// Dispatches a record to the appropriate logging backend (async logger, thread pool, or direct sinks).
@@ -1338,7 +1246,7 @@ pub const Logger = struct {
 
             _ = al.queue(formatted, record.level.priority());
 
-            // Auto-flush if enabled
+            // Signal async logger to flush if auto_flush is enabled
             if (self.config.auto_flush) {
                 al.flush();
             }
@@ -1348,7 +1256,6 @@ pub const Logger = struct {
         // Dispatch to thread pool if available - this is where async parallelism happens
         if (self.thread_pool) |tp| {
             // Clone record for async processing
-            // We need to clone because the original record is stack-allocated and will be deinitialized
             var cloned_rec = try record.clone(self.allocator);
             errdefer cloned_rec.deinit();
 
@@ -1359,10 +1266,8 @@ pub const Logger = struct {
             };
 
             if (tp.submitCallback(processLogTask, task_ctx)) {
-                // Auto-flush if enabled (consistent with sync path)
-                if (self.config.auto_flush) {
-                    self.flushInternal() catch {};
-                }
+                // Task submitted to thread pool - no flush needed here.
+                // The thread pool worker will write to sinks when the task executes.
                 return;
             }
 
@@ -1371,11 +1276,9 @@ pub const Logger = struct {
             cloned_rec.deinit();
         }
 
-        // Write to all sinks (synchronous path when no thread pool)
-        // Note: Each sink has its own mutex for thread-safety
-        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
+        // Write to all sinks (synchronous path when no thread pool or async logger)
         for (self.sinks.items) |sink| {
-            sink.writeWithAllocator(record, self.config, scratch_alloc) catch |write_err| {
+            sink.writeWithAllocator(record, self.config, null) catch |write_err| {
                 if (self.metrics) |m| {
                     m.recordError();
                 }
@@ -1390,7 +1293,7 @@ pub const Logger = struct {
             };
         }
 
-        // Auto-flush if enabled
+        // Auto-flush on synchronous path only
         if (self.config.auto_flush) {
             self.flushInternal() catch {};
         }
@@ -1511,81 +1414,6 @@ pub const Logger = struct {
         return Utils.currentSeconds() - self.init_timestamp;
     }
 
-    /// Logs system diagnostics (OS, arch, CPU, memory, drives) as a single record.
-    /// Respects Config.include_drive_diagnostics when emitting drive info.
-    /// Stores structured data in Record context for custom format interpolation.
-    pub fn logSystemDiagnostics(self: *Logger, src: ?std.builtin.SourceLocation) !void {
-        const alloc = self.scratchAllocator();
-
-        var diag = try Diagnostics.collect(alloc, self.config.include_drive_diagnostics);
-        defer diag.deinit(alloc);
-
-        // Build message using default structure (ASCII-safe)
-        var msg = std.Io.Writer.Allocating.init(alloc);
-        defer msg.deinit();
-
-        const w = &msg.writer;
-        try w.print(
-            "[DIAGNOSTICS] os={s} arch={s} cpu={s} cores={d}",
-            .{ diag.os_tag, diag.arch, diag.cpu_model, diag.logical_cores },
-        );
-
-        if (diag.total_mem) |t| {
-            const avail = diag.avail_mem orelse 0;
-            try w.print(" ram_total={d}MB ram_available={d}MB", .{ t / Constants.SizeConstants.bytes_per_mb, avail / Constants.SizeConstants.bytes_per_mb });
-        }
-
-        if (self.config.include_drive_diagnostics and diag.drives.len > 0) {
-            try w.writeAll(" drives=[");
-            for (diag.drives, 0..) |d, i| {
-                const total_gb = d.total_bytes / Constants.SizeConstants.bytes_per_gb;
-                const free_gb = d.free_bytes / Constants.SizeConstants.bytes_per_gb;
-                try w.print("{s} total={d}GB free={d}GB", .{ d.name, total_gb, free_gb });
-                if (i + 1 < diag.drives.len) try w.writeAll("; ");
-            }
-            try w.writeAll("]");
-        }
-
-        // Log with context data for structured formatting support
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
-
-        var record = Record.init(self.scratchAllocator(), .info, msg.written());
-        defer record.deinit();
-
-        if (src) |s| {
-            if (self.config.show_filename) record.filename = s.file;
-            if (self.config.show_lineno) {
-                record.line = s.line;
-                record.column = s.column;
-            }
-            if (self.config.show_function) record.function = s.fn_name;
-        }
-
-        // Store diagnostics in record context for format customization
-        try record.context.put("diag.os", .{ .string = diag.os_tag });
-        try record.context.put("diag.arch", .{ .string = diag.arch });
-        try record.context.put("diag.cpu", .{ .string = diag.cpu_model });
-        try record.context.put("diag.cores", .{ .integer = @intCast(diag.logical_cores) });
-        if (diag.total_mem) |t| {
-            try record.context.put("diag.ram_total_mb", .{ .integer = @intCast(t / Constants.SizeConstants.bytes_per_mb) });
-        }
-        if (diag.avail_mem) |a| {
-            try record.context.put("diag.ram_avail_mb", .{ .integer = @intCast(a / Constants.SizeConstants.bytes_per_mb) });
-        }
-
-        // Note: diagnostics_output_path can be used by adding a separate sink for diagnostics
-        // The diagnostics context fields (diag.os, diag.cpu, etc) are available for custom formats
-
-        // Dispatch the record
-        self.dispatchRecord(&record) catch |dispatch_err| {
-            if (self.metrics) |m| m.recordError();
-            if (self.config.debug_mode) {
-                std.debug.print("Diagnostics dispatch error: {}\n", .{dispatch_err});
-            }
-        };
-    }
-
     // Logging methods with simple, Python-like API
     // Pass @src() from your call site to enable clickable file:line in terminal
     // Example: try logger.info("message", @src());
@@ -1662,9 +1490,8 @@ pub const Logger = struct {
             record.context.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
         }
 
-        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
         for (self.sinks.items) |sink| {
-            sink.writeWithAllocator(&record, self.config, scratch_alloc) catch {};
+            sink.writeWithAllocator(&record, self.config, null) catch {};
             sink.flush() catch {};
         }
     }
@@ -1815,9 +1642,8 @@ pub const Logger = struct {
         }
 
         // Write to all sinks
-        const scratch_alloc = if (self.config.use_arena_allocator) self.scratchAllocator() else null;
         for (self.sinks.items) |sink| {
-            sink.writeWithAllocator(&record, self.config, scratch_alloc) catch |write_err| {
+            sink.writeWithAllocator(&record, self.config, null) catch |write_err| {
                 if (self.metrics) |m| {
                     m.recordError();
                 }
@@ -2387,7 +2213,6 @@ test "logger basic" {
     // Create logger with auto_sink disabled for testing
     var config = Config.default();
     config.auto_sink = false;
-    config.check_for_updates = false;
 
     const logger = try Logger.initWithConfig(std.testing.allocator, config);
     defer logger.deinit();
@@ -2398,8 +2223,7 @@ test "logger basic" {
 
 test "logger with auto sink" {
     // Default config has auto_sink = true
-    var config = Config.default();
-    config.check_for_updates = false;
+    const config = Config.default();
     const logger = try Logger.initWithConfig(std.testing.allocator, config);
     defer logger.deinit();
 
@@ -2411,7 +2235,6 @@ test "distributed logger context" {
     // Verify that DistributedLogger correctly propagates context
     var config = Config.default();
     config.auto_sink = false; // Disable auto-sink to test logic only
-    config.check_for_updates = false;
 
     // Setup a memory sink to inspect records
     const logger = try Logger.initWithConfig(std.testing.allocator, config);
@@ -2432,7 +2255,6 @@ test "distributed logger context" {
 test "global trace context" {
     var config = Config.default();
     config.auto_sink = false;
-    config.check_for_updates = false;
 
     const logger = try Logger.initWithConfig(std.testing.allocator, config);
     defer logger.deinit();
@@ -2449,7 +2271,6 @@ test "global trace context" {
 test "logger traceparent context helpers" {
     var config = Config.default();
     config.auto_sink = false;
-    config.check_for_updates = false;
 
     const logger = try Logger.initWithConfig(std.testing.allocator, config);
     defer logger.deinit();
@@ -2469,7 +2290,6 @@ test "logger traceparent context helpers" {
 test "distributed logger child and module helpers" {
     var config = Config.default();
     config.auto_sink = false;
-    config.check_for_updates = false;
 
     const logger = try Logger.initWithConfig(std.testing.allocator, config);
     defer logger.deinit();
@@ -2489,30 +2309,9 @@ test "logger supports GeneralPurposeAllocator" {
 
     var config = Config.default();
     config.auto_sink = false;
-    config.check_for_updates = false;
 
     const logger = try Logger.initWithConfig(gpa.allocator(), config);
     defer logger.deinit();
 
     try logger.info("gpa-backed logger", null);
-}
-
-test "logger arena threshold resets between records" {
-    var config = Config.default();
-    config.auto_sink = false;
-    config.check_for_updates = false;
-    config.use_arena_allocator = true;
-    config.arena_reset_threshold = 32;
-
-    const logger = try Logger.initWithConfig(std.testing.allocator, config);
-    defer logger.deinit();
-
-    try std.testing.expect(logger.arena_state != null);
-    try std.testing.expectEqual(@as(usize, 0), logger.arena_bytes_since_reset);
-
-    try logger.info("abcdefghijklmnopqrstuvwxyz0123456789", null);
-    try std.testing.expect(logger.arena_bytes_since_reset >= config.arena_reset_threshold);
-
-    try logger.info("small", null);
-    try std.testing.expect(logger.arena_bytes_since_reset < config.arena_reset_threshold);
 }

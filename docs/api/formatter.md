@@ -117,10 +117,6 @@ Formats a log record into ArcSight Common Event Format (CEF) for robust SIEM too
 
 Formats a log record into MessagePack (`msgpack`) binary format. It packs all standard attributes (timestamp, level, message, module, context, etc.) into a highly compact binary array, suitable for high-volume network and storage sinks.
 
-#### `formatTuiWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
-
-Formats a log record into a beautiful, color-coded, border-framed real-time terminal UI card. Displays live log counters, execution contexts, and level status badges in a structured table.
-
 #### `formatTemplate(record: *const Record, template: []const u8, config: anytype) ![]u8`
 
 Formats a log record based on a custom layout template.

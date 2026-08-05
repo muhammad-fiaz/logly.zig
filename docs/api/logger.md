@@ -104,20 +104,14 @@ Initializes a new `Logger` instance with a specific configuration preset.
 `Logger.init(...)` and `Logger.initWithConfig(...)` accept any allocator implementing `std.mem.Allocator`.
 
 - Use `std.heap.DebugAllocator` for robust general-purpose ownership and leak detection.
-- Enable arena scratch allocation with `Config.withArenaAllocation()` (aliases: `withArenaAllocator()`, `withArena()`) for high-throughput temporary allocations.
 
 ```zig
 var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
-var config = logly.Config.production().withArenaAllocator();
-config.arena_reset_threshold = 128 * 1024;
-
-const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
+const logger = try logly.Logger.initWithConfig(gpa.allocator(), logly.Config.default());
 defer logger.deinit();
 ```
-
-`configure(...)` can also toggle arena allocation at runtime (`use_arena_allocator`) without recreating the logger.
 
 ### `deinit() void`
 
@@ -173,33 +167,6 @@ Formats the current global logger trace context as a W3C `traceparent` header st
 ### `clearTraceContext() void`
 
 **Legacy**. Clears the global trace context.
-
-## Arena Allocator Methods
-
-When `use_arena_allocator` is enabled in config, the logger uses an arena allocator for temporary allocations, improving performance.
-
-The logger tracks approximate temporary usage and automatically resets the arena between records when usage reaches `Config.arena_reset_threshold`.
-
-### `scratchAllocator() std.mem.Allocator`
-
-Returns the arena allocator if enabled, otherwise returns the main allocator. Use for temporary allocations that can be batch-freed.
-
-```zig
-const allocator = logger.scratchAllocator();
-const temp = try allocator.alloc(u8, 1024);
-defer allocator.free(temp);
-```
-
-### `resetArena() void`
-
-Resets the arena allocator, freeing all temporary allocations at once. Call periodically in high-throughput scenarios.
-
-```zig
-// Reset every 1000 logs to prevent memory growth
-if (i % 1000 == 0) {
-    logger.resetArena();
-}
-```
 
 ## Callbacks
 
@@ -680,7 +647,13 @@ Enables the logger (logging is enabled by default).
 
 Temporarily disables all logging.
 
-
+> [!NOTE]
+> **Dispatch priority**: When multiple logging backends are enabled, records are dispatched in the following order:
+> 1. **AsyncLogger** (highest priority) — if `async_config.enabled = true`, records are queued in the ring buffer for background processing.
+> 2. **Thread Pool** — if `thread_pool.enabled = true`, records are submitted as tasks to the worker pool.
+> 3. **Direct Sinks** (lowest priority) — records are written synchronously to all configured sinks.
+>
+> `auto_flush` only applies to the **sync** and **async_logger** paths. The thread pool path does **not** flush on `auto_flush` because the task is merely queued to a worker — no sink write has occurred yet at the point `dispatchRecord` returns.
 
 ### `flush() !void`
 
@@ -701,18 +674,6 @@ Synchronously writes a fatal crash dump (with stack traces) directly to all acti
 
 ```zig
 try logger.logPanic("Database connection pool saturated!");
-```
-
-### `logSystemDiagnostics(src: ?std.builtin.SourceLocation) !void`
-
-Collects OS/CPU/memory (and optional per-drive storage) and logs them as a single `info` record. Honors `config.include_drive_diagnostics` and uses the logger's scratch allocator.
-
-```zig
-var cfg = logly.Config.default();
-cfg.include_drive_diagnostics = true;
-
-const logger = try logly.Logger.initWithConfig(allocator, cfg);
-try logger.logSystemDiagnostics(@src());
 ```
 
 ## Logging Methods

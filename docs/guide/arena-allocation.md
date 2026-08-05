@@ -1,35 +1,25 @@
 ---
-title: Arena Allocation
-description: Learn how to use arena allocation in Logly.zig for high-performance logging. Reduce memory overhead and improve cache locality with batched allocations.
+title: Allocator Usage
+description: Learn how to use allocators in Logly.zig for logging. Pass your own allocator to Logger.initWithConfig for full control over memory management.
 head:
   - - meta
     - name: keywords
-      content: arena allocation, memory management, high-performance, zip, logging performance, malloc overhead
+      content: allocator, memory management, high-performance, logging performance, zig allocator
   - - meta
     - property: og:title
-      content: Arena Allocation | Logly.zig
+      content: Allocator Usage | Logly.zig
   - - meta
     - property: og:image
       content: https://muhammad-fiaz.github.io/logly.zig/cover.png
 ---
 
-# Arena Allocation
+# Allocator Usage
 
-Logly.zig supports optional arena allocation for improved performance in high-throughput logging scenarios. Arena allocation reduces memory allocation overhead by batching temporary allocations and releasing them efficiently.
+Logly works with any `std.mem.Allocator` implementation. Pass your own allocator to `Logger.init(allocator)` or `Logger.initWithConfig(allocator, config)`.
 
-By default, arena allocation is disabled (`use_arena_allocator = false`) and the logger uses the allocator passed to `Logger.init(...)` / `Logger.initWithConfig(...)`.
 In most applications, that allocator is `std.heap.DebugAllocator`.
 
-## Overview
-
-Arena allocation is a memory management technique that:
-- **Reduces malloc overhead**: Batches small allocations into larger chunks
-- **Improves cache locality**: Related allocations are placed near each other
-- **Enables efficient cleanup**: Frees all allocations at once with `resetArena()`
-
-## Enabling Arena Allocation
-
-Enable arena allocation via the `use_arena_allocator` config option:
+## Basic Usage
 
 ```zig
 const std = @import("std");
@@ -39,267 +29,50 @@ pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    // Configure logger with arena allocator
-    var config = logly.Config.default();
-    config.use_arena_allocator = true;
-    config.arena_reset_threshold = 64 * 1024; // Reset when arena reaches 64KB (default)
-
-    const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
+    const logger = try logly.Logger.initWithConfig(gpa.allocator(), logly.Config.default());
     defer logger.deinit();
 
-    // Log messages - temporary allocations use arena
-    try logger.info("High-throughput logging enabled", @src());
+    try logger.info("Hello from Logly!", @src());
 }
 ```
 
-Equivalent builder style:
+## Using Your Own Arena
+
+If your application already uses arena allocation (for example, per-request memory), keep using it. Pass the arena allocator to `Logger.initWithConfig`:
 
 ```zig
-var config = logly.Config.default().withArenaAllocator();
-config.arena_reset_threshold = 64 * 1024;
-```
-
-`withArenaAllocator()` and `withArena()` are aliases of `withArenaAllocation()`. The explicit field form (`config.use_arena_allocator = true`) remains fully supported and is not deprecated.
-
-Difference:
-- `config.use_arena_allocator = true` mutates an existing config value.
-- `config = config.withArenaAllocator()` returns a modified copy and must be reassigned.
-
-## Using Your Own GPA-Backed Arena
-
-If your application already uses arena allocation (for example, per-request memory), keep using it. Logly's `use_arena_allocator` controls only the logger's internal scratch allocations.
-
-```zig
-const std = @import("std");
-
 var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
-// Application-level arena (independent from logger internal arena)
+// Application-level arena
 var request_arena = std.heap.ArenaAllocator.init(gpa.allocator());
 defer request_arena.deinit();
 
-const req_alloc = request_arena.allocator();
-const tmp = try req_alloc.alloc(u8, 1024);
-_ = tmp;
-
-// Reset request arena when request completes
-_ = request_arena.reset(.retain_capacity);
+const logger = try logly.Logger.initWithConfig(request_arena.allocator(), logly.Config.default());
 ```
 
 ## Thread Pool Integration
 
-When using the Thread Pool, you can enable per-worker arena allocation to further improve performance for parallel logging tasks. Each worker thread maintains its own arena, which is reset after every task, ensuring minimal memory overhead and contention.
-
-```zig
-    // Enable Thread Pool with Arena
-    config.thread_pool = .{
-        .enabled = true,
-        .thread_count = 4,
-        .enable_arena = true, // Enable per-worker arena
-    };
-```
-
-## Configuration Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `use_arena_allocator` | `bool` | `false` | Enable/disable arena allocation for main logger |
-| `arena_reset_threshold` | `usize` | `64 * 1024` | Arena size threshold before automatic reset |
-| `thread_pool.enable_arena` | `bool` | `false` | Enable per-worker arena allocation in thread pool |
-| `async.use_arena` | `bool` | `false` | Enable arena allocation for async logger batch processing |
-
-## Arena Methods
-
-### Logger Methods
-
-#### `scratchAllocator()`
-
-Returns the arena allocator if enabled, otherwise returns the main allocator:
-
-```zig
-// Get the scratch allocator for temporary operations
-const allocator = logger.scratchAllocator();
-
-// Use for temporary allocations
-const temp_buffer = try allocator.alloc(u8, 1024);
-defer allocator.free(temp_buffer);
-```
-
-#### `resetArena()`
-
-Resets the arena allocator, freeing all temporary allocations at once:
-
-```zig
-// Periodically reset arena to prevent memory growth
-if (i % 1000 == 0) {
-    logger.resetArena();
-}
-```
-
-### Component Methods with Arena Support
-
-The following components have arena-aware methods that automatically use the logger's scratch allocator:
-
-| Component | Arena Method | Description |
-|-----------|--------------|-------------|
-| **Sink** | `writeWithAllocator(record, config, allocator)` | Write with custom allocator |
-| **Formatter** | `formatWithAllocator(record, config, allocator)` | Format with custom allocator |
-| **Redactor** | `redactWithAllocator(message, allocator)` | Redact with custom allocator |
-| **Compression** | `compressWithAllocator(data, allocator)` | Compress with custom allocator |
-| **Rules** | `evaluateWithAllocator(record, allocator)` | Evaluate with custom allocator |
-| **AsyncLogger** | `scratchAllocator()`, `resetArena()` | Arena for batch processing |
-
-## Thread Pool Integration
-
-When using the Thread Pool for parallel logging, you can also enable per-worker arena allocation. This provides each worker thread with its own arena for temporary allocations during formatting and sink writing, further reducing contention on the global allocator.
+When using the Thread Pool, each worker thread receives the allocator you pass to `Logger.initWithConfig`. For parallel logging, ensure thread-safe allocation:
 
 ```zig
 var config = logly.Config.default();
 config.thread_pool = .{
     .enabled = true,
     .thread_count = 4,
-    .enable_arena = true, // Enable per-worker arena
 };
-// Also enable main logger arena for initial record creation
-config.use_arena_allocator = true;
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
 
-With `enable_arena = true`, each worker thread initializes an `ArenaAllocator`. This allocator is passed to the sink's write method, allowing formatters to use it for temporary string building. The arena is automatically reset after each log task is processed.
-
-## High-Throughput Example
-
-For applications with continuous logging, combine arena allocation with periodic resets:
-
-```zig
-const std = @import("std");
-const logly = @import("logly");
-
-pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const config = logly.Config{
-        .use_arena_allocator = true,
-        .arena_reset_threshold = 32 * 1024, // Smaller threshold for frequent resets
-        .show_filename = true,
-        .show_lineno = true,
-    };
-
-    const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
-    defer logger.deinit();
-
-    // Add file sink for persistent logs
-    _ = try logger.add(logly.SinkConfig.file("app.log"));
-
-    // Simulate high-throughput server logs
-    var request_count: u64 = 0;
-    while (request_count < 100000) : (request_count += 1) {
-        try logger.infof("Request {d} processed", .{request_count}, @src());
-        try logger.debugf("Response time: {d}ms", .{request_count % 100}, @src());
-
-        // Reset arena every 500 requests
-        if (request_count % 500 == 0) {
-            logger.resetArena();
-            try logger.debugf("Arena reset at request {d}", .{request_count}, @src());
-        }
-    }
-
-    try logger.successf("Processed {d} requests", .{request_count}, @src());
-}
-```
-
-## Performance Benefits
-
-Arena allocation provides significant performance improvements when:
-
-- **High log volume**: Thousands of log messages per second
-- **Short-lived allocations**: Formatting buffers, temporary strings
-- **Batch processing**: Processing large datasets with logging
-
-### Benchmark Comparison
-
-| Scenario | Standard Allocator | Arena Allocator | Improvement |
-|----------|-------------------|-----------------|-------------|
-| 10K logs/sec | ~150μs/log | ~50μs/log | 3x faster |
-| 100K logs/sec | ~200μs/log | ~60μs/log | 3.3x faster |
-| Memory fragmentation | High | None | Significant |
-
 ## Best Practices
 
-1. **Reset periodically**: Call `resetArena()` regularly to prevent memory growth
-2. **Use appropriate threshold**: Set `arena_reset_threshold` based on your log frequency
-3. **Monitor memory**: In debug mode, track arena size if memory is a concern
-4. **Combine with file rotation**: Arena works well with time/size-based rotation
-
-## When to Use Arena Allocation
-
-✅ **Use arena allocation when:**
-- Logging at high rates (>1000 logs/second)
-- Memory allocation overhead is a bottleneck
-- Running batch processing jobs
-- Building performance-critical applications
-
-❌ **Skip arena allocation when:**
-- Low log volume
-- Memory debugging is needed
-- Simple applications with infrequent logging
-
-## Complete Example
-
-```zig
-const std = @import("std");
-const logly = @import("logly");
-
-pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    // Production configuration with arena allocation
-    const config = logly.Config{
-        .use_arena_allocator = true,
-        .arena_reset_threshold = 64 * 1024,
-        .level = .info,
-        .show_time = true,
-        .show_filename = true,
-        .show_lineno = true,
-        .json = false,
-    };
-
-    const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
-    defer logger.deinit();
-
-    // Add multiple sinks
-    _ = try logger.add(logly.SinkConfig.file("app.log"));
-    _ = try logger.add(logly.SinkConfig.json("app.json"));
-
-    // Bind persistent context
-    try logger.bind("app", .{ .string = "my-service" });
-    try logger.bind("version", .{ .string = "1.0.0" });
-
-    try logger.info("Application starting with arena allocation", @src());
-
-    // Simulate workload
-    var batch: usize = 0;
-    while (batch < 10) : (batch += 1) {
-        var i: usize = 0;
-        while (i < 1000) : (i += 1) {
-            try logger.debugf("Processing batch {d}, item {d}", .{ batch, i }, @src());
-        }
-
-        // Reset arena after each batch
-        logger.resetArena();
-        try logger.infof("Completed batch {d}", .{batch}, @src());
-    }
-
-    try logger.success("All batches processed successfully", @src());
-}
-```
+1. **Use `DebugAllocator` in development** — catches memory leaks and double-frees
+2. **Use a dedicated arena for high-throughput logging** — reduce malloc overhead
+3. **Keep allocations simple** — Logly's internal allocations are designed to be minimal
 
 ## See Also
 
 - [Configuration Guide](/guide/configuration) - Full configuration options
 - [Async Logging](/guide/async) - Combine with async for maximum throughput
-- [File Rotation](/guide/rotation) - Log file management
+- [Thread Pool](/guide/thread-pool) - Parallel log processing

@@ -35,7 +35,6 @@ Logly provides comprehensive callback support across all major components:
 - **Scheduler Callbacks**: Scheduled task execution
 - **Rules Callbacks**: Rule matching, evaluation, diagnostic messages
 - **Crash Callbacks**: Panic and signal handling notifications
-- **Update Checker Callbacks**: Version status notifications
 
 ## Logger Callbacks
 
@@ -270,6 +269,27 @@ fn onPatternMatched(pattern_name: []const u8, matched_value: []const u8) void {
 redactor.setPatternMatchedCallback(&onPatternMatched);
 ```
 
+### Redaction Detail
+
+Called when a redaction occurs, providing the pattern name, original value, and the redacted replacement:
+
+```zig
+fn onRedactionDetail(pattern_name: []const u8, original_value: []const u8, redacted_value: []const u8) void {
+    audit.log("Redacted '{s}': '{s}' -> '{s}'", .{ pattern_name, original_value, redacted_value });
+}
+
+redactor.setRedactionDetailCallback(&onRedactionDetail);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pattern_name` | `[]const u8` | Name of the redaction pattern that matched (e.g., `"password"`, `"card"`) |
+| `original_value` | `[]const u8` | The original sensitive value before redaction |
+| `redacted_value` | `[]const u8` | The replacement value after redaction (e.g., `"[REDACTED]"`) |
+
+> [!NOTE]
+> The `on_redaction_detail` callback is invoked for each individual redaction within a log record. A single record may trigger multiple redactions if multiple patterns match.
+
 ## Rotation Callbacks
 
 ### Rotation Lifecycle
@@ -480,20 +500,6 @@ fn onCrash(message: []const u8) void {
 }
 
 logly.crash.setCrashCallback(&onCrash);
-```
-
-## Update Checker Callbacks
-
-```zig
-fn onUpdateResult(status: logly.UpdateChecker.UpdateCheckStatus, latest_tag: []const u8, current_version: []const u8) void {
-    std.debug.print("Update status: {s} ({s} -> {s})\n", .{
-        @tagName(status),
-        current_version,
-        latest_tag,
-    });
-}
-
-logly.UpdateChecker.setUpdateCallback(&onUpdateResult);
 ```
 
 ### Available Rules Callbacks

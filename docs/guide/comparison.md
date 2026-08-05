@@ -40,7 +40,6 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Distributed Tracing | ✅ Automatic (Trace/Span/Correlation IDs) + Callbacks | ⚠ Context only | ❌ | ❌ |
 | OpenTelemetry (v0.1.4+) | ✅ Full OTLP/Jaeger/Zipkin/Datadog/AWS/Azure | ❌ | ❌ | ❌ |
 | Metrics | ✅ Automatic | ❌ | ⚠ Prometheus | ❌ |
-| System Diagnostics | ✅ Automatic | ❌ | ❌ | ❌ |
 | Filtering | ✅ Automatic | ❌ | ❌ | ✅ Manual |
 | Scheduled Cleaning | ✅ Automatic | ❌ | ❌ | ❌ |
 | Dynamic Path | ✅ Automatic | ❌ | ❌ | ❌ |
@@ -50,7 +49,6 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Bare-Metal Support | ✅ | ❌ | ❌ | ✅ |
 | Prebuilt Libraries | ✅ | ❌ | ❌ | ✅ |
 | Documentation Site | ✅ | ❌ | ❌ | ✅ |
-| Auto-Update Checker | ✅ | ❌ | ❌ | ❌ |
 | CI/CodeQL | ✅ | ⚠ | ❌ | ✅ |
 | License | MIT | MIT | MIT | MIT |
 

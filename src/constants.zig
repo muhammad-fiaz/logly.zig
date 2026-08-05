@@ -121,9 +121,11 @@ pub const CompressionExtensions = struct {
     pub const zip: []const u8 = ".zip";
     /// LZ4 compressed file extension.
     pub const lz4: []const u8 = ".lz4";
+    /// Brotli compressed file extension.
+    pub const brotli: []const u8 = ".br";
 
     /// All compression extensions for iteration.
-    pub const all: [10][]const u8 = .{ gz, lgz, zst, deflate, lzma, lzma2, xz, tar_gz, zip, lz4 };
+    pub const all: [12][]const u8 = .{ gz, lgz, zst, deflate, lzma, lzma2, xz, tar_gz, zip, lz4, brotli, "" };
 
     /// Check if a filename ends with any known compression extension.
     pub fn isCompressed(name: []const u8) bool {
@@ -136,7 +138,8 @@ pub const CompressionExtensions = struct {
             std.mem.endsWith(u8, name, xz) or
             std.mem.endsWith(u8, name, tar_gz) or
             std.mem.endsWith(u8, name, zip) or
-            std.mem.endsWith(u8, name, lz4);
+            std.mem.endsWith(u8, name, lz4) or
+            std.mem.endsWith(u8, name, brotli);
     }
 
     /// Check if a filename ends with a specific compression extension.
@@ -1067,6 +1070,7 @@ pub const CompressionConstants = struct {
         pub const tar_gz = CompressionExtensions.tar_gz;
         pub const zip = CompressionExtensions.zip;
         pub const lz4 = CompressionExtensions.lz4;
+        pub const brotli = CompressionExtensions.brotli;
         pub const none = "";
     };
 };
@@ -1121,8 +1125,6 @@ pub const RotationDefaults = struct {
 pub const ConfigDefaults = struct {
     /// Default stack size for stack trace capturing (1MB).
     pub const stack_size: usize = 1024 * 1024;
-    /// Default arena reset threshold (64KB).
-    pub const arena_reset_threshold: usize = 64 * 1024;
     /// Default distributed trace header name.
     pub const distributed_trace_header: []const u8 = "X-Trace-ID";
     /// Default distributed span header name.
@@ -1438,30 +1440,6 @@ test "preset defaults are reasonable" {
     try std.testing.expect(ConfigPresetDefaults.high_throughput_max_pending > ConfigPresetDefaults.high_throughput_thread_pool_queue_size);
 }
 
-/// System diagnostics constants.
-///
-/// Usage:
-///   Max buffer sizes and resource limits for system diagnostics.
-///
-/// Complexity: O(1)
-pub const DiagnosticsConstants = struct {
-    /// Maximum mount point path length (macOS/BSD/Linux).
-    pub const mac_mount_path_len: usize = 1024;
-};
-
-/// Update checker constants.
-///
-/// Usage:
-///   Repository information for version checking.
-///
-/// Complexity: O(1)
-pub const UpdateCheckerConstants = struct {
-    /// GitHub repository owner.
-    pub const repo_owner: []const u8 = "muhammad-fiaz";
-    /// GitHub repository name.
-    pub const repo_name: []const u8 = "logly.zig";
-};
-
 test "color helpers produce valid prefixes" {
     const s = Colors.fg256(208);
     try std.testing.expect(s.len >= 5);
@@ -1640,22 +1618,6 @@ pub const SchedulerExtendedDefaults = struct {
     pub const task_history_size: usize = 32;
     /// One-shot task min delay (ms).
     pub const one_shot_min_delay_ms: u64 = 1;
-};
-
-/// Diagnostic system constants.
-pub const DiagnosticsDefaults = struct {
-    /// Maximum health-check entries per report.
-    pub const max_health_checks: usize = 64;
-    /// JSON report buffer initial size.
-    pub const json_report_buffer: usize = BufferSizes.format;
-    /// Health check name max length.
-    pub const health_check_name_len: usize = 64;
-    /// Default report interval (ms).
-    pub const report_interval_ms: u64 = 60_000;
-    /// Queue depth warning threshold (0.0-1.0).
-    pub const queue_depth_warn_threshold: f64 = 0.8;
-    /// Memory warning threshold (bytes, 512MB default).
-    pub const memory_warn_bytes: u64 = 512 * 1024 * 1024;
 };
 
 /// Telemetry extended constants.

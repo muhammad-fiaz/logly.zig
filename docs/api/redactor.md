@@ -386,6 +386,30 @@ Returns count of configured pattern rules that match this value.
 
 Writes a compliance audit log to the provided writer, detailing the configured fields, patterns, and configuration settings for compliance verification.
 
+### Redaction Detail Callback
+
+#### `setRedactionDetailCallback(callback: ?*const fn ([]const u8, []const u8, []const u8) void) void`
+
+Sets a callback that fires for every redaction event, providing the original value, the redacted value, and the pattern name that triggered the redaction. Useful for audit logging and debugging redaction rules.
+
+**Alias**: `onRedactionDetail`
+
+```zig
+fn onRedactDetail(original: []const u8, redacted: []const u8, pattern_name: []const u8) void {
+    std.debug.print("[AUDIT] Pattern '{s}': '{s}' -> '{s}'\n", .{pattern_name, original, redacted});
+}
+
+redactor.setRedactionDetailCallback(onRedactDetail);
+```
+
+**Parameters:**
+- `callback` — The callback function, or `null` to remove an existing callback.
+
+**Callback Signature:**
+- `original: []const u8` — The original value before redaction.
+- `redacted: []const u8` — The value after redaction was applied.
+- `pattern_name: []const u8` — The name of the pattern or field that matched.
+
 ### Configuration
 
 #### `getConfig() RedactionConfig`

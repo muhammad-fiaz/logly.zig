@@ -11,8 +11,7 @@ pub fn main() !void {
     _ = logly.Terminal.enableAnsiColors();
 
     // Create logger (auto-sink enabled by default)
-    var config_init = logly.Config.default();
-    config_init.check_for_updates = true;
+    const config_init = logly.Config.default();
     const logger = try logly.Logger.initWithConfig(allocator, config_init);
     defer logger.deinit();
 

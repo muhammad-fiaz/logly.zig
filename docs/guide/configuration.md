@@ -68,15 +68,10 @@ logger.configure(config);
 | `capture_stack_trace`    | `bool`        | `false`                 | Capture stack traces for Error/Critical logs.        |
 | `symbolize_stack_trace`  | `bool`        | `false`                 | Resolve stack trace addresses to symbols.            |
 | `auto_sink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
-| `check_for_updates`      | `bool`        | `true`                  | Check for updates on startup                         |
 | `enable_callbacks`       | `bool`        | `false`                 | Enable log callbacks (only when using callbacks)     |
 | `log_format`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
 | `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss.SSS"` | Timestamp format                                 |
 | `timezone`               | `enum`        | `.local`                | Timezone for timestamps (`.local` or `.utc`)         |
-| `use_arena_allocator`    | `bool`        | `false`                 | Enable arena allocator for temporary allocations     |
-| `arena_reset_threshold`  | `usize`       | `64 * 1024`             | Scratch arena reset threshold in bytes               |
-| `emit_system_diagnostics_on_init` | `bool` | `false`           | Emit system diagnostics on logger initialization     |
-| `include_drive_diagnostics` | `bool`     | `true`                  | Include drive information in diagnostics             |
 | `auto_flush`             | `bool`        | `false`                 | Auto-flush sinks (set true only when immediate output is critical) |
 | `logs_root_path`         | `?[]const u8` | `null`                  | Root directory for log files                        |
 | `debug_mode`             | `bool`        | `false`                 | Enable debug output for troubleshooting             |
@@ -195,65 +190,16 @@ var config = logly.Config.default().withAsync(.{
 // Enable compression
 var config2 = logly.Config.default().withCompression(logly.CompressionConfig.production());
 
-// Enable thread pool with specific thread count
-var config3 = logly.Config.default().withThreadPool(.{
-    .enabled = true,
-    .thread_count = 4,
-});
-
-// Enable scheduler
-var config4 = logly.Config.default().withScheduler(.{
-    .enabled = true,
-    .cleanup_max_age_days = 7,
-});
-
-// Enable arena allocation
-var config5 = logly.Config.default().withArenaAllocation();
-
 // Chain multiple features
 var config6 = logly.Config.default()
     .withAsync(.{ .enabled = true, .buffer_size = 8192 })
     .withCompression(logly.CompressionConfig.production())
-    .withThreadPool(.{ .enabled = true, .thread_count = 0 }) // Auto-detect CPU cores
-    .withArenaAllocation();
+    .withThreadPool(.{ .enabled = true, .thread_count = 0 }); // Auto-detect CPU cores
 ```
 
-### Allocator Configuration (Explicit vs Builder)
+### Allocator Configuration
 
-Both forms are valid and supported:
-
-```zig
-var config = logly.Config.default();
-config.use_arena_allocator = true;
-
-// Equivalent builder aliases
-config = config.withArenaAllocation();
-config = config.withArenaAllocator();
-config = config.withArena();
-```
-
-Difference:
-- Field assignment mutates your existing `config` variable in place.
-- Builder/alias methods return a modified copy (reassign to keep changes).
-
-You can also run your application/request scratch allocations in your own arena that is backed by GPA, independently of Logly's internal arena:
-
-```zig
-const std = @import("std");
-
-var gpa = std.heap.DebugAllocator(.{}){};
-defer _ = gpa.deinit();
-
-var app_arena = std.heap.ArenaAllocator.init(gpa.allocator());
-defer app_arena.deinit();
-
-const request_alloc = app_arena.allocator();
-const tmp = try request_alloc.alloc(u8, 256);
-_ = tmp;
-
-// Release request-scoped allocations in one step
-_ = app_arena.reset(.retain_capacity);
-```
+Pass your own allocator to `Logger.initWithConfig(allocator, config)` directly. Standard `std.heap.DebugAllocator` is recommended for general-purpose ownership and leak detection.
 
 ## Configuration Presets
 
@@ -587,49 +533,6 @@ logger.configure(config);
 
 ## Performance Configuration
 
-### Arena Allocator
-
-For high-throughput logging scenarios, enable the arena allocator to reduce allocation overhead:
-
-```zig
-var config = logly.Config.default();
-
-// Enable arena allocator for temporary allocations
-config.use_arena_allocator = true;
-
-// Optionally set the reset threshold (default: 64KB)
-config.arena_reset_threshold = 128 * 1024;  // 128KB
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
-defer logger.deinit();
-```
-
-Or use the convenience method:
-
-```zig
-const config = logly.Config.default().withArenaAllocation();
-const logger = try logly.Logger.initWithConfig(allocator, config);
-```
-
-Both `config.use_arena_allocator = true` and `config = config.withArenaAllocator()` enable the same logger behavior.
-The difference is mutation style:
-- Field assignment updates an existing config value.
-- Builder aliases return a modified copy.
-
-**Benefits:**
-- Reduces allocation overhead for formatting operations
-- Better cache locality for temporary buffers
-- Faster logging in high-frequency scenarios
-
-**Manual Arena Reset:**
-
-For long-running applications, you can manually reset the arena to prevent memory growth:
-
-```zig
-// Reset periodically in high-throughput scenarios
-logger.resetArena();
-```
-
 ### Cross-Platform Colors
 
 Logly automatically handles ANSI color support across platforms:
@@ -714,6 +617,9 @@ config.rules.symbols.error_analysis = "ðŸ›‘ Cause:";
 ## Advanced Features
 
 For more advanced customizations like custom themes, scoped context, and advanced redaction, check out the [Advanced Features Example](../../examples/advanced_features.zig) and the [Context Guide](./context.md).
+
+> [!TIP]
+> Logly uses `std.math.clamp` internally to clamp compression levels to valid ranges when converting between enum levels and numeric values (e.g., zstd levels 1-22). You don't need to clamp values yourself — invalid levels are automatically clamped to the nearest valid bound.
 
 ## See Also
 

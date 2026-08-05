@@ -242,6 +242,21 @@ Redaction helps with compliance requirements like:
 5. **Document patterns**: Keep a list of what data types are being redacted
 6. **Performance**: Complex regex patterns may impact performance
 
+## Redaction Detail Callback
+
+The `on_redaction_detail` callback provides visibility into every redaction event, giving you both the original and redacted values. This is essential for audit logging and debugging redaction rules.
+
+```zig
+fn onRedactDetail(original: []const u8, redacted: []const u8, pattern_name: []const u8) void {
+    std.debug.print("[AUDIT] Pattern '{s}' redacted '{s}' -> '{s}'\n", .{pattern_name, original, redacted});
+}
+
+redactor.setRedactionDetailCallback(onRedactDetail);
+```
+
+[!TIP]
+Use `on_redaction_detail` alongside `audit_redactions = true` in your `RedactionConfig` to build a complete audit trail for compliance scenarios like GDPR or PCI-DSS.
+
 ## Global Configuration
 
 Configure redaction globally through `Config.RedactionConfig`:

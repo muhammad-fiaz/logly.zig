@@ -21,6 +21,12 @@ _ = try logger.addSink(.{});
 _ = try logger.add(.{});  // Short alias
 ```
 
+!!! note "Auto-sink Behavior"
+    When you manually add a console sink via `logger.add(.{})`, the `auto_sink` flag is automatically disabled to prevent duplicate console output. This means the automatic console sink created during `Logger.init()` will not be added if you explicitly add one first.
+
+[!NOTE]
+When you manually add a console sink via `logger.add(.{})`, the `auto_sink` flag is automatically disabled to prevent duplicate console output. The automatic console sink created during `Logger.init()` will not be added if you explicitly add one first.
+
 ## File Sink
 
 File sinks write logs to a file. You can configure rotation, retention, and specific log levels for each sink.
@@ -199,7 +205,7 @@ _ = logger.clear();  // or logger.removeAll() or logger.removeAllSinks()
 | `include_trace_id` | `bool` | `false` | Include trace IDs (distributed tracing) |
 | `event_log` | `bool` | `false` | Enable system event log (Windows Event Log/Syslog) |
 | `compression` | `?CompressionConfig` | `null` | Network compression settings |
-| `write_mode` | `enum` | `.append` | File write mode (`.append`, `.overwrite`, `.create_new`) |
+| `write_mode` | `WriteMode` | `.append` | File write mode: `.append`, `.overwrite`, `.append_rotate` |
 
 ## Color Control
 

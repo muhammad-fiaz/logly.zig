@@ -4,7 +4,7 @@ description: Learn how to compress log files with Logly.zig using DEFLATE, GZIP,
 head:
   - - meta
     - name: keywords
-      content: log compression, gzip logs, zlib compression, zstd compression, log archiving, storage optimization, compressed logging, log backup
+      content: log compression, gzip logs, zlib compression, zstd compression, brotli compression, log archiving, storage optimization, compressed logging, log backup
 ---
 
 # Compression Guide
@@ -15,7 +15,7 @@ This guide covers log compression in Logly, including automatic and manual compr
 
 Logly provides a comprehensive compression module with advanced features:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4
+- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4, Brotli
 - **Smart Strategies**: Text-optimized, binary, RLE, adaptive auto-detection
 - **Flexible Modes**: Manual, on-rotation, size-based, scheduled, streaming
 - **Background Processing**: Offload compression to thread pool
@@ -157,6 +157,9 @@ var targz_comp = logly.Compression.tarGzCompression(allocator);
 defer comp1.deinit();
 // ... defer for others
 ```
+
+[!TIP]
+Brotli compression is fully supported with quality levels 0–11. Lower values (0–3) prioritize speed, while higher values (8–11) achieve maximum compression ratio. Use level 4–6 for a balanced trade-off in production log archival.
 
 ## Zstd Compression (v0.1.8+)
 

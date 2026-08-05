@@ -115,8 +115,6 @@ pub const AsyncConfig = struct {
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
     background_worker: bool = true,
-    /// Enable arena allocator for batch processing (reduces malloc overhead).
-    use_arena: bool = false,
     /// Shutdown grace period in milliseconds to allow remaining records to flush.
     shutdown_timeout_ms: u64 = 1000,
     /// Enable priority queue logic to handle high-priority levels first.
@@ -353,22 +351,6 @@ Wait for the queue to drain until timeout.
 pub fn waitUntilDrained(self: *AsyncLogger, timeout_ms: u64) bool
 ```
 
-### scratchAllocator
-
-Returns the arena allocator if enabled, otherwise returns the main allocator. Use for temporary allocations that can be batch-freed.
-
-```zig
-pub fn scratchAllocator(self: *AsyncLogger) std.mem.Allocator
-```
-
-### resetArena
-
-Resets the arena allocator, freeing all temporary allocations. Call periodically after processing batches.
-
-```zig
-pub fn resetArena(self: *AsyncLogger) void
-```
-
 ## AsyncStats Methods
 
 ### Getter Methods
@@ -601,6 +583,14 @@ pub fn main() !void {
     std.debug.print("Drop rate: {d:.2}%\\n", .{stats.dropRate() * 100});
 }
 ```
+
+> [!IMPORTANT]
+> **Async logging vs `auto_flush`**: These are independent concepts that are often confused:
+> - **Async logging** (`async_config.enabled`): Records are queued in a lock-free ring buffer and processed by background worker threads. This controls *when* and *how* log records are dispatched.
+> - **`auto_flush`**: Controls whether sinks are flushed after each record (sync path) or after each batch (async path). This controls *durability guarantees*.
+> - **Thread pool**: Records are submitted as tasks to a worker pool. No flush occurs at submission time — the task is still queued and not yet written to any sink.
+>
+> In practice: if you enable async logging with `auto_flush = false`, records are batched and flushed on the configured interval or when the batch size is reached. If you enable async logging with `auto_flush = true`, sinks are flushed after every batch, which can reduce throughput.
 
 ## See Also
 

@@ -29,11 +29,11 @@
 
 const std = @import("std");
 const Config = @import("config.zig").Config;
-// const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
 const zstd = @import("zstd");
+const brotli = @import("brotli");
 const ThreadPool = @import("thread_pool.zig").ThreadPool;
 
 /// Log compression utilities with callback support and comprehensive monitoring.
@@ -779,6 +779,9 @@ pub const Compression = struct {
             .lz4 => {
                 try self.compressLz4WithAllocator(data, &result, alloc);
             },
+            .brotli => {
+                try self.compressBrotliWithAllocator(data, &result, alloc);
+            },
             .lzma => {
                 try self.compressLzmaWithAllocator(data, &result, alloc);
             },
@@ -952,52 +955,22 @@ pub const Compression = struct {
     fn compressZstdWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
         if (data.len == 0) return;
 
-        // Calculate maximum compressed size
-        const max_dst_size = zstd.c.ZSTD_compressBound(data.len);
-        if (max_dst_size == 0) return error.ZstdError;
-
-        // Reserve space in result buffer to write directly
-        try result.ensureUnusedCapacity(alloc, max_dst_size);
-
-        // Get pointer to unused space
-        const dest_ptr = result.items.ptr + result.items.len;
-
-        // Get compression level from config (supports custom zstd levels 1-22)
         const compression_level = self.config.getEffectiveZstdLevel();
 
-        // Compress directly into result buffer
-        var compressed_size: usize = 0;
         if (self.config.zstd_dict) |dict| {
-            const cctx = zstd.c.ZSTD_createCCtx();
-            if (cctx == null) return error.ZstdError;
-            defer _ = zstd.c.ZSTD_freeCCtx(cctx);
-            compressed_size = zstd.c.ZSTD_compress_usingDict(
-                cctx,
-                dest_ptr,
-                max_dst_size,
-                data.ptr,
-                data.len,
-                dict.ptr,
-                dict.len,
-                compression_level,
-            );
+            var compressor = zstd.Compressor.init() catch return error.ZstdError;
+            defer compressor.deinit();
+
+            compressor.setParameter(.compression_level, compression_level) catch return error.ZstdError;
+            compressor.loadDictionary(dict) catch return error.ZstdError;
+            const compressed = compressor.compressAlloc(alloc, data) catch return error.ZstdCompressionFailed;
+            defer alloc.free(compressed);
+            try result.appendSlice(alloc, compressed);
         } else {
-            compressed_size = zstd.c.ZSTD_compress(
-                dest_ptr,
-                max_dst_size,
-                data.ptr,
-                data.len,
-                compression_level,
-            );
+            const compressed = zstd.compress(alloc, data, compression_level) catch return error.ZstdCompressionFailed;
+            defer alloc.free(compressed);
+            try result.appendSlice(alloc, compressed);
         }
-
-        // Check for errors
-        if (zstd.c.ZSTD_isError(compressed_size) != 0) {
-            return error.ZstdCompressionFailed;
-        }
-
-        // Update result length
-        result.items.len += compressed_size;
     }
 
     /// Decompresses zstd-compressed data.
@@ -1019,40 +992,25 @@ pub const Compression = struct {
             return alloc.alloc(u8, 0);
         }
 
-        // Allocate destination buffer
-        const dest_buffer = try alloc.alloc(u8, original_size);
-        errdefer alloc.free(dest_buffer);
-
-        // Decompress the data
-        var decompressed_size: usize = 0;
         if (self.config.zstd_dict) |dict| {
-            const dctx = zstd.c.ZSTD_createDCtx();
-            if (dctx == null) return error.ZstdError;
-            defer _ = zstd.c.ZSTD_freeDCtx(dctx);
-            decompressed_size = zstd.c.ZSTD_decompress_usingDict(
-                dctx,
-                dest_buffer.ptr,
-                original_size,
-                data.ptr,
-                data.len,
-                dict.ptr,
-                dict.len,
-            );
+            var decompressor = zstd.Decompressor.init() catch return error.ZstdError;
+            defer decompressor.deinit();
+
+            decompressor.loadDictionary(dict) catch return error.ZstdError;
+            const decompressed = decompressor.decompressAlloc(alloc, data, original_size) catch return error.ZstdDecompressionFailed;
+            if (decompressed.len != original_size) {
+                alloc.free(decompressed);
+                return error.ZstdSizeMismatch;
+            }
+            return decompressed;
         } else {
-            decompressed_size = zstd.c.ZSTD_decompress(
-                dest_buffer.ptr,
-                original_size,
-                data.ptr,
-                data.len,
-            );
+            const decompressed = zstd.decompress(alloc, data, original_size) catch return error.ZstdDecompressionFailed;
+            if (decompressed.len != original_size) {
+                alloc.free(decompressed);
+                return error.ZstdSizeMismatch;
+            }
+            return decompressed;
         }
-
-        // Verify size matches expected
-        if (decompressed_size != original_size) {
-            return error.ZstdSizeMismatch;
-        }
-
-        return dest_buffer;
     }
 
     fn compressTarGzWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
@@ -1210,6 +1168,40 @@ pub const Compression = struct {
 
         // Write literals
         try result.appendSlice(alloc, literals);
+    }
+
+    /// Brotli compression using the brotli.zig binding.
+    /// Brotli provides excellent compression ratios, especially for UTF-8 text.
+    /// Supports quality levels 0-11 (default 6, best 11).
+    /// v0.2.1+
+    fn compressBrotliWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
+        if (data.len == 0) return;
+
+        const level: i32 = self.config.getEffectiveBrotliLevel();
+
+        // Use brotli.zig oneshot compression with quality level
+        const compressed = brotli.compressWithOptions(alloc, data, .{
+            .quality = @intCast(std.math.clamp(level, 0, 11)),
+        }) catch {
+            // Fallback: store as uncompressed literals
+            try result.appendSlice(alloc, data);
+            return;
+        };
+        defer alloc.free(compressed);
+
+        try result.appendSlice(alloc, compressed);
+    }
+
+    /// Brotli decompression using the brotli.zig binding.
+    /// v0.2.1+
+    fn decompressBrotliWithAllocator(self: *Compression, data: []const u8, original_size: usize, alloc: std.mem.Allocator) ![]u8 {
+        _ = self;
+        _ = original_size;
+
+        const decompressed = brotli.decompress(alloc, data) catch {
+            return error.DecompressionFailed;
+        };
+        return decompressed;
     }
 
     /// LZMA compression using native dictionary-based compression.
@@ -1901,6 +1893,7 @@ pub const Compression = struct {
             .xz => self.decompressXzWithAllocator(data[12..], original_size, self.allocator),
             .none => self.allocator.dupe(u8, data[12..]),
             .lz4 => self.decompressLz4WithAllocator(data[12..], original_size, self.allocator),
+            .brotli => self.decompressBrotliWithAllocator(data[12..], original_size, self.allocator),
         };
         errdefer self.allocator.free(result);
 

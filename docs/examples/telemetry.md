@@ -28,9 +28,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Disable update checker for production
-    logly.UpdateChecker.setEnabled(false);
-
     // Configure Jaeger backend
     var config = logly.TelemetryConfig.jaeger();
     config.service_name = "my-service";

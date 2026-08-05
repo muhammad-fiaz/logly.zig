@@ -230,6 +230,17 @@ const no_drop = logly.AsyncPresets.noDrop();
 - **File Sink**: Non-blocking (buffered) by default
 - **AsyncLogger**: Fully non-blocking with background worker
 
+## Auto-Flush vs Async Logging
+
+These two features serve different purposes and are not the same thing:
+
+- **`auto_flush`** controls whether sinks are flushed after every log record (in the synchronous path) or when the async logger processes a batch. When enabled, each log record is written to the underlying sink immediately. This ensures no data loss but adds I/O overhead per record.
+
+- **Async logging** means log records are queued in a ring buffer and processed by background worker threads. Records are batched together before being written to sinks, which improves throughput by reducing the number of I/O operations.
+
+[!NOTE]
+`auto_flush = true` with async logging means the async worker flushes after each batch, not that your application thread blocks on I/O. The application thread still enqueues to the ring buffer and returns immediately.
+
 ## Flushing
 
 ### Manual Flush

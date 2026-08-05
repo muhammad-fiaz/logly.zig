@@ -99,9 +99,35 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `overwrite_mode` | `bool` | `false` | **Append mode (default)**: logs appended to existing files. **Overwrite mode**: logs overwrite files on each write (truncate at initialization). |
-| `append_rotate` | `bool` | `false` | Append normally but allow rotation trigger. Overrides `overwrite_mode`. |
+| `overwrite_mode` | `bool` | `false` | Legacy field: `false` = append (default), `true` = truncate file on startup. Prefer `write_mode`. |
+| `write_mode` | `WriteMode` | `.append` | File write mode. See `WriteMode` enum below. |
 | `file_mode` | `?u32` | `null` | File permissions for created log files (Unix only). |
+
+#### WriteMode Enum
+
+| Variant | Behavior |
+|---------|----------|
+| `.append` | Append to existing file (default). File grows over time. |
+| `.overwrite` | Truncate file on startup. Only current session logs are kept. |
+| `.append_rotate` | Append to file with explicit rotation trigger. Use with rotation config. |
+
+```zig
+// Append mode (default)
+var sink = logly.SinkConfig.file("app.log");
+sink.write_mode = .append;
+
+// Overwrite mode (fresh start each run)
+var sink = logly.SinkConfig.file("session.log");
+sink.write_mode = .overwrite;
+
+// Append with rotation
+var sink = logly.SinkConfig.file("app.log");
+sink.write_mode = .append_rotate;
+sink.rotation = "daily";
+sink.retention = 7;
+```
+
+When using `overwrite_mode = true`, it is equivalent to `write_mode = .overwrite`.
 
 ### File Rotation
 

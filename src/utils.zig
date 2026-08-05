@@ -318,13 +318,13 @@ pub fn localUtcOffsetMinutes(timestamp: i64) i16 {
 
     const min_offset = @as(i64, Constants.TimeConstants.min_utc_offset_minutes);
     const max_offset = @as(i64, Constants.TimeConstants.max_utc_offset_minutes);
-    const bounded = clamp(i64, offset_minutes, min_offset, max_offset);
+    const bounded = std.math.clamp(offset_minutes, min_offset, max_offset);
 
     return @as(i16, @intCast(bounded));
 }
 
 fn splitUtcOffsetMinutes(offset_minutes: i16) struct { sign: u8, hours: u16, minutes: u16 } {
-    const clamped_offset = clamp(i16, offset_minutes, Constants.TimeConstants.min_utc_offset_minutes, Constants.TimeConstants.max_utc_offset_minutes);
+    const clamped_offset = std.math.clamp(offset_minutes, Constants.TimeConstants.min_utc_offset_minutes, Constants.TimeConstants.max_utc_offset_minutes);
     const sign: u8 = if (clamped_offset < 0) '-' else '+';
     const abs_minutes_i32: i32 = if (clamped_offset < 0)
         -@as(i32, clamped_offset)
@@ -601,27 +601,10 @@ pub fn formatFilenameSafe(buf: []u8, tc: TimeComponents) ![]u8 {
     return buf[0..writer.end];
 }
 
-/// Clamps a value between min and max bounds.
-pub fn clamp(comptime T: type, value: T, min_val: T, max_val: T) T {
-    if (value < min_val) return min_val;
-    if (value > max_val) return max_val;
-    return value;
-}
-
 /// Safely converts a signed integer to unsigned, returning 0 for negative values.
 pub fn safeToUnsigned(comptime T: type, value: anytype) T {
     if (value < 0) return 0;
     return @intCast(value);
-}
-
-/// Returns the minimum of two values.
-pub fn min(comptime T: type, a: T, b: T) T {
-    return if (a < b) a else b;
-}
-
-/// Returns the maximum of two values.
-pub fn max(comptime T: type, a: T, b: T) T {
-    return if (a > b) a else b;
 }
 
 /// Alias for formatDatePattern (for date_formatting module compatibility)
@@ -845,9 +828,9 @@ test "isSameDay" {
 }
 
 test "clamp" {
-    try std.testing.expectEqual(@as(i32, 5), clamp(i32, 3, 5, 10));
-    try std.testing.expectEqual(@as(i32, 10), clamp(i32, 15, 5, 10));
-    try std.testing.expectEqual(@as(i32, 7), clamp(i32, 7, 5, 10));
+    try std.testing.expectEqual(@as(i32, 5), std.math.clamp(@as(i32, 3), 5, 10));
+    try std.testing.expectEqual(@as(i32, 10), std.math.clamp(@as(i32, 15), 5, 10));
+    try std.testing.expectEqual(@as(i32, 7), std.math.clamp(@as(i32, 7), 5, 10));
 }
 
 test "safeToUnsigned" {
@@ -926,11 +909,7 @@ pub fn write1Or2Digits(writer: anytype, value: anytype) !void {
 
 /// Writes a 16-bit value as 4 lowercase hexadecimal digits.
 pub fn write4Hex(writer: anytype, value: u16) !void {
-    const hex = "0123456789abcdef";
-    try writer.writeByte(hex[(value >> 12) & 0xF]);
-    try writer.writeByte(hex[(value >> 8) & 0xF]);
-    try writer.writeByte(hex[(value >> 4) & 0xF]);
-    try writer.writeByte(hex[value & 0xF]);
+    try writer.print("{x:0>4}", .{value});
 }
 /// Writes an integer value using decimal representation.
 pub fn writeInt(writer: anytype, value: anytype) !void {
@@ -942,13 +921,8 @@ pub fn writeInt(writer: anytype, value: anytype) !void {
 pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
     var bytes: [16]u8 = undefined;
     io().random(&bytes);
-    const hex_chars = "0123456789abcdef";
-    var result = try allocator.alloc(u8, 32);
-    for (bytes, 0..) |b, i| {
-        result[i * 2] = hex_chars[b >> 4];
-        result[i * 2 + 1] = hex_chars[b & 0xF];
-    }
-    return result;
+    const hex = std.fmt.bytesToHex(bytes, .lower);
+    return allocator.dupe(u8, &hex);
 }
 
 /// Generates a random 64-bit Span ID as a hex string (16 chars).
@@ -956,13 +930,8 @@ pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
 pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
     var bytes: [8]u8 = undefined;
     io().random(&bytes);
-    const hex_chars = "0123456789abcdef";
-    var result = try allocator.alloc(u8, 16);
-    for (bytes, 0..) |b, i| {
-        result[i * 2] = hex_chars[b >> 4];
-        result[i * 2 + 1] = hex_chars[b & 0xF];
-    }
-    return result;
+    const hex = std.fmt.bytesToHex(bytes, .lower);
+    return allocator.dupe(u8, &hex);
 }
 
 /// Parsed W3C traceparent context.
@@ -1522,12 +1491,13 @@ pub fn getCompressionExtension(algo: anytype) []const u8 {
         .tar_gz => Constants.CompressionConstants.ArchivingExtensions.tar_gz,
         .zip => Constants.CompressionConstants.ArchivingExtensions.zip,
         .lz4 => Constants.CompressionConstants.ArchivingExtensions.lz4,
+        .brotli => Constants.CompressionConstants.ArchivingExtensions.brotli,
         .none => Constants.CompressionConstants.ArchivingExtensions.none,
     };
 }
 
 test "getCompressionExtension" {
-    const Algo = enum { none, deflate, zlib, raw_deflate, gzip, zstd, lzma, lzma2, xz, tar_gz, zip, lz4 };
+    const Algo = enum { none, deflate, zlib, raw_deflate, gzip, zstd, lzma, lzma2, xz, tar_gz, zip, lz4, brotli };
     try std.testing.expectEqualStrings(".gz", getCompressionExtension(Algo.gzip));
     try std.testing.expectEqualStrings(".gz", getCompressionExtension(Algo.deflate));
     try std.testing.expectEqualStrings(".zst", getCompressionExtension(Algo.zstd));
@@ -1535,6 +1505,7 @@ test "getCompressionExtension" {
     try std.testing.expectEqualStrings(".xz", getCompressionExtension(Algo.xz));
     try std.testing.expectEqualStrings(".tar.gz", getCompressionExtension(Algo.tar_gz));
     try std.testing.expectEqualStrings(".zip", getCompressionExtension(Algo.zip));
+    try std.testing.expectEqualStrings(".br", getCompressionExtension(Algo.brotli));
     try std.testing.expectEqualStrings("", getCompressionExtension(Algo.none));
 }
 
@@ -1636,26 +1607,12 @@ pub fn writeTruncated(writer: anytype, s: []const u8, max_len: usize, suffix: []
 /// FNV-1a 32-bit hash of a byte slice. Fast non-cryptographic hash.
 /// Suitable for sampling keys, module name hashing, etc.
 pub fn hashFnv32a(data: []const u8) u32 {
-    const FNV_PRIME: u32 = 16777619;
-    const FNV_OFFSET: u32 = 2166136261;
-    var hash: u32 = FNV_OFFSET;
-    for (data) |byte| {
-        hash ^= @as(u32, byte);
-        hash *%= FNV_PRIME;
-    }
-    return hash;
+    return std.hash.Fnv1a_32.hash(data);
 }
 
 /// FNV-1a 64-bit hash of a byte slice.
 pub fn hashFnv64a(data: []const u8) u64 {
-    const FNV_PRIME: u64 = 1099511628211;
-    const FNV_OFFSET: u64 = 14695981039346656037;
-    var hash: u64 = FNV_OFFSET;
-    for (data) |byte| {
-        hash ^= @as(u64, byte);
-        hash *%= FNV_PRIME;
-    }
-    return hash;
+    return std.hash.Fnv1a_64.hash(data);
 }
 
 /// Normalizes a path for cross-platform use (replaces backslashes with forward slashes).

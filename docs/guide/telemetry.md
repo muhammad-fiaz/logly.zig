@@ -56,9 +56,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Disable update checker
-    logly.UpdateChecker.setEnabled(false);
-
     // Configure telemetry with Jaeger
     var config = logly.TelemetryConfig.jaeger();
     config.service_name = "my-service";

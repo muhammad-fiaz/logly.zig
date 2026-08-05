@@ -1,12 +1,16 @@
 .{
     .name = .logly,
-    .version = "0.2.0",
+    .version = "0.2.1",
     .fingerprint = 0x54acba927bcb9891,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zstd = .{
-            .url = "git+https://github.com/muhammad-fiaz/zstd.zig.git#92127e8294e6fd352450dd4a3e3f4ed4048b8874",
-            .hash = "zstd-1.6.0-biH4jPHXMgByS-WuwAUII5ZFigXUcBX8kMeqMsP_oIVl",
+            .url = "https://github.com/muhammad-fiaz/zstd.zig/archive/refs/tags/0.0.1.tar.gz",
+            .hash = "zstd-0.0.1-biH4jJ_KMgDBpUCoVlLqLK9JeyTgO8vFXurQl_ECstYN",
+        },
+        .brotli = .{
+            .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.1.tar.gz",
+            .hash = "brotli-0.0.1-utAAyFafJQAO-8c5LCoUD5ZhEmMfSZx72MonfJipzynD",
         },
     },
     .paths = .{

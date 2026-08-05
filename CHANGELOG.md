@@ -5,7 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> Beginning with v0.2.1, detailed release notes are published through GitHub Releases. CHANGELOG.md now provides only a concise version history.
+
 > **Note:** Documentation for versions below 0.1.2 is not available. Please refer to commit history or pull requests for those versions.
+
+## [0.2.1]
+
+### Added
+- **Brotli Compression** – Added Brotli compression support via the `brotli.zig` binding for excellent text/log compression ratios (quality levels 0-11).
+- `CompressionAlgorithm.brotli` enum value and `CompressionConfig.brotli()` factory method.
+- `CompressionLevel.toBrotliLevel()` method for mapping compression levels to Brotli-specific levels.
+- `CompressionConfig.getEffectiveBrotliLevel()` for custom Brotli level control.
+- `CompressionConfig.custom_brotli_level` field for fine-grained Brotli compression control.
+- `CompressionExtensions.brotli` (`.br`) and `ArchivingExtensions.brotli` constants.
+- `Utils.getCompressionExtension()` updated to handle Brotli algorithm.
+- **Redaction Audit** – Added `on_redaction_detail` callback to `Redactor` for full audit trails showing original and redacted values.
+- **Standard Library Modernization** – Replaced custom implementations with Zig 0.16.0 builtins: `std.math.clamp`, `std.fmt.bytesToHex`, `std.hash.Fnv1a_32`/`std.hash.Fnv1a_64`, `writer.print("{x:0>4}")`.
+- **Write Mode Documentation** – Added comprehensive documentation for `WriteMode` enum (`.append`, `.overwrite`, `.append_rotate`) and how each mode interacts with file rotation.
+- **Append/Overwrite Examples** – Added `examples/append_overwrite.zig` demonstrating all write modes with rotation configurations.
+
+### Changed
+- **Standard Library Modernization** – Improved reuse of Zig 0.16.0 Standard Library across all modules.
+- **`std.math.clamp`** – Replaced custom `Utils.clamp()` with `std.math.clamp` across `utils.zig`, `sampler.zig`, `telemetry.zig`, `config.zig`, `compression.zig`.
+- **`std.fmt.bytesToHex`** – Replaced manual hex encoding in `generateTraceId()` and `generateSpanId()` with `std.fmt.bytesToHex`.
+- **`std.hash.Fnv1a_32` / `std.hash.Fnv1a_64`** – Replaced custom FNV-1a hash implementations with standard library hash functions.
+- **`writer.print` hex formatting** – Replaced manual `write4Hex` byte-by-byte hex encoding with `writer.print("{x:0>4}")`.
+- **Case-Insensitive Parsing** – `Level.fromString()`, `RotationInterval.fromString()`, and JSON config level parsing now use `std.ascii.eqlIgnoreCase` for robust input handling (accepts "TRACE", "trace", "Trace", etc.).
+- **Console Sink Edge Case** – `logger.add(.{})` now auto-disables `auto_sink` to prevent duplicate console output when manually adding a console sink.
+- **Thread Pool Dispatch** – `dispatchRecord` thread pool path no longer synchronously flushes sinks, as the flush was incorrect when the task is still queued; only the sync and async logger paths flush.
+- **Redaction Audit** – Added `on_redaction_detail` callback to `Redactor` to expose original and redacted values for compliance auditing.
+- **Internal Refactoring** – Simplified implementations, reduced duplicate code, improved maintainability.
+- **Performance Improvements** – Reduced heap allocations, improved buffer reuse, optimized synchronization.
+- **Build System** – Updated `build.zig` and `build.zig.zon` for Zig 0.16.0 conventions with Brotli dependency.
+- **Documentation** – Updated README, VitePress config, and API documentation for v0.2.1.
+
+### Fixed
+- **Scheduler Wildcard Bug** – `matchPattern` in `scheduler.zig` now correctly handles `"*"` wildcard pattern to match all filenames (previously only matched `*.ext` and exact names).
+- **Async/Autoflush Overlap** – `dispatchRecord` no longer calls `flushInternal()` on the thread pool path when the task is still queued; only the synchronous and async logger paths flush when `auto_flush` is enabled.
+- **Redaction Audit Logging** – Added `on_redaction_detail` callback to `Redactor` that provides the original and redacted values for each redaction event, enabling full audit trails.
+- **Zstd API Migration** – Migrated from low-level `zstd.c.*` C API to high-level `zstd.compress()`/`zstd.decompress()` and `zstd.Compressor`/`zstd.Decompressor` APIs for dict support.
+- **Brotli Error Handling** – Fixed pointless error discard in `compressBrotliWithAllocator` fallback path.
+- **Code Quality** – Removed duplicate doc comments in `metrics.zig` and `update_checker.zig`, removed commented-out import in `compression.zig`.
+- **Utility Cleanup** – Removed unused `Utils.min()` and `Utils.max()` wrapper functions in favor of Zig builtins `@min`/`@max`.
+
+### Removed
+- **Update Checker** (`src/update_checker.zig`) – Completely removed. Update checking is no longer built-in; use external CI/CD tooling for version monitoring.
+- **System Diagnostics** (`src/diagnostics.zig`) – Completely removed. Use `std.process.getEnvMap()` or platform-specific APIs directly.
+- **Terminal UI (TUI) Formatter** – Removed built-in TUI dashboard card formatter (`config.tui`, `formatTuiWithAllocator`). TUI-style output can be achieved client-side.
+- `docs/guide/update-checker.md` – Update checker documentation removed.
+- `docs/guide/diagnostics.md` – Diagnostics documentation removed.
+- `docs/guide/tui.md` – TUI documentation removed.
+- `docs/examples/msgpack-tui.md` – MessagePack & TUI example removed.
+- `docs/examples/diagnostics.md` – Diagnostics example removed.
+- `examples/msgpack_tui.zig` – MessagePack & TUI example removed.
+- `Config.check_for_updates` field removed.
+- `Config.emit_system_diagnostics_on_init` field removed.
+- `Config.include_drive_diagnostics` field removed.
+- `Config.diagnostics_output_path` field removed.
+- `Config.tui` field removed.
+- `Logger.logSystemDiagnostics()` method removed.
+- `Logger.update_thread` field removed.
+- `Constants.DiagnosticsConstants` removed.
+- `Constants.UpdateCheckerConstants` removed.
+- `Constants.DiagnosticsDefaults` removed.
+- **Arena Allocator** – Removed `Config.use_arena_allocator`, `Config.arena_reset_threshold`, `Config.withArenaAllocator()`, `Config.withArena()`, `Logger.resetArena()`, `Logger.scratchAllocator()`, `Config.ThreadPoolConfig.arena()`, `Config.AsyncConfig.use_arena`. Callers now pass their own allocator to `Logger.initWithConfig(allocator, config)` and manage allocation directly.
+- `examples/allocator_strategies.zig` – Removed (arena allocator strategies).
+- `examples/thread_pool_arena.zig` – Removed (thread pool arena usage).
 
 ## [0.2.0]
 

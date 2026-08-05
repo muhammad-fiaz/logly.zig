@@ -51,9 +51,6 @@ pub const AsyncLogger = struct {
     /// List of sinks to write to.
     sinks: std.ArrayList(*Sink) = .empty,
 
-    /// Arena allocator optimized for batch operations to reduce fragmentation and allocation overhead.
-    arena: ?std.heap.ArenaAllocator = null,
-
     /// Callback triggered when the internal buffer exceeds its capacity.
     /// Provides the number of dropped records for monitoring.
     overflow_callback: ?*const fn (dropped_count: u64) void = null,
@@ -363,11 +360,6 @@ pub const AsyncLogger = struct {
             .sinks = .empty,
         };
 
-        // Initialize arena allocator if enabled for better batch processing performance
-        if (config.use_arena) {
-            self.arena = std.heap.ArenaAllocator.init(allocator);
-        }
-
         if (config.background_worker) {
             try self.startWorker();
         }
@@ -384,11 +376,6 @@ pub const AsyncLogger = struct {
         // Flush remaining entries
         self.flushSync();
 
-        // Clean up arena allocator if it was created
-        if (self.arena) |*arena| {
-            arena.deinit();
-        }
-
         self.buffer.deinit();
         self.sinks.deinit(self.allocator);
         self.allocator.destroy(self);
@@ -397,21 +384,9 @@ pub const AsyncLogger = struct {
     /// Alias for deinit().
     pub const destroy = deinit;
 
-    /// Returns the arena allocator if enabled, otherwise the main allocator.
-    /// Use this for temporary allocations that can be batch-freed.
+    /// Returns the allocator for temporary allocations.
     pub fn scratchAllocator(self: *AsyncLogger) std.mem.Allocator {
-        if (self.arena) |*arena| {
-            return arena.allocator();
-        }
         return self.allocator;
-    }
-
-    /// Resets the arena allocator if enabled, freeing all temporary allocations.
-    /// Call this after processing a batch to reclaim memory.
-    pub fn resetArena(self: *AsyncLogger) void {
-        if (self.arena) |*arena| {
-            _ = arena.reset(.retain_capacity);
-        }
     }
 
     /// Returns the effective batch size after clamping configuration to the static buffer.
@@ -721,9 +696,6 @@ pub const AsyncLogger = struct {
                 if (self.on_batch_flushed) |cb| {
                     cb(count, @truncate(@as(u64, @intCast(@max(0, write_time)))));
                 }
-
-                // Reset arena after each batch to free temporary memory
-                self.resetArena();
             }
         }
     }
