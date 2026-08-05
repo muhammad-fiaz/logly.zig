@@ -74,11 +74,10 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Distributed Tracing | ✅ Automatic | ❌ Manual | Trace/span/correlation IDs |
 | Rules System | ✅ Automatic triggers | ❌ | Template-based diagnostic messages |
 
-::: info Automatic vs Manual
-- **Automatic**: Feature works out-of-the-box with configuration
-- **Manual**: Feature requires custom implementation by the developer
-- std.log provides raw performance but requires manual implementation for most features
-:::
+> [!NOTE]
+> - **Automatic**: Feature works out-of-the-box with configuration
+> - **Manual**: Feature requires custom implementation by the developer
+> - std.log provides raw performance but requires manual implementation for most features
 
 ## Performance Comparison
 
@@ -99,12 +98,11 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Max observed throughput (ops/sec) | **36.48M** | ~0.18M | ~0.12M |N/A (based on implementation) |
 | Avg baseline latency (ns) | **~939** | ~25,000 | ~8,500 |N/A (based on implementation) |
 
-::: warning Performance Note
-- **std.log** has the lowest raw latency (~5,000 ns) because it's minimal and outputs to stderr only
-- **logly.zig** trades slightly higher latency for automatic features (colors, JSON, rotation, etc.)
-- All metrics vary based on system, OS, Zig version, hardware, and build configuration
-- N/A means the feature is not available or requires manual implementation
-:::
+> [!WARNING]
+> - **std.log** has the lowest raw latency (~5,000 ns) because it's minimal and outputs to stderr only
+> - **logly.zig** trades slightly higher latency for automatic features (colors, JSON, rotation, etc.)
+> - All metrics vary based on system, OS, Zig version, hardware, and build configuration
+> - N/A means the feature is not available or requires manual implementation
 
 ## Rules System (v0.1.0+)
 
@@ -176,9 +174,8 @@ Logly.zig supports multiple compression and archive algorithms for log archival 
 | **zip** | 3-5x | ~190 MB/s | ~290 MB/s | `.zip` | Cross-platform archives |
 | **lz4** | 1-2x | ~600 MB/s | ~1000 MB/s | `.lz4` | Real-time, ultra-fast compression |
 
-::: tip Recommendation
-Use **zstd** (v0.1.5+) for best performance and a great general-purpose tradeoff. For long-term archival prefer **LZMA / XZ** (higher ratio); for ultra-low-latency real-time logging prefer **LZ4** (fastest). Choose based on the speed vs ratio trade-off for your workload.
-:::
+> [!TIP]
+> Use **zstd** (v0.1.5+) for best performance and a great general-purpose tradeoff. For long-term archival prefer **LZMA / XZ** (higher ratio); for ultra-low-latency real-time logging prefer **LZ4** (fastest). Choose based on the speed vs ratio trade-off for your workload.
 
 ## OpenTelemetry Comparison (v0.1.4+)
 

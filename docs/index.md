@@ -105,9 +105,8 @@ pub fn main() !void {
 - **Cross-Platform**: Works on Linux, Windows, macOS, and more
 - **Well Documented**: Comprehensive guides and API documentation
 
-::: tip 💡 Note
-Logly.zig aims to be production-ready. While this is a relatively new project and not yet widely adopted, it offers powerful features that can simplify your Zig project's logging. If you love Logly.zig, feel free to use it in your projects and give it a ⭐ on GitHub!
-:::
+> [!TIP]
+> Logly.zig aims to be production-ready. While this is a relatively new project and not yet widely adopted, it offers powerful features that can simplify your Zig project's logging. If you love Logly.zig, feel free to use it in your projects and give it a ⭐ on GitHub!
 
 ## Installation
 

@@ -2757,6 +2757,21 @@ pub const Config = struct {
         return self.withCompression(CompressionConfig.lz4());
     }
 
+    /// Returns a configuration with brotli compression enabled.
+    ///
+    /// Builder pattern method to enable brotli compression.
+    ///
+    /// Arguments:
+    ///   - `self`: Current configuration.
+    ///
+    /// Return Value:
+    ///   - Modified `Config` with brotli compression enabled.
+    ///
+    /// Complexity: O(1)
+    pub fn withBrotliCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.brotli());
+    }
+
     /// Returns a configuration with thread pool enabled.
     ///
     /// Builder pattern method to enable thread pool support.

@@ -238,8 +238,8 @@ These two features serve different purposes and are not the same thing:
 
 - **Async logging** means log records are queued in a ring buffer and processed by background worker threads. Records are batched together before being written to sinks, which improves throughput by reducing the number of I/O operations.
 
-[!NOTE]
-`auto_flush = true` with async logging means the async worker flushes after each batch, not that your application thread blocks on I/O. The application thread still enqueues to the ring buffer and returns immediately.
+> [!NOTE]
+> `auto_flush = true` with async logging means the async worker flushes after each batch, not that your application thread blocks on I/O. The application thread still enqueues to the ring buffer and returns immediately.
 
 ## Flushing
 

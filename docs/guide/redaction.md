@@ -254,8 +254,8 @@ fn onRedactDetail(original: []const u8, redacted: []const u8, pattern_name: []co
 redactor.setRedactionDetailCallback(onRedactDetail);
 ```
 
-[!TIP]
-Use `on_redaction_detail` alongside `audit_redactions = true` in your `RedactionConfig` to build a complete audit trail for compliance scenarios like GDPR or PCI-DSS.
+> [!TIP]
+> Use `on_redaction_detail` alongside `audit_redactions = true` in your `RedactionConfig` to build a complete audit trail for compliance scenarios like GDPR or PCI-DSS.
 
 ## Global Configuration
 

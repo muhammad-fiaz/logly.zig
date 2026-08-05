@@ -547,6 +547,12 @@ pub const Compression = struct {
         return initWithConfig(allocator, CompressionConfig.lz4());
     }
 
+    /// Creates a Compression instance with brotli algorithm.
+    /// v0.1.8+
+    pub fn brotliCompression(allocator: std.mem.Allocator) Compression {
+        return initWithConfig(allocator, CompressionConfig.brotli());
+    }
+
     /// Creates a Compression instance with a custom zstd compression level (1-22).
     /// Allows fine-grained control over compression ratio vs speed tradeoff.
     ///

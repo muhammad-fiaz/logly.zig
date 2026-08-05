@@ -32,11 +32,11 @@ Logly-Zig supports **10 built-in log levels**, each with a specific priority, co
 | CRITICAL | 50       | Bright Red   | 91      | `logger.critical()` | `crit()` | Critical system errors    |
 | FATAL    | 55       | White on Red | 97;41   | `logger.fatal()`    | -        | Fatal system errors       |
 
-!!! note "Case-Insensitive Level Parsing"
-    Level names are parsed case-insensitively. You can use `"TRACE"`, `"trace"`, or `"Trace"` — all are accepted. This applies to `Level.fromString()`, JSON config level parsing, and rotation interval parsing.
+> [!NOTE]
+> Level names are parsed case-insensitively. You can use `"TRACE"`, `"trace"`, or `"Trace"` — all are accepted. This applies to `Level.fromString()`, JSON config level parsing, and rotation interval parsing.
 
-[!TIP]
-Level names are case-insensitive throughout Logly. You can use `"TRACE"`, `"trace"`, or `"Trace"` — all are accepted. This applies to `Level.fromString()`, JSON config parsing, and rotation interval parsing.
+> [!TIP]
+> Level names are case-insensitive throughout Logly. You can use `"TRACE"`, `"trace"`, or `"Trace"` — all are accepted. This applies to `Level.fromString()`, JSON config parsing, and rotation interval parsing.
 
 ## Whole-Line Coloring
 

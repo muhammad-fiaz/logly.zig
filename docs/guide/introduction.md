@@ -74,9 +74,8 @@ Logly.Zig is built upon the following core principles:
 | **Cross-Platform Colors** | ✓                       | ✓                    | **✓**               | ✗ |
 | **Rules System (v0.0.9+)**| ✗                       | ✗                    | **✓ Automatic**     | ✗ |
 
-::: tip Full Comparison
-For a comprehensive comparison with other Zig logging libraries including nexlog, log.zig, and std.log, see the [Comparison](/guide/comparison) page.
-:::
+> [!TIP]
+> For a comprehensive comparison with other Zig logging libraries including nexlog, log.zig, and std.log, see the [Comparison](/guide/comparison) page.
 
 ## Enterprise Features
 

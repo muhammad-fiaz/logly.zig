@@ -21,11 +21,8 @@ _ = try logger.addSink(.{});
 _ = try logger.add(.{});  // Short alias
 ```
 
-!!! note "Auto-sink Behavior"
-    When you manually add a console sink via `logger.add(.{})`, the `auto_sink` flag is automatically disabled to prevent duplicate console output. This means the automatic console sink created during `Logger.init()` will not be added if you explicitly add one first.
-
-[!NOTE]
-When you manually add a console sink via `logger.add(.{})`, the `auto_sink` flag is automatically disabled to prevent duplicate console output. The automatic console sink created during `Logger.init()` will not be added if you explicitly add one first.
+> [!NOTE]
+> When you manually add a console sink via `logger.add(.{})`, the `auto_sink` flag is automatically disabled to prevent duplicate console output. The automatic console sink created during `Logger.init()` will not be added if you explicitly add one first.
 
 ## File Sink
 

@@ -206,9 +206,8 @@ Statistics for formatter performance.
 | `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
 | `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate throughput (bytes per second) |
 
-::: tip Precise Byte Tracking
-As of v0.1.8, `total_bytes_formatted` captures the exact length of each formatted message, replacing previous estimations.
-:::
+> [!TIP]
+> As of v0.1.8, `total_bytes_formatted` captures the exact length of each formatted message, replacing previous estimations.
 
 #### Reset
 
