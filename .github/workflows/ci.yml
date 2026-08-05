@@ -20,7 +20,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -37,7 +37,7 @@ jobs:
     name: Run Examples
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -51,7 +51,7 @@ jobs:
     name: Build Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
