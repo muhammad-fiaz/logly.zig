@@ -389,53 +389,23 @@ Async logging configuration.
 
 #### `rules: RulesConfig`
 
-Rules system configuration. The rules system **respects global switches** (`global_console_display`, `global_file_storage`, `global_color_display`).
+Invoke system configuration. Controls extra message display on log records.
 
-- `enabled`: Master switch for rules system. Default: `false`.
-- `client_rules_enabled`: Enable client-defined rules. Default: `true`.
-- `builtin_rules_enabled`: Enable built-in rules (reserved). Default: `true`.
-- `use_unicode`: Use Unicode symbols (set false for ASCII). Default: `false`.
+- `enabled`: Master switch for invoke system. Default: `false`.
+- `client_rules_enabled`: Enable client-defined triggers. Default: `true`.
+- `builtin_rules_enabled`: Enable built-in triggers (reserved). Default: `true`.
 - `enable_colors`: ANSI colors in output. Default: `true`.
-- `show_rule_id`: Show rule IDs in output. Default: `false`.
-- `include_rule_id_prefix`: Include "R0001:" prefix. Default: `false`.
-- `rule_id_format`: Custom rule ID format. Default: `"R{d}"`.
 - `indent`: Message indent. Default: `"    "`.
-- `message_prefix`: Prefix character (deprecated, use `symbols`). Default: `"↳"`.
-- `symbols`: Custom symbols for message categories. See [RuleSymbols](#rulesymbols).
+- `include_in_json`: Include in JSON output. Default: `true`.
 - `console_output`: Output to console (AND'd with `global_console_display`). Default: `true`.
 - `file_output`: Output to files (AND'd with `global_file_storage`). Default: `true`.
-- `include_in_json`: Include in JSON output. Default: `true`.
-- `verbose`: Full context output. Default: `false`.
-- `max_rules`: Maximum rules allowed. Default: `1000`.
+- `max_rules`: Maximum triggers allowed. Default: `1000`.
 - `max_messages_per_rule`: Max messages to show per match. Default: `10`.
-- `sort_by_severity`: Order by severity. Default: `false`.
 
 **Presets:**
-- `RulesConfig.development()`: Full debugging with colors and Unicode.
-- `RulesConfig.production()`: Minimal output, no colors, no verbose.
-- `RulesConfig.ascii()`: ASCII-only for terminals without Unicode.
+- `RulesConfig.development()`: Colors enabled.
+- `RulesConfig.production()`: No colors.
 - `RulesConfig.disabled()`: Zero overhead.
-- `RulesConfig.silent()`: Rules evaluate but don't output.
-- `RulesConfig.consoleOnly()`: No file output.
-- `RulesConfig.fileOnly()`: No console output.
-
-#### `RuleSymbols`
-
-Customizable symbols for rule message categories. Defaults are ASCII-compatible.
-
-- `error_analysis`: Default `">> [ERROR]"`
-- `solution_suggestion`: Default `">> [FIX]"`
-- `performance_hint`: Default `">> [PERF]"`
-- `security_alert`: Default `">> [SEC]"`
-- `deprecation_warning`: Default `">> [DEP]"`
-- `best_practice`: Default `">> [HINT]"`
-- `accessibility`: Default `">> [A11Y]"`
-- `documentation`: Default `">> [DOC]"`
-- `action_required`: Default `">> [ACTION]"`
-- `bug_report`: Default `">> [BUG]"`
-- `general_information`: Default `">> [INFO]"`
-- `warning_explanation`: Default `">> [WARN]"`
-- `default`: Default `">>"`
 
 #### `thread_pool: ThreadPoolConfig`
 

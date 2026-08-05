@@ -662,7 +662,7 @@ Note: `config.auto_flush` defaults to `false` for throughput. Enable it when imm
 
 ### `reloadFromFile(file_path: []const u8) !void`
 
-Dynamically reloads the configuration of the logger from a JSON file on disk. This will update the logger's active levels, sinks, formats, and rules at runtime without dropping log records or restarting the application.
+Dynamically reloads the configuration of the logger from a JSON file on disk. This will update the logger's active levels, sinks, formats, and invoke triggers at runtime without dropping log records or restarting the application.
 
 ```zig
 try logger.reloadFromFile("config.json");

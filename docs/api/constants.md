@@ -288,84 +288,16 @@ pub const NetworkConstants = struct {
 };
 ```
 
-## Rules Constants
+## Invoke Constants
 
-Rules system constants for diagnostic message formatting.
+Invoke system limits for triggers and messages.
 
 ```zig
-pub const RulesConstants = struct {
-    /// Default indentation for rule messages
-    pub const default_indent: []const u8 = "    ";
-    /// Default prefix character for rule messages
-    pub const default_prefix: []const u8 = "↳";
-    /// Default prefix character for ASCII mode
-    pub const default_prefix_ascii: []const u8 = "|--";
-    /// Maximum number of rules allowed by default
+pub const InvokeConstants = struct {
+    /// Maximum number of triggers allowed by default.
     pub const default_max_rules: usize = 1000;
-    /// Maximum messages per rule allowed by default
+    /// Maximum messages per trigger allowed by default.
     pub const default_max_messages: usize = 10;
-
-    /// Unicode prefixes for each message category
-    pub const Prefixes = struct {
-       pub const cause: []const u8 = "⦿ cause:";
-        pub const fix: []const u8 = "✦ fix:";
-        pub const suggest: []const u8 = "→ suggest:";
-        pub const action: []const u8 = "▸ action:";
-        pub const docs: []const u8 = "📖 docs:";
-        pub const report: []const u8 = "🔗 report:";
-        pub const note: []const u8 = "ℹ note:";
-        pub const caution: []const u8 = "⚠ caution:";
-        pub const perf: []const u8 = "⚡ perf:";
-        pub const security: []const u8 = "🛡 security:";
-        pub const custom: []const u8 = "•";
-    };
-
-    /// ASCII-only prefixes for each message category
-    pub const PrefixesAscii = struct {
-        pub const cause: []const u8 = "[CAUSE]";
-        pub const fix: []const u8 = "[FIX]";
-        pub const suggest: []const u8 = "[SUGGEST]";
-        pub const action: []const u8 = "[ACTION]";
-        pub const docs: []const u8 = "[DOCS]";
-        pub const report: []const u8 = "[REPORT]";
-        pub const note: []const u8 = "[NOTE]";
-        pub const caution: []const u8 = "[CAUTION]";
-        pub const perf: []const u8 = "[PERF]";
-        pub const security: []const u8 = "[SECURITY]";
-        pub const custom: []const u8 = "[*]";
-    };
-
-    /// Customizable symbols for rule message categories
-    pub const RuleSymbols = struct {
-        pub const error_analysis: []const u8 = ">> [ERROR]";
-        pub const solution_suggestion: []const u8 = ">> [FIX]";
-        pub const performance_hint: []const u8 = ">> [PERF]";
-        pub const security_alert: []const u8 = ">> [SEC]";
-        pub const deprecation_warning: []const u8 = ">> [DEP]";
-        pub const best_practice: []const u8 = ">> [HINT]";
-        pub const accessibility: []const u8 = ">> [A11Y]";
-        pub const documentation: []const u8 = ">> [DOC]";
-        pub const action_required: []const u8 = ">> [ACTION]";
-        pub const bug_report: []const u8 = ">> [BUG]";
-        pub const general_information: []const u8 = ">> [INFO]";
-        pub const warning_explanation: []const u8 = ">> [WARN]";
-        pub const default: []const u8 = ">>";
-    };
-
-    /// ANSI color codes for each message category
-    pub const Colors = struct {
-        pub const cause: []const u8 = "91;1";
-        pub const fix: []const u8 = "96;1";
-        pub const suggest: []const u8 = "93;1";
-        pub const action: []const u8 = "91;1";
-        pub const docs: []const u8 = "35";
-        pub const report: []const u8 = "33";
-        pub const note: []const u8 = "37";
-        pub const caution: []const u8 = "33";
-        pub const perf: []const u8 = "36";
-        pub const security: []const u8 = "95;1";
-        pub const custom: []const u8 = "37";
-    };
 };
 ```
 
@@ -957,4 +889,4 @@ const trace_color = Constants.Colors.Themes.neon.trace;  // "38;5;51"
 
 - [Config API](config.md) - Configuration options
 - [Thread Pool API](thread-pool.md) - Thread pool configuration
-- [Rules API](rules.md) - Rules system configuration
+- [Invoke API](invoke.md) - Invoke system configuration

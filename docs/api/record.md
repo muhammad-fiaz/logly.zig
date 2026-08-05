@@ -186,7 +186,7 @@ try record.context.put("request_count", .{ .integer = 42 });
 
 ### `invoke_messages: ?[]const InvokeMessage`
 
-Rule messages attached to this record if any rules matched during evaluation. Default: `null`.
+Extra messages attached to this record if any triggers matched during evaluation. Default: `null`.
 
 ## Methods
 

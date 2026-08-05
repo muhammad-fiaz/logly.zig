@@ -603,15 +603,13 @@ try logger.custom("audit", "Security event");
 // Output: {"timestamp":"...","level":"AUDIT","message":"Security event"}
 ```
 
-## Rules System Configuration
+## Invoke System Configuration
 
-The Rules System provides guided diagnostics and can be customized with specific symbols.
+The Invoke System attaches extra messages to log records when conditions match.
 
 ```zig
 var config = logly.Config.default();
 config.rules.enabled = true;
-// Define custom symbols (supports Emoji if terminal allows)
-config.rules.symbols.error_analysis = "ðŸ›‘ Cause:";
 ```
 
 ## Advanced Features

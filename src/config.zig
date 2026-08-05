@@ -2041,106 +2041,70 @@ pub const Config = struct {
         pub const archiveTo = withArchive;
     };
 
-    /// Rules system configuration for compiler-style guided diagnostics.
+    /// Invoke system configuration. Controls extra message display on log records.
     pub const RulesConfig = struct {
-        /// Master switch for rules system.
+        /// Master switch for invoke system.
         enabled: bool = false,
 
-        /// Enable/disable client-defined rules.
+        /// Enable/disable client-defined triggers.
         client_rules_enabled: bool = true,
 
-        /// Enable/disable built-in rules (reserved for future use).
+        /// Enable/disable built-in triggers (reserved for future use).
         builtin_rules_enabled: bool = true,
 
-        /// Use Unicode symbols in output (set to false for ASCII-only terminals).
-        use_unicode: bool = true,
-
-        /// Enable ANSI colors in rule message output.
+        /// Enable ANSI colors in invoke message output.
         enable_colors: bool = true,
 
-        /// Show rule IDs in output (useful for debugging).
-        show_rule_id: bool = false,
+        /// Indent string for invoke messages.
+        indent: []const u8 = "    ",
 
-        /// Include rule ID prefix like "R0001:" in output.
-        include_rule_id_prefix: bool = false,
-
-        /// Custom rule ID format string.
-        rule_id_format: []const u8 = "R{d}",
-
-        /// Indent string for rule messages.
-        indent: []const u8 = Constants.InvokeConstants.default_indent,
-
-        /// Message prefix character/string (deprecated, use symbols).
-        message_prefix: []const u8 = Constants.InvokeConstants.default_prefix,
-
-        /// Include rule messages in JSON output.
+        /// Include invoke messages in JSON output.
         include_in_json: bool = true,
 
-        /// Maximum number of rules allowed.
+        /// Maximum number of triggers allowed.
         max_rules: usize = Constants.InvokeConstants.default_max_rules,
 
-        /// Maximum messages per rule to display.
+        /// Maximum messages per trigger to display.
         max_messages_per_rule: usize = Constants.InvokeConstants.default_max_messages,
 
-        /// Display rule messages on console (respects global_console_display).
+        /// Display invoke messages on console (respects global_console_display).
         console_output: bool = true,
 
-        /// Write rule messages to file sinks (respects global_file_storage).
+        /// Write invoke messages to file sinks (respects global_file_storage).
         file_output: bool = true,
 
-        /// Enable verbose mode with full context.
-        verbose: bool = false,
-
-        /// Sort messages by severity.
-        sort_by_severity: bool = false,
-
         /// Preset configurations for various environments.
-        /// Returns minimal rule configuration.
-        /// Enables rules with basic settings.
+        /// Returns minimal configuration with basic settings.
         ///
         /// Complexity: O(1)
         pub fn minimal() RulesConfig {
-            return .{ .enabled = true, .use_unicode = true, .enable_colors = true };
+            return .{ .enabled = true, .enable_colors = true };
         }
 
-        /// Returns production rule configuration.
-        /// No colors, no verbose output, minimal overhead.
+        /// Returns production configuration.
+        /// No colors, minimal overhead.
         ///
         /// Complexity: O(1)
         pub fn production() RulesConfig {
             return .{
                 .enabled = true,
-                .use_unicode = false,
                 .enable_colors = false,
-                .show_rule_id = false,
-                .verbose = false,
             };
         }
 
-        /// Returns development rule configuration.
-        /// Full debugging info, colors, Unicode support, and verbose output.
+        /// Returns development configuration.
+        /// Colors enabled for full debugging.
         ///
         /// Complexity: O(1)
         pub fn development() RulesConfig {
             return .{
                 .enabled = true,
-                .use_unicode = true,
                 .enable_colors = true,
-                .show_rule_id = true,
-                .verbose = true,
             };
         }
 
-        /// Returns ASCII-only rule configuration.
-        /// Useful for legacy terminals or environments without Unicode support.
-        ///
-        /// Complexity: O(1)
-        pub fn ascii() RulesConfig {
-            return .{ .enabled = true, .use_unicode = false, .enable_colors = true };
-        }
-
-        /// Returns disabled rule configuration.
-        /// Zero overhead as rules system is bypassed.
+        /// Returns disabled configuration.
+        /// Zero overhead as invoke system is bypassed.
         ///
         /// Complexity: O(1)
         pub fn disabled() RulesConfig {
@@ -3063,45 +3027,28 @@ test "rules config default values" {
     try std.testing.expect(!rules_config.enabled);
     try std.testing.expect(rules_config.client_rules_enabled);
     try std.testing.expect(rules_config.builtin_rules_enabled);
-    try std.testing.expect(rules_config.use_unicode);
     try std.testing.expect(rules_config.enable_colors);
-    try std.testing.expect(!rules_config.show_rule_id);
-    try std.testing.expect(!rules_config.include_rule_id_prefix);
     try std.testing.expect(rules_config.include_in_json);
     try std.testing.expectEqual(Constants.InvokeConstants.default_max_rules, rules_config.max_rules);
     try std.testing.expectEqual(Constants.InvokeConstants.default_max_messages, rules_config.max_messages_per_rule);
     try std.testing.expect(rules_config.console_output);
     try std.testing.expect(rules_config.file_output);
-    try std.testing.expect(!rules_config.verbose);
-    try std.testing.expect(!rules_config.sort_by_severity);
 }
 
 test "rules config presets" {
     // Development preset
     const dev = Config.RulesConfig.development();
     try std.testing.expect(dev.enabled);
-    try std.testing.expect(dev.use_unicode);
     try std.testing.expect(dev.enable_colors);
-    try std.testing.expect(dev.show_rule_id);
-    try std.testing.expect(dev.verbose);
 
     // Production preset
     const prod = Config.RulesConfig.production();
     try std.testing.expect(prod.enabled);
-    try std.testing.expect(!prod.use_unicode);
     try std.testing.expect(!prod.enable_colors);
-    try std.testing.expect(!prod.show_rule_id);
-    try std.testing.expect(!prod.verbose);
-
-    // ASCII preset
-    const ascii = Config.RulesConfig.ascii();
-    try std.testing.expect(ascii.enabled);
-    try std.testing.expect(!ascii.use_unicode);
-    try std.testing.expect(ascii.enable_colors);
 
     // Disabled preset
-    const disabled = Config.RulesConfig.disabled();
-    try std.testing.expect(!disabled.enabled);
+    const dis = Config.RulesConfig.disabled();
+    try std.testing.expect(!dis.enabled);
 
     // Silent preset
     const silent = Config.RulesConfig.silent();
@@ -3127,8 +3074,7 @@ test "config with rules" {
     config.rules = Config.RulesConfig.development();
 
     try std.testing.expect(config.rules.enabled);
-    try std.testing.expect(config.rules.verbose);
-    try std.testing.expect(config.rules.show_rule_id);
+    try std.testing.expect(config.rules.enable_colors);
 }
 
 test "config global switches affect rules" {

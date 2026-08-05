@@ -72,7 +72,7 @@ Logly.Zig is built upon the following core principles:
 | **Scheduler**             | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
 | **Custom Formats**        | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ Manual |
 | **Cross-Platform Colors** | ✓                       | ✓                    | **✓**               | ✗ |
-| **Rules System (v0.0.9+)**| ✗                       | ✗                    | **✓ Automatic**     | ✗ |
+| **Invoke System (v0.0.9+)**| ✗                       | ✗                    | **✓ Automatic**     | ✗ |
 
 > [!TIP]
 > For a comprehensive comparison with other Zig logging libraries including nexlog, log.zig, and std.log, see the [Comparison](/guide/comparison) page.

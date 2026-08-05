@@ -424,72 +424,56 @@ scheduler.setTaskCompletedCallback(&onTaskCompleted);
 scheduler.setTaskErrorCallback(&onTaskError);
 ```
 
-## Rules System Callbacks
+## Invoke System Callbacks
 
-The Rules engine provides callbacks for monitoring rule evaluations and diagnostic message generation:
+The Invoke engine provides callbacks for monitoring trigger evaluations and message generation:
 
-### Rule Matched Callback
+### Trigger Matched Callback
 
-Called when a rule matches a log record:
+Called when a trigger matches a log record:
 
 ```zig
-fn onRuleMatched(rule: *const logly.Rules.Rule, record: *const logly.Record) void {
-    std.debug.print("Rule '{s}' matched for level {s}\n", .{
-        rule.name,
+fn onTriggerMatched(trigger: *const logly.Invoke.Trigger, record: *const logly.Record) void {
+    std.debug.print("Trigger '{s}' matched for level {s}\n", .{
+        trigger.name orelse "unnamed",
         @tagName(record.level),
     });
 }
 
-rules.on_rule_matched = &onRuleMatched;
-```
-
-### Rule Evaluated Callback
-
-Called for every rule evaluation (matched or not):
-
-```zig
-fn onRuleEvaluated(rule: *const logly.Rules.Rule, record: *const logly.Record, matched: bool) void {
-    if (matched) {
-        metrics.increment("rules.matched", 1);
-    } else {
-        metrics.increment("rules.not_matched", 1);
-    }
-}
-
-rules.on_rule_evaluated = &onRuleEvaluated;
+invoke.on_trigger_matched = &onTriggerMatched;
 ```
 
 ### Messages Attached Callback
 
-Called when diagnostic messages are attached to a record:
+Called when messages are attached to a record:
 
 ```zig
 fn onMessagesAttached(record: *const logly.Record, message_count: usize) void {
-    std.debug.print("Attached {d} diagnostic messages to record\n", .{message_count});
+    std.debug.print("Attached {d} messages to record\n", .{message_count});
 }
 
-rules.on_messages_attached = &onMessagesAttached;
+invoke.on_messages_attached = &onMessagesAttached;
 ```
 
 ### Evaluation Lifecycle Callbacks
 
 ```zig
 fn onBeforeEvaluate(record: *const logly.Record) void {
-    // Called before rule evaluation starts
+    // Called before trigger evaluation starts
 }
 
 fn onAfterEvaluate(record: *const logly.Record, matched_count: usize) void {
-    // Called after all rules have been evaluated
-    std.debug.print("{d} rules matched for this record\n", .{matched_count});
+    // Called after all triggers have been evaluated
+    std.debug.print("{d} triggers matched for this record\n", .{matched_count});
 }
 
 fn onEvaluationError(error_msg: []const u8) void {
-    std.debug.print("Rules evaluation error: {s}\n", .{error_msg});
+    std.debug.print("Invoke evaluation error: {s}\n", .{error_msg});
 }
 
-rules.on_before_evaluate = &onBeforeEvaluate;
-rules.on_after_evaluate = &onAfterEvaluate;
-rules.on_evaluation_error = &onEvaluationError;
+invoke.on_before_evaluate = &onBeforeEvaluate;
+invoke.on_after_evaluate = &onAfterEvaluate;
+invoke.on_evaluation_error = &onEvaluationError;
 ```
 
 ## Crash Callbacks

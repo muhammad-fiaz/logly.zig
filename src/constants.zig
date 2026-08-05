@@ -802,68 +802,17 @@ pub const NetworkConstants = struct {
     pub const send_timeout_ms: u64 = 1000;
 };
 
-/// Invoke system constants for extra message formatting.
+/// Invoke system constants.
 ///
 /// Usage:
-///   Definitions for formatting invoke-based diagnostics (prefixes, colors).
+///   Limits for invoke triggers and messages.
 ///
 /// Complexity: O(1)
 pub const InvokeConstants = struct {
-    /// Default indentation for rule messages.
-    pub const default_indent: []const u8 = "    ";
-    /// Default prefix character for rule messages.
-    pub const default_prefix: []const u8 = "↳";
-    /// Default prefix character for ASCII mode.
-    pub const default_prefix_ascii: []const u8 = "|--";
-    /// Maximum number of rules allowed by default.
+    /// Maximum number of triggers allowed by default.
     pub const default_max_rules: usize = 1000;
-    /// Maximum messages per rule allowed by default.
+    /// Maximum messages per trigger allowed by default.
     pub const default_max_messages: usize = 10;
-
-    /// Unicode prefixes for each message category.
-    pub const Prefixes = struct {
-        pub const cause: []const u8 = "⦿ cause:";
-        pub const fix: []const u8 = "✦ fix:";
-        pub const suggest: []const u8 = "→ suggest:";
-        pub const action: []const u8 = "▸ action:";
-        pub const docs: []const u8 = "📖 docs:";
-        pub const report: []const u8 = "🔗 report:";
-        pub const note: []const u8 = "ℹ note:";
-        pub const caution: []const u8 = "⚠ caution:";
-        pub const perf: []const u8 = "⚡ perf:";
-        pub const security: []const u8 = "🛡 security:";
-        pub const custom: []const u8 = "•";
-    };
-
-    /// ASCII-only prefixes for each message category.
-    pub const PrefixesAscii = struct {
-        pub const cause: []const u8 = "[CAUSE]";
-        pub const fix: []const u8 = "[FIX]";
-        pub const suggest: []const u8 = "[SUGGEST]";
-        pub const action: []const u8 = "[ACTION]";
-        pub const docs: []const u8 = "[DOCS]";
-        pub const report: []const u8 = "[REPORT]";
-        pub const note: []const u8 = "[NOTE]";
-        pub const caution: []const u8 = "[CAUTION]";
-        pub const perf: []const u8 = "[PERF]";
-        pub const security: []const u8 = "[SECURITY]";
-        pub const custom: []const u8 = "[*]";
-    };
-
-    /// ANSI color codes for each message category.
-    pub const Colors = struct {
-        pub const cause: []const u8 = "91;1"; // Bright red
-        pub const fix: []const u8 = "96;1"; // Bright cyan
-        pub const suggest: []const u8 = "93;1"; // Bright yellow
-        pub const action: []const u8 = "91;1"; // Bold red
-        pub const docs: []const u8 = "35"; // Magenta
-        pub const report: []const u8 = "33"; // Yellow
-        pub const note: []const u8 = "37"; // White
-        pub const caution: []const u8 = "33"; // Yellow
-        pub const perf: []const u8 = "36"; // Cyan
-        pub const security: []const u8 = "95;1"; // Bright magenta
-        pub const custom: []const u8 = "37"; // White
-    };
 };
 
 /// Syslog constants for RFC 5424 compliance.
@@ -1218,36 +1167,9 @@ test "network constants are reasonable" {
     try std.testing.expect(NetworkConstants.send_timeout_ms > 0);
 }
 
-test "rules constants exist" {
-    // Default values
-    try std.testing.expect(InvokeConstants.default_indent.len > 0);
-    try std.testing.expect(InvokeConstants.default_prefix.len > 0);
-    try std.testing.expect(InvokeConstants.default_prefix_ascii.len > 0);
+test "invoke constants exist" {
     try std.testing.expect(InvokeConstants.default_max_rules > 0);
     try std.testing.expect(InvokeConstants.default_max_messages > 0);
-
-    // Unicode prefixes
-    try std.testing.expect(InvokeConstants.Prefixes.cause.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.fix.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.suggest.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.action.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.docs.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.report.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.note.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.caution.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.perf.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.security.len > 0);
-    try std.testing.expect(InvokeConstants.Prefixes.custom.len > 0);
-
-    // ASCII prefixes
-    try std.testing.expect(InvokeConstants.PrefixesAscii.cause.len > 0);
-    try std.testing.expect(InvokeConstants.PrefixesAscii.fix.len > 0);
-    try std.testing.expect(InvokeConstants.PrefixesAscii.security.len > 0);
-
-    // Colors
-    try std.testing.expect(InvokeConstants.Colors.cause.len > 0);
-    try std.testing.expect(InvokeConstants.Colors.fix.len > 0);
-    try std.testing.expect(InvokeConstants.Colors.security.len > 0);
 }
 
 test "syslog constants exist" {
