@@ -146,7 +146,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Persistent Context** | Scoped loggers with persistent fields via `logger.with()` | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/context) |
 | **Advanced Filtering** | Fluent API for complex filter rules | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/filtering) |
 | **Configuration Modes** | Log-only, display-only, and custom display/storage modes | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/configuration) |
-| **Rule-based Templates** | Diagnostic message templates with cause, fix, and documentation links | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/rules) |
+| **Invoke System** | Attach extra messages to logs when conditions match | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/invoke) |
 | **OpenTelemetry** | Full OTEL support with Jaeger, Zipkin, Datadog, GCP, AWS, Azure, and generic collectors | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Distributed Tracing** | W3C Trace Context propagation with span and trace management | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Metrics Export** | Export metrics in OTLP, Prometheus, and JSON formats | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
@@ -210,10 +210,12 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ### Version 0.2.1
 
-This version includes Standard Library modernization, Brotli compression support, internal refactoring, and removal of Diagnostics, Update Checker, Arena Allocator, and TUI.
+This version includes the Invoke system rename, Standard Library modernization, Brotli compression support, internal refactoring, CI workflow, and removal of Diagnostics, Update Checker, Arena Allocator, and TUI.
 
 **Key Changes:**
+* **Rules → Invoke Rename** - The Rules System is now the Invoke system. Attach extra messages to log records when conditions match — level-based, message-content, custom-level, duration, and once-fire triggers. Messages are plain strings, no built-in categories or prefixes.
 * **Brotli Compression** - Added Brotli compression support via the `brotli.zig` binding for excellent text/log compression ratios.
+* **CI Workflow** - Added GitHub Actions CI for automated build, test, and example validation on push to `main` and PRs.
 * **Standard Library Modernization** - Improved reuse of Zig 0.16.0 Standard Library (`std.SemanticVersion`, `std.compress`, etc.).
 * **Internal Refactoring** - Simplified implementations, reduced duplicate code, improved maintainability.
 * **Performance Improvements** - Reduced heap allocations, improved buffer reuse, optimized synchronization.
@@ -221,7 +223,6 @@ This version includes Standard Library modernization, Brotli compression support
 * **Removed Update Checker** - The `UpdateChecker` module is removed. Use external CI/CD tooling for version monitoring.
 * **Removed Arena Allocator** - Callers now pass their own allocator to `Logger.initWithConfig(allocator, config)`.
 * **Removed TUI** - Built-in TUI dashboard formatter removed. TUI-style output can be achieved client-side.
-* **Compression Integration** - Improved Brotli and Zstandard compression integration with the library.
 
 For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -254,7 +255,7 @@ This version includes enterprise-grade security controls, high-performance zero-
 **Metrics, Telemetry & Observability:**
 * **Metrics**: Histograms per log level, P50/P95/P99 latency calculations, StatsD export, and Prometheus text format export.
 * **Telemetry**: Event batching (`batch_size`, `flush_interval_ms`), Honeycomb, Datadog/GCP formats, and OTLP integrations.
-* **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, rules, and crash handling.
+* **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, invoke, and crash handling.
 
 **Concurrency, Threading & Compression:**
 * **Thread Pool**: Task cancellation, thread naming, execution jitter, and graceful draining.

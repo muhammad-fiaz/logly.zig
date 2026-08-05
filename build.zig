@@ -74,7 +74,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "advanced_features", .path = "examples/advanced_features.zig" },
         .{ .name = "custom_theme", .path = "examples/custom_theme.zig" },
         .{ .name = "config_presets", .path = "examples/config_presets.zig" },
-        .{ .name = "rules", .path = "examples/rules.zig" },
+        .{ .name = "invoke", .path = "examples/invoke.zig" },
         .{ .name = "telemetry", .path = "examples/telemetry.zig" },
         .{ .name = "telemetry_metric_names", .path = "examples/telemetry_metric_names.zig" },
         .{ .name = "pipeline_controls", .path = "examples/pipeline_controls.zig" },

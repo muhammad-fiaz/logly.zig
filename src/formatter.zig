@@ -988,11 +988,11 @@ pub const Formatter = struct {
         }
 
         // Render rule messages if present
-        if (record.rule_messages) |messages| {
-            const Rules = @import("rules.zig").Rules;
-            var rules_temp = Rules.init(self.allocator);
-            defer rules_temp.deinit();
-            try rules_temp.formatMessages(messages, writer, use_color);
+        if (record.invoke_messages) |messages| {
+            const Invoke = @import("invoke.zig").Invoke;
+            var invoke_temp = Invoke.init(self.allocator);
+            defer invoke_temp.deinit();
+            try invoke_temp.formatMessages(messages, writer, use_color);
         }
     }
 
@@ -1435,16 +1435,16 @@ pub const Formatter = struct {
             try writer.writeByte('}');
         }
 
-        // Rules
-        if (record.rule_messages) |messages| {
+        // Invoke messages
+        if (record.invoke_messages) |messages| {
             try writer.writeAll(comma);
             try writer.writeAll(indent);
-            try writer.writeAll("\"rules\"");
+            try writer.writeAll("\"invoke\"");
             try writer.writeAll(sep);
-            const Rules = @import("rules.zig").Rules;
-            var rules_temp = Rules.init(self.allocator);
-            defer rules_temp.deinit();
-            try rules_temp.formatMessagesJson(messages, writer, pretty);
+            const Invoke = @import("invoke.zig").Invoke;
+            var invoke_temp = Invoke.init(self.allocator);
+            defer invoke_temp.deinit();
+            try invoke_temp.formatMessagesJson(messages, writer, pretty);
         }
 
         try writer.writeAll(newline);

@@ -16,7 +16,7 @@ export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
 
 // SEO Keywords
 export const KEYWORDS =
-  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, rules engine, metrics, metrics export, prometheus, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, brotli compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
+  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, invoke system, metrics, metrics export, prometheus, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, brotli compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
 
 export default defineConfig({
   lang: "en-US",
@@ -411,7 +411,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Memory-Mapped Sinks", link: "/guide/mmap" },
           { text: "Thread Pool", link: "/guide/thread-pool" },
           { text: "Scheduler", link: "/guide/scheduler" },
-          { text: "Rules System", link: "/guide/rules" },
+          { text: "Invoke System", link: "/guide/invoke" },
           { text: "Compile-Time Settings", link: "/guide/compile-time" },
           { text: "Network Logging", link: "/guide/network-logging" },
         ],
@@ -447,7 +447,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Sink", link: "/api/sink" },
           { text: "Formatter", link: "/api/formatter" },
           { text: "Rotation", link: "/api/rotation" },
-          { text: "Rules", link: "/api/rules" },
+          { text: "Invoke", link: "/api/invoke" },
           { text: "Filter", link: "/api/filter" },
           { text: "Sampler", link: "/api/sampler" },
           { text: "Redactor", link: "/api/redactor" },
@@ -473,7 +473,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Rotation", link: "/examples/rotation" },
           { text: "JSON Logging", link: "/examples/json" },
           { text: "JSON Extended", link: "/examples/json-extended" },
-          { text: "Rules System", link: "/examples/rules" },
+          { text: "Invoke System", link: "/examples/invoke" },
           { text: "Custom Colors", link: "/examples/custom-colors" },
           { text: "Custom Theme", link: "/examples/custom-theme" },
           { text: "Color Control", link: "/examples/color-control" },

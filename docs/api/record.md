@@ -184,7 +184,7 @@ try record.context.put("user_id", .{ .string = "12345" });
 try record.context.put("request_count", .{ .integer = 42 });
 ```
 
-### `rule_messages: ?[]const RuleMessage`
+### `invoke_messages: ?[]const InvokeMessage`
 
 Rule messages attached to this record if any rules matched during evaluation. Default: `null`.
 

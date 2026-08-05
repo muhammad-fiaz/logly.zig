@@ -2041,23 +2041,6 @@ pub const Config = struct {
         pub const archiveTo = withArchive;
     };
 
-    /// Customizable symbols for rule message categories.
-    pub const RuleSymbols = struct {
-        error_analysis: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.error_analysis,
-        solution_suggestion: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.solution_suggestion,
-        performance_hint: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.performance_hint,
-        security_alert: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.security_alert,
-        deprecation_warning: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.deprecation_warning,
-        best_practice: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.best_practice,
-        accessibility: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.accessibility,
-        documentation: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.documentation,
-        action_required: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.action_required,
-        bug_report: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.bug_report,
-        general_information: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.general_information,
-        warning_explanation: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.warning_explanation,
-        default: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.default,
-    };
-
     /// Rules system configuration for compiler-style guided diagnostics.
     pub const RulesConfig = struct {
         /// Master switch for rules system.
@@ -2085,22 +2068,19 @@ pub const Config = struct {
         rule_id_format: []const u8 = "R{d}",
 
         /// Indent string for rule messages.
-        indent: []const u8 = Constants.RulesConstants.default_indent,
+        indent: []const u8 = Constants.InvokeConstants.default_indent,
 
         /// Message prefix character/string (deprecated, use symbols).
-        message_prefix: []const u8 = Constants.RulesConstants.default_prefix,
-
-        /// Custom symbols for message categories.
-        symbols: RuleSymbols = .{},
+        message_prefix: []const u8 = Constants.InvokeConstants.default_prefix,
 
         /// Include rule messages in JSON output.
         include_in_json: bool = true,
 
         /// Maximum number of rules allowed.
-        max_rules: usize = Constants.RulesConstants.default_max_rules,
+        max_rules: usize = Constants.InvokeConstants.default_max_rules,
 
         /// Maximum messages per rule to display.
-        max_messages_per_rule: usize = Constants.RulesConstants.default_max_messages,
+        max_messages_per_rule: usize = Constants.InvokeConstants.default_max_messages,
 
         /// Display rule messages on console (respects global_console_display).
         console_output: bool = true,
@@ -3088,8 +3068,8 @@ test "rules config default values" {
     try std.testing.expect(!rules_config.show_rule_id);
     try std.testing.expect(!rules_config.include_rule_id_prefix);
     try std.testing.expect(rules_config.include_in_json);
-    try std.testing.expectEqual(Constants.RulesConstants.default_max_rules, rules_config.max_rules);
-    try std.testing.expectEqual(Constants.RulesConstants.default_max_messages, rules_config.max_messages_per_rule);
+    try std.testing.expectEqual(Constants.InvokeConstants.default_max_rules, rules_config.max_rules);
+    try std.testing.expectEqual(Constants.InvokeConstants.default_max_messages, rules_config.max_messages_per_rule);
     try std.testing.expect(rules_config.console_output);
     try std.testing.expect(rules_config.file_output);
     try std.testing.expect(!rules_config.verbose);

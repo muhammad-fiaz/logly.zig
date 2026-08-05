@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.1]
 
 ### Added
+- **CI Workflow** – Added `.github/workflows/ci.yml` for automated build, test, and example validation on push to `main` and PRs.
+- **Invoke Examples** – Added `examples/invoke.zig` demonstrating level-based, message-content, custom-level, duration, and once-fire triggers.
+- **Invoke Documentation** – Added `docs/api/invoke.md`, `docs/guide/invoke.md`, and `docs/examples/invoke.md` with comprehensive Invoke system documentation.
 - **Brotli Compression** – Added Brotli compression support via the `brotli.zig` binding for excellent text/log compression ratios (quality levels 0-11).
 - `CompressionAlgorithm.brotli` enum value and `CompressionConfig.brotli()` factory method.
 - `CompressionLevel.toBrotliLevel()` method for mapping compression levels to Brotli-specific levels.
@@ -25,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Append/Overwrite Examples** – Added `examples/append_overwrite.zig` demonstrating all write modes with rotation configurations.
 
 ### Changed
+- **Rules → Invoke Rename** – Renamed the Rules System to "Invoke" across the entire codebase. The Invoke system attaches extra messages to log records when conditions match. Messages are plain strings (`[]const u8`), no built-in categories, prefixes, or colors.
+- **`src/rules.zig` → `src/invoke.zig`** – Replaced the rules module with a simpler Invoke module containing `Invoke`, `Trigger`, `LevelMatch`, `Message`, and `Stats` types.
+- **Record Field Rename** – `rule_messages: ?[]const RuleMessage` → `invoke_messages: ?[]const InvokeMessage` in `Record`.
+- **Logger Field Rename** – `rules: ?*Rules` → `invoke: ?*Invoke` in `Logger`, with `setRules()` → `setInvoke()`.
+- **Constants Rename** – `RulesConstants` → `InvokeConstants` in `constants.zig`.
+- **Documentation Update** – All docs pages, sidebar config, and sitemap updated to reference Invoke instead of Rules.
 - **Standard Library Modernization** – Improved reuse of Zig 0.16.0 Standard Library across all modules.
 - **`std.math.clamp`** – Replaced custom `Utils.clamp()` with `std.math.clamp` across `utils.zig`, `sampler.zig`, `telemetry.zig`, `config.zig`, `compression.zig`.
 - **`std.fmt.bytesToHex`** – Replaced manual hex encoding in `generateTraceId()` and `generateSpanId()` with `std.fmt.bytesToHex`.

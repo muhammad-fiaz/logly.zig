@@ -12,7 +12,7 @@
 //! - Time Constants: Time-related conversion factors
 //! - Rotation Constants: File rotation defaults
 //! - Network Constants: Network I/O settings
-//! - Rules System: Diagnostic rules formatting
+//! - Invoke System: Extra messages formatting
 
 const std = @import("std");
 
@@ -501,77 +501,6 @@ pub const MetricsConstants = struct {
     };
 };
 
-/// Message category constants for diagnostic rules.
-///
-/// Usage:
-///   Use these constants for consistent message category display names
-///   and prefixes in the diagnostic rules system.
-///
-/// Complexity: O(1)
-pub const MessageCategoryConstants = struct {
-    /// Display names for message categories.
-    pub const DisplayNames = struct {
-        pub const error_analysis: []const u8 = "Error Analysis";
-        pub const solution_suggestion: []const u8 = "Solution";
-        pub const best_practice: []const u8 = "Best Practice";
-        pub const action_required: []const u8 = "Action Required";
-        pub const documentation_link: []const u8 = "Documentation";
-        pub const bug_report: []const u8 = "Report Issue";
-        pub const general_information: []const u8 = "Information";
-        pub const warning_explanation: []const u8 = "Warning Details";
-        pub const performance_tip: []const u8 = "Performance";
-        pub const security_notice: []const u8 = "Security";
-        pub const custom: []const u8 = "Note";
-    };
-
-    /// Unicode prefixes for message categories.
-    pub const Prefixes = struct {
-        pub const error_analysis: []const u8 = "    » 🔍 [cause]";
-        pub const solution_suggestion: []const u8 = "    » 💡 [fix]";
-        pub const best_practice: []const u8 = "    » ✨ [suggest]";
-        pub const action_required: []const u8 = "    » ⚡ [action]";
-        pub const documentation_link: []const u8 = "    » 📚 [docs]";
-        pub const bug_report: []const u8 = "    » 🐛 [report]";
-        pub const general_information: []const u8 = "    » 📝 [note]";
-        pub const warning_explanation: []const u8 = "    » ⚠️  [caution]";
-        pub const performance_tip: []const u8 = "    » 🚀 [perf]";
-        pub const security_notice: []const u8 = "    » 🔒 [security]";
-        pub const custom: []const u8 = "    » 🔹 [custom]";
-    };
-
-    /// ASCII-only prefixes for non-UTF8 terminals.
-    pub const PrefixesAscii = struct {
-        pub const error_analysis: []const u8 = "    >> [cause]";
-        pub const solution_suggestion: []const u8 = "    >> [fix]";
-        pub const best_practice: []const u8 = "    >> [suggest]";
-        pub const action_required: []const u8 = "    >> [action]";
-        pub const documentation_link: []const u8 = "    >> [docs]";
-        pub const bug_report: []const u8 = "    >> [report]";
-        pub const general_information: []const u8 = "    >> [note]";
-        pub const warning_explanation: []const u8 = "    >> [caution]";
-        pub const performance_tip: []const u8 = "    >> [perf]";
-        pub const security_notice: []const u8 = "    >> [security]";
-        pub const custom: []const u8 = "    >> [custom]";
-    };
-
-    /// Short symbols for rule configuration.
-    pub const RuleSymbols = struct {
-        pub const error_analysis: []const u8 = ">> [ERROR]";
-        pub const solution_suggestion: []const u8 = ">> [FIX]";
-        pub const performance_hint: []const u8 = ">> [PERF]";
-        pub const security_alert: []const u8 = ">> [SEC]";
-        pub const deprecation_warning: []const u8 = ">> [DEP]";
-        pub const best_practice: []const u8 = ">> [HINT]";
-        pub const accessibility: []const u8 = ">> [A11Y]";
-        pub const documentation: []const u8 = ">> [DOC]";
-        pub const action_required: []const u8 = ">> [ACTION]";
-        pub const bug_report: []const u8 = ">> [BUG]";
-        pub const general_information: []const u8 = ">> [INFO]";
-        pub const warning_explanation: []const u8 = ">> [WARN]";
-        pub const default: []const u8 = ">>";
-    };
-};
-
 /// File rotation constants.
 ///
 /// Usage:
@@ -873,13 +802,13 @@ pub const NetworkConstants = struct {
     pub const send_timeout_ms: u64 = 1000;
 };
 
-/// Rules system constants for diagnostic message formatting.
+/// Invoke system constants for extra message formatting.
 ///
 /// Usage:
-///   Definitions for formatting rule-based diagnostics (prefixes, colors).
+///   Definitions for formatting invoke-based diagnostics (prefixes, colors).
 ///
 /// Complexity: O(1)
-pub const RulesConstants = struct {
+pub const InvokeConstants = struct {
     /// Default indentation for rule messages.
     pub const default_indent: []const u8 = "    ";
     /// Default prefix character for rule messages.
@@ -1291,34 +1220,34 @@ test "network constants are reasonable" {
 
 test "rules constants exist" {
     // Default values
-    try std.testing.expect(RulesConstants.default_indent.len > 0);
-    try std.testing.expect(RulesConstants.default_prefix.len > 0);
-    try std.testing.expect(RulesConstants.default_prefix_ascii.len > 0);
-    try std.testing.expect(RulesConstants.default_max_rules > 0);
-    try std.testing.expect(RulesConstants.default_max_messages > 0);
+    try std.testing.expect(InvokeConstants.default_indent.len > 0);
+    try std.testing.expect(InvokeConstants.default_prefix.len > 0);
+    try std.testing.expect(InvokeConstants.default_prefix_ascii.len > 0);
+    try std.testing.expect(InvokeConstants.default_max_rules > 0);
+    try std.testing.expect(InvokeConstants.default_max_messages > 0);
 
     // Unicode prefixes
-    try std.testing.expect(RulesConstants.Prefixes.cause.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.fix.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.suggest.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.action.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.docs.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.report.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.note.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.caution.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.perf.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.security.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.custom.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.cause.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.fix.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.suggest.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.action.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.docs.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.report.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.note.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.caution.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.perf.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.security.len > 0);
+    try std.testing.expect(InvokeConstants.Prefixes.custom.len > 0);
 
     // ASCII prefixes
-    try std.testing.expect(RulesConstants.PrefixesAscii.cause.len > 0);
-    try std.testing.expect(RulesConstants.PrefixesAscii.fix.len > 0);
-    try std.testing.expect(RulesConstants.PrefixesAscii.security.len > 0);
+    try std.testing.expect(InvokeConstants.PrefixesAscii.cause.len > 0);
+    try std.testing.expect(InvokeConstants.PrefixesAscii.fix.len > 0);
+    try std.testing.expect(InvokeConstants.PrefixesAscii.security.len > 0);
 
     // Colors
-    try std.testing.expect(RulesConstants.Colors.cause.len > 0);
-    try std.testing.expect(RulesConstants.Colors.fix.len > 0);
-    try std.testing.expect(RulesConstants.Colors.security.len > 0);
+    try std.testing.expect(InvokeConstants.Colors.cause.len > 0);
+    try std.testing.expect(InvokeConstants.Colors.fix.len > 0);
+    try std.testing.expect(InvokeConstants.Colors.security.len > 0);
 }
 
 test "syslog constants exist" {

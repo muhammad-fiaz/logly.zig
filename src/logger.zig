@@ -33,7 +33,7 @@ const ThreadPool = @import("thread_pool.zig").ThreadPool;
 const AsyncLogger = @import("async.zig").AsyncLogger;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
-const Rules = @import("rules.zig").Rules;
+const Invoke = @import("invoke.zig").Invoke;
 
 /// The core Logger struct responsible for managing sinks, configuration, and log dispatch.
 pub const Logger = struct {
@@ -199,8 +199,8 @@ pub const Logger = struct {
     thread_pool: ?*ThreadPool = null,
     /// Async logger for high-performance buffered logging.
     async_logger: ?*AsyncLogger = null,
-    /// Rules engine for diagnostic messages.
-    rules: ?*Rules = null,
+    /// Invoke engine for extra diagnostic messages.
+    invoke: ?*Invoke = null,
 
     /// Initialization timestamp for uptime tracking.
     init_timestamp: i64 = 0,
@@ -410,10 +410,10 @@ pub const Logger = struct {
         self.redactor = redactor;
     }
 
-    pub fn setRules(self: *Logger, rules: *Rules) void {
+    pub fn setInvoke(self: *Logger, invoke: *Invoke) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.rules = rules;
+        self.invoke = invoke;
     }
 
     /// Enables metrics collection.
@@ -1186,10 +1186,10 @@ pub const Logger = struct {
             }
         }
 
-        // Evaluate rules if configured
-        if (self.config.rules.enabled and self.rules != null) {
-            if (self.rules.?.evaluate(&record)) |messages| {
-                record.rule_messages = messages;
+        // Evaluate invoke triggers if configured
+        if (self.config.rules.enabled and self.invoke != null) {
+            if (self.invoke.?.evaluate(&record)) |messages| {
+                record.invoke_messages = messages;
             }
         }
 
@@ -1362,10 +1362,10 @@ pub const Logger = struct {
             m.recordLog(level, message.len);
         }
 
-        // Evaluate rules if configured
-        if (self.config.rules.enabled and self.rules != null) {
-            if (self.rules.?.evaluate(&record)) |messages| {
-                record.rule_messages = messages;
+        // Evaluate invoke triggers if configured
+        if (self.config.rules.enabled and self.invoke != null) {
+            if (self.invoke.?.evaluate(&record)) |messages| {
+                record.invoke_messages = messages;
             }
         }
 
@@ -1583,10 +1583,10 @@ pub const Logger = struct {
             }
         }
 
-        // Evaluate rules if configured
-        if (self.config.rules.enabled and self.rules != null) {
-            if (self.rules.?.evaluate(&record)) |messages| {
-                record.rule_messages = messages;
+        // Evaluate invoke triggers if configured
+        if (self.config.rules.enabled and self.invoke != null) {
+            if (self.invoke.?.evaluate(&record)) |messages| {
+                record.invoke_messages = messages;
             }
         }
 
