@@ -228,51 +228,6 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-### Version 0.2.0
-
-This version includes enterprise-grade security controls, high-performance zero-copy memory-mapped logging, crash resilience, robust background processing, advanced observability, and dynamic configurability.
-
-**Enterprise Security & Extreme Performance:**
-* **Tamper-Evident Logs (Cryptographic Chaining)**: Secure your logs using SHA-256 cryptographic chaining. Each log entry is cryptographically linked to the previous one, rendering any manual edits immediately obvious.
-* **Memory-Mapped (mmap) Sinks**: True zero-copy disk writes with microsecond latencies via portable RAM-to-disk mapping on Linux, macOS, and Windows.
-* **TCP Syslog**: Connection-oriented, reliable remote Syslog delivery (RFC 6587) for stable log aggregation.
-* **Global Panic Hook**: Intercept runtime crashes, produce synchronous stack dumps direct to all active sinks, and safely bypass async locks to avoid deadlocks.
-* **Dynamic Reloading**: Runtime JSON configuration reloading (`Logger.reloadFromFile`) to adapt levels, sinks, rules, and formatting on-the-fly.
-* **Dot-Notation Path Filtering**: Filter log records based on deep nested properties (e.g. `user.id` or `network.ip`) within the context metadata.
-* **Binary Serialization (MessagePack)**: Native support for compact binary MessagePack logging to minimize storage footprint and network overhead.
-* **ANSI Terminal Dev Dashboard**: Real-time interactive CLI dashboard format featuring styled borders, status badges, and structured tables.
-
-**Advanced Filtering, Formatting & Redaction:**
-* **Filters**: Time-window quiet hours, rate-limiting rules (token bucket), glob matching (`*`, `?`), composite AND/OR chains, and batch processing.
-* **Formatters**: NDJSON, Logfmt (for Grafana Loki), CEF (Common Event Format for SIEM), and fully customizable Template-based alignment.
-* **Redaction**: Built-in Regex, Email, IPv4/IPv6, JWT, and Credit Card (Luhn validation) redaction patterns with GDPR/PCI presets and Compliance Audit Logs.
-
-**Robust Sink & Async Management:**
-* **Sinks**: Sink Groups (atomic fan-out), in-memory ring buffers, per-sink rate limiting, health checks, and buffered write modes.
-* **Async Engine**: Backpressure signals (queue utilization), priority queues (Critical/Fatal bypass), shutdown grace periods, and `drainAndFlush()` handling.
-* **Rotation & Archiving**: Hourly rotation, total maximum size bounds, and multi-file `.tar.gz` archiving capability.
-
-**Metrics, Telemetry & Observability:**
-* **Metrics**: Histograms per log level, P50/P95/P99 latency calculations, StatsD export, and Prometheus text format export.
-* **Telemetry**: Event batching (`batch_size`, `flush_interval_ms`), Honeycomb, Datadog/GCP formats, and OTLP integrations.
-* **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, invoke, and crash handling.
-
-**Concurrency, Threading & Compression:**
-* **Thread Pool**: Task cancellation, thread naming, execution jitter, and graceful draining.
-* **Scheduler**: Task retries with exponential backoff, global pause/resume, and task dependencies.
-* **Compression**: Zstd Dictionary support for highly repetitive logs, and asynchronous compression offloading.
-* **Sampling**: Token bucket burst sampling, granular `LevelMask` overrides, and temporary level bypassing.
-
-**Internal Improvements:**
-* Standardized constants and config defaults across all core modules.
-* Moved shared formatting, escaping, and time utilities into `src/utils.zig`.
-* Removed hardcoded values in favor of centralized `Constants.*` usage.
-* Unified common utility operations such as atomic loads, JSON escaping, size parsing, throughput calculations, duration formatting, and traceparent parsing.
-
-For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
-
----
-
 ## Installation
 
 
