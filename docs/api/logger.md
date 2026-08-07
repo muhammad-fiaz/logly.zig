@@ -765,15 +765,13 @@ try logger.custom("audit", "User login detected", @src());
 
 ## Formatted Logging
 
-> **Note**: The main logging methods (`info`, `debug`, etc.) now directly support format strings and arguments. The `f` suffix variants are maintained for backward compatibility.
-
-All logging methods accept a format string and arguments in the same call:
+For formatted messages, use the `f`-suffix methods:
 
 ```zig
-// Recommended: Use main method with format string
-try logger.info("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src());
-try logger.warn("Request took {d}ms", .{elapsed_ms}, @src());
-try logger.crit("Failed after {d} retries: {s}", .{ retry_count, error_msg }, @src());
+// Use infof, debugf, etc. for formatted messages
+try logger.infof("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src());
+try logger.warningf("Request took {d}ms", .{elapsed_ms}, @src());
+try logger.critf("Failed after {d} retries: {s}", .{ retry_count, error_msg }, @src());
 ```
 
 ### Legacy Format Methods (f-suffix)
@@ -819,7 +817,7 @@ config.show_filename = true;
 config.show_lineno = true;
 logger.configure(config);
 
-try logger.info(@src(), "This message has source location", .{});
+try logger.info("This message has source location", @src());
 // Output: [2024-01-15 10:30:45] [INFO] myfile.zig:42:0: This message has source location
 ```
 
@@ -831,9 +829,9 @@ The format `file:line:column:` is compatible with most terminals and IDEs, allow
 
 Logs an error with automatic error name resolution.
 
-### `logTimed(level: Level, message: []const u8, start_time: i128) !i128`
+### `logTimed(level: Level, message: []const u8, start_time: i128, src: ?std.builtin.SourceLocation) !i128`
 
-Logs a message with elapsed time calculation.
+Logs a message with elapsed time calculation and optional source location.
 
 ### `getRecordCount() u64`
 

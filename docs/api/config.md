@@ -58,10 +58,6 @@ Enable MessagePack binary formatting for extremely compact log serialization. De
 
 Enable cryptographic log chaining where each record includes the SHA-256 hash signature of the preceding record to prevent log tampering. Default: `false`.
 
-#### `mmap: bool`
-
-Enable memory-mapped file sinks utilizing virtual RAM mappings to bypass file system call overhead for microsecond disk writes. Default: `false`.
-
 #### `logs_root_path: ?[]const u8`
 
 Optional global root path for all log files. If set, file sinks will be stored relative to this path. Default: `null`.
@@ -622,14 +618,33 @@ Sampling configuration for high-throughput scenarios.
 ```zig
 pub const SamplingConfig = struct {
     enabled: bool = false,
-    rate: f64 = 1.0,
-    strategy: SamplingStrategy = .probability,
+    strategy: Strategy = .{ .probability = 1.0 },
+    bypass_levels: ?LevelMask = null,
 
-    pub const SamplingStrategy = enum {
-        probability,
-        rate_limit,
-        adaptive,
-        every_n,
+    pub const Strategy = union(enum) {
+        none: void,
+        probability: f64,
+        rate_limit: SamplingRateLimitConfig,
+        every_n: u32,
+        adaptive: AdaptiveConfig,
+        token_bucket: TokenBucketConfig,
+    };
+
+    pub const SamplingRateLimitConfig = struct {
+        max_records: u32,
+        window_ms: u64,
+    };
+
+    pub const AdaptiveConfig = struct {
+        target_rate: u32,
+        min_sample_rate: f64,
+        max_sample_rate: f64,
+        adjustment_interval_ms: u64,
+    };
+
+    pub const TokenBucketConfig = struct {
+        burst_capacity: u32,
+        refill_rate_per_sec: u32,
     };
 };
 ```
@@ -661,6 +676,27 @@ pub const RedactionConfig = struct {
     fields: ?[]const []const u8 = null,
     patterns: ?[]const []const u8 = null,
     replacement: []const u8 = "[REDACTED]",
+    default_type: RedactionType = .full,
+    enable_regex: bool = false,
+    hash_algorithm: HashAlgorithm = .sha256,
+    partial_start_chars: u8 = 2,
+    partial_end_chars: u8 = 2,
+    mask_char: u8 = '*',
+    truncate_length: usize = 10,
+    truncate_suffix: []const u8 = "...",
+    case_insensitive: bool = true,
+    audit_redactions: bool = false,
+    compliance_preset: ?CompliancePreset = null,
+
+    pub const RedactionType = enum { full, partial_start, partial_end, hash, mask_middle, truncate };
+    pub const HashAlgorithm = enum { sha256, sha512, md5 };
+    pub const CompliancePreset = enum { pci_dss, hipaa, gdpr, sox, custom };
+
+    pub fn default() RedactionConfig;
+    pub fn pciDss() RedactionConfig;
+    pub fn hipaa() RedactionConfig;
+    pub fn gdpr() RedactionConfig;
+    pub fn strict() RedactionConfig;
 };
 ```
 

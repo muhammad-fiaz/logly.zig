@@ -1338,10 +1338,11 @@ pub const Logger = struct {
     ///     level: The log level.
     ///     message: The log message.
     ///     start_time: The start timestamp from Utils.currentNanos().
+    ///     src: Source location for file:line display.
     ///
     /// Returns:
     ///     The duration in nanoseconds.
-    pub fn logTimed(self: *Logger, level: Level, message: []const u8, start_time: i128) !i128 {
+    pub fn logTimed(self: *Logger, level: Level, message: []const u8, start_time: i128, src: ?std.builtin.SourceLocation) !i128 {
         const end_time = Utils.currentNanos();
         const duration = end_time - start_time;
 
@@ -1354,6 +1355,19 @@ pub const Logger = struct {
         defer record.deinit();
 
         record.duration_ns = @intCast(@max(0, duration));
+
+        if (src) |s| {
+            if (self.config.show_filename) {
+                record.filename = s.file;
+            }
+            if (self.config.show_lineno) {
+                record.line = s.line;
+                record.column = s.column;
+            }
+            if (self.config.show_function) {
+                record.function = s.fn_name;
+            }
+        }
 
         if (self.trace_id) |t| record.trace_id = t;
         if (self.span_id) |s| record.span_id = s;
@@ -1414,7 +1428,6 @@ pub const Logger = struct {
         return Utils.currentSeconds() - self.init_timestamp;
     }
 
-    // Logging methods with simple, Python-like API
     // Pass @src() from your call site to enable clickable file:line in terminal
     // Example: try logger.info("message", @src());
     pub fn trace(self: *Logger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
@@ -1786,11 +1799,12 @@ pub const SpanContext = struct {
     ///
     /// Arguments:
     ///     message: Optional message to log with span completion.
-    pub fn end(self: *SpanContext, message: ?[]const u8) !void {
+    ///     src: Source location for file:line display.
+    pub fn end(self: *SpanContext, message: ?[]const u8, src: ?std.builtin.SourceLocation) !void {
         const duration = Utils.currentNanos() - self.start_time;
 
         if (message) |msg| {
-            _ = try self.logger.logTimed(.debug, msg, self.start_time);
+            _ = try self.logger.logTimed(.debug, msg, self.start_time, src);
         }
 
         self.logger.mutex.lockUncancelable(Utils.io());
@@ -2021,33 +2035,33 @@ pub const ContextLogger = struct {
     pub const record = log;
 
     /// Logs a trace message with context.
-    pub fn trace(self: *ContextLogger, message: []const u8) !void {
-        try self.log(.trace, message, null);
+    pub fn trace(self: *ContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.trace, message, src);
     }
 
     /// Logs a debug message with context.
-    pub fn debug(self: *ContextLogger, message: []const u8) !void {
-        try self.log(.debug, message, null);
+    pub fn debug(self: *ContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.debug, message, src);
     }
 
     /// Logs an info message with context.
-    pub fn info(self: *ContextLogger, message: []const u8) !void {
-        try self.log(.info, message, null);
+    pub fn info(self: *ContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.info, message, src);
     }
 
     /// Logs a warning message with context.
-    pub fn warn(self: *ContextLogger, message: []const u8) !void {
-        try self.log(.warning, message, null);
+    pub fn warn(self: *ContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.warning, message, src);
     }
 
     /// Logs an error message with context.
-    pub fn err(self: *ContextLogger, message: []const u8) !void {
-        try self.log(.err, message, null);
+    pub fn err(self: *ContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.err, message, src);
     }
 
     /// Logs a critical message with context.
-    pub fn critical(self: *ContextLogger, message: []const u8) !void {
-        try self.log(.critical, message, null);
+    pub fn critical(self: *ContextLogger, message: []const u8, src: ?std.builtin.SourceLocation) !void {
+        try self.log(.critical, message, src);
     }
 };
 

@@ -60,7 +60,7 @@ pub fn main() !void {
         try logger.info("Querying users table", @src());
         try logger.debug("SELECT * FROM users", @src());
 
-        try span.end(null);
+        try span.end(null, @src());
     }
 
     logger.clearTraceContext();
