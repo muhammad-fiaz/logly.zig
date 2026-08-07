@@ -7,9 +7,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Disable update checker for this example
-    logly.UpdateChecker.setEnabled(false);
-
     // Initialize logger
     var logger = try logly.Logger.init(allocator);
     defer logger.deinit();

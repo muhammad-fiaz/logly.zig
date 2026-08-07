@@ -277,7 +277,7 @@ pub const Sampler = struct {
 
     fn clampRate(input_rate: f64) f64 {
         if (std.math.isNan(input_rate)) return 0.0;
-        return Utils.clamp(f64, input_rate, 0.0, 1.0);
+        return std.math.clamp(input_rate, 0.0, 1.0);
     }
 
     fn evaluateSampleDecisionLocked(

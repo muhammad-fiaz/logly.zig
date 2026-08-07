@@ -50,7 +50,7 @@ A production-grade, high-performance structured logging library for Zig, designe
   - [Method 3: Building from Source](#method-3-building-from-source)
   - [Prebuilt Library](#prebuilt-library)
 - [Quick Start](#quick-start)
-- [Allocator Strategies (GPA + Arena)](#allocator-strategies-gpa--arena)
+- [Allocator Usage](#allocator-usage)
 - [Usage Examples](#usage-examples)
   - [File Logging](#file-logging)
   - [File Rotation](#file-rotation)
@@ -109,12 +109,12 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Custom Formats** | Customizable log message and timestamp formats | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/formatting) |
 | **Network Logging** | Send logs over TCP/UDP with JSON support and automatic reconnection | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/network-logging) |
 | **Stack Traces** | Automatic stack trace capture for errors and critical logs | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/stack-traces) |
-| **Compression** | Built-in support for GZIP, ZLIB, DEFLATE, and ZSTD compression | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/compression) |
+| **Compression** | Built-in support for GZIP, ZLIB, DEFLATE, ZSTD, and Brotli compression | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/compression) |
 | **Metrics** | Track logger performance, throughput, and error rates | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/metrics) |
-| **System Diagnostics** | Emit OS/CPU/memory (and drives) on startup or on-demand | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/diagnostics) |
+
 | **Scoped Logging** | Create child loggers with bound context that persists across calls | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/context) |
 | **Redaction** | Automatically mask sensitive data like passwords and API keys | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/redaction) |
-| **Update Checker** | Automatically check for new versions of Logly | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/update-checker) |
+
 | **Context Binding** | Attach persistent key-value pairs to logs | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/context) |
 | **Async I/O** | Non-blocking writes with configurable buffering | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/async) |
 | **Thread-Safe** | Safe concurrent logging from multiple threads | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/introduction) |
@@ -129,7 +129,6 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Cross-Platform Colors** | Works on Linux, macOS, Windows 10+, and popular terminals | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/colors) |
 | **Filtering** | Rule-based log filtering by level, module, or content | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/filtering) |
 | **Per-Sink Filtering** | Configure filters on each sink in addition to global logger filters | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/sinks) |
-| **Arena Allocation** | Optional arena allocator for reduced allocation overhead in high-throughput scenarios | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/arena-allocation) |
 | **Source Location** | Optional clickable `file:line` output via `@src()` when `show_filename`/`show_lineno` are enabled | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/source-location) |
 | **Method Aliases** | Convenience aliases for common APIs e.g., `add()` / `remove()` for sink management, `warn()` / `crit()` for logging | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/introduction) |
 | **Sampling** | Control log throughput with probability and rate-limiting | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/sampling) |
@@ -140,14 +139,14 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Async Logger** | Ring buffer-based async logging with background workers | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/async) |
 | **Thread Pool** | Parallel log processing with work stealing | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/thread-pool) |
 | **Scheduler** | Automatic log cleanup, compression, and maintenance | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/scheduler) |
-| **System Diagnostics** | Automatic OS, CPU, memory, and drive information collection | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/diagnostics) |
+
 | **Network Logging** | Send logs via TCP/UDP with JSON support and compression | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/network-logging) |
 | **Custom Themes** | Define custom color themes for log levels | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/colors) |
 | **Advanced Redaction** | Custom patterns and callbacks for sensitive data | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/redaction) |
 | **Persistent Context** | Scoped loggers with persistent fields via `logger.with()` | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/context) |
 | **Advanced Filtering** | Fluent API for complex filter rules | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/filtering) |
 | **Configuration Modes** | Log-only, display-only, and custom display/storage modes | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/configuration) |
-| **Rule-based Templates** | Diagnostic message templates with cause, fix, and documentation links | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/rules) |
+| **Invoke System** | Attach extra messages to logs when conditions match | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/invoke) |
 | **OpenTelemetry** | Full OTEL support with Jaeger, Zipkin, Datadog, GCP, AWS, Azure, and generic collectors | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Distributed Tracing** | W3C Trace Context propagation with span and trace management | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Metrics Export** | Export metrics in OTLP, Prometheus, and JSON formats | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
@@ -209,6 +208,26 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ## Recent Changes
 
+### Version 0.2.1
+
+This version includes the Invoke system rename, Standard Library modernization, Brotli compression support, internal refactoring, CI workflow, and removal of Diagnostics, Update Checker, Arena Allocator, and TUI.
+
+**Key Changes:**
+* **Rules → Invoke Rename** - The Rules System is now the Invoke system. Attach extra messages to log records when conditions match — level-based, message-content, custom-level, duration, and once-fire triggers. Messages are plain strings, no built-in categories or prefixes.
+* **Brotli Compression** - Added Brotli compression support via the `brotli.zig` binding for excellent text/log compression ratios.
+* **CI Workflow** - Added GitHub Actions CI for automated build, test, and example validation on push to `main` and PRs.
+* **Standard Library Modernization** - Improved reuse of Zig 0.16.0 Standard Library (`std.SemanticVersion`, `std.compress`, etc.).
+* **Internal Refactoring** - Simplified implementations, reduced duplicate code, improved maintainability.
+* **Performance Improvements** - Reduced heap allocations, improved buffer reuse, optimized synchronization.
+* **Removed Diagnostics** - The `Diagnostics` module is removed. Use `std.process.getEnvMap()` or platform-specific APIs directly.
+* **Removed Update Checker** - The `UpdateChecker` module is removed. Use external CI/CD tooling for version monitoring.
+* **Removed Arena Allocator** - Callers now pass their own allocator to `Logger.initWithConfig(allocator, config)`.
+* **Removed TUI** - Built-in TUI dashboard formatter removed. TUI-style output can be achieved client-side.
+
+For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ### Version 0.2.0
 
 This version includes enterprise-grade security controls, high-performance zero-copy memory-mapped logging, crash resilience, robust background processing, advanced observability, and dynamic configurability.
@@ -233,11 +252,10 @@ This version includes enterprise-grade security controls, high-performance zero-
 * **Async Engine**: Backpressure signals (queue utilization), priority queues (Critical/Fatal bypass), shutdown grace periods, and `drainAndFlush()` handling.
 * **Rotation & Archiving**: Hourly rotation, total maximum size bounds, and multi-file `.tar.gz` archiving capability.
 
-**Metrics, Telemetry & Diagnostics:**
+**Metrics, Telemetry & Observability:**
 * **Metrics**: Histograms per log level, P50/P95/P99 latency calculations, StatsD export, and Prometheus text format export.
-* **Diagnostics**: JSON diagnostics export, lightweight snapshots, and memory-based `HealthReport` assessments.
 * **Telemetry**: Event batching (`batch_size`, `flush_interval_ms`), Honeycomb, Datadog/GCP formats, and OTLP integrations.
-* **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, rules, crash handling, and update checks.
+* **Callbacks**: Logger lifecycle hooks plus subsystem callbacks for sinks, async, filtering, sampling, redaction, formatting, rotation, compression, metrics, thread pool, scheduler, invoke, and crash handling.
 
 **Concurrency, Threading & Compression:**
 * **Thread Pool**: Task cancellation, thread naming, execution jitter, and graceful draining.
@@ -262,10 +280,10 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 The easiest way to add Logly to your project:
 
-**For Zig 0.16.0+ (use `0.1.8` or newer):**
+**For Zig 0.16.0+ (use `0.2.1` or newer):**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
 ```
 
 **For Zig 0.15.0 (use `0.1.7` or earlier):**
@@ -288,12 +306,12 @@ This automatically adds the dependency with the correct hash to your `build.zig.
 
 Add to your `build.zig.zon`:
 
-**For Zig 0.16.0+ (use `0.1.8` or newer):**
+**For Zig 0.16.0+ (use `0.2.1` or newer):**
 
 ```zig
 .dependencies = .{
     .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz",
         .hash = "...", // you needed to add hash here :)
     },
 },
@@ -412,58 +430,19 @@ pub fn main() !void {
 > [!NOTE]
 > To enable auto-flush globally, set `config.auto_flush = true` or call `logger.enableAutoFlush()`. Auto-flush trades throughput for immediate output.
 
-## Allocator Strategies (GPA + Arena)
+## Allocator Usage
 
-Logly works with any `std.mem.Allocator` implementation.
-
-Default behavior:
-
-- Logger allocation strategy is the allocator you pass to `Logger.init(...)` / `Logger.initWithConfig(...)`.
-- `Config.use_arena_allocator` defaults to `false`.
-- The recommended default in applications is `std.heap.DebugAllocator`.
-
-Use `DebugAllocator` as a production-safe default with leak tracking:
+Logly works with any `std.mem.Allocator` implementation. Pass your own allocator directly — no built-in arena allocation:
 
 ```zig
 var gpa = std.heap.DebugAllocator(.{}){};
 defer _ = gpa.deinit();
 
-const logger = try logly.Logger.init(gpa.allocator());
+const logger = try logly.Logger.initWithConfig(gpa.allocator(), logly.Config.default());
 defer logger.deinit();
 ```
 
-For high-throughput workloads with lots of temporary formatting allocations, enable arena-backed scratch allocation:
-
-```zig
-var config = logly.Config.production();
-config.use_arena_allocator = true;
-config.arena_reset_threshold = 128 * 1024; // reset scratch arena after ~128KB of temporary allocations
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
-defer logger.deinit();
-```
-
-Equivalent builder-style configuration:
-
-```zig
-var config = logly.Config.production().withArenaAllocator();
-config.arena_reset_threshold = 128 * 1024; // reset scratch arena after ~128KB of temporary allocations
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
-defer logger.deinit();
-
-// Optional manual reset hook for long-running loops
-logger.resetArena();
-```
-
-Field-vs-builder difference:
-
-- `config.use_arena_allocator = true` mutates your existing config variable.
-- `config = config.withArenaAllocator()` (or `withArenaAllocation()` / `withArena()`) returns a modified copy and requires reassignment.
-
-All examples in the `examples/` directory use `std.heap.DebugAllocator` as the base allocator and then optionally enable logger arena scratch allocation per config.
-
-When arena allocation is enabled, Logly automatically performs threshold-based arena resets between records to keep memory usage bounded while preserving high throughput.
+The recommended default in applications is `std.heap.DebugAllocator`. For high-throughput workloads, callers can wrap their allocator with a custom arena and pass it to `Logger.initWithConfig(allocator, config)`.
 
 ## Usage Examples
 
@@ -732,9 +711,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Disable update checker for production
-    logly.UpdateChecker.setEnabled(false);
-
     // Configure Jaeger backend
     var config = logly.TelemetryConfig.jaeger();
     config.service_name = "my-service";
@@ -980,24 +956,17 @@ defer logger.deinit();
 try logger.reloadFromFile("config.json");
 ```
 
-### MessagePack Binary & Terminal UI Formats
+### MessagePack Binary Format
 
-Utilize ultra-compact compliance MessagePack binary format to minimize network/disk footprint, or output to interactive TUI dev cards with status badges and structured tables.
+Utilize ultra-compact compliance MessagePack binary format to minimize network/disk footprint.
 
 ```zig
-// 1. MessagePack binary logging
+// MessagePack binary logging
 var msgpack_config = logly.Config.default();
 msgpack_config.msgpack = true;
 
 const msgpack_logger = try logly.Logger.initWithConfig(allocator, msgpack_config);
 defer msgpack_logger.deinit();
-
-// 2. Styled Developer Terminal UI layout
-var tui_config = logly.Config.default();
-tui_config.tui = true;
-
-const tui_logger = try logly.Logger.initWithConfig(allocator, tui_config);
-defer tui_logger.deinit();
 ```
 
 ### Production Configuration
@@ -1118,43 +1087,6 @@ var config = logly.Config.default()
     .withScheduler();
 ```
 
-### Disabling the Update Checker
-
-> [!NOTE]
-> Logly's built-in update checker runs asynchronously in a parallel thread, achieving **zero impact** on logging performance or startup latency.
-
-If you are running in restricted network environments, CI/CD pipelines, or production servers, you can disable the update checker programmatically using either of these two methods:
-
-#### Option 1: Global Disabling (Recommended for entire application)
-Call `setEnabled(false)` on the `UpdateChecker` module before initializing any loggers:
-```zig
-const logly = @import("logly");
-
-pub fn main() !void {
-    // Disable the update checker globally
-    logly.UpdateChecker.setEnabled(false);
-    
-    // Initialize loggers normally
-    var logger = try logly.Logger.init(allocator, logly.Config.default());
-    defer logger.deinit();
-}
-```
-
-#### Option 2: Configuration-Level Disabling
-Disable version checking on a per-config basis:
-```zig
-var config = logly.Config.default();
-config.check_for_updates = false;
-
-var logger = try logly.Logger.init(allocator, config);
-defer logger.deinit();
-```
-
-For technical reference and customized checker endpoints, see:
-- Core implementation: [update_checker.zig](file:///c:/Users/smuha/Downloads/logly.zig/src/update_checker.zig)
-- API Reference: [update-checker.md (API)](file:///c:/Users/smuha/Downloads/logly.zig/docs/api/update-checker.md)
-- User Guide: [update-checker.md (Guide)](file:///c:/Users/smuha/Downloads/logly.zig/docs/guide/update-checker.md)
-
 ## Log Levels
 
 | Level    | Priority | Method              | Alias          | Use Case                |
@@ -1269,8 +1201,6 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 |-----------|----------------------------|------------------------------------|-------|
 | Standard allocator (GPA) | 55,929 | 17,880 | Default allocation |
 | Standard allocator (formatted) | 32,885 | 30,409 | GPA with formatting |
-| Arena allocator | 92,368 | 10,826 | Reduced alloc overhead |
-| Arena allocator (formatted) | 34,596 | 28,905 | Arena with formatting |
 | Page allocator | 69,599 | 14,368 | System page allocator |
 
 </details>
@@ -1312,15 +1242,6 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 </details>
 
 <details>
-<summary><strong>System Diagnostics</strong></summary>
-
-| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| System Diagnostics (basic) | 24,566 | 40,706 | OS/CPU/Mem info |
-
-</details>
-
-<details>
 <summary><strong>Multi-Threading</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
@@ -1333,7 +1254,7 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 | 4 threads JSON | 37,412 | 26,730 | Parallel JSON logging |
 | 4 threads colored | 54,558 | 18,329 | Parallel colored logging |
 | 4 threads formatted | 51,787 | 19,310 | Parallel formatted logging |
-| 4 threads arena allocator | 51,039 | 19,593 | Parallel with arena alloc |
+
 
 </details>
 
@@ -1419,6 +1340,7 @@ zig build example-custom_levels_full
 zig build example-dynamic_path
 zig build example-customizations
 zig build example-sink_write_modes
+zig build example-append_overwrite
 
 # Enterprise feature examples
 zig build example-filtering
@@ -1428,7 +1350,7 @@ zig build example-metrics
 zig build example-tracing
 zig build example-color_options
 zig build example-production_config
-zig build example-diagnostics
+zig build example-production_config
 
 # Advanced feature examples
 zig build example-compression
@@ -1437,9 +1359,7 @@ zig build example-scheduler
 zig build example-async_logging
 zig build example-async_advanced
 zig build example-compression_demo
-zig build example-scheduler_demo
-zig build example-thread_pool_arena
-zig build example-allocator_strategies
+
 
 # Run an example
 ./zig-out/bin/basic

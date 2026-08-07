@@ -40,17 +40,15 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Distributed Tracing | ✅ Automatic (Trace/Span/Correlation IDs) + Callbacks | ⚠ Context only | ❌ | ❌ |
 | OpenTelemetry (v0.1.4+) | ✅ Full OTLP/Jaeger/Zipkin/Datadog/AWS/Azure | ❌ | ❌ | ❌ |
 | Metrics | ✅ Automatic | ❌ | ⚠ Prometheus | ❌ |
-| System Diagnostics | ✅ Automatic | ❌ | ❌ | ❌ |
 | Filtering | ✅ Automatic | ❌ | ❌ | ✅ Manual |
 | Scheduled Cleaning | ✅ Automatic | ❌ | ❌ | ❌ |
 | Dynamic Path | ✅ Automatic | ❌ | ❌ | ❌ |
 | Module-level Config | ✅ | ❌ | ❌ | ✅ Manual |
 | Custom Log Levels | ✅ | ❌ | ❌ | ❌ |
-| Rules System (v0.1.0+) | ✅ Template-triggered messages | ❌ | ❌ | ❌ |
+| Invoke System (v0.1.0+) | ✅ Extra messages on match | ❌ | ❌ | ❌ |
 | Bare-Metal Support | ✅ | ❌ | ❌ | ✅ |
 | Prebuilt Libraries | ✅ | ❌ | ❌ | ✅ |
 | Documentation Site | ✅ | ❌ | ❌ | ✅ |
-| Auto-Update Checker | ✅ | ❌ | ❌ | ❌ |
 | CI/CodeQL | ✅ | ⚠ | ❌ | ✅ |
 | License | MIT | MIT | MIT | MIT |
 
@@ -74,13 +72,12 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Redaction | ✅ Automatic | ❌ Manual | PII masking built-in |
 | Metrics | ✅ Automatic | ❌ Manual | Built-in counters and stats |
 | Distributed Tracing | ✅ Automatic | ❌ Manual | Trace/span/correlation IDs |
-| Rules System | ✅ Automatic triggers | ❌ | Template-based diagnostic messages |
+| Invoke System | ✅ Automatic triggers | ❌ | Extra messages attached on match |
 
-::: info Automatic vs Manual
-- **Automatic**: Feature works out-of-the-box with configuration
-- **Manual**: Feature requires custom implementation by the developer
-- std.log provides raw performance but requires manual implementation for most features
-:::
+> [!NOTE]
+> - **Automatic**: Feature works out-of-the-box with configuration
+> - **Manual**: Feature requires custom implementation by the developer
+> - std.log provides raw performance but requires manual implementation for most features
 
 ## Performance Comparison
 
@@ -101,27 +98,26 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Max observed throughput (ops/sec) | **36.48M** | ~0.18M | ~0.12M |N/A (based on implementation) |
 | Avg baseline latency (ns) | **~939** | ~25,000 | ~8,500 |N/A (based on implementation) |
 
-::: warning Performance Note
-- **std.log** has the lowest raw latency (~5,000 ns) because it's minimal and outputs to stderr only
-- **logly.zig** trades slightly higher latency for automatic features (colors, JSON, rotation, etc.)
-- All metrics vary based on system, OS, Zig version, hardware, and build configuration
-- N/A means the feature is not available or requires manual implementation
-:::
+> [!WARNING]
+> - **std.log** has the lowest raw latency (~5,000 ns) because it's minimal and outputs to stderr only
+> - **logly.zig** trades slightly higher latency for automatic features (colors, JSON, rotation, etc.)
+> - All metrics vary based on system, OS, Zig version, hardware, and build configuration
+> - N/A means the feature is not available or requires manual implementation
 
-## Rules System (v0.1.0+)
+## Invoke System (v0.1.0+)
 
-Logly.zig includes a unique **Rules System** that provides compiler-style guided diagnostics:
+Logly.zig includes a unique **Invoke System** that attaches extra messages to log records when conditions match:
 
 ```zig
-// Define a rule that triggers on error logs containing "Database"
-try rules.add(.{
+// Define a trigger that fires on error logs containing "Database"
+try invoke.add(.{
     .id = 1,
     .level_match = .{ .exact = .err },
     .message_contains = "Database",
-    .messages = &[_]logly.Rules.RuleMessage{
-        .cause("Connection pool exhausted"),
-        .fix("Increase max_connections in config"),
-        .docs("DB Guide", "https://docs.example.com/db"),
+    .messages = &[_]logly.Invoke.Message{
+        ">> [ERROR] Connection pool exhausted",
+        ">> [FIX] Increase max_connections in config",
+        ">> [DOC] DB Guide: https://docs.example.com/db",
     },
 });
 
@@ -130,9 +126,9 @@ try logger.err("Database connection timeout", @src());
 
 // Output:
 // [ERROR] Database connection timeout
-//     >> [ERROR] Connection pool exhausted
-//     >> [FIX] Increase max_connections in config
-//     >> [DOC] DB Guide (https://docs.example.com/db)
+// >> [ERROR] Connection pool exhausted
+// >> [FIX] Increase max_connections in config
+// >> [DOC] DB Guide: https://docs.example.com/db
 ```
 
 This feature is **not available** in std.log, nexlog, or log.zig.
@@ -154,7 +150,7 @@ This feature is **not available** in std.log, nexlog, or log.zig.
 2. **Automatic Everything**: Features work out-of-the-box vs manual implementation
 3. **High Performance**: Optimized async logging with up to 36M ops/sec throughput
 4. **Enterprise Ready**: Built-in redaction, metrics, distributed tracing
-5. **Rules System**: Template-triggered diagnostic messages (unique feature)
+5. **Invoke System**: Extra messages attached on match (unique feature)
 6. **Developer Friendly**: Intuitive API with extensive documentation
 7. **Production Tested**: Compression, rotation, and retention policies
 8. **Cross-Platform**: Works on Linux, macOS, Windows, and bare-metal
@@ -178,9 +174,8 @@ Logly.zig supports multiple compression and archive algorithms for log archival 
 | **zip** | 3-5x | ~190 MB/s | ~290 MB/s | `.zip` | Cross-platform archives |
 | **lz4** | 1-2x | ~600 MB/s | ~1000 MB/s | `.lz4` | Real-time, ultra-fast compression |
 
-::: tip Recommendation
-Use **zstd** (v0.1.5+) for best performance and a great general-purpose tradeoff. For long-term archival prefer **LZMA / XZ** (higher ratio); for ultra-low-latency real-time logging prefer **LZ4** (fastest). Choose based on the speed vs ratio trade-off for your workload.
-:::
+> [!TIP]
+> Use **zstd** (v0.1.5+) for best performance and a great general-purpose tradeoff. For long-term archival prefer **LZMA / XZ** (higher ratio); for ultra-low-latency real-time logging prefer **LZ4** (fastest). Choose based on the speed vs ratio trade-off for your workload.
 
 ## OpenTelemetry Comparison (v0.1.4+)
 
@@ -249,4 +244,4 @@ try logger.err("Error occurred: {}", .{error_code}, @src());
 - [Getting Started](/guide/getting-started)
 - [Installation](/guide/installation)
 - [Configuration](/guide/configuration)
-- [Rules System](/guide/rules)
+- [Invoke System](/guide/invoke)

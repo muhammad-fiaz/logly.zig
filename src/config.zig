@@ -41,13 +41,6 @@ pub const Config = struct {
     color: bool = true,
 
     /// Check for updates on startup.
-    check_for_updates: bool = true,
-
-    /// Emit system diagnostics on startup (OS, CPU, memory, drives).
-    emit_system_diagnostics_on_init: bool = false,
-    /// Include per-drive storage information when emitting diagnostics.
-    include_drive_diagnostics: bool = true,
-
     /// Output format settings.
     json: bool = false,
     pretty_json: bool = false,
@@ -58,7 +51,6 @@ pub const Config = struct {
     align_fields: bool = false,
     tamper_evident: bool = false,
     msgpack: bool = false,
-    tui: bool = false,
 
     /// Custom format string for log messages.
     /// Available placeholders: {time}, {level}, {message}, {module}, {function}, {file}, {line},
@@ -227,23 +219,11 @@ pub const Config = struct {
     /// OpenTelemetry telemetry configuration.
     telemetry: TelemetryConfig = .{},
 
-    /// Use arena allocator for internal temporary allocations.
-    /// Improves performance by batching allocations and reducing malloc overhead.
-    use_arena_allocator: bool = false,
-
-    /// Arena reset threshold in bytes. When arena reaches this size, it resets.
-    arena_reset_threshold: usize = Constants.ConfigDefaults.arena_reset_threshold,
-
     /// Optional global root path for all log files.
     /// If set, file sinks will be stored relative to this path.
     /// The directory will be auto-created if it doesn't exist.
     /// If the path cannot be created, a warning is emitted but logging continues.
     logs_root_path: ?[]const u8 = null,
-
-    /// Optional custom path for diagnostics logs.
-    /// If set, system diagnostics will be stored at this path.
-    /// If null, diagnostics will use logs_root_path or default behavior.
-    diagnostics_output_path: ?[]const u8 = null,
 
     /// Custom format structure configuration.
     format_structure: FormatStructureConfig = .{},
@@ -838,8 +818,6 @@ pub const Config = struct {
         stack_size: usize = Constants.ThreadDefaults.stack_size,
         /// Enable work stealing between threads.
         work_stealing: bool = true,
-        /// Enable per-worker arena allocator for temporary allocations.
-        enable_arena: bool = false,
         /// Thread naming prefix.
         thread_name_prefix: []const u8 = Constants.ThreadDefaults.thread_name_prefix,
         /// Keep alive time for idle threads (milliseconds).
@@ -909,19 +887,10 @@ pub const Config = struct {
             return cfg;
         }
 
-        /// Returns a copy with per-worker arenas enabled or disabled.
-        pub fn withArena(self: ThreadPoolConfig, enabled: bool) ThreadPoolConfig {
-            var cfg = self;
-            cfg.enable_arena = enabled;
-            return cfg;
-        }
-
         /// Alias for `withThreadCount`.
         pub const threads = withThreadCount;
         /// Alias for `withQueueSize`.
         pub const queue = withQueueSize;
-        /// Alias for `withArena`.
-        pub const arena = ThreadPoolConfig.withArena;
     };
 
     /// Parallel sink writing configuration.
@@ -1252,6 +1221,10 @@ pub const Config = struct {
         /// Use this for fine-grained control over zstd compression levels.
         /// v0.1.5+
         custom_zstd_level: ?i32 = null,
+        /// Custom Brotli level (0-11). If set, overrides the level enum for Brotli.
+        /// Use this for fine-grained control over Brotli compression levels.
+        /// v0.2.1+
+        custom_brotli_level: ?i32 = null,
         /// Compress on rotation.
         on_rotation: bool = true,
         /// Keep original file after compression.
@@ -1322,6 +1295,11 @@ pub const Config = struct {
             zip,
             /// LZ4 - Extremely fast compression/decompression
             lz4,
+            /// Brotli - Google's compression algorithm, excellent for text/log data
+            /// Provides very good compression ratios, especially for UTF-8 text.
+            /// Supports quality levels 0-11 (default 6, best 11).
+            /// v0.2.1+
+            brotli,
         };
 
         pub const CompressionLevel = enum {
@@ -1364,6 +1342,25 @@ pub const Config = struct {
                     .fast => 3, // Fast compression, good ratio
                     .default => 6, // Balanced (zstd default is 3, we use 6 for better ratio)
                     .best => 19, // High compression (below ultra threshold)
+                };
+            }
+
+            /// Converts the enum to its corresponding Brotli compression integer level (0-11).
+            /// Brotli supports levels 0-11, with higher levels providing better compression
+            /// at the cost of speed. Level 0 is fastest, 11 is best compression.
+            ///
+            /// Returns:
+            /// - i32 integer representation for Brotli (0-11).
+            ///
+            /// Complexity: O(1)
+            /// v0.2.1+
+            pub fn toBrotliLevel(self: CompressionLevel) i32 {
+                return switch (self) {
+                    .none => 0,
+                    .fastest => 1, // Fastest brotli compression
+                    .fast => 4, // Fast compression
+                    .default => 6, // Balanced (Brotli default is 6)
+                    .best => 11, // Maximum compression
                 };
             }
         };
@@ -1727,7 +1724,7 @@ pub const Config = struct {
         /// v0.1.5+
         pub fn zstdWithLevel(custom_level: i32) CompressionConfig {
             // Clamp to valid zstd range (1-22)
-            const clamped_level = @max(1, @min(22, custom_level));
+            const clamped_level = std.math.clamp(custom_level, 1, 22);
             return .{
                 .enabled = true,
                 .level = .default,
@@ -1809,6 +1806,33 @@ pub const Config = struct {
                 .algorithm = .lz4,
                 .extension = Constants.CompressionConstants.ArchivingExtensions.lz4,
             };
+        }
+
+        /// Returns a Brotli compression config.
+        /// Brotli provides excellent compression ratios, especially for UTF-8 text.
+        /// Supports quality levels 0-11 (default 6, best 11).
+        /// v0.2.1+
+        pub fn brotli() CompressionConfig {
+            return .{
+                .enabled = true,
+                .algorithm = .brotli,
+                .extension = Constants.CompressionConstants.ArchivingExtensions.brotli,
+            };
+        }
+
+        /// Returns the effective Brotli compression level.
+        /// If custom_brotli_level is set, uses that; otherwise maps from level enum.
+        ///
+        /// Returns:
+        ///     - i32 Brotli compression level (0-11).
+        ///
+        /// Complexity: O(1)
+        /// v0.2.1+
+        pub fn getEffectiveBrotliLevel(self: *const CompressionConfig) i32 {
+            if (self.custom_brotli_level) |custom| {
+                return custom;
+            }
+            return self.level.toBrotliLevel();
         }
 
         /// Returns the effective zstd compression level.
@@ -2017,126 +2041,70 @@ pub const Config = struct {
         pub const archiveTo = withArchive;
     };
 
-    /// Customizable symbols for rule message categories.
-    pub const RuleSymbols = struct {
-        error_analysis: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.error_analysis,
-        solution_suggestion: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.solution_suggestion,
-        performance_hint: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.performance_hint,
-        security_alert: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.security_alert,
-        deprecation_warning: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.deprecation_warning,
-        best_practice: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.best_practice,
-        accessibility: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.accessibility,
-        documentation: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.documentation,
-        action_required: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.action_required,
-        bug_report: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.bug_report,
-        general_information: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.general_information,
-        warning_explanation: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.warning_explanation,
-        default: []const u8 = Constants.MessageCategoryConstants.RuleSymbols.default,
-    };
-
-    /// Rules system configuration for compiler-style guided diagnostics.
+    /// Invoke system configuration. Controls extra message display on log records.
     pub const RulesConfig = struct {
-        /// Master switch for rules system.
+        /// Master switch for invoke system.
         enabled: bool = false,
 
-        /// Enable/disable client-defined rules.
+        /// Enable/disable client-defined triggers.
         client_rules_enabled: bool = true,
 
-        /// Enable/disable built-in rules (reserved for future use).
+        /// Enable/disable built-in triggers (reserved for future use).
         builtin_rules_enabled: bool = true,
 
-        /// Use Unicode symbols in output (set to false for ASCII-only terminals).
-        use_unicode: bool = true,
-
-        /// Enable ANSI colors in rule message output.
+        /// Enable ANSI colors in invoke message output.
         enable_colors: bool = true,
 
-        /// Show rule IDs in output (useful for debugging).
-        show_rule_id: bool = false,
+        /// Indent string for invoke messages.
+        indent: []const u8 = "    ",
 
-        /// Include rule ID prefix like "R0001:" in output.
-        include_rule_id_prefix: bool = false,
-
-        /// Custom rule ID format string.
-        rule_id_format: []const u8 = "R{d}",
-
-        /// Indent string for rule messages.
-        indent: []const u8 = Constants.RulesConstants.default_indent,
-
-        /// Message prefix character/string (deprecated, use symbols).
-        message_prefix: []const u8 = Constants.RulesConstants.default_prefix,
-
-        /// Custom symbols for message categories.
-        symbols: RuleSymbols = .{},
-
-        /// Include rule messages in JSON output.
+        /// Include invoke messages in JSON output.
         include_in_json: bool = true,
 
-        /// Maximum number of rules allowed.
-        max_rules: usize = Constants.RulesConstants.default_max_rules,
+        /// Maximum number of triggers allowed.
+        max_rules: usize = Constants.InvokeConstants.default_max_rules,
 
-        /// Maximum messages per rule to display.
-        max_messages_per_rule: usize = Constants.RulesConstants.default_max_messages,
+        /// Maximum messages per trigger to display.
+        max_messages_per_rule: usize = Constants.InvokeConstants.default_max_messages,
 
-        /// Display rule messages on console (respects global_console_display).
+        /// Display invoke messages on console (respects global_console_display).
         console_output: bool = true,
 
-        /// Write rule messages to file sinks (respects global_file_storage).
+        /// Write invoke messages to file sinks (respects global_file_storage).
         file_output: bool = true,
 
-        /// Enable verbose mode with full context.
-        verbose: bool = false,
-
-        /// Sort messages by severity.
-        sort_by_severity: bool = false,
-
         /// Preset configurations for various environments.
-        /// Returns minimal rule configuration.
-        /// Enables rules with basic settings.
+        /// Returns minimal configuration with basic settings.
         ///
         /// Complexity: O(1)
         pub fn minimal() RulesConfig {
-            return .{ .enabled = true, .use_unicode = true, .enable_colors = true };
+            return .{ .enabled = true, .enable_colors = true };
         }
 
-        /// Returns production rule configuration.
-        /// No colors, no verbose output, minimal overhead.
+        /// Returns production configuration.
+        /// No colors, minimal overhead.
         ///
         /// Complexity: O(1)
         pub fn production() RulesConfig {
             return .{
                 .enabled = true,
-                .use_unicode = false,
                 .enable_colors = false,
-                .show_rule_id = false,
-                .verbose = false,
             };
         }
 
-        /// Returns development rule configuration.
-        /// Full debugging info, colors, Unicode support, and verbose output.
+        /// Returns development configuration.
+        /// Colors enabled for full debugging.
         ///
         /// Complexity: O(1)
         pub fn development() RulesConfig {
             return .{
                 .enabled = true,
-                .use_unicode = true,
                 .enable_colors = true,
-                .show_rule_id = true,
-                .verbose = true,
             };
         }
 
-        /// Returns ASCII-only rule configuration.
-        /// Useful for legacy terminals or environments without Unicode support.
-        ///
-        /// Complexity: O(1)
-        pub fn ascii() RulesConfig {
-            return .{ .enabled = true, .use_unicode = false, .enable_colors = true };
-        }
-
-        /// Returns disabled rule configuration.
-        /// Zero overhead as rules system is bypassed.
+        /// Returns disabled configuration.
+        /// Zero overhead as invoke system is bypassed.
         ///
         /// Complexity: O(1)
         pub fn disabled() RulesConfig {
@@ -2184,8 +2152,6 @@ pub const Config = struct {
         overflow_policy: OverflowPolicy = .drop_oldest,
         /// Auto-start worker thread.
         background_worker: bool = true,
-        /// Use arena allocator for batch processing (reduces malloc overhead).
-        use_arena: bool = false,
         /// Queue utilization ratio that records a backpressure event.
         backpressure_threshold: f64 = Constants.AsyncConstants.backpressure_threshold_ratio,
         /// Default timeout for explicit drain waits.
@@ -2433,7 +2399,6 @@ pub const Config = struct {
         if (other.cef) result.cef = true;
         if (other.align_fields) result.align_fields = true;
         if (other.msgpack) result.msgpack = true;
-        if (other.tui) result.tui = true;
         if (other.include_trace_id) result.include_trace_id = true;
         if (other.include_pid) result.include_pid = true;
         if (other.include_hostname) result.include_hostname = true;
@@ -2736,6 +2701,21 @@ pub const Config = struct {
         return self.withCompression(CompressionConfig.lz4());
     }
 
+    /// Returns a configuration with brotli compression enabled.
+    ///
+    /// Builder pattern method to enable brotli compression.
+    ///
+    /// Arguments:
+    ///   - `self`: Current configuration.
+    ///
+    /// Return Value:
+    ///   - Modified `Config` with brotli compression enabled.
+    ///
+    /// Complexity: O(1)
+    pub fn withBrotliCompression(self: Config) Config {
+        return self.withCompression(CompressionConfig.brotli());
+    }
+
     /// Returns a configuration with thread pool enabled.
     ///
     /// Builder pattern method to enable thread pool support.
@@ -2771,30 +2751,6 @@ pub const Config = struct {
         result.scheduler.enabled = true;
         return result;
     }
-
-    /// Returns a configuration with arena allocator hint enabled.
-    ///
-    /// Optimization helper. When enabled, the logger may use an arena allocator
-    /// for request-scoped or temporary allocations to improve performance.
-    ///
-    /// Arguments:
-    ///   - None
-    ///
-    /// Return Value:
-    ///   - Modified `Config` with `use_arena_allocator` set to true.
-    ///
-    /// Complexity: O(1)
-    pub fn withArenaAllocation(self: Config) Config {
-        var result = self;
-        result.use_arena_allocator = true;
-        return result;
-    }
-
-    /// Alias for withArenaAllocation.
-    pub const withArenaAllocator = withArenaAllocation;
-
-    /// Short alias for withArenaAllocation.
-    pub const withArena = withArenaAllocation;
 
     /// Returns a configuration for log-only mode (no console display, only file storage).
     ///
@@ -2872,7 +2828,17 @@ pub const Config = struct {
         const j = parsed.value;
 
         if (j.level) |lvl| {
-            config.level = if (std.mem.eql(u8, lvl, "trace") or std.mem.eql(u8, lvl, "TRACE")) .trace else if (std.mem.eql(u8, lvl, "debug") or std.mem.eql(u8, lvl, "DEBUG")) .debug else if (std.mem.eql(u8, lvl, "info") or std.mem.eql(u8, lvl, "INFO")) .info else if (std.mem.eql(u8, lvl, "notice") or std.mem.eql(u8, lvl, "NOTICE")) .notice else if (std.mem.eql(u8, lvl, "success") or std.mem.eql(u8, lvl, "SUCCESS")) .success else if (std.mem.eql(u8, lvl, "warning") or std.mem.eql(u8, lvl, "WARNING") or std.mem.eql(u8, lvl, "warn") or std.mem.eql(u8, lvl, "WARN")) .warning else if (std.mem.eql(u8, lvl, "err") or std.mem.eql(u8, lvl, "ERR") or std.mem.eql(u8, lvl, "error") or std.mem.eql(u8, lvl, "ERROR")) .err else if (std.mem.eql(u8, lvl, "fail") or std.mem.eql(u8, lvl, "FAIL")) .fail else if (std.mem.eql(u8, lvl, "critical") or std.mem.eql(u8, lvl, "CRITICAL") or std.mem.eql(u8, lvl, "crit") or std.mem.eql(u8, lvl, "CRIT")) .critical else if (std.mem.eql(u8, lvl, "fatal") or std.mem.eql(u8, lvl, "FATAL")) .fatal else Level.fromString(lvl) orelse .info;
+            config.level = if (std.ascii.eqlIgnoreCase(lvl, "trace") or std.ascii.eqlIgnoreCase(lvl, "trc")) .trace
+                else if (std.ascii.eqlIgnoreCase(lvl, "debug") or std.ascii.eqlIgnoreCase(lvl, "dbg")) .debug
+                else if (std.ascii.eqlIgnoreCase(lvl, "info")) .info
+                else if (std.ascii.eqlIgnoreCase(lvl, "notice") or std.ascii.eqlIgnoreCase(lvl, "note")) .notice
+                else if (std.ascii.eqlIgnoreCase(lvl, "success") or std.ascii.eqlIgnoreCase(lvl, "ok")) .success
+                else if (std.ascii.eqlIgnoreCase(lvl, "warning") or std.ascii.eqlIgnoreCase(lvl, "warn")) .warning
+                else if (std.ascii.eqlIgnoreCase(lvl, "err") or std.ascii.eqlIgnoreCase(lvl, "error")) .err
+                else if (std.ascii.eqlIgnoreCase(lvl, "fail")) .fail
+                else if (std.ascii.eqlIgnoreCase(lvl, "critical") or std.ascii.eqlIgnoreCase(lvl, "crit")) .critical
+                else if (std.ascii.eqlIgnoreCase(lvl, "fatal") or std.ascii.eqlIgnoreCase(lvl, "panic")) .fatal
+                else Level.fromString(lvl) orelse .info;
         }
         if (j.color) |val| config.color = val;
         if (j.json) |val| config.json = val;
@@ -3005,19 +2971,6 @@ test "config with display storage" {
     try std.testing.expect(both.global_file_storage);
 }
 
-test "config arena allocation aliases" {
-    const base = Config.default();
-
-    const arena_via_primary = base.withArenaAllocation();
-    try std.testing.expect(arena_via_primary.use_arena_allocator);
-
-    const arena_via_alias = base.withArenaAllocator();
-    try std.testing.expect(arena_via_alias.use_arena_allocator);
-
-    const arena_via_short_alias = base.withArena();
-    try std.testing.expect(arena_via_short_alias.use_arena_allocator);
-}
-
 test "config pipeline builders enable related features" {
     const cfg = Config.default()
         .withHighThroughputPipeline()
@@ -3063,11 +3016,10 @@ test "config async metrics and threadpool helper aliases" {
     try std.testing.expect(!metrics_cfg.export_level_breakdown);
     try std.testing.expect(metrics_cfg.export_sink_breakdown);
 
-    const pool_cfg = Config.ThreadPoolConfig.ioBound().threads(4).queue(256).arena(true);
+    const pool_cfg = Config.ThreadPoolConfig.ioBound().threads(4).queue(256);
     try std.testing.expect(pool_cfg.enabled);
     try std.testing.expectEqual(@as(usize, 4), pool_cfg.thread_count);
     try std.testing.expectEqual(@as(usize, 256), pool_cfg.queue_size);
-    try std.testing.expect(pool_cfg.enable_arena);
 }
 
 test "rules config default values" {
@@ -3075,45 +3027,28 @@ test "rules config default values" {
     try std.testing.expect(!rules_config.enabled);
     try std.testing.expect(rules_config.client_rules_enabled);
     try std.testing.expect(rules_config.builtin_rules_enabled);
-    try std.testing.expect(rules_config.use_unicode);
     try std.testing.expect(rules_config.enable_colors);
-    try std.testing.expect(!rules_config.show_rule_id);
-    try std.testing.expect(!rules_config.include_rule_id_prefix);
     try std.testing.expect(rules_config.include_in_json);
-    try std.testing.expectEqual(Constants.RulesConstants.default_max_rules, rules_config.max_rules);
-    try std.testing.expectEqual(Constants.RulesConstants.default_max_messages, rules_config.max_messages_per_rule);
+    try std.testing.expectEqual(Constants.InvokeConstants.default_max_rules, rules_config.max_rules);
+    try std.testing.expectEqual(Constants.InvokeConstants.default_max_messages, rules_config.max_messages_per_rule);
     try std.testing.expect(rules_config.console_output);
     try std.testing.expect(rules_config.file_output);
-    try std.testing.expect(!rules_config.verbose);
-    try std.testing.expect(!rules_config.sort_by_severity);
 }
 
 test "rules config presets" {
     // Development preset
     const dev = Config.RulesConfig.development();
     try std.testing.expect(dev.enabled);
-    try std.testing.expect(dev.use_unicode);
     try std.testing.expect(dev.enable_colors);
-    try std.testing.expect(dev.show_rule_id);
-    try std.testing.expect(dev.verbose);
 
     // Production preset
     const prod = Config.RulesConfig.production();
     try std.testing.expect(prod.enabled);
-    try std.testing.expect(!prod.use_unicode);
     try std.testing.expect(!prod.enable_colors);
-    try std.testing.expect(!prod.show_rule_id);
-    try std.testing.expect(!prod.verbose);
-
-    // ASCII preset
-    const ascii = Config.RulesConfig.ascii();
-    try std.testing.expect(ascii.enabled);
-    try std.testing.expect(!ascii.use_unicode);
-    try std.testing.expect(ascii.enable_colors);
 
     // Disabled preset
-    const disabled = Config.RulesConfig.disabled();
-    try std.testing.expect(!disabled.enabled);
+    const dis = Config.RulesConfig.disabled();
+    try std.testing.expect(!dis.enabled);
 
     // Silent preset
     const silent = Config.RulesConfig.silent();
@@ -3139,8 +3074,7 @@ test "config with rules" {
     config.rules = Config.RulesConfig.development();
 
     try std.testing.expect(config.rules.enabled);
-    try std.testing.expect(config.rules.verbose);
-    try std.testing.expect(config.rules.show_rule_id);
+    try std.testing.expect(config.rules.enable_colors);
 }
 
 test "config global switches affect rules" {

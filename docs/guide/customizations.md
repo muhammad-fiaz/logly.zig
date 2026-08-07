@@ -197,53 +197,6 @@ pub const AlertSeverity = enum {
 };
 ```
 
-## Diagnostics Custom Path
-
-Store system diagnostics in a separate file from regular logs.
-
-### Configuration
-
-```zig
-var config = logly.Config.default();
-config.diagnostics_output_path = "./logs/diagnostics.log";
-config.logs_root_path = "./logs";
-config.emit_system_diagnostics_on_init = true;
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
-```
-
-### Behavior
-
-- Diagnostics are emitted at logger initialization if configured
-- Structured context fields (`diag.os`, `diag.cpu`, etc.) are available for custom formatting
-- Use the standard `logSystemDiagnostics()` method to emit on demand
-
-### Available Diagnostics Fields
-
-When using custom log formats, these fields are available:
-
-- `{diag.os}` - Operating system name (windows, linux, macos)
-- `{diag.arch}` - Architecture (x86_64, aarch64, etc.)
-- `{diag.cpu}` - CPU model name
-- `{diag.cores}` - Number of logical cores
-- `{diag.ram_total_mb}` - Total RAM in megabytes
-- `{diag.ram_avail_mb}` - Available RAM in megabytes
-
-### Example with Custom Format
-
-```zig
-var config = logly.Config.default();
-config.log_format = "[{level}] {message} | CPU={diag.cpu} ({diag.cores} cores)";
-config.emit_system_diagnostics_on_init = true;
-
-const logger = try logly.Logger.initWithConfig(allocator, config);
-try logger.logSystemDiagnostics(@src());
-
-// Output:
-// [INFO] [DIAGNOSTICS] os=windows arch=x86_64 cpu=rocketlake cores=16 ... | 
-//   CPU=rocketlake (16 cores)
-```
-
 ## Complete Example
 
 Here's a comprehensive example combining all customization features:
@@ -283,9 +236,6 @@ pub fn main() !void {
         .log_matches = true,
     };
 
-    // Diagnostics
-    config.emit_system_diagnostics_on_init = true;
-
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
@@ -297,9 +247,6 @@ pub fn main() !void {
     try logger.info("Application started", @src());
     try logger.warning("Resource usage high", @src());
     try logger.err("Connection failed", @src());
-
-    // Emit diagnostics
-    try logger.logSystemDiagnostics(@src());
 }
 ```
 

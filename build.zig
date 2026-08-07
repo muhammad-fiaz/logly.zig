@@ -11,11 +11,19 @@ pub fn build(b: *std.Build) void {
     });
     const zstd_mod = zstd_dep.module("zstd");
 
-    // Create the logly module with zstd support
+    // Resolve brotli dependency
+    const brotli_dep = b.dependency("brotli", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const brotli_mod = brotli_dep.module("brotli");
+
+    // Create the logly module with zstd and brotli support
     const logly_module = b.createModule(.{
         .root_source_file = b.path("src/logly.zig"),
     });
     logly_module.addImport("zstd", zstd_mod);
+    logly_module.addImport("brotli", brotli_mod);
 
     // Expose the module for external projects that depend on this package.
     // This allows users to do: `const logly = @import("logly");` in their code
@@ -24,6 +32,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/logly.zig"),
     });
     exposed_module.addImport("zstd", zstd_mod);
+    exposed_module.addImport("brotli", brotli_mod);
 
     const examples = [_]struct { name: []const u8, path: []const u8, skip_run_all: bool = false }{
         .{ .name = "basic", .path = "examples/basic.zig" },
@@ -35,7 +44,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "custom_colors", .path = "examples/custom_colors.zig" },
         .{ .name = "async_logging", .path = "examples/async_logging.zig" },
         .{ .name = "advanced_config", .path = "examples/advanced_config.zig" },
-        .{ .name = "allocator_strategies", .path = "examples/allocator_strategies.zig" },
+
         .{ .name = "module_levels", .path = "examples/module_levels.zig" },
         .{ .name = "sink_formats", .path = "examples/sink_formats.zig" },
         .{ .name = "formatted_logging", .path = "examples/formatted_logging.zig" },
@@ -47,7 +56,6 @@ pub fn build(b: *std.Build) void {
         .{ .name = "metrics", .path = "examples/metrics.zig" },
         .{ .name = "tracing", .path = "examples/tracing.zig" },
         .{ .name = "production_config", .path = "examples/production_config.zig" },
-        .{ .name = "diagnostics", .path = "examples/diagnostics.zig" },
         .{ .name = "color_options", .path = "examples/color_options.zig" },
         .{ .name = "custom_levels_full", .path = "examples/custom_levels_full.zig" },
         .{ .name = "compression", .path = "examples/compression.zig" },
@@ -56,18 +64,17 @@ pub fn build(b: *std.Build) void {
         .{ .name = "scheduler", .path = "examples/scheduler.zig" },
         .{ .name = "async_advanced", .path = "examples/async_advanced.zig" },
         .{ .name = "compression_demo", .path = "examples/compression_demo.zig" },
-        .{ .name = "scheduler_demo", .path = "examples/scheduler_demo.zig" },
-        .{ .name = "thread_pool_arena", .path = "examples/thread_pool_arena.zig" },
+
         .{ .name = "dynamic_path", .path = "examples/dynamic_path.zig" },
         .{ .name = "distributed_json", .path = "examples/distributed_json.zig" },
         .{ .name = "customizations", .path = "examples/customizations.zig" },
         .{ .name = "sink_write_modes", .path = "examples/sink_write_modes.zig" },
+        .{ .name = "append_overwrite", .path = "examples/append_overwrite.zig" },
         .{ .name = "network_logging", .path = "examples/network_logging.zig", .skip_run_all = true },
-        .{ .name = "version_checker", .path = "examples/update_check.zig", .skip_run_all = true },
         .{ .name = "advanced_features", .path = "examples/advanced_features.zig" },
         .{ .name = "custom_theme", .path = "examples/custom_theme.zig" },
         .{ .name = "config_presets", .path = "examples/config_presets.zig" },
-        .{ .name = "rules", .path = "examples/rules.zig" },
+        .{ .name = "invoke", .path = "examples/invoke.zig" },
         .{ .name = "telemetry", .path = "examples/telemetry.zig" },
         .{ .name = "telemetry_metric_names", .path = "examples/telemetry_metric_names.zig" },
         .{ .name = "pipeline_controls", .path = "examples/pipeline_controls.zig" },
@@ -81,7 +88,6 @@ pub fn build(b: *std.Build) void {
         .{ .name = "hot_reload", .path = "examples/hot_reload.zig" },
         .{ .name = "mmap_sink", .path = "examples/mmap_sink.zig" },
         .{ .name = "context_filter", .path = "examples/context_filter.zig" },
-        .{ .name = "msgpack_tui", .path = "examples/msgpack_tui.zig" },
     };
 
     // Create run-all-examples step that runs all examples sequentially
@@ -141,6 +147,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tests.root_module.addImport("zstd", zstd_mod);
+    tests.root_module.addImport("brotli", brotli_mod);
 
     if (target.result.os.tag == .windows) {
         tests.root_module.linkSystemLibrary("ws2_32", .{});
@@ -169,6 +176,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     bench_exe.root_module.addImport("logly", logly_module);
+    bench_exe.root_module.addImport("brotli", brotli_mod);
 
     if (target.result.os.tag == .windows) {
         bench_exe.root_module.linkSystemLibrary("ws2_32", .{});
@@ -221,5 +229,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
     lib.root_module.addImport("zstd", zstd_mod);
+    lib.root_module.addImport("brotli", brotli_mod);
     b.installArtifact(lib);
 }

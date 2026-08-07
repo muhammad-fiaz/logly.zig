@@ -4,7 +4,7 @@ description: Learn how to compress log files with Logly.zig using DEFLATE, GZIP,
 head:
   - - meta
     - name: keywords
-      content: log compression, gzip logs, zlib compression, zstd compression, log archiving, storage optimization, compressed logging, log backup
+      content: log compression, gzip logs, zlib compression, zstd compression, brotli compression, log archiving, storage optimization, compressed logging, log backup
 ---
 
 # Compression Guide
@@ -15,7 +15,7 @@ This guide covers log compression in Logly, including automatic and manual compr
 
 Logly provides a comprehensive compression module with advanced features:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4
+- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4, Brotli
 - **Smart Strategies**: Text-optimized, binary, RLE, adaptive auto-detection
 - **Flexible Modes**: Manual, on-rotation, size-based, scheduled, streaming
 - **Background Processing**: Offload compression to thread pool
@@ -81,6 +81,9 @@ var config7 = logly.Config.default().withLogCompression();
 
 // Production-ready - balanced with checksums
 var config8 = logly.Config.default().withProductionCompression();
+
+// Brotli - best ratio for text/JSON (v0.1.8+)
+var config9 = logly.Config.default().withBrotliCompression();
 ```
 
 ### CompressionConfig Presets
@@ -115,6 +118,7 @@ const xz_cfg = CompressionConfig.xz();                // XZ
 const lz4_cfg = CompressionConfig.lz4();              // LZ4
 const zip_cfg = CompressionConfig.zip();              // ZIP
 const targz_cfg = CompressionConfig.tarGz();          // TAR.GZ
+const brotli_cfg = CompressionConfig.brotli();        // Brotli
 
 // Size-based trigger (compress when file exceeds 5MB)
 const size_cfg = CompressionConfig.onSize(5 * 1024 * 1024);
@@ -153,10 +157,69 @@ var xz_comp = logly.Compression.xzCompression(allocator);
 var lz4_comp = logly.Compression.lz4Compression(allocator);
 var zip_comp = logly.Compression.zipCompression(allocator);
 var targz_comp = logly.Compression.tarGzCompression(allocator);
+var brotli_comp = logly.Compression.brotliCompression(allocator);
 
 defer comp1.deinit();
 // ... defer for others
 ```
+
+## Brotli Compression (v0.1.8+)
+
+Brotli is a compression algorithm developed by Google, optimized for web content and text. It provides excellent compression ratios, especially for text-based data like JSON log files.
+
+### Why Use Brotli?
+
+| Feature | Brotli | Zstd | GZIP/DEFLATE |
+|---------|--------|------|--------------|
+| **Compression Ratio** | 4-8x | 3-6x | 3-5x |
+| **Compression Speed** | ~100 MB/s (level 4) | ~400 MB/s | ~200 MB/s |
+| **Decompression Speed** | ~400 MB/s | ~1400 MB/s | ~300 MB/s |
+| **File Extension** | `.br` | `.zst` | `.gz` |
+| **Best For** | Text/JSON archival | High-throughput, streaming | Compatibility |
+
+### Quick Start
+
+```zig
+// One-liner brotli compression
+var comp = logly.Compression.brotliCompression(allocator);
+defer comp.deinit();
+```
+
+### Compression Levels
+
+Brotli quality levels range from 0 to 11:
+
+| Level | Speed | Ratio | Use Case |
+|-------|-------|-------|----------|
+| 0–3 | Fastest | Lower | Real-time, interactive |
+| 4–6 | Balanced | Good | General production |
+| 7–9 | Moderate | High | Archival, production |
+| 10–11 | Slowest | Maximum | Long-term storage |
+
+### Custom Level
+
+```zig
+var comp = logly.Compression.initWithConfig(allocator, .{
+    .algorithm = .brotli,
+    .level = .custom,
+    .custom_brotli_level = 6, // Balanced level
+});
+defer comp.deinit();
+```
+
+### Config Builder
+
+```zig
+var config = logly.Config{};
+config.compression = logly.CompressionConfig.brotli();
+
+// Or with the builder pattern
+var config2 = logly.Config{}
+    .withBrotliCompression();
+```
+
+> [!TIP]
+> Brotli achieves the best compression ratios for JSON and text data, making it ideal for log archival. For high-throughput scenarios, prefer zstd. Use Brotli quality level 4–6 for a balanced trade-off in production log archival.
 
 ## Zstd Compression (v0.1.8+)
 

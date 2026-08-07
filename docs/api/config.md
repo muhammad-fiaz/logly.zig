@@ -46,18 +46,6 @@ Pretty print JSON output. Default: `false`.
 
 Enable ANSI colors. Default: `true`.
 
-#### `check_for_updates: bool`
-
-Check GitHub for the latest Logly release on startup. Runs in a background thread and prints a highlighted notice when a newer version is available. Default: `true`.
-
-#### `emit_system_diagnostics_on_init: bool`
-
-Emit a single system diagnostics log (OS, arch, CPU, cores, memory) when the logger initializes. Default: `false`.
-
-#### `include_drive_diagnostics: bool`
-
-When emitting diagnostics, include per-drive totals and free space. Applies to startup diagnostics and manual `logSystemDiagnostics` calls. Default: `true`.
-
 #### `log_compact: bool`
 
 Use compact log format. Default: `false`.
@@ -66,77 +54,25 @@ Use compact log format. Default: `false`.
 
 Enable MessagePack binary formatting for extremely compact log serialization. Default: `false`.
 
-#### `tui: bool`
-
-Enable a beautiful, real-time developer terminal UI card layout featuring status badges and structured tables. Default: `false`.
-
 #### `tamper_evident: bool`
 
 Enable cryptographic log chaining where each record includes the SHA-256 hash signature of the preceding record to prevent log tampering. Default: `false`.
-
-#### `mmap: bool`
-
-Enable memory-mapped file sinks utilizing virtual RAM mappings to bypass file system call overhead for microsecond disk writes. Default: `false`.
-
-#### `use_arena_allocator: bool`
-
-Enable arena allocator for the main logger instance. When enabled, the logger uses an arena allocator for temporary record/format allocations, which can improve performance by reducing allocation overhead. Default: `false`.
-
-```zig
-var config = logly.Config.default();
-config.use_arena_allocator = true;
-config.arena_reset_threshold = 64 * 1024;
-```
-
-Equivalent builder aliases:
-
-```zig
-var config = logly.Config.default().withArenaAllocation();
-// or
-config = config.withArenaAllocator();
-// or
-config = config.withArena();
-```
-
-All three builder names are behavior-equivalent and set `use_arena_allocator = true`.
-
-Difference from direct field assignment:
-- `config.use_arena_allocator = true` mutates an existing `config` value.
-- `config = config.withArenaAllocator()` (or aliases) returns a modified copy and requires reassignment.
-
-You can also use your own application/request arena backed by GPA independently of Logly's internal scratch arena:
-
-```zig
-const std = @import("std");
-
-var gpa = std.heap.DebugAllocator(.{}){};
-defer _ = gpa.deinit();
-
-var request_arena = std.heap.ArenaAllocator.init(gpa.allocator());
-defer request_arena.deinit();
-
-const tmp_alloc = request_arena.allocator();
-const buf = try tmp_alloc.alloc(u8, 512);
-_ = buf;
-_ = request_arena.reset(.retain_capacity);
-```
-
-#### `arena_reset_threshold: usize`
-
-Arena reset threshold in bytes. When approximate temporary arena usage reaches this value, the logger resets the arena before processing the next record. Default: `64 * 1024`.
 
 #### `logs_root_path: ?[]const u8`
 
 Optional global root path for all log files. If set, file sinks will be stored relative to this path. Default: `null`.
 
-#### `diagnostics_output_path: ?[]const u8`
-
-If set, system diagnostics will be stored at this path. Default: `null`.
-
 #### `auto_flush: bool`
 
 Automatically flush sinks after every log operation. Creates immediate output but **significantly impacts performance** in high-throughput applications. Default: `false` (for performance). Set to `true` only when immediate output visibility is critical.
 
+> [!IMPORTANT]
+> `auto_flush` and `async_config` are **independent settings** that control different aspects of the logging pipeline:
+> - **`auto_flush`** controls whether sinks are flushed after each log record (sync path) or after each batch (async path).
+> - **`async_config`** enables asynchronous logging with ring buffers and background worker threads.
+> - **Thread pool dispatch does NOT flush when `auto_flush` is true** — the task is queued to the worker pool but not yet written to sinks, so no flush occurs at submission time.
+>
+> If you need immediate output visibility, enable `auto_flush` without async. If you need high throughput without blocking, use `async_config` without `auto_flush` (relying on batch/interval flushing instead).
 
 ### Distributed Logging
 
@@ -446,57 +382,26 @@ Async logging configuration.
 - `max_latency_ms`: Maximum latency before forcing a flush.
 - `overflow_policy`: Overflow policy (`.drop_oldest`, `.drop_newest`, `.block`).
 - `background_worker`: Auto-start worker thread.
-- `use_arena`: Enable arena allocator for batch processing. Default: `false`.
 
 #### `rules: RulesConfig`
 
-Rules system configuration. The rules system **respects global switches** (`global_console_display`, `global_file_storage`, `global_color_display`).
+Invoke system configuration. Controls extra message display on log records.
 
-- `enabled`: Master switch for rules system. Default: `false`.
-- `client_rules_enabled`: Enable client-defined rules. Default: `true`.
-- `builtin_rules_enabled`: Enable built-in rules (reserved). Default: `true`.
-- `use_unicode`: Use Unicode symbols (set false for ASCII). Default: `false`.
+- `enabled`: Master switch for invoke system. Default: `false`.
+- `client_rules_enabled`: Enable client-defined triggers. Default: `true`.
+- `builtin_rules_enabled`: Enable built-in triggers (reserved). Default: `true`.
 - `enable_colors`: ANSI colors in output. Default: `true`.
-- `show_rule_id`: Show rule IDs in output. Default: `false`.
-- `include_rule_id_prefix`: Include "R0001:" prefix. Default: `false`.
-- `rule_id_format`: Custom rule ID format. Default: `"R{d}"`.
 - `indent`: Message indent. Default: `"    "`.
-- `message_prefix`: Prefix character (deprecated, use `symbols`). Default: `"↳"`.
-- `symbols`: Custom symbols for message categories. See [RuleSymbols](#rulesymbols).
+- `include_in_json`: Include in JSON output. Default: `true`.
 - `console_output`: Output to console (AND'd with `global_console_display`). Default: `true`.
 - `file_output`: Output to files (AND'd with `global_file_storage`). Default: `true`.
-- `include_in_json`: Include in JSON output. Default: `true`.
-- `verbose`: Full context output. Default: `false`.
-- `max_rules`: Maximum rules allowed. Default: `1000`.
+- `max_rules`: Maximum triggers allowed. Default: `1000`.
 - `max_messages_per_rule`: Max messages to show per match. Default: `10`.
-- `sort_by_severity`: Order by severity. Default: `false`.
 
 **Presets:**
-- `RulesConfig.development()`: Full debugging with colors and Unicode.
-- `RulesConfig.production()`: Minimal output, no colors, no verbose.
-- `RulesConfig.ascii()`: ASCII-only for terminals without Unicode.
+- `RulesConfig.development()`: Colors enabled.
+- `RulesConfig.production()`: No colors.
 - `RulesConfig.disabled()`: Zero overhead.
-- `RulesConfig.silent()`: Rules evaluate but don't output.
-- `RulesConfig.consoleOnly()`: No file output.
-- `RulesConfig.fileOnly()`: No console output.
-
-#### `RuleSymbols`
-
-Customizable symbols for rule message categories. Defaults are ASCII-compatible.
-
-- `error_analysis`: Default `">> [ERROR]"`
-- `solution_suggestion`: Default `">> [FIX]"`
-- `performance_hint`: Default `">> [PERF]"`
-- `security_alert`: Default `">> [SEC]"`
-- `deprecation_warning`: Default `">> [DEP]"`
-- `best_practice`: Default `">> [HINT]"`
-- `accessibility`: Default `">> [A11Y]"`
-- `documentation`: Default `">> [DOC]"`
-- `action_required`: Default `">> [ACTION]"`
-- `bug_report`: Default `">> [BUG]"`
-- `general_information`: Default `">> [INFO]"`
-- `warning_explanation`: Default `">> [WARN]"`
-- `default`: Default `">>"`
 
 #### `thread_pool: ThreadPoolConfig`
 
@@ -506,7 +411,6 @@ Thread pool configuration.
 - `queue_size`: Maximum queue size.
 - `stack_size`: Stack size per thread.
 - `work_stealing`: Enable work stealing.
-- `enable_arena`: Enable per-worker arena allocator.
 - `thread_name_prefix`: Thread naming prefix.
 - `keep_alive_ms`: Keep alive time for idle threads.
 - `thread_affinity`: Enable thread affinity.
@@ -659,12 +563,6 @@ Enables thread pool with the provided configuration.
 
 Enables scheduler with the provided configuration.
 
-### `withArenaAllocation() Config`
-
-Enables arena allocator for internal temporary allocations to improve performance.
-
-Aliases: `withArenaAllocator()`, `withArena()`.
-
 ### `merge(other: Config) Config`
 
 Merges another configuration into the current one. Non-default values from `other` override the current values.
@@ -687,8 +585,7 @@ const json_data =
     \\  "level": "debug",
     \\  "json": true,
     \\  "pretty_json": false,
-    \\  "msgpack": true,
-    \\  "tui": false
+    \\  "msgpack": true
     \\}
 ;
 
@@ -721,14 +618,33 @@ Sampling configuration for high-throughput scenarios.
 ```zig
 pub const SamplingConfig = struct {
     enabled: bool = false,
-    rate: f64 = 1.0,
-    strategy: SamplingStrategy = .probability,
+    strategy: Strategy = .{ .probability = 1.0 },
+    bypass_levels: ?LevelMask = null,
 
-    pub const SamplingStrategy = enum {
-        probability,
-        rate_limit,
-        adaptive,
-        every_n,
+    pub const Strategy = union(enum) {
+        none: void,
+        probability: f64,
+        rate_limit: SamplingRateLimitConfig,
+        every_n: u32,
+        adaptive: AdaptiveConfig,
+        token_bucket: TokenBucketConfig,
+    };
+
+    pub const SamplingRateLimitConfig = struct {
+        max_records: u32,
+        window_ms: u64,
+    };
+
+    pub const AdaptiveConfig = struct {
+        target_rate: u32,
+        min_sample_rate: f64,
+        max_sample_rate: f64,
+        adjustment_interval_ms: u64,
+    };
+
+    pub const TokenBucketConfig = struct {
+        burst_capacity: u32,
+        refill_rate_per_sec: u32,
     };
 };
 ```
@@ -760,6 +676,27 @@ pub const RedactionConfig = struct {
     fields: ?[]const []const u8 = null,
     patterns: ?[]const []const u8 = null,
     replacement: []const u8 = "[REDACTED]",
+    default_type: RedactionType = .full,
+    enable_regex: bool = false,
+    hash_algorithm: HashAlgorithm = .sha256,
+    partial_start_chars: u8 = 2,
+    partial_end_chars: u8 = 2,
+    mask_char: u8 = '*',
+    truncate_length: usize = 10,
+    truncate_suffix: []const u8 = "...",
+    case_insensitive: bool = true,
+    audit_redactions: bool = false,
+    compliance_preset: ?CompliancePreset = null,
+
+    pub const RedactionType = enum { full, partial_start, partial_end, hash, mask_middle, truncate };
+    pub const HashAlgorithm = enum { sha256, sha512, md5 };
+    pub const CompliancePreset = enum { pci_dss, hipaa, gdpr, sox, custom };
+
+    pub fn default() RedactionConfig;
+    pub fn pciDss() RedactionConfig;
+    pub fn hipaa() RedactionConfig;
+    pub fn gdpr() RedactionConfig;
+    pub fn strict() RedactionConfig;
 };
 ```
 
@@ -802,8 +739,6 @@ pub const ThreadPoolConfig = struct {
     stack_size: usize = 1024 * 1024,
     /// Enable work stealing between threads.
     work_stealing: bool = true,
-    /// Enable per-worker arena allocator for efficient memory usage.
-    enable_arena: bool = false,
 };
 ```
 
@@ -1038,8 +973,6 @@ pub const AsyncConfig = struct {
     overflow_policy: OverflowPolicy = .drop_oldest,
     /// Auto-start worker thread.
     background_worker: bool = true,
-    /// Enable arena allocator for batch processing.
-    use_arena: bool = false,
 
     pub const OverflowPolicy = enum {
         drop_oldest,
@@ -1160,17 +1093,6 @@ Returns a configuration with scheduler enabled.
 const config = logly.Config.default().withScheduler(.{
     .cleanup_max_age_days = 7,
 });
-```
-
-### `withArenaAllocation() Config`
-
-Returns a configuration with arena allocator support enabled for logger scratch allocations.
-
-Aliases: `withArenaAllocator()`, `withArena()`.
-
-```zig
-var config = logly.Config.default().withArenaAllocator();
-config.arena_reset_threshold = 128 * 1024;
 ```
 
 ### `merge(other) Config`

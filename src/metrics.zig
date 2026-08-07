@@ -32,7 +32,6 @@ const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
 /// Metrics collection for logging system observability and performance monitoring.
-/// Metrics collection for logging system observability and performance monitoring.
 ///
 /// Tracks various statistics about logging operations including record counts,
 /// throughput, latency, and per-sink metrics.

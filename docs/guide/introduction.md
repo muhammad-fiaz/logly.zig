@@ -9,7 +9,7 @@ head:
 
 # What is Logly.zig?
 
-Logly.zig is a high-performance, structured logging library for Zig, engineered to deliver the robust feature set of its Python and Rust counterparts while maximizing native Zig performance and safety guarantees.
+Logly.zig is a high-performance, structured logging library for Zig, designed to deliver a comprehensive feature set while maximizing native Zig performance and safety guarantees.
 
 ## Key Features
 
@@ -45,7 +45,7 @@ Logly.zig is a high-performance, structured logging library for Zig, engineered 
 
 Logly.Zig is built upon the following core principles:
 
-1.  **Developer Experience**: An intuitive, Python-inspired API that reduces cognitive load.
+1.  **Developer Experience**: An intuitive, ergonomic API that reduces cognitive load.
 2.  **Uncompromised Performance**: Optimized for high-throughput, low-latency applications.
 3.  **Type Safety**: Leveraging Zig's powerful compile-time checks to prevent runtime errors.
 4.  **Zero-Cost Abstractions**: Features that incur no runtime overhead when unused.
@@ -53,14 +53,14 @@ Logly.Zig is built upon the following core principles:
 
 ## Comparison with Other Implementations
 
-| Feature                   | Python Logly            | Rust Logly           | Logly.zig           | std.log |
-| :------------------------ | :---------------------- | :------------------- | :------------------ | :------ |
-| **Performance**           | Maturin-Bindings (Fast) | Native Rust (Faster) | Native Zig (Faster) | Raw (Manual) |
-| **Memory Safety**         | Runtime                 | Compile-time         | **Compile-time**    | Compile-time |
-| **Async Support**         | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ Manual |
-| **File Rotation**         | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ Manual |
-| **JSON Logging**          | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ Manual |
-| **Custom Colors**         | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✗ |
+| Feature                   | Logly.zig              | std.log               |
+| :------------------------ | :--------------------- | :-------------------- |
+| **Performance**           | Native Zig (Fast)      | Raw (Manual)          |
+| **Memory Safety**         | **Compile-time**       | Compile-time          |
+| **Async Support**         | **✓ Automatic**        | ✗ Manual              |
+| **File Rotation**         | **✓ Automatic**        | ✗ Manual              |
+| **JSON Logging**          | **✓ Automatic**        | ✗ Manual              |
+| **Custom Colors**         | **✓ Automatic**        | ✗                     |
 | **Simplified API**        | ✓                       | ✓                    | **✓**               | ✓ Basic |
 | **Filtering**             | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✓ Manual |
 | **Sampling**              | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
@@ -72,11 +72,10 @@ Logly.Zig is built upon the following core principles:
 | **Scheduler**             | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
 | **Custom Formats**        | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ Manual |
 | **Cross-Platform Colors** | ✓                       | ✓                    | **✓**               | ✗ |
-| **Rules System (v0.0.9+)**| ✗                       | ✗                    | **✓ Automatic**     | ✗ |
+| **Invoke System (v0.0.9+)**| ✗                       | ✗                    | **✓ Automatic**     | ✗ |
 
-::: tip Full Comparison
-For a comprehensive comparison with other Zig logging libraries including nexlog, log.zig, and std.log, see the [Comparison](/guide/comparison) page.
-:::
+> [!TIP]
+> For a comprehensive comparison with other Zig logging libraries including nexlog, log.zig, and std.log, see the [Comparison](/guide/comparison) page.
 
 ## Enterprise Features
 
@@ -102,10 +101,6 @@ Built-in metrics collection for logging performance monitoring.
 
 OpenTelemetry-compatible trace context propagation with automatic span ID generation.
 
-### 🚀 Arena Allocator
-
-Optional arena allocator support for improved performance in high-throughput scenarios, reducing allocation overhead for temporary formatting operations.
-
 ### 🎨 Cross-Platform Colors
 
 Enhanced ANSI color support for Windows, Linux, macOS, and bare metal/freestanding targets.
@@ -122,7 +117,7 @@ Logly.Zig is perfect for:
 - **High-performance systems** with strict latency requirements
 - **Cross-platform projects** targeting multiple operating systems
 - **Projects** that need structured logging for analysis
-- **Teams** familiar with Python's logging patterns
+- **Teams** looking for a structured logging solution
 - **Microservices** requiring distributed tracing support
 - **Compliance-sensitive** applications needing data redaction
 - **Embedded/bare metal** systems needing efficient logging

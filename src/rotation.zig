@@ -64,13 +64,14 @@ pub const Rotation = struct {
         }
 
         /// Parses an interval from string (e.g., "daily", "hourly").
+        /// Case-insensitive matching.
         pub fn fromString(s: []const u8) ?RotationInterval {
-            if (std.mem.eql(u8, s, "minutely")) return .minutely;
-            if (std.mem.eql(u8, s, "hourly")) return .hourly;
-            if (std.mem.eql(u8, s, "daily")) return .daily;
-            if (std.mem.eql(u8, s, "weekly")) return .weekly;
-            if (std.mem.eql(u8, s, "monthly")) return .monthly;
-            if (std.mem.eql(u8, s, "yearly")) return .yearly;
+            if (std.ascii.eqlIgnoreCase(s, "minutely")) return .minutely;
+            if (std.ascii.eqlIgnoreCase(s, "hourly")) return .hourly;
+            if (std.ascii.eqlIgnoreCase(s, "daily")) return .daily;
+            if (std.ascii.eqlIgnoreCase(s, "weekly")) return .weekly;
+            if (std.ascii.eqlIgnoreCase(s, "monthly")) return .monthly;
+            if (std.ascii.eqlIgnoreCase(s, "yearly")) return .yearly;
             return null;
         }
 

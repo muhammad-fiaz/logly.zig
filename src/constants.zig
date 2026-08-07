@@ -12,7 +12,7 @@
 //! - Time Constants: Time-related conversion factors
 //! - Rotation Constants: File rotation defaults
 //! - Network Constants: Network I/O settings
-//! - Rules System: Diagnostic rules formatting
+//! - Invoke System: Extra messages formatting
 
 const std = @import("std");
 
@@ -121,9 +121,11 @@ pub const CompressionExtensions = struct {
     pub const zip: []const u8 = ".zip";
     /// LZ4 compressed file extension.
     pub const lz4: []const u8 = ".lz4";
+    /// Brotli compressed file extension.
+    pub const brotli: []const u8 = ".br";
 
     /// All compression extensions for iteration.
-    pub const all: [10][]const u8 = .{ gz, lgz, zst, deflate, lzma, lzma2, xz, tar_gz, zip, lz4 };
+    pub const all: [12][]const u8 = .{ gz, lgz, zst, deflate, lzma, lzma2, xz, tar_gz, zip, lz4, brotli, "" };
 
     /// Check if a filename ends with any known compression extension.
     pub fn isCompressed(name: []const u8) bool {
@@ -136,7 +138,8 @@ pub const CompressionExtensions = struct {
             std.mem.endsWith(u8, name, xz) or
             std.mem.endsWith(u8, name, tar_gz) or
             std.mem.endsWith(u8, name, zip) or
-            std.mem.endsWith(u8, name, lz4);
+            std.mem.endsWith(u8, name, lz4) or
+            std.mem.endsWith(u8, name, brotli);
     }
 
     /// Check if a filename ends with a specific compression extension.
@@ -498,77 +501,6 @@ pub const MetricsConstants = struct {
     };
 };
 
-/// Message category constants for diagnostic rules.
-///
-/// Usage:
-///   Use these constants for consistent message category display names
-///   and prefixes in the diagnostic rules system.
-///
-/// Complexity: O(1)
-pub const MessageCategoryConstants = struct {
-    /// Display names for message categories.
-    pub const DisplayNames = struct {
-        pub const error_analysis: []const u8 = "Error Analysis";
-        pub const solution_suggestion: []const u8 = "Solution";
-        pub const best_practice: []const u8 = "Best Practice";
-        pub const action_required: []const u8 = "Action Required";
-        pub const documentation_link: []const u8 = "Documentation";
-        pub const bug_report: []const u8 = "Report Issue";
-        pub const general_information: []const u8 = "Information";
-        pub const warning_explanation: []const u8 = "Warning Details";
-        pub const performance_tip: []const u8 = "Performance";
-        pub const security_notice: []const u8 = "Security";
-        pub const custom: []const u8 = "Note";
-    };
-
-    /// Unicode prefixes for message categories.
-    pub const Prefixes = struct {
-        pub const error_analysis: []const u8 = "    » 🔍 [cause]";
-        pub const solution_suggestion: []const u8 = "    » 💡 [fix]";
-        pub const best_practice: []const u8 = "    » ✨ [suggest]";
-        pub const action_required: []const u8 = "    » ⚡ [action]";
-        pub const documentation_link: []const u8 = "    » 📚 [docs]";
-        pub const bug_report: []const u8 = "    » 🐛 [report]";
-        pub const general_information: []const u8 = "    » 📝 [note]";
-        pub const warning_explanation: []const u8 = "    » ⚠️  [caution]";
-        pub const performance_tip: []const u8 = "    » 🚀 [perf]";
-        pub const security_notice: []const u8 = "    » 🔒 [security]";
-        pub const custom: []const u8 = "    » 🔹 [custom]";
-    };
-
-    /// ASCII-only prefixes for non-UTF8 terminals.
-    pub const PrefixesAscii = struct {
-        pub const error_analysis: []const u8 = "    >> [cause]";
-        pub const solution_suggestion: []const u8 = "    >> [fix]";
-        pub const best_practice: []const u8 = "    >> [suggest]";
-        pub const action_required: []const u8 = "    >> [action]";
-        pub const documentation_link: []const u8 = "    >> [docs]";
-        pub const bug_report: []const u8 = "    >> [report]";
-        pub const general_information: []const u8 = "    >> [note]";
-        pub const warning_explanation: []const u8 = "    >> [caution]";
-        pub const performance_tip: []const u8 = "    >> [perf]";
-        pub const security_notice: []const u8 = "    >> [security]";
-        pub const custom: []const u8 = "    >> [custom]";
-    };
-
-    /// Short symbols for rule configuration.
-    pub const RuleSymbols = struct {
-        pub const error_analysis: []const u8 = ">> [ERROR]";
-        pub const solution_suggestion: []const u8 = ">> [FIX]";
-        pub const performance_hint: []const u8 = ">> [PERF]";
-        pub const security_alert: []const u8 = ">> [SEC]";
-        pub const deprecation_warning: []const u8 = ">> [DEP]";
-        pub const best_practice: []const u8 = ">> [HINT]";
-        pub const accessibility: []const u8 = ">> [A11Y]";
-        pub const documentation: []const u8 = ">> [DOC]";
-        pub const action_required: []const u8 = ">> [ACTION]";
-        pub const bug_report: []const u8 = ">> [BUG]";
-        pub const general_information: []const u8 = ">> [INFO]";
-        pub const warning_explanation: []const u8 = ">> [WARN]";
-        pub const default: []const u8 = ">>";
-    };
-};
-
 /// File rotation constants.
 ///
 /// Usage:
@@ -870,68 +802,17 @@ pub const NetworkConstants = struct {
     pub const send_timeout_ms: u64 = 1000;
 };
 
-/// Rules system constants for diagnostic message formatting.
+/// Invoke system constants.
 ///
 /// Usage:
-///   Definitions for formatting rule-based diagnostics (prefixes, colors).
+///   Limits for invoke triggers and messages.
 ///
 /// Complexity: O(1)
-pub const RulesConstants = struct {
-    /// Default indentation for rule messages.
-    pub const default_indent: []const u8 = "    ";
-    /// Default prefix character for rule messages.
-    pub const default_prefix: []const u8 = "↳";
-    /// Default prefix character for ASCII mode.
-    pub const default_prefix_ascii: []const u8 = "|--";
-    /// Maximum number of rules allowed by default.
+pub const InvokeConstants = struct {
+    /// Maximum number of triggers allowed by default.
     pub const default_max_rules: usize = 1000;
-    /// Maximum messages per rule allowed by default.
+    /// Maximum messages per trigger allowed by default.
     pub const default_max_messages: usize = 10;
-
-    /// Unicode prefixes for each message category.
-    pub const Prefixes = struct {
-        pub const cause: []const u8 = "⦿ cause:";
-        pub const fix: []const u8 = "✦ fix:";
-        pub const suggest: []const u8 = "→ suggest:";
-        pub const action: []const u8 = "▸ action:";
-        pub const docs: []const u8 = "📖 docs:";
-        pub const report: []const u8 = "🔗 report:";
-        pub const note: []const u8 = "ℹ note:";
-        pub const caution: []const u8 = "⚠ caution:";
-        pub const perf: []const u8 = "⚡ perf:";
-        pub const security: []const u8 = "🛡 security:";
-        pub const custom: []const u8 = "•";
-    };
-
-    /// ASCII-only prefixes for each message category.
-    pub const PrefixesAscii = struct {
-        pub const cause: []const u8 = "[CAUSE]";
-        pub const fix: []const u8 = "[FIX]";
-        pub const suggest: []const u8 = "[SUGGEST]";
-        pub const action: []const u8 = "[ACTION]";
-        pub const docs: []const u8 = "[DOCS]";
-        pub const report: []const u8 = "[REPORT]";
-        pub const note: []const u8 = "[NOTE]";
-        pub const caution: []const u8 = "[CAUTION]";
-        pub const perf: []const u8 = "[PERF]";
-        pub const security: []const u8 = "[SECURITY]";
-        pub const custom: []const u8 = "[*]";
-    };
-
-    /// ANSI color codes for each message category.
-    pub const Colors = struct {
-        pub const cause: []const u8 = "91;1"; // Bright red
-        pub const fix: []const u8 = "96;1"; // Bright cyan
-        pub const suggest: []const u8 = "93;1"; // Bright yellow
-        pub const action: []const u8 = "91;1"; // Bold red
-        pub const docs: []const u8 = "35"; // Magenta
-        pub const report: []const u8 = "33"; // Yellow
-        pub const note: []const u8 = "37"; // White
-        pub const caution: []const u8 = "33"; // Yellow
-        pub const perf: []const u8 = "36"; // Cyan
-        pub const security: []const u8 = "95;1"; // Bright magenta
-        pub const custom: []const u8 = "37"; // White
-    };
 };
 
 /// Syslog constants for RFC 5424 compliance.
@@ -1067,6 +948,7 @@ pub const CompressionConstants = struct {
         pub const tar_gz = CompressionExtensions.tar_gz;
         pub const zip = CompressionExtensions.zip;
         pub const lz4 = CompressionExtensions.lz4;
+        pub const brotli = CompressionExtensions.brotli;
         pub const none = "";
     };
 };
@@ -1121,8 +1003,6 @@ pub const RotationDefaults = struct {
 pub const ConfigDefaults = struct {
     /// Default stack size for stack trace capturing (1MB).
     pub const stack_size: usize = 1024 * 1024;
-    /// Default arena reset threshold (64KB).
-    pub const arena_reset_threshold: usize = 64 * 1024;
     /// Default distributed trace header name.
     pub const distributed_trace_header: []const u8 = "X-Trace-ID";
     /// Default distributed span header name.
@@ -1287,36 +1167,9 @@ test "network constants are reasonable" {
     try std.testing.expect(NetworkConstants.send_timeout_ms > 0);
 }
 
-test "rules constants exist" {
-    // Default values
-    try std.testing.expect(RulesConstants.default_indent.len > 0);
-    try std.testing.expect(RulesConstants.default_prefix.len > 0);
-    try std.testing.expect(RulesConstants.default_prefix_ascii.len > 0);
-    try std.testing.expect(RulesConstants.default_max_rules > 0);
-    try std.testing.expect(RulesConstants.default_max_messages > 0);
-
-    // Unicode prefixes
-    try std.testing.expect(RulesConstants.Prefixes.cause.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.fix.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.suggest.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.action.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.docs.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.report.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.note.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.caution.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.perf.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.security.len > 0);
-    try std.testing.expect(RulesConstants.Prefixes.custom.len > 0);
-
-    // ASCII prefixes
-    try std.testing.expect(RulesConstants.PrefixesAscii.cause.len > 0);
-    try std.testing.expect(RulesConstants.PrefixesAscii.fix.len > 0);
-    try std.testing.expect(RulesConstants.PrefixesAscii.security.len > 0);
-
-    // Colors
-    try std.testing.expect(RulesConstants.Colors.cause.len > 0);
-    try std.testing.expect(RulesConstants.Colors.fix.len > 0);
-    try std.testing.expect(RulesConstants.Colors.security.len > 0);
+test "invoke constants exist" {
+    try std.testing.expect(InvokeConstants.default_max_rules > 0);
+    try std.testing.expect(InvokeConstants.default_max_messages > 0);
 }
 
 test "syslog constants exist" {
@@ -1437,30 +1290,6 @@ test "preset defaults are reasonable" {
     try std.testing.expect(ConfigPresetDefaults.high_throughput_thread_pool_queue_size > 0);
     try std.testing.expect(ConfigPresetDefaults.high_throughput_max_pending > ConfigPresetDefaults.high_throughput_thread_pool_queue_size);
 }
-
-/// System diagnostics constants.
-///
-/// Usage:
-///   Max buffer sizes and resource limits for system diagnostics.
-///
-/// Complexity: O(1)
-pub const DiagnosticsConstants = struct {
-    /// Maximum mount point path length (macOS/BSD/Linux).
-    pub const mac_mount_path_len: usize = 1024;
-};
-
-/// Update checker constants.
-///
-/// Usage:
-///   Repository information for version checking.
-///
-/// Complexity: O(1)
-pub const UpdateCheckerConstants = struct {
-    /// GitHub repository owner.
-    pub const repo_owner: []const u8 = "muhammad-fiaz";
-    /// GitHub repository name.
-    pub const repo_name: []const u8 = "logly.zig";
-};
 
 test "color helpers produce valid prefixes" {
     const s = Colors.fg256(208);
@@ -1640,22 +1469,6 @@ pub const SchedulerExtendedDefaults = struct {
     pub const task_history_size: usize = 32;
     /// One-shot task min delay (ms).
     pub const one_shot_min_delay_ms: u64 = 1;
-};
-
-/// Diagnostic system constants.
-pub const DiagnosticsDefaults = struct {
-    /// Maximum health-check entries per report.
-    pub const max_health_checks: usize = 64;
-    /// JSON report buffer initial size.
-    pub const json_report_buffer: usize = BufferSizes.format;
-    /// Health check name max length.
-    pub const health_check_name_len: usize = 64;
-    /// Default report interval (ms).
-    pub const report_interval_ms: u64 = 60_000;
-    /// Queue depth warning threshold (0.0-1.0).
-    pub const queue_depth_warn_threshold: f64 = 0.8;
-    /// Memory warning threshold (bytes, 512MB default).
-    pub const memory_warn_bytes: u64 = 512 * 1024 * 1024;
 };
 
 /// Telemetry extended constants.

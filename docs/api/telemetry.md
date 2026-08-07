@@ -1376,30 +1376,6 @@ config.sampling_strategy = .parent_based;
 
 ---
 
-## Disabling Update Checker
-
-When using Logly in production or testing, you may want to disable the automatic update checker. This can be done globally for your entire project:
-
-```zig
-const logly = @import("logly");
-
-pub fn main() !void {
-    // Disable update checker at the start of your application
-    // This affects ALL subsequent logger initializations in the project
-    logly.UpdateChecker.setEnabled(false);
-
-    // Now create loggers - none will perform update checks
-    var logger = try logly.Logger.init(.{ .allocator = allocator });
-    defer logger.deinit();
-
-    // ... your application code
-}
-```
-
-**Note:** Once disabled with `setEnabled(false)`, the update checker remains disabled for all subsequent logger imports and initializations within the same process. This is a project-wide setting.
-
----
-
 ## Thread Safety
 
 All Telemetry operations are thread-safe:

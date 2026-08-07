@@ -33,7 +33,6 @@ const BenchmarkResult = struct {
         "Redaction",
         "Metrics",
         "Rotation",
-        "System Diagnostics",
         "Multi-Threading",
         "Performance Comparison",
     };
@@ -153,7 +152,6 @@ fn benchmarkConfig() Config {
     config.auto_flush = false;
     config.global_console_display = false;
     config.global_file_storage = false;
-    config.check_for_updates = false;
     return config;
 }
 
@@ -211,13 +209,6 @@ fn benchFilterRejected(ctx: *const BenchContext) !void {
 
 fn benchFilterComplex(ctx: *const BenchContext) !void {
     try ctx.logger.info("Checking complex filter rules", null);
-}
-
-//
-// Diagnostics Benchmark Functions
-//
-fn benchDiagnostics(ctx: *const BenchContext) !void {
-    try ctx.logger.logSystemDiagnostics(null);
 }
 
 //
@@ -637,7 +628,6 @@ pub fn main() !void {
         defer loggerStd.deinit();
 
         var configStd = Config.default();
-        configStd.use_arena_allocator = false;
         configStd.auto_sink = false;
         configStd.auto_flush = false;
         loggerStd.configure(configStd);
@@ -647,23 +637,6 @@ pub fn main() !void {
         const ctxStd = BenchContext{ .logger = loggerStd, .allocator = allocator };
         try results.append(allocator, runBenchmark("Standard allocator (GPA)", benchSimpleLog, &ctxStd, "Default allocation", "Allocator Comparison"));
         try results.append(allocator, runBenchmark("Standard allocator (formatted)", benchFormattedLog, &ctxStd, "GPA with formatting", "Allocator Comparison"));
-    }
-
-    {
-        // Arena allocator
-        const loggerArena = try Logger.initWithConfig(allocator, Config.default().withArenaAllocation());
-        defer loggerArena.deinit();
-
-        var configArena = loggerArena.config;
-        configArena.auto_sink = false;
-        configArena.auto_flush = false;
-        loggerArena.configure(configArena);
-
-        _ = try loggerArena.addSink(.{ .path = NULL_PATH });
-
-        const ctxArena = BenchContext{ .logger = loggerArena, .allocator = allocator };
-        try results.append(allocator, runBenchmark("Arena allocator", benchSimpleLog, &ctxArena, "Reduced alloc overhead", "Allocator Comparison"));
-        try results.append(allocator, runBenchmark("Arena allocator (formatted)", benchFormattedLog, &ctxArena, "Arena with formatting", "Allocator Comparison"));
     }
 
     {
@@ -1126,27 +1099,6 @@ pub fn main() !void {
     }
 
     //
-    // System Diagnostics
-    //
-    {
-        std.debug.print("Running: System Diagnostics benchmarks...\n", .{});
-
-        const loggerDiag = try Logger.init(allocator);
-        defer loggerDiag.deinit();
-
-        var configDiag = Config.default();
-        configDiag.auto_sink = false;
-        configDiag.auto_flush = false;
-        configDiag.include_drive_diagnostics = false; // Keep it faster
-        loggerDiag.configure(configDiag);
-
-        _ = try loggerDiag.addSink(.{ .path = NULL_PATH });
-
-        const ctxDiag = BenchContext{ .logger = loggerDiag, .allocator = allocator };
-        try results.append(allocator, runBenchmark("System Diagnostics (basic)", benchDiagnostics, &ctxDiag, "OS/CPU/Mem info", "System Diagnostics"));
-    }
-
-    //
     // Multi-Threading
     //
     {
@@ -1334,29 +1286,6 @@ pub fn main() !void {
             "Multi-Threading",
             allocator,
             multiThreadWorkerFormatted,
-        ));
-    }
-
-    {
-        // Multi-thread with arena allocator
-        const loggerArena = try Logger.initWithConfig(allocator, Config.default().withArenaAllocation());
-        defer loggerArena.deinit();
-
-        var configArena = loggerArena.config;
-        configArena.auto_sink = false;
-        configArena.auto_flush = false;
-        loggerArena.configure(configArena);
-
-        _ = try loggerArena.addSink(.{ .path = NULL_PATH });
-
-        try results.append(allocator, runMultiThreadBenchmark(
-            "4 threads arena allocator",
-            loggerArena,
-            4,
-            "Parallel with arena alloc",
-            "Multi-Threading",
-            allocator,
-            multiThreadWorker,
         ));
     }
 

@@ -25,19 +25,6 @@ When set, all file-based sinks have their paths automatically resolved relative 
 config.logs_root_path = "./logs";
 ```
 
-## Config.diagnostics_output_path
-
-Optional custom path for system diagnostics output.
-
-**Type:** `?[]const u8`  
-**Default:** `null`
-
-When set, system diagnostics can be routed to a specific file. The path respects `logs_root_path` if configured.
-
-```zig
-config.diagnostics_output_path = "./logs/diagnostics.log";
-```
-
 ## Config.format_structure
 
 Customization of log message structure and formatting.
@@ -290,7 +277,6 @@ Logly also supports a fluent builder pattern for configuration:
 
 ```zig
 var config = logly.Config.default()
-    .withArenaAllocation()
     .withAsync()
     .withThreadPool(4);
 

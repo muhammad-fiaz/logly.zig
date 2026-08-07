@@ -215,6 +215,10 @@ pub const Redactor = struct {
     /// Parameters: (pattern_name: []const u8, matched_value: []const u8)
     on_pattern_matched: ?*const fn ([]const u8, []const u8) void = null,
 
+    /// Callback invoked with redaction details showing original and redacted values.
+    /// Parameters: (pattern_name: []const u8, original_value: []const u8, redacted_value: []const u8)
+    on_redaction_detail: ?*const fn ([]const u8, []const u8, []const u8) void = null,
+
     /// Callback invoked when redactor is initialized.
     /// Parameters: (stats: *const RedactorStats)
     on_redactor_initialized: ?*const fn (*const RedactorStats) void = null,
@@ -394,6 +398,13 @@ pub const Redactor = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
         self.on_pattern_matched = callback;
+    }
+
+    /// Sets the callback for redaction detail events (shows original and redacted values).
+    pub fn setRedactionDetailCallback(self: *Redactor, callback: *const fn ([]const u8, []const u8, []const u8) void) void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+        self.on_redaction_detail = callback;
     }
 
     /// Sets the callback for redactor initialization.
@@ -579,6 +590,7 @@ pub const Redactor = struct {
         for (self.patterns.items) |pattern| {
             if (!patternMatchesMessage(pattern, result)) continue;
 
+            const original_value = result;
             result = try self.applyPatternWithAllocator(result, pattern, alloc);
 
             was_redacted = true;
@@ -587,7 +599,12 @@ pub const Redactor = struct {
 
                 // Invoke pattern matched callback
                 if (self.on_pattern_matched) |callback| {
-                    callback(pattern.name, message);
+                    callback(pattern.name, original_value);
+                }
+
+                // Invoke redaction detail callback (shows original and redacted values)
+                if (self.on_redaction_detail) |callback| {
+                    callback(pattern.name, original_value, result);
                 }
             }
         }
@@ -1173,6 +1190,7 @@ pub const Redactor = struct {
 
     /// Alias for setPatternMatchedCallback
     pub const onPatternMatched = setPatternMatchedCallback;
+    pub const onRedactionDetail = setRedactionDetailCallback;
 
     /// Alias for setInitializedCallback
     pub const onInitialized = setInitializedCallback;

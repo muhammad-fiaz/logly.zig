@@ -16,7 +16,7 @@ export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
 
 // SEO Keywords
 export const KEYWORDS =
-  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, rules engine, diagnostics rules, metrics, metrics export, prometheus, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
+  "zig, logging, logger, structured logging, async logging, json logging, file rotation, explicit rotation control, thread pool, scheduler, invoke system, metrics, metrics export, prometheus, tracing, telemetry, redaction, filtering, sampling, runtime sampling control, compression, zstd compression, brotli compression, queue utilization, distributed tracing, zig library, production logging, enterprise logging";
 
 export default defineConfig({
   lang: "en-US",
@@ -24,7 +24,7 @@ export default defineConfig({
   description: SITE_DESCRIPTION,
   base: "/logly.zig/",
   lastUpdated: true,
-  cleanUrls: true,
+  cleanUrls: false,
 
   sitemap: {
     hostname: SITE_URL,
@@ -180,7 +180,7 @@ gtag('config', '${GA_ID}');`,
     // Dynamic OG image generation based on page title
     const pageTitle = pageData.title || SITE_NAME;
     const pageDescription = pageData.description || SITE_DESCRIPTION;
-    const canonicalUrl = `${SITE_URL}/${pageData.relativePath.replace(/((^|\/)index)?\.md$/, "$2").replace(/\.md$/, "")}`;
+    const canonicalUrl = `${SITE_URL}/${pageData.relativePath.replace(/((^|\/)index)?\.md$/, "$2").replace(/\.md$/, ".html")}`;
 
     pageData.frontmatter.head ??= [];
     pageData.frontmatter.head.push(
@@ -273,7 +273,7 @@ gtag('config', '${GA_ID}');`,
           priceCurrency: "USD",
         },
         downloadUrl: "https://github.com/muhammad-fiaz/logly.zig",
-        softwareVersion: "0.2.0",
+        softwareVersion: "0.2.1",
         license: "https://opensource.org/licenses/MIT",
       });
     } else {
@@ -389,7 +389,6 @@ gtag('config', '${GA_ID}');`,
           { text: "Sinks", link: "/guide/sinks" },
           { text: "Formatting", link: "/guide/formatting" },
           { text: "MessagePack Binary", link: "/guide/msgpack" },
-          { text: "Terminal UI Format", link: "/guide/tui" },
           { text: "Custom Levels", link: "/guide/custom-levels" },
         ],
       },
@@ -412,8 +411,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Memory-Mapped Sinks", link: "/guide/mmap" },
           { text: "Thread Pool", link: "/guide/thread-pool" },
           { text: "Scheduler", link: "/guide/scheduler" },
-          { text: "Rules System", link: "/guide/rules" },
-          { text: "Arena Allocation", link: "/guide/arena-allocation" },
+          { text: "Invoke System", link: "/guide/invoke" },
           { text: "Compile-Time Settings", link: "/guide/compile-time" },
           { text: "Network Logging", link: "/guide/network-logging" },
         ],
@@ -421,9 +419,7 @@ gtag('config', '${GA_ID}');`,
       {
         text: "System & Operations",
         items: [
-          { text: "System Diagnostics", link: "/guide/diagnostics" },
           { text: "Crash & Panic Handler", link: "/guide/crash-handler" },
-          { text: "Update Checker", link: "/guide/update-checker" },
         ],
       },
       {
@@ -438,6 +434,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Telemetry (OpenTelemetry)", link: "/guide/telemetry" },
           { text: "Tamper-Evident Chaining", link: "/guide/tamper-evident" },
           { text: "Customizations", link: "/guide/customizations" },
+          { text: "Allocator Usage", link: "/guide/arena-allocation" },
         ],
       },
       {
@@ -450,20 +447,18 @@ gtag('config', '${GA_ID}');`,
           { text: "Sink", link: "/api/sink" },
           { text: "Formatter", link: "/api/formatter" },
           { text: "Rotation", link: "/api/rotation" },
-          { text: "Rules", link: "/api/rules" },
+          { text: "Invoke", link: "/api/invoke" },
           { text: "Filter", link: "/api/filter" },
           { text: "Sampler", link: "/api/sampler" },
           { text: "Redactor", link: "/api/redactor" },
           { text: "Metrics", link: "/api/metrics" },
           { text: "Telemetry", link: "/api/telemetry" },
           { text: "Network", link: "/api/network" },
-          { text: "Update Checker", link: "/api/update-checker" },
           { text: "Record", link: "/api/record" },
           { text: "Async Queue", link: "/api/async" },
           { text: "Compression", link: "/api/compression" },
           { text: "Thread Pool", link: "/api/thread-pool" },
           { text: "Scheduler", link: "/api/scheduler" },
-          { text: "Diagnostics", link: "/api/diagnostics" },
           { text: "Constants", link: "/api/constants" },
           { text: "Callbacks", link: "/api/callbacks" },
           { text: "Customizations", link: "/api/customizations" },
@@ -478,7 +473,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Rotation", link: "/examples/rotation" },
           { text: "JSON Logging", link: "/examples/json" },
           { text: "JSON Extended", link: "/examples/json-extended" },
-          { text: "Rules System", link: "/examples/rules" },
+          { text: "Invoke System", link: "/examples/invoke" },
           { text: "Custom Colors", link: "/examples/custom-colors" },
           { text: "Custom Theme", link: "/examples/custom-theme" },
           { text: "Color Control", link: "/examples/color-control" },
@@ -487,7 +482,7 @@ gtag('config', '${GA_ID}');`,
           { text: "Async Logging", link: "/examples/async-logging" },
           { text: "Network Logging", link: "/examples/network-logging" },
           { text: "Advanced Config", link: "/examples/advanced-config" },
-          { text: "Allocator Strategies", link: "/examples/allocator-strategies" },
+
           { text: "Module Levels", link: "/examples/module-levels" },
           { text: "Custom Levels Full", link: "/examples/custom-levels-full" },
           { text: "Sink Formats", link: "/examples/sink-formats" },
@@ -505,19 +500,18 @@ gtag('config', '${GA_ID}');`,
           { text: "Scheduler", link: "/examples/scheduler" },
           { text: "Dynamic Path", link: "/examples/dynamic-path" },
           { text: "Sink Write Modes", link: "/examples/write-modes" },
+          { text: "Append/Overwrite", link: "/examples/append-overwrite" },
           { text: "Production Config", link: "/examples/production-config" },
-          { text: "Diagnostics", link: "/examples/diagnostics" },
           { text: "Filter Advanced", link: "/examples/filter-advanced" },
           { text: "Formatter Advanced", link: "/examples/formatter-advanced" },
           { text: "Sink Advanced", link: "/examples/sink-advanced" },
           { text: "Redaction Advanced", link: "/examples/redaction-advanced" },
-          { text: "Network Logging", link: "/examples/network-logging" },
           { text: "Crash Handler", link: "/examples/crash-handler" },
           { text: "Hot Reload", link: "/examples/hot-reload" },
           { text: "Memory Mapped (mmap)", link: "/examples/mmap" },
-          { text: "MessagePack & TUI", link: "/examples/msgpack-tui" },
           { text: "Context Filtering", link: "/examples/context-filter" },
           { text: "Customizations", link: "/examples/customizations" },
+          { text: "Allocator Usage", link: "/examples/allocator-strategies" },
         ],
       },
     ],

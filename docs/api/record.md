@@ -150,7 +150,7 @@ pub const ErrorInfo = struct {
     message: []const u8,
     stack_trace: ?[]const u8 = null,
     code: ?i32 = null,
-    error_category: ErrorCategory = .logic,
+    error_category: ?ErrorCategory = null,
 };
 
 pub const ErrorCategory = enum {
@@ -158,6 +158,7 @@ pub const ErrorCategory = enum {
     network,
     logic,
     oom,
+    unknown,
 };
 ```
 
@@ -184,9 +185,9 @@ try record.context.put("user_id", .{ .string = "12345" });
 try record.context.put("request_count", .{ .integer = 42 });
 ```
 
-### `rule_messages: ?[]const RuleMessage`
+### `invoke_messages: ?[]const InvokeMessage`
 
-Rule messages attached to this record if any rules matched during evaluation. Default: `null`.
+Extra messages attached to this record if any triggers matched during evaluation. Default: `null`.
 
 ## Methods
 
@@ -350,7 +351,7 @@ The Record module provides convenience aliases:
 ## Context Methods
 
 - `addField(key: []const u8, value: json.Value) !void` - Add a context field
-- `addTag(key: []const u8, value: []const u8) !void` - Add a lightweight string tag
+- `addTag(tag: []const u8) !void` - Add a lightweight string tag
 - `setError(name, message, stack_trace, code) !void` - Set error information
 - `setDuration(duration_ns: u64) void` - Set operation duration
 - `setDurationSince(start_time: i128) void` - Set duration from timer start

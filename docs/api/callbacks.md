@@ -14,7 +14,6 @@ The Callback API allows you to hook into the logging lifecycle for monitoring, t
 | `setInitializedCallback()` | - | Set initialized callback |
 | `setDestroyedCallback()` | - | Set destroyed callback |
 | `setCrashCallback()` | `onCrash()` | Set crash callback |
-| `setUpdateCallback()` | - | Set update-check callback |
 | `setThreadStartCallback()` | `onThreadStart()` | Set thread pool start callback |
 | `setThreadStopCallback()` | `onThreadStop()` | Set thread pool stop callback |
 | `setTaskSubmittedCallback()` | `onTaskSubmitted()` | Set task submitted callback |
@@ -116,14 +115,6 @@ Invoked immediately when a panic, Windows VEH exception, or POSIX signal occurs.
 
 ```zig
 callback: *const fn(message: []const u8) void
-```
-
-### `on_update_result`
-
-Invoked after the update checker compares the current version against the latest release.
-
-```zig
-callback: *const fn(status: UpdateCheckStatus, latest_tag: []const u8, current_version: []const u8) void
 ```
 
 ### `on_thread_pool_callback`

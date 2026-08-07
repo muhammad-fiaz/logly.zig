@@ -614,12 +614,6 @@ pub const Formatter = struct {
             return res;
         }
 
-        if (self.configIsTui(config)) {
-            const res = try self.formatTuiWithAllocator(record, config, scratch_allocator);
-            bytes_formatted = res.len;
-            return res;
-        }
-
         if (self.configIsNdjson(config)) {
             const res = try self.formatJsonWithAllocator(record, config, scratch_allocator);
             bytes_formatted = res.len;
@@ -673,12 +667,6 @@ pub const Formatter = struct {
     fn configIsMsgpack(self: *Formatter, config: anytype) bool {
         _ = self;
         return if (@hasField(@TypeOf(config), "msgpack")) config.msgpack else false;
-    }
-
-    /// Internal helper to detect if TUI config is active.
-    fn configIsTui(self: *Formatter, config: anytype) bool {
-        _ = self;
-        return if (@hasField(@TypeOf(config), "tui")) config.tui else false;
     }
 
     /// Internal helper to detect if NDJSON config is active.
@@ -1000,11 +988,11 @@ pub const Formatter = struct {
         }
 
         // Render rule messages if present
-        if (record.rule_messages) |messages| {
-            const Rules = @import("rules.zig").Rules;
-            var rules_temp = Rules.init(self.allocator);
-            defer rules_temp.deinit();
-            try rules_temp.formatMessages(messages, writer, use_color);
+        if (record.invoke_messages) |messages| {
+            const Invoke = @import("invoke.zig").Invoke;
+            var invoke_temp = Invoke.init(self.allocator);
+            defer invoke_temp.deinit();
+            try invoke_temp.formatMessages(messages, writer, use_color);
         }
     }
 
@@ -1447,16 +1435,16 @@ pub const Formatter = struct {
             try writer.writeByte('}');
         }
 
-        // Rules
-        if (record.rule_messages) |messages| {
+        // Invoke messages
+        if (record.invoke_messages) |messages| {
             try writer.writeAll(comma);
             try writer.writeAll(indent);
-            try writer.writeAll("\"rules\"");
+            try writer.writeAll("\"invoke\"");
             try writer.writeAll(sep);
-            const Rules = @import("rules.zig").Rules;
-            var rules_temp = Rules.init(self.allocator);
-            defer rules_temp.deinit();
-            try rules_temp.formatMessagesJson(messages, writer, pretty);
+            const Invoke = @import("invoke.zig").Invoke;
+            var invoke_temp = Invoke.init(self.allocator);
+            defer invoke_temp.deinit();
+            try invoke_temp.formatMessagesJson(messages, writer, pretty);
         }
 
         try writer.writeAll(newline);
@@ -1886,54 +1874,6 @@ pub const Formatter = struct {
                 else => try writeMsgpackStr(writer, ""),
             }
         }
-
-        return buf.toOwnedSlice();
-    }
-
-    /// Formats a log record as a premium Terminal UI Dashboard card.
-    pub fn formatTuiWithAllocator(self: *Formatter, record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8 {
-        _ = config;
-        const alloc = scratch_allocator orelse self.allocator;
-        var buf = std.Io.Writer.Allocating.init(alloc);
-        errdefer buf.deinit();
-        const writer = &buf.writer;
-
-        const count = self.stats.getTotalFormatted();
-        const lvl_str = record.level.asString();
-        const color = record.level.defaultColor();
-
-        try writer.print("\x1b[36m┌── [LOGLY TUI MONITOR] ──[Count: {d}]──────────────────────────\x1b[0m\n", .{count});
-        try writer.print("\x1b[36m│\x1b[0m [\x1b[{s};1m{s:<8}\x1b[0m] Message: {s}\n", .{ color, lvl_str, record.message });
-        if (record.module) |mod| {
-            try writer.print("\x1b[36m│\x1b[0m Module: \x1b[35m{s}\x1b[0m", .{mod});
-            if (record.filename) |file| {
-                try writer.print(" | Location: \x1b[92m{s}:{d}\x1b[0m", .{ file, record.line orelse 0 });
-            }
-            try writer.writeAll("\n");
-        } else if (record.filename) |file| {
-            try writer.print("\x1b[36m│\x1b[0m Location: \x1b[92m{s}:{d}\x1b[0m\n", .{ file, record.line orelse 0 });
-        }
-
-        if (record.context.count() > 0) {
-            try writer.writeAll("\x1b[36m│\x1b[0m Context: ");
-            var it = record.context.iterator();
-            var first = true;
-            while (it.next()) |entry| {
-                if (!first) try writer.writeAll(", ");
-                first = false;
-                try writer.print("\x1b[33m{s}\x1b[0m=", .{entry.key_ptr.*});
-                switch (entry.value_ptr.*) {
-                    .string => |s| try writer.print("\"{s}\"", .{s}),
-                    .integer => |i| try writer.print("{d}", .{i}),
-                    .float => |f| try writer.print("{d:.2}", .{f}),
-                    .bool => |b| try writer.print("{}", .{b}),
-                    else => try writer.writeAll("null"),
-                }
-            }
-            try writer.writeAll("\n");
-        }
-
-        try writer.writeAll("\x1b[36m└──────────────────────────────────────────────────────────────\x1b[0m\n");
 
         return buf.toOwnedSlice();
     }
@@ -2592,12 +2532,12 @@ fn writeMsgpackStr(writer: anytype, str: []const u8) !void {
     try writer.writeAll(str);
 }
 
-test "formatter Msgpack and TUI" {
+test "formatter Msgpack" {
     const allocator = std.testing.allocator;
     var formatter = Formatter.init(allocator);
     defer formatter.deinit();
 
-    var record = Record.init(allocator, .info, "msgpack and tui test message");
+    var record = Record.init(allocator, .info, "msgpack test message");
     defer record.deinit();
     record.module = "test_binary";
 
@@ -2610,13 +2550,4 @@ test "formatter Msgpack and TUI" {
     try std.testing.expect(msgpack_data.len > 0);
     // Map header 0x87
     try std.testing.expectEqual(@as(u8, 0x87), msgpack_data[0]);
-
-    // Test TUI
-    config.msgpack = false;
-    config.tui = true;
-    const tui_str = try formatter.format(&record, config);
-    defer allocator.free(tui_str);
-
-    try std.testing.expect(tui_str.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, tui_str, "LOGLY TUI MONITOR") != null);
 }

@@ -96,4 +96,4 @@ zig build run-basic
 
 ## Related
 
-- [Allocator Strategies Example](allocator-strategies.md) - Default DebugAllocator workflow and optional arena allocation.
+- [Allocator Usage Example](allocator-strategies.md) - Default DebugAllocator workflow and passing your own allocator.

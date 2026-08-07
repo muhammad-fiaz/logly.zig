@@ -104,16 +104,6 @@ Set a custom prefix for worker threads to make debugging easier:
 
 Threads will be named automatically (e.g., `logly-worker-0`, `logly-worker-1`).
 
-### Arena Allocation
-
-Enable per-worker arena allocation for efficient memory usage:
-
-```zig
-.enable_arena = true
-```
-
-When enabled, each worker thread maintains its own arena allocator. This is particularly useful for formatting operations, as it reduces contention on the global allocator and improves cache locality. The arena is automatically reset after each task.
-
 ### Priority Queues
 
 Enable task prioritization:
@@ -630,6 +620,9 @@ pool.discard();  // Same as clear()
 if (pool.isRunning()) { ... }
 const total = pool.threadCount();
 ```
+
+> [!NOTE]
+> **Thread pool dispatch does not trigger `auto_flush`**: When the thread pool path is used, log records are submitted as tasks to the worker pool. At the point of submission (`dispatchRecord`), no sink write has occurred — the task is only queued. Therefore, even with `auto_flush = true`, no flush happens until the worker thread actually executes the task and writes to sinks. If you need immediate flush after every record, use the sync or async_logger paths instead of the thread pool path.
 
 ## See Also
 

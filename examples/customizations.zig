@@ -68,26 +68,11 @@ pub fn main() !void {
     try logger3.warning("Custom magenta warning", @src());
     try logger3.err("Custom red error message", @src());
 
-    std.debug.print("\n4. Diagnostics Custom Path\n", .{});
-    std.debug.print("   Storing diagnostics logs separately in ./diagnostics folder\n\n", .{});
-
-    var config4 = logly.Config.default();
-    config4.emit_system_diagnostics_on_init = true;
-    config4.diagnostics_output_path = "./diagnostics/system_info.log";
-    config4.logs_root_path = "./logs";
-
-    const logger4 = try logly.Logger.initWithConfig(allocator, config4);
-    defer logger4.deinit();
-
-    // Manually emit diagnostics to custom path
-    try logger4.logSystemDiagnostics(@src());
-    try logger4.info("System diagnostics saved to ./diagnostics/system_info.log", @src());
-
-    std.debug.print("\n5. Highlighter Patterns and Alerts\n", .{});
+    std.debug.print("\n4. Highlighter Patterns and Alerts\n", .{});
     std.debug.print("   Configuring pattern matching and alerts\n\n", .{});
 
-    var config5 = logly.Config.default();
-    config5.highlighters = .{
+    var config4 = logly.Config.default();
+    config4.highlighters = .{
         .enabled = true,
         .alert_on_match = true,
         .alert_min_severity = .warning,
@@ -95,20 +80,18 @@ pub fn main() !void {
         .max_matches_per_message = 5,
     };
 
-    const logger5 = try logly.Logger.initWithConfig(allocator, config5);
-    defer logger5.deinit();
+    const logger4 = try logly.Logger.initWithConfig(allocator, config4);
+    defer logger4.deinit();
 
-    try logger5.info("Normal log message", @src());
-    try logger5.warning("Warning: Database connection timeout detected", @src());
-    try logger5.err("ERROR: Critical failure in payment processing", @src());
+    try logger4.info("Normal log message", @src());
+    try logger4.warning("Warning: Database connection timeout detected", @src());
+    try logger4.err("ERROR: Critical failure in payment processing", @src());
 
-    std.debug.print("\n6. Combined: All Customizations\n", .{});
+    std.debug.print("\n5. Combined: All Customizations\n", .{});
     std.debug.print("   Using all customization features together\n\n", .{});
 
     var config_combined = logly.Config.default();
     config_combined.logs_root_path = "./logs";
-    config_combined.diagnostics_output_path = "./logs/diagnostics.log";
-    config_combined.emit_system_diagnostics_on_init = true;
 
     config_combined.format_structure = .{
         .message_prefix = "[APP] ",
@@ -136,8 +119,6 @@ pub fn main() !void {
     try logger_combined.info("Application initialization complete", @src());
     try logger_combined.warning("High memory usage detected", @src());
     try logger_combined.err("Failed to connect to remote service", @src());
-
-    try logger_combined.logSystemDiagnostics(@src());
 
     std.debug.print("\nAll customization examples completed!\n", .{});
     std.debug.print("Check ./logs directory for generated log files.\n", .{});

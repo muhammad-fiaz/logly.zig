@@ -88,8 +88,8 @@ pub const Record = struct {
     /// Additional context key-value pairs.
     context: std.StringHashMap(std.json.Value),
 
-    /// Rule messages attached to this record (if any rules matched).
-    rule_messages: ?[]const RuleMessage = null,
+    /// Invoke messages attached to this record (if any triggers matched).
+    invoke_messages: ?[]const InvokeMessage = null,
 
     /// Allocator reference for managed memory.
     allocator: std.mem.Allocator,
@@ -127,8 +127,8 @@ pub const Record = struct {
         error_category: ?ErrorCategory = null,
     };
 
-    /// Rule message structure (re-exported from rules.zig).
-    pub const RuleMessage = @import("rules.zig").Rules.RuleMessage;
+    /// Message type (re-exported from invoke.zig).
+    pub const InvokeMessage = @import("invoke.zig").Invoke.Message;
 
     /// Returns the display name for the level (custom or standard).
     pub fn levelName(self: *const Record) []const u8 {
@@ -236,7 +236,7 @@ pub const Record = struct {
             self.allocator.destroy(st);
         }
 
-        if (self.rule_messages) |messages| {
+        if (self.invoke_messages) |messages| {
             self.allocator.free(messages);
         }
 

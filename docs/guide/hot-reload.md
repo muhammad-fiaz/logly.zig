@@ -7,7 +7,7 @@ description: Learn how to dynamically reload Logly configuration at runtime from
 
 In long-running production environments, restarting a service to adjust log verbosity (e.g., turning on `DEBUG` or `TRACE` logs during an active incident) can be highly disruptive, costly, and may clear the very in-memory state you are trying to inspect.
 
-Logly provides high-performance **Zero-Downtime Hot-Reloading** of its configuration. This allows developers and operators to dynamically adjust active log levels, sinks, formats, and rules at runtime from a JSON configuration file without stopping the process or dropping a single log record.
+Logly provides high-performance **Zero-Downtime Hot-Reloading** of its configuration. This allows developers and operators to dynamically adjust active log levels, sinks, formats, and invoke triggers at runtime from a JSON configuration file without stopping the process or dropping a single log record.
 
 ---
 
@@ -75,8 +75,7 @@ The configuration file is a simple, standard JSON structure that mirrors Logly's
   "color": true,
   "json": false,
   "auto_flush": true,
-  "msgpack": false,
-  "tui": true
+  "msgpack": false
 }
 ```
 
@@ -88,7 +87,6 @@ The configuration file is a simple, standard JSON structure that mirrors Logly's
 * **`color`**: Enable/disable colored CLI output.
 * **`json`**: Toggle structured JSON formatting.
 * **`msgpack`**: Enable MessagePack binary formatting for storage efficiency.
-* **`tui`**: Enable styled terminal cards for local development.
 
 ---
 

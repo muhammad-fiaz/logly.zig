@@ -342,16 +342,6 @@ _ = try logger.add(.{
 });
 ```
 
-## Terminal UI (TUI) Dashboard Cards (v0.2.0)
-
-To elevate your local development workflow, you can enable Logly's stunning **Terminal UI (TUI)** layout. Instead of flat scrolling lines, each log record is rendered inside a bordered console card frame with styled badges, organized files, and aligned metadata tables.
-
-Enable in development:
-```zig
-config.tui = true;
-```
-
 ## See Also
 - [Formatter API](/api/formatter) - Formatter reference
-- [MessagePack & TUI Example](/examples/msgpack-tui) - Binary & Console cards example
 - [Formatted Logging Example](/examples/formatted-logging) - flat custom format example

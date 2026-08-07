@@ -336,6 +336,17 @@ pub fn main() !void {
         std.debug.print("    LZ4:    {} -> {} bytes ({s})\n", .{ algo_test_data.len, lz4_compressed.len, if (std.mem.eql(u8, algo_test_data, lz4_decompressed)) "✓" else "✗" });
     }
 
+    // Brotli (v0.2.1+)
+    {
+        var brotli_comp = logly.Compression.brotliCompression(allocator);
+        defer brotli_comp.deinit();
+        const brotli_compressed = try brotli_comp.compress(algo_test_data);
+        defer allocator.free(brotli_compressed);
+        const brotli_decompressed = try brotli_comp.decompress(brotli_compressed);
+        defer allocator.free(brotli_decompressed);
+        std.debug.print("    Brotli: {} -> {} bytes ({s})\n", .{ algo_test_data.len, brotli_compressed.len, if (std.mem.eql(u8, algo_test_data, brotli_decompressed)) "✓" else "✗" });
+    }
+
     std.debug.print("\n", .{});
 
     // Example 14: Config Presets for v0.1.8 Algorithms

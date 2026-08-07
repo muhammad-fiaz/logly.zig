@@ -35,7 +35,6 @@ Logly provides comprehensive callback support across all major components:
 - **Scheduler Callbacks**: Scheduled task execution
 - **Rules Callbacks**: Rule matching, evaluation, diagnostic messages
 - **Crash Callbacks**: Panic and signal handling notifications
-- **Update Checker Callbacks**: Version status notifications
 
 ## Logger Callbacks
 
@@ -270,6 +269,27 @@ fn onPatternMatched(pattern_name: []const u8, matched_value: []const u8) void {
 redactor.setPatternMatchedCallback(&onPatternMatched);
 ```
 
+### Redaction Detail
+
+Called when a redaction occurs, providing the pattern name, original value, and the redacted replacement:
+
+```zig
+fn onRedactionDetail(pattern_name: []const u8, original_value: []const u8, redacted_value: []const u8) void {
+    audit.log("Redacted '{s}': '{s}' -> '{s}'", .{ pattern_name, original_value, redacted_value });
+}
+
+redactor.setRedactionDetailCallback(&onRedactionDetail);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pattern_name` | `[]const u8` | Name of the redaction pattern that matched (e.g., `"password"`, `"card"`) |
+| `original_value` | `[]const u8` | The original sensitive value before redaction |
+| `redacted_value` | `[]const u8` | The replacement value after redaction (e.g., `"[REDACTED]"`) |
+
+> [!NOTE]
+> The `on_redaction_detail` callback is invoked for each individual redaction within a log record. A single record may trigger multiple redactions if multiple patterns match.
+
 ## Rotation Callbacks
 
 ### Rotation Lifecycle
@@ -404,72 +424,56 @@ scheduler.setTaskCompletedCallback(&onTaskCompleted);
 scheduler.setTaskErrorCallback(&onTaskError);
 ```
 
-## Rules System Callbacks
+## Invoke System Callbacks
 
-The Rules engine provides callbacks for monitoring rule evaluations and diagnostic message generation:
+The Invoke engine provides callbacks for monitoring trigger evaluations and message generation:
 
-### Rule Matched Callback
+### Trigger Matched Callback
 
-Called when a rule matches a log record:
+Called when a trigger matches a log record:
 
 ```zig
-fn onRuleMatched(rule: *const logly.Rules.Rule, record: *const logly.Record) void {
-    std.debug.print("Rule '{s}' matched for level {s}\n", .{
-        rule.name,
+fn onTriggerMatched(trigger: *const logly.Invoke.Trigger, record: *const logly.Record) void {
+    std.debug.print("Trigger '{s}' matched for level {s}\n", .{
+        trigger.name orelse "unnamed",
         @tagName(record.level),
     });
 }
 
-rules.on_rule_matched = &onRuleMatched;
-```
-
-### Rule Evaluated Callback
-
-Called for every rule evaluation (matched or not):
-
-```zig
-fn onRuleEvaluated(rule: *const logly.Rules.Rule, record: *const logly.Record, matched: bool) void {
-    if (matched) {
-        metrics.increment("rules.matched", 1);
-    } else {
-        metrics.increment("rules.not_matched", 1);
-    }
-}
-
-rules.on_rule_evaluated = &onRuleEvaluated;
+invoke.on_trigger_matched = &onTriggerMatched;
 ```
 
 ### Messages Attached Callback
 
-Called when diagnostic messages are attached to a record:
+Called when messages are attached to a record:
 
 ```zig
 fn onMessagesAttached(record: *const logly.Record, message_count: usize) void {
-    std.debug.print("Attached {d} diagnostic messages to record\n", .{message_count});
+    std.debug.print("Attached {d} messages to record\n", .{message_count});
 }
 
-rules.on_messages_attached = &onMessagesAttached;
+invoke.on_messages_attached = &onMessagesAttached;
 ```
 
 ### Evaluation Lifecycle Callbacks
 
 ```zig
 fn onBeforeEvaluate(record: *const logly.Record) void {
-    // Called before rule evaluation starts
+    // Called before trigger evaluation starts
 }
 
 fn onAfterEvaluate(record: *const logly.Record, matched_count: usize) void {
-    // Called after all rules have been evaluated
-    std.debug.print("{d} rules matched for this record\n", .{matched_count});
+    // Called after all triggers have been evaluated
+    std.debug.print("{d} triggers matched for this record\n", .{matched_count});
 }
 
 fn onEvaluationError(error_msg: []const u8) void {
-    std.debug.print("Rules evaluation error: {s}\n", .{error_msg});
+    std.debug.print("Invoke evaluation error: {s}\n", .{error_msg});
 }
 
-rules.on_before_evaluate = &onBeforeEvaluate;
-rules.on_after_evaluate = &onAfterEvaluate;
-rules.on_evaluation_error = &onEvaluationError;
+invoke.on_before_evaluate = &onBeforeEvaluate;
+invoke.on_after_evaluate = &onAfterEvaluate;
+invoke.on_evaluation_error = &onEvaluationError;
 ```
 
 ## Crash Callbacks
@@ -480,20 +484,6 @@ fn onCrash(message: []const u8) void {
 }
 
 logly.crash.setCrashCallback(&onCrash);
-```
-
-## Update Checker Callbacks
-
-```zig
-fn onUpdateResult(status: logly.UpdateChecker.UpdateCheckStatus, latest_tag: []const u8, current_version: []const u8) void {
-    std.debug.print("Update status: {s} ({s} -> {s})\n", .{
-        @tagName(status),
-        current_version,
-        latest_tag,
-    });
-}
-
-logly.UpdateChecker.setUpdateCallback(&onUpdateResult);
 ```
 
 ### Available Rules Callbacks

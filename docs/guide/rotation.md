@@ -24,6 +24,32 @@ try logger.add(.{
 });
 ```
 
+## Write Modes and Rotation
+
+Rotation works with all write modes. The `write_mode` field controls how the file is opened initially, while rotation handles file lifecycle:
+
+| Write Mode | Initial Behavior | After Rotation |
+|------------|------------------|----------------|
+| `.append` (default) | Append to existing file | New file starts fresh (truncated) |
+| `.overwrite` | Truncate file on startup | New file starts fresh (truncated) |
+| `.append_rotate` | Append with explicit rotation trigger | New file starts fresh (truncated) |
+
+```zig
+// Append mode with daily rotation
+var sink = logly.SinkConfig.file("app.log");
+sink.write_mode = .append;
+sink.rotation = "daily";
+sink.retention = 7;
+
+// Overwrite mode with size rotation
+var sink = logly.SinkConfig.file("session.log");
+sink.write_mode = .overwrite;
+sink.size_limit = 1024 * 1024; // 1MB
+sink.retention = 3;
+```
+
+After rotation, the old file is renamed (e.g., `app.log.2026-08-05`) and a new fresh file is created. This behavior is consistent across all write modes.
+
 ## Global Configuration
 
 You can configure rotation defaults globally in `Config`, which allows you to enforce strategies across all sinks or provide defaults for those that don't specify them.

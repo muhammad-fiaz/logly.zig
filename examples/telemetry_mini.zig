@@ -6,8 +6,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    logly.UpdateChecker.setEnabled(false);
-
     var config = logly.TelemetryConfig.file("telemetry_test.jsonl");
     config.service_name = "test-app";
     config.enabled = true;

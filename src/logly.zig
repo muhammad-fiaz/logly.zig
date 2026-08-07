@@ -37,7 +37,6 @@
 //!
 //! ```zig
 //! var config = logly.Config.production();
-//! config.use_arena_allocator = true; // optional high-throughput scratch arena
 //! const logger = try logly.Logger.initWithConfig(allocator, config);
 //! ```
 //!
@@ -108,13 +107,9 @@ pub const SamplerPresets = @import("sampler.zig").SamplerPresets;
 pub const Redactor = @import("redactor.zig").Redactor;
 pub const RedactionPresets = @import("redactor.zig").RedactionPresets;
 pub const Metrics = @import("metrics.zig").Metrics;
-pub const Diagnostics = @import("diagnostics.zig");
-pub const Rules = @import("rules.zig").Rules;
-pub const RulesConfig = Rules.RulesConfig;
-pub const RuleMessage = Rules.RuleMessage;
-pub const RuleMessageBuilder = @import("rules.zig").RuleMessageBuilder;
-pub const LevelMatchBuilder = @import("rules.zig").LevelMatchBuilder;
-pub const UpdateChecker = @import("update_checker.zig"); // Added alias
+
+pub const Invoke = @import("invoke.zig").Invoke;
+pub const InvokeMessage = Invoke.Message;
 
 // Advanced I/O components
 pub const Compression = @import("compression.zig").Compression;

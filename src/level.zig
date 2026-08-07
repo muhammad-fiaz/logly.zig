@@ -172,17 +172,16 @@ pub const Level = enum(u8) {
     }
 
     pub fn fromString(s: []const u8) ?Level {
-        const N = Constants.MetricsConstants.level_names;
-        if (std.mem.eql(u8, s, N[0])) return .trace;
-        if (std.mem.eql(u8, s, N[1])) return .debug;
-        if (std.mem.eql(u8, s, N[2])) return .info;
-        if (std.mem.eql(u8, s, N[3])) return .notice;
-        if (std.mem.eql(u8, s, N[4])) return .success;
-        if (std.mem.eql(u8, s, N[5])) return .warning;
-        if (std.mem.eql(u8, s, N[6])) return .err;
-        if (std.mem.eql(u8, s, N[7])) return .fail;
-        if (std.mem.eql(u8, s, N[8])) return .critical;
-        if (std.mem.eql(u8, s, N[9])) return .fatal;
+        if (std.ascii.eqlIgnoreCase(s, "trace")) return .trace;
+        if (std.ascii.eqlIgnoreCase(s, "debug")) return .debug;
+        if (std.ascii.eqlIgnoreCase(s, "info")) return .info;
+        if (std.ascii.eqlIgnoreCase(s, "notice")) return .notice;
+        if (std.ascii.eqlIgnoreCase(s, "success")) return .success;
+        if (std.ascii.eqlIgnoreCase(s, "warning") or std.ascii.eqlIgnoreCase(s, "warn")) return .warning;
+        if (std.ascii.eqlIgnoreCase(s, "error") or std.ascii.eqlIgnoreCase(s, "err")) return .err;
+        if (std.ascii.eqlIgnoreCase(s, "fail")) return .fail;
+        if (std.ascii.eqlIgnoreCase(s, "critical") or std.ascii.eqlIgnoreCase(s, "crit")) return .critical;
+        if (std.ascii.eqlIgnoreCase(s, "fatal")) return .fatal;
         return null;
     }
 
