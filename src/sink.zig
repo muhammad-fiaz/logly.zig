@@ -97,7 +97,7 @@ const SystemLog = struct {
     const PosixImpl = if (platform == .posix) struct {
         fn logPosix(self: *SystemLog, level: Level, message: []const u8) !void {
             // Prepare zero-terminated message
-            const msg_z: [:0]const u8 = try self.allocator.dupeZ(u8, message);
+            const msg_z: [:0]const u8 = try self.allocator.dupeSentinel(u8, message, 0);
             defer self.allocator.free(msg_z);
 
             // Map level to syslog priority
@@ -124,7 +124,7 @@ const SystemLog = struct {
 
         switch (platform) {
             .windows => {
-                const name_z = try allocator.dupeZ(u8, safe_name);
+                const name_z = try allocator.dupeSentinel(u8, safe_name, 0);
                 errdefer allocator.free(name_z);
                 self.ident = name_z;
                 if (windows.RegisterEventSourceA(null, name_z)) |h| {
@@ -132,7 +132,7 @@ const SystemLog = struct {
                 }
             },
             .posix => {
-                const name_z = try allocator.dupeZ(u8, safe_name);
+                const name_z = try allocator.dupeSentinel(u8, safe_name, 0);
                 self.ident = name_z;
                 posix.openlog(name_z, posix.LOG_PID | posix.LOG_CONS, posix.LOG_USER);
             },
@@ -175,7 +175,7 @@ const SystemLog = struct {
 
     fn logWindows(self: *SystemLog, level: Level, message: []const u8) !void {
         if (self.handle) |h| {
-            const msg_z = try self.allocator.dupeZ(u8, message);
+            const msg_z = try self.allocator.dupeSentinel(u8, message, 0);
             defer self.allocator.free(msg_z);
             const strings = [_]windows.LPCSTR{msg_z};
             const wType = switch (level) {

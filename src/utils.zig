@@ -1832,7 +1832,7 @@ pub fn computeChainHash(last_hash: ?[32]u8, newly_written: []const u8) [32]u8 {
         hasher.update(&lh);
     } else {
         // Use a default seed/IV for the first hash in the chain
-        const iv = [_]u8{0} ** 32;
+        const iv: [32]u8 = @splat(0);
         hasher.update(&iv);
     }
     hasher.update(newly_written);

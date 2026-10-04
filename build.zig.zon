@@ -2,15 +2,16 @@
     .name = .logly,
     .version = "0.2.1",
     .fingerprint = 0x54acba927bcb9891,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
+        // Once #3 is merged, we can switch to the official zstd.zig package.
         .zstd = .{
-            .url = "https://github.com/muhammad-fiaz/zstd.zig/archive/refs/tags/0.0.1.tar.gz",
-            .hash = "zstd-0.0.1-biH4jJ_KMgDBpUCoVlLqLK9JeyTgO8vFXurQl_ECstYN",
+            .url = "git+https://github.com/mgomersbach/zstd.zig?ref=feat/dictionary-support#7730ec01cc3d23e16e7f6b22800467fa246816de",
+            .hash = "zstd-0.0.3-biH4jFzqBABRYhsPQeiMlXbPNXbYXwFDRlZGuSGitvU-",
         },
         .brotli = .{
-            .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.1.tar.gz",
-            .hash = "brotli-0.0.1-utAAyFafJQAO-8c5LCoUD5ZhEmMfSZx72MonfJipzynD",
+            .url = "git+https://github.com/muhammad-fiaz/brotli.zig?ref=main#9f3209dbac424704d9337a8dafc65ba22be8fa20",
+            .hash = "brotli-0.0.4-utAAyNAhCgC-Qnj9sNoERwSLIcmIrUn_gZaxX1RZRcRk",
         },
     },
     .paths = .{

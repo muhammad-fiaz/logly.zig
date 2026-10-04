@@ -2143,7 +2143,8 @@ test "scheduler maintenance task" {
     // Verify max_total_size constraint enforcement
     {
         const file = try dir.createFile(Utils.io(), "large.log", .{});
-        try file.writeStreamingAll(Utils.io(), &([_]u8{'A'} ** Constants.SizeConstants.bytes_per_kb));
+        const kb: [Constants.SizeConstants.bytes_per_kb]u8 = @splat('A');
+        try file.writeStreamingAll(Utils.io(), &kb);
         file.close(Utils.io());
     }
 
