@@ -36,6 +36,17 @@ const zstd = @import("zstd");
 const brotli = @import("brotli");
 const ThreadPool = @import("thread_pool.zig").ThreadPool;
 
+/// `s` repeated `n` times, as `"s" ** n` used to produce before Zig 0.17
+/// removed array multiplication. Test-fixture data only.
+fn repeatString(comptime s: []const u8, comptime n: usize) []const u8 {
+    const buf: [s.len * n]u8 = comptime blk: {
+        var b: [s.len * n]u8 = undefined;
+        for (0..n) |i| @memcpy(b[i * s.len ..][0..s.len], s);
+        break :blk b;
+    };
+    return &buf;
+}
+
 /// Log compression utilities with callback support and comprehensive monitoring.
 ///
 /// Provides compression and decompression capabilities for log files using
@@ -963,20 +974,12 @@ pub const Compression = struct {
 
         const compression_level = self.config.getEffectiveZstdLevel();
 
-        if (self.config.zstd_dict) |dict| {
-            var compressor = zstd.Compressor.init() catch return error.ZstdError;
-            defer compressor.deinit();
-
-            compressor.setParameter(.compression_level, compression_level) catch return error.ZstdError;
-            compressor.loadDictionary(dict) catch return error.ZstdError;
-            const compressed = compressor.compressAlloc(alloc, data) catch return error.ZstdCompressionFailed;
-            defer alloc.free(compressed);
-            try result.appendSlice(alloc, compressed);
-        } else {
-            const compressed = zstd.compress(alloc, data, compression_level) catch return error.ZstdCompressionFailed;
-            defer alloc.free(compressed);
-            try result.appendSlice(alloc, compressed);
-        }
+        const compressed = if (self.config.zstd_dict) |dict|
+            zstd.compressWithDict(alloc, data, dict, zstd.getCompressionParameters(compression_level, data.len, 0)) catch return error.ZstdCompressionFailed
+        else
+            zstd.compressWithLevel(alloc, data, compression_level) catch return error.ZstdCompressionFailed;
+        defer alloc.free(compressed);
+        try result.appendSlice(alloc, compressed);
     }
 
     /// Decompresses zstd-compressed data.
@@ -998,25 +1001,15 @@ pub const Compression = struct {
             return alloc.alloc(u8, 0);
         }
 
-        if (self.config.zstd_dict) |dict| {
-            var decompressor = zstd.Decompressor.init() catch return error.ZstdError;
-            defer decompressor.deinit();
-
-            decompressor.loadDictionary(dict) catch return error.ZstdError;
-            const decompressed = decompressor.decompressAlloc(alloc, data, original_size) catch return error.ZstdDecompressionFailed;
-            if (decompressed.len != original_size) {
-                alloc.free(decompressed);
-                return error.ZstdSizeMismatch;
-            }
-            return decompressed;
-        } else {
-            const decompressed = zstd.decompress(alloc, data, original_size) catch return error.ZstdDecompressionFailed;
-            if (decompressed.len != original_size) {
-                alloc.free(decompressed);
-                return error.ZstdSizeMismatch;
-            }
-            return decompressed;
+        const decompressed = if (self.config.zstd_dict) |dict|
+            zstd.decompressWithDict(alloc, data, dict) catch return error.ZstdDecompressionFailed
+        else
+            zstd.decompress(alloc, data) catch return error.ZstdDecompressionFailed;
+        if (decompressed.len != original_size) {
+            alloc.free(decompressed);
+            return error.ZstdSizeMismatch;
         }
+        return decompressed;
     }
 
     fn compressTarGzWithAllocator(self: *Compression, data: []const u8, result: *std.ArrayList(u8), alloc: std.mem.Allocator) !void {
@@ -2736,7 +2729,7 @@ test "compression with repetitive data" {
     defer comp.deinit();
 
     // Repetitive data compresses well with RLE
-    const data = "AAAAAAAAAAAAAAAA" ** 50; // 800 bytes of 'A'
+    const data = repeatString("AAAAAAAAAAAAAAAA", 50); // 800 bytes of 'A'
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -2783,7 +2776,7 @@ test "compression with log-like data" {
 test "compression levels" {
     const allocator = std.testing.allocator;
 
-    const test_data = "The quick brown fox jumps over the lazy dog. " ** 20;
+    const test_data = repeatString("The quick brown fox jumps over the lazy dog. ", 20);
 
     // Test different compression levels
     inline for ([_]Compression.Level{ .none, .fast, .default, .best }) |level| {
@@ -2825,7 +2818,7 @@ test "compression stats" {
     var comp = Compression.init(allocator);
     defer comp.deinit();
 
-    const data = "Test data" ** 100; // Repetitive data compresses well
+    const data = repeatString("Test data", 100); // Repetitive data compresses well
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -2849,7 +2842,7 @@ test "streaming compression" {
     var comp = Compression.init(allocator);
     defer comp.deinit();
 
-    const data = "Streaming test data" ** 10;
+    const data = repeatString("Streaming test data", 10);
 
     const reader: std.Io.Reader = .fixed(data);
     var out_buffer = std.Io.Writer.Allocating.init(allocator);
@@ -2995,7 +2988,7 @@ test "zstd compression with repetitive data" {
     defer comp.deinit();
 
     // Repetitive data compresses well
-    const data = "AAAAAAAAAAAAAAAA" ** 50; // 800 bytes of 'A'
+    const data = repeatString("AAAAAAAAAAAAAAAA", 50); // 800 bytes of 'A'
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3009,9 +3002,31 @@ test "zstd compression with repetitive data" {
     try std.testing.expectEqualStrings(data, decompressed);
 }
 
+test "zstd compression with a raw-content dictionary round-trips and shrinks output" {
+    const allocator = std.testing.allocator;
+    const dict = repeatString("shared dictionary content for zstd. ", 20);
+
+    var comp = Compression.zstdCompression(allocator);
+    defer comp.deinit();
+    comp.config.zstd_dict = dict;
+
+    const data = repeatString("shared dictionary content for zstd. ", 4);
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
+    try std.testing.expectEqualStrings(data, decompressed);
+
+    var comp_no_dict = Compression.zstdCompression(allocator);
+    defer comp_no_dict.deinit();
+    const compressed_no_dict = try comp_no_dict.compress(data);
+    defer allocator.free(compressed_no_dict);
+    try std.testing.expect(compressed.len < compressed_no_dict.len);
+}
+
 test "zstd compression presets" {
     const allocator = std.testing.allocator;
-    const test_data = "The quick brown fox jumps over the lazy dog. " ** 20;
+    const test_data = repeatString("The quick brown fox jumps over the lazy dog. ", 20);
 
     // Test zstd presets
     {
@@ -3057,7 +3072,7 @@ test "zstd compression presets" {
 
 test "zstd compression levels" {
     const allocator = std.testing.allocator;
-    const test_data = "Log data: " ** 100; // Good test data for compression
+    const test_data = repeatString("Log data: ", 100); // Good test data for compression
 
     // Test all standard levels via CompressionLevel enum
     inline for ([_]Compression.Level{ .fastest, .fast, .default, .best }) |level| {
@@ -3115,7 +3130,7 @@ test "zstd compression stats" {
     var comp = Compression.zstdCompression(allocator);
     defer comp.deinit();
 
-    const data = "Zstd test data" ** 100;
+    const data = repeatString("Zstd test data", 100);
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3149,7 +3164,7 @@ test "zstd compression CRC32 checksum" {
 
 test "all algorithms compress and decompress" {
     const allocator = std.testing.allocator;
-    const test_data = "Test data for all compression algorithms" ** 10;
+    const test_data = repeatString("Test data for all compression algorithms", 10);
 
     // Test all algorithms (excluding .none which is passthrough mode)
     inline for ([_]Compression.Algorithm{ .deflate, .zlib, .raw_deflate, .gzip, .zstd }) |algo| {
@@ -3179,7 +3194,7 @@ test "deflate algorithm" {
     comp.config.algorithm = .deflate;
     defer comp.deinit();
 
-    const data = "DEFLATE test data" ** 10;
+    const data = repeatString("DEFLATE test data", 10);
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3198,7 +3213,7 @@ test "zlib algorithm" {
     comp.config.algorithm = .zlib;
     defer comp.deinit();
 
-    const data = "ZLIB test data" ** 10;
+    const data = repeatString("ZLIB test data", 10);
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3217,7 +3232,7 @@ test "raw_deflate algorithm" {
     comp.config.algorithm = .raw_deflate;
     defer comp.deinit();
 
-    const data = "RAW_DEFLATE test data" ** 10;
+    const data = repeatString("RAW_DEFLATE test data", 10);
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3269,7 +3284,7 @@ test "decompress deflate capacity overflow" {
 
 test "compression preset factory methods" {
     const allocator = std.testing.allocator;
-    const test_data = "Preset test data" ** 20;
+    const test_data = repeatString("Preset test data", 20);
 
     // Test all Compression factory methods
     const factories = .{
@@ -3522,7 +3537,7 @@ test "statistics alias" {
     var comp = Compression.init(allocator);
     defer comp.deinit();
 
-    const data = "Test data" ** 50;
+    const data = repeatString("Test data", 50);
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3623,7 +3638,7 @@ test "ratio method" {
     var comp = Compression.zstdCompression(allocator);
     defer comp.deinit();
 
-    const data = "Repetitive data " ** 100;
+    const data = repeatString("Repetitive data ", 100);
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3633,7 +3648,7 @@ test "ratio method" {
 
 test "zstd custom level compression" {
     const allocator = std.testing.allocator;
-    const test_data = "Custom level test data " ** 50;
+    const test_data = repeatString("Custom level test data ", 50);
 
     // Test various custom zstd levels
     inline for ([_]i32{ 1, 3, 6, 10, 15, 19, 22 }) |custom_level| {
@@ -3652,7 +3667,7 @@ test "zstd custom level compression" {
 
 test "zstd custom level clamping" {
     const allocator = std.testing.allocator;
-    const test_data = "Clamping test data " ** 20;
+    const test_data = repeatString("Clamping test data ", 20);
 
     // Test level clamping (levels < 1 should clamp to 1, > 22 should clamp to 22)
     {
@@ -3711,7 +3726,7 @@ test "zstd getEffectiveZstdLevel" {
 
 test "zstd aliases" {
     const allocator = std.testing.allocator;
-    const test_data = "Alias test data " ** 30;
+    const test_data = repeatString("Alias test data ", 30);
 
     // Test zstdDefault alias (same as zstdCompression)
     {
@@ -3773,7 +3788,7 @@ test "CompressionConfig zstd aliases" {
 
 test "lzma compression roundtrip" {
     const allocator = std.testing.allocator;
-    const test_data = "LZMA compression test data for log files" ** 20;
+    const test_data = repeatString("LZMA compression test data for log files", 20);
 
     var comp = Compression.lzmaCompression(allocator);
     defer comp.deinit();
@@ -3793,7 +3808,7 @@ test "lzma compression roundtrip" {
 
 test "lzma2 compression roundtrip" {
     const allocator = std.testing.allocator;
-    const test_data = "LZMA2 compression test data for log files" ** 20;
+    const test_data = repeatString("LZMA2 compression test data for log files", 20);
 
     var comp = Compression.lzma2Compression(allocator);
     defer comp.deinit();
@@ -3813,7 +3828,7 @@ test "lzma2 compression roundtrip" {
 
 test "xz compression roundtrip" {
     const allocator = std.testing.allocator;
-    const test_data = "XZ compression test data for log files" ** 20;
+    const test_data = repeatString("XZ compression test data for log files", 20);
 
     var comp = Compression.xzCompression(allocator);
     defer comp.deinit();
@@ -3833,7 +3848,7 @@ test "xz compression roundtrip" {
 
 test "zip compression roundtrip" {
     const allocator = std.testing.allocator;
-    const test_data = "ZIP compression test data for log files" ** 20;
+    const test_data = repeatString("ZIP compression test data for log files", 20);
 
     var comp = Compression.zipCompression(allocator);
     defer comp.deinit();
@@ -3853,7 +3868,7 @@ test "zip compression roundtrip" {
 
 test "tar.gz compression roundtrip" {
     const allocator = std.testing.allocator;
-    const test_data = "TAR.GZ compression test data for log files" ** 20;
+    const test_data = repeatString("TAR.GZ compression test data for log files", 20);
 
     var comp = Compression.tarGzCompression(allocator);
     defer comp.deinit();
@@ -3873,7 +3888,7 @@ test "tar.gz compression roundtrip" {
 
 test "lz4 compression roundtrip" {
     const allocator = std.testing.allocator;
-    const test_data = "LZ4 compression test data for log files" ** 20;
+    const test_data = repeatString("LZ4 compression test data for log files", 20);
 
     var comp = Compression.lz4Compression(allocator);
     defer comp.deinit();
@@ -3915,7 +3930,7 @@ test "all v0.1.6 compression algorithms with empty data" {
 test "all v0.1.6 compression algorithms with large data" {
     const allocator = std.testing.allocator;
     // 10KB of repetitive log-like data
-    const test_data = "[2026-01-19T19:30:00Z] INFO: Application started successfully\n" ** 150;
+    const test_data = repeatString("[2026-01-19T19:30:00Z] INFO: Application started successfully\n", 150);
 
     const algorithms = [_]struct { algo: Compression.Algorithm, name: []const u8 }{
         .{ .algo = .lzma, .name = "lzma" },
@@ -3945,7 +3960,7 @@ test "all v0.1.6 compression algorithms with large data" {
 
 test "compression factory methods for new algorithms" {
     const allocator = std.testing.allocator;
-    const test_data = "Factory method test" ** 10;
+    const test_data = repeatString("Factory method test", 10);
 
     // Test all new factory methods
     const factories = .{
@@ -3973,7 +3988,7 @@ test "compression factory methods for new algorithms" {
 
 test "compression with checksum for new algorithms" {
     const allocator = std.testing.allocator;
-    const test_data = "Checksum verification test data" ** 15;
+    const test_data = repeatString("Checksum verification test data", 15);
 
     const algorithms = [_]Compression.Algorithm{
         .lzma, .lzma2, .xz, .zip, .tar_gz, .lz4,
@@ -4026,7 +4041,7 @@ test "compression config presets for new algorithms" {
 
 test "compression stats tracking for new algorithms" {
     const allocator = std.testing.allocator;
-    const test_data = "Stats tracking test data" ** 30;
+    const test_data = repeatString("Stats tracking test data", 30);
 
     var comp = Compression.lzmaCompression(allocator);
     defer comp.deinit();

@@ -273,7 +273,7 @@ pub const Metrics = struct {
     error_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     /// Per-level record counts.
-    level_counts: [Constants.LevelConstants.count]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.LevelConstants.count,
+    level_counts: [Constants.LevelConstants.count]std.atomic.Value(Constants.AtomicUnsigned) = @splat(std.atomic.Value(Constants.AtomicUnsigned).init(0)),
 
     /// Metrics collection start time.
     start_time: i64,
@@ -288,10 +288,10 @@ pub const Metrics = struct {
     max_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     /// Histogram buckets for latency distribution.
-    histogram: [Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.MetricsConstants.histogram_boundaries.len,
+    histogram: [Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = @splat(std.atomic.Value(Constants.AtomicUnsigned).init(0)),
 
     /// Histogram buckets for latency distribution per log level.
-    level_histograms: [Constants.LevelConstants.count][Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = [_][Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned){[_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.MetricsConstants.histogram_boundaries.len} ** Constants.LevelConstants.count,
+    level_histograms: [Constants.LevelConstants.count][Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = @splat(@as([Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned), @splat(std.atomic.Value(Constants.AtomicUnsigned).init(0)))),
 
     /// Snapshot history for trend analysis.
     history: std.ArrayList(Snapshot),
