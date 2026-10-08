@@ -2578,7 +2578,6 @@ test "logger async background worker drains on deinit without a manual flush" {
     try std.testing.expect(stat.size > 0);
 }
 
-
 test "logger async memory sink retains records instead of writing to stdout" {
     // writeRaw() is the async delivery path. It once had no memory branch and
     // fell through to stdout, silently dropping records from a memory sink and

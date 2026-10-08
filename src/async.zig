@@ -448,7 +448,7 @@ pub const AsyncLogger = struct {
                 .binary = binary,
                 .color = color,
                 .colorVertical = vertical,
-                    .colorPresentable = presentable,
+                .colorPresentable = presentable,
             };
             self.writeToSinks(entry);
             return true;

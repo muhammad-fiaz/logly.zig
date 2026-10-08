@@ -1388,7 +1388,7 @@ pub const Sink = struct {
                 self.noteMsgpackWritten(bytes.len);
             }
         } else if (self.memoryRing) |ring| {
-const idx = self.memoryRingIndex;
+            const idx = self.memoryRingIndex;
             if (ring[idx]) |old| {
                 self.allocator.free(old);
             }
