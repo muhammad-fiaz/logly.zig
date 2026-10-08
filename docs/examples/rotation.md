@@ -19,7 +19,7 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Add a rotating sink: Daily rotation, keep 30 files
-    try logger.addSink(logly.SinkConfig.rotating("logs/app.log", "daily", 30));
+    _ = try logger.addSink(logly.SinkConfig.rotating("logs/app.log", "daily", 30));
 
     logger.info("Application started");
 }
@@ -29,7 +29,7 @@ pub fn main() !void {
 Rotate every 50MB, keep 5 files.
 
 ```zig
-try logger.addSink(logly.SinkConfig.createSizeRotatingSink("logs/data.log", 50 * 1024 * 1024, 5));
+_ = try logger.addSink(logly.SinkConfig.createSizeRotatingSink("logs/data.log", 50 * 1024 * 1024, 5));
 ```
 
 ### Concise Configuration (Short Alias)
@@ -162,11 +162,11 @@ defer minimal.deinit();
 
 ```zig
 // Use preset helpers to create sink configs
-try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
-try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
-try logger.addSink(RotationPresets.weeklySink("logs/weekly.log", 12));
-try logger.addSink(RotationPresets.monthlySink("logs/monthly.log", 12));
-try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
+_ = try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
+_ = try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
+_ = try logger.addSink(RotationPresets.weeklySink("logs/weekly.log", 12));
+_ = try logger.addSink(RotationPresets.monthlySink("logs/monthly.log", 12));
+_ = try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
 ```
 
 ---
@@ -295,7 +295,7 @@ Control exactly how the rotated file is named using a format string.
 
 ```zig
 // Rotates "app.log" to "app-2023.10.25.log" instead of "app.log.2023-10-25"
-try logger.add(.{
+_ = try logger.add(.{
     .path = "app.log",
     .rotation = "daily",
     .namingFormat = "{base}-{date}{ext}",

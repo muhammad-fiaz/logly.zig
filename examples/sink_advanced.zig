@@ -8,6 +8,14 @@ pub fn main() !void {
 
     _ = logly.Terminal.enableAnsiColors();
 
+    var globalConfig = logly.Config.default();
+    globalConfig.autoSink = false;
+
+    // Sinks are registered through the logger; fetch the handle back to
+    // inspect it. The logger owns and cleans up every registered sink.
+    const owner = try logly.Logger.initWithConfig(allocator, globalConfig);
+    defer owner.deinit();
+
     std.debug.print("\n", .{});
     std.debug.print("  Advanced Sink Demo\n", .{});
     std.debug.print("\n\n", .{});
@@ -18,11 +26,8 @@ pub fn main() !void {
     memCfg.name = "in_memory_buffer";
     memCfg.memoryCapacity = 3; // Keep ring buffer tiny for simple demo
 
-    const memSink = try logly.Sink.init(allocator, memCfg);
-    defer memSink.deinit();
-
-    var globalConfig = logly.Config.default();
-    globalConfig.autoSink = false;
+    const memSink = owner.getSink(try owner.addSink(memCfg)) orelse
+        return error.SinkUnavailable;
 
     var r1 = logly.Record.init(allocator, .info, "Message One");
     defer r1.deinit();
@@ -73,14 +78,14 @@ pub fn main() !void {
     var s1Cfg = logly.SinkConfig.memory();
     s1Cfg.name = "sub_sink_1";
     s1Cfg.memoryCapacity = 10;
-    const s1 = try logly.Sink.init(allocator, s1Cfg);
-    defer s1.deinit();
+    const s1 = owner.getSink(try owner.addSink(s1Cfg)) orelse
+        return error.SinkUnavailable;
 
     var s2Cfg = logly.SinkConfig.memory();
     s2Cfg.name = "sub_sink_2";
     s2Cfg.memoryCapacity = 10;
-    const s2 = try logly.Sink.init(allocator, s2Cfg);
-    defer s2.deinit();
+    const s2 = owner.getSink(try owner.addSink(s2Cfg)) orelse
+        return error.SinkUnavailable;
 
     try group.addSink(s1);
     try group.addSink(s2);
@@ -117,8 +122,8 @@ pub fn main() !void {
     rateCfg.name = "rate_limited_stderr";
     rateCfg.rateLimitPerSecond = 2; // only allow 2 msgs/sec
 
-    const rateSink = try logly.Sink.init(allocator, rateCfg);
-    defer rateSink.deinit();
+    const rateSink = owner.getSink(try owner.addSink(rateCfg)) orelse
+        return error.SinkUnavailable;
 
     std.debug.print("Writing 5 messages rapidly (expect only 2 to output)...\n", .{});
     var i: usize = 0;

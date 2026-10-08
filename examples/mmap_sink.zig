@@ -1,6 +1,9 @@
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -10,7 +13,6 @@ pub fn main() !void {
 
     // Configure a sink with mmap enabled for high-performance writes
     const logPath = "mmap_example.log";
-    const io = logly.Utils.io();
 
     var sinkConfig = logly.SinkConfig.file(logPath);
     sinkConfig.name = "mmap_sink";

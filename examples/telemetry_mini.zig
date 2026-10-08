@@ -1,6 +1,9 @@
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -25,7 +28,7 @@ pub fn main() !void {
 
         try span.setAttribute("items.count", .{ .integer = 42 });
         try span.addEvent("started", null);
-        logly.Utils.sleepMs(10);
+        _ = io.sleep(std.Io.Duration.fromMilliseconds(10), .awake) catch {};
         try span.addEvent("finished", null);
     }
 

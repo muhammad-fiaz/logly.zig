@@ -1,6 +1,9 @@
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -18,7 +21,6 @@ pub fn main() !void {
 
     // Write a sample JSON config file to disk using Zig 0.16 IO API
     const configPath = "hot_reload_test.json";
-    const io = logly.Utils.io();
     {
         const f = try std.Io.Dir.cwd().createFile(io, configPath, .{});
         defer f.close(io);

@@ -1,17 +1,20 @@
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     const stream = try logly.Network.connectTcp(allocator, "tcp://127.0.0.1:9000");
-    defer stream.close(logly.Utils.io());
+    defer stream.close(io);
     try logly.Network.sendTcp(stream, "raw tcp log\n");
 
     const udp = try logly.Network.createUdpSocket(allocator, "udp://127.0.0.1:514");
-    defer udp.socket.close(logly.Utils.io());
+    defer udp.socket.close(io);
     try logly.Network.sendSyslogUdp(
         allocator,
         udp.socket,

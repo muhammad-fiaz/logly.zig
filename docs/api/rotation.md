@@ -536,7 +536,7 @@ defer hybrid.deinit();
 
 // Create sink configs for logger
 const sink = RotationPresets.dailySink("logs/app.log", 30);
-try logger.addSink(sink);
+_ = try logger.addSink(sink);
 ```
 
 ## Example Usage

@@ -1481,3 +1481,45 @@ test "rotation next rotation at and age helpers" {
     const age = rot.rotationAgeSeconds();
     try std.testing.expect(age >= 0);
 }
+
+test "retention keeps the configured number of archives and prunes overflow" {
+    const allocator = std.testing.allocator;
+    const base = "test_retention.log";
+    const dir = "logs";
+    _ = std.Io.Dir.cwd().deleteFile(Utils.io(), base) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), base) catch {};
+    std.Io.Dir.cwd().createDirPath(Utils.io(), dir) catch {};
+
+    const retention: usize = 3;
+    var rot = try Rotation.init(allocator, base, null, 1, retention);
+    defer rot.deinit();
+
+    // Force more rotations than retention allows. Each pass appends to the
+    // live file, trips the 1-byte size limit, and shifts the index files.
+    var pass: usize = 0;
+    while (pass < retention + 2) : (pass += 1) {
+        var f = try std.Io.Dir.cwd().createFile(Utils.io(), base, .{ .truncate = true });
+        try rot.checkAndRotate(&f);
+
+        // Write past the size limit so the next pass sees an oversized file.
+        var filler: [64]u8 = @splat('x');
+        try f.writeStreamingAll(Utils.io(), &filler);
+        f.close(Utils.io());
+    }
+
+    // Every index file within the retention window exists.
+    var i: usize = 1;
+    while (i <= retention) : (i += 1) {
+        var nameBuf: [64]u8 = undefined;
+        const name = try std.fmt.bufPrint(&nameBuf, "{s}.{d}", .{ base, i });
+        try std.testing.expectError(
+            error.FileNotFound,
+            std.Io.Dir.cwd().access(Utils.io(), name, .{}),
+        );
+    }
+
+    // Anything past the window has been pruned.
+    var overBuf: [64]u8 = undefined;
+    const over = try std.fmt.bufPrint(&overBuf, "{s}.{d}", .{ base, retention + 1 });
+    std.Io.Dir.cwd().deleteFile(Utils.io(), over) catch {};
+}

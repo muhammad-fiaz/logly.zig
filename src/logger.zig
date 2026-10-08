@@ -2751,6 +2751,93 @@ fn readWholeFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return allocator.realloc(buf, total) catch buf[0..total];
 }
 
+test "default sink is console and storage flags decide file writes" {
+    // A SinkConfig with no path is a console sink. asyncWrite only controls
+    // buffering of whatever target is chosen; it has no bearing on whether a
+    // file is written. Storage flags decide that, and they fail loudly rather
+    // than silently creating a file.
+    const allocator = std.testing.allocator;
+    const path = "test_default_sink_probe.log";
+    std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+
+    // displayOnly: console on, file storage off. autoSink already added a
+    // console sink, and a file sink is refused instead of being written.
+    {
+        var cfg = Config.displayOnly();
+        cfg.autoSink = true;
+        const l = try Logger.initWithConfig(allocator, cfg);
+        defer l.deinit();
+        try std.testing.expectEqual(@as(usize, 1), l.getSinkCount());
+        try std.testing.expectError(error.FileStorageDisabled, l.addSink(.{ .path = path }));
+        try l.info("console only", null);
+        try l.flush();
+    }
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(Utils.io(), path, .{}));
+
+    // logOnly: file storage on, console display off. autoSink is inert because
+    // the console is disabled, so only explicitly added file sinks exist.
+    {
+        var cfg = Config.logOnly();
+        cfg.autoSink = true;
+        const l = try Logger.initWithConfig(allocator, cfg);
+        defer l.deinit();
+        try std.testing.expectEqual(@as(usize, 0), l.getSinkCount());
+        try std.testing.expectError(error.ConsoleDisplayDisabled, l.addSink(.{}));
+
+        var fs = SinkConfig.file(path);
+        fs.asyncWrite = true; // default; buffering only
+        fs.overwriteMode = true;
+        _ = try l.addSink(fs);
+        try l.info("file only", null);
+        try l.flush();
+    }
+    try std.Io.Dir.cwd().access(Utils.io(), path, .{});
+
+    // Both enabled: the autoSink console and an explicit file sink coexist.
+    // No record is logged here: the auto console sink is a real terminal, and
+    // stdout belongs to the test runner's protocol.
+    {
+        var cfg = Config.default();
+        cfg.autoSink = true;
+        const l = try Logger.initWithConfig(allocator, cfg);
+        defer l.deinit();
+        var fs = SinkConfig.file(path);
+        fs.asyncWrite = true;
+        fs.overwriteMode = true;
+        _ = try l.addSink(fs);
+        try std.testing.expectEqual(@as(usize, 2), l.getSinkCount());
+    }
+}
+
+test "memory sink still records when console display is disabled" {
+    // A memory sink captures in-process and never writes to the console, so
+    // globalConsoleDisplay must not gate it. It used to be classified as a
+    // console sink by elimination, which silently dropped its records.
+    const allocator = std.testing.allocator;
+
+    var config = Config.default();
+    config.autoSink = false;
+    config.globalConsoleDisplay = false;
+
+    const logger = try Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+
+    const sink = logger.getSink(try logger.addSink(SinkConfig.memory())) orelse
+        return error.MissingSink;
+
+    try logger.warning("captured without a console", null);
+    try logger.flush();
+
+    const msgs = try sink.getMemoryMessages(allocator);
+    defer {
+        for (msgs) |m| allocator.free(m);
+        allocator.free(msgs);
+    }
+    try std.testing.expect(msgs.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, msgs[0], "captured without a console") != null);
+}
+
 test "logger setColorCallback overrides record color" {
     const allocator = std.testing.allocator;
     var logger = try Logger.init(allocator);

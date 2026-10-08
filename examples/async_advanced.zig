@@ -1,6 +1,8 @@
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -59,7 +61,7 @@ pub fn main() !void {
     // Push some entries
     for (0..10) |i| {
         _ = rb.push(.{
-            .timestamp = logly.Utils.currentMillis(),
+            .timestamp = std.Io.Clock.real.now(io).toMilliseconds(),
             .formattedMessage = "Test message",
             .levelPriority = 20,
             .queuedAt = @intCast(i),

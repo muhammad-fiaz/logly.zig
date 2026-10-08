@@ -76,21 +76,21 @@ pub fn main() !void {
 
     std.debug.print("\nTheme Presets\n\n", .{});
 
-    // Theme presets
-    const Theme = logly.Formatter.Theme;
+    // Theme presets are selected by name on the level-color config.
+    const ThemePreset = logly.Config.LevelColorConfig.ThemePreset;
     std.debug.print("Available theme presets:\n", .{});
-    std.debug.print("  Theme.bright()  - Bold/bright colors\n", .{});
-    std.debug.print("  Theme.dim()     - Dim colors\n", .{});
-    std.debug.print("  Theme.minimal() - Subtle grays\n", .{});
-    std.debug.print("  Theme.neon()    - Vivid 256-colors\n", .{});
-    std.debug.print("  Theme.pastel()  - Soft colors\n", .{});
-    std.debug.print("  Theme.dark()    - Dark terminal\n", .{});
-    std.debug.print("  Theme.light()   - Light terminal\n", .{});
+    std.debug.print("  .bright  - Bold/bright colors\n", .{});
+    std.debug.print("  .dim     - Dim colors\n", .{});
+    std.debug.print("  .minimal - Subtle grays\n", .{});
+    std.debug.print("  .neon    - Vivid 256-colors\n", .{});
+    std.debug.print("  .pastel  - Soft colors\n", .{});
+    std.debug.print("  .dark    - Dark terminal\n", .{});
+    std.debug.print("  .light   - Light terminal\n", .{});
 
     // Show theme colors rendered as sequences.
-    const neon = Theme.neon();
-    const neonTrace = logly.Color.sequence(neon.trace, .trueColor);
-    const neonErr = logly.Color.sequence(neon.err, .trueColor);
+    var neonCfg = logly.Config.LevelColorConfig{ .themePreset = ThemePreset.neon };
+    const neonTrace = logly.Color.sequence(neonCfg.getColorForLevel(.trace), .trueColor);
+    const neonErr = logly.Color.sequence(neonCfg.getColorForLevel(.err), .trueColor);
     std.debug.print("\nNeon theme sequences:\n", .{});
     std.debug.print("  trace={s}sample{s} err={s}sample{s}\n", .{ neonTrace.slice(), reset, neonErr.slice(), reset });
 

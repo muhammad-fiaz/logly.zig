@@ -13,6 +13,9 @@ const CompressionPresets = logly.CompressionPresets;
 
 /// Comprehensive compression demo for Logly v0.2.2
 /// Demonstrates all compression algorithms: deflate, gzip, zlib, zstd, brotli, lzma, lzma2, xz, zip, tar.gz, lz4
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -23,7 +26,6 @@ pub fn main() !void {
     std.debug.print("  All Compression Algorithms: deflate, gzip, zstd, brotli, lzma, xz, zip, tar.gz, lz4\n", .{});
 
     const logDir = "logs";
-    const io = logly.Utils.io();
     std.Io.Dir.cwd().createDirPath(io, logDir) catch {};
 
     // Create sample log data

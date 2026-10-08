@@ -54,3 +54,4 @@ logs_test_batch/
 benchmark-results.md
 NUL
 NUL.*
+*.out

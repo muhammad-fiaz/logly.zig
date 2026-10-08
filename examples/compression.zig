@@ -9,6 +9,9 @@ fn repeatAlloc(allocator: std.mem.Allocator, s: []const u8, n: usize) ![]u8 {
     return out;
 }
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -236,20 +239,19 @@ pub fn main() !void {
     const streamData = try repeatAlloc(allocator, "Data to be compressed via stream", 5);
     defer allocator.free(streamData);
     var inputReader = std.Io.Reader.fixed(streamData);
-    var outputBuffer: std.ArrayList(u8) = .empty;
-    defer outputBuffer.deinit(allocator);
+    var outputBuffer = std.Io.Writer.Allocating.init(allocator);
+    defer outputBuffer.deinit();
 
-    var outputWriter = logly.Utils.ArrayListWriter.init(&outputBuffer, allocator);
-    try streamComp.compressStream(&inputReader, &outputWriter.writer);
-    std.debug.print("    Stream compressed size: {d} bytes\n", .{outputBuffer.items.len});
+    try streamComp.compressStream(&inputReader, &outputBuffer.writer);
+    std.debug.print("    Stream compressed size: {d} bytes\n", .{outputBuffer.written().len});
 
-    var decompInput = std.Io.Reader.fixed(outputBuffer.items);
-    var decompOutput: std.ArrayList(u8) = .empty;
-    defer decompOutput.deinit(allocator);
+    var decompInput = std.Io.Reader.fixed(outputBuffer.written());
+    var decompOutput = std.Io.Writer.Allocating.init(allocator);
+    defer decompOutput.deinit();
 
-    var decompWriter = logly.Utils.ArrayListWriter.init(&decompOutput, allocator);
-    try streamComp.decompressStream(&decompInput, &decompWriter.writer);
-    std.debug.print("    Stream decompressed verified: {s}\n\n", .{if (std.mem.eql(u8, streamData, decompOutput.items)) "[OK] Yes" else "[FAIL] No"});
+    try streamComp.decompressStream(&decompInput, &decompOutput.writer);
+    const roundTripOk = std.mem.eql(u8, streamData, decompOutput.written());
+    std.debug.print("    Stream decompressed verified: {s}\n\n", .{if (roundTripOk) "[OK] Yes" else "[FAIL] No"});
 
     // Example 12: Directory Compression
     std.debug.print("12. Directory Compression\n", .{});
@@ -257,7 +259,6 @@ pub fn main() !void {
 
     // Create dummy logs for directory compression test
     const testDir = "logs_test_batch";
-    const io = logly.Utils.io();
     std.Io.Dir.cwd().createDirPath(io, testDir) catch {};
     // defer {
     //    // Cleanup compressed files

@@ -1159,8 +1159,10 @@ pub const Sink = struct {
         if (self.file != null) {
             // File sink - check global file storage setting
             if (!globalConfig.globalFileStorage) return;
-        } else if (self.stream == null and self.udpSocket == null and self.systemLog == null) {
-            // Console sink - check global console display setting
+        } else if (self.memoryRing == null and self.stream == null and self.udpSocket == null and self.systemLog == null) {
+            // Console sink - check global console display setting. Memory sinks
+            // are excluded: they capture in-process and never touch the console,
+            // so disabling console output must not silently drop their records.
             if (!globalConfig.globalConsoleDisplay) return;
         }
         // Network and system log sinks are not affected by global console/file settings

@@ -10,6 +10,9 @@ fn printMessage(msg: []const u8) void {
     }
 }
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -36,7 +39,7 @@ pub fn main() !void {
     std.debug.print("  UDP Server listening on 127.0.0.1:{d}\n", .{udpPort});
 
     // Give servers a brief moment to spin up their threads
-    logly.Utils.sleepMs(100);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(100), .awake) catch {};
 
     // 2. TCP Sink Setup with health checking
     std.debug.print("\n2. TCP NetworkSink with Health Monitoring\n", .{});
@@ -56,7 +59,7 @@ pub fn main() !void {
     try tcpSink.write("WARN: [TCP] Disk usage approaching 85% on /dev/sda1.\n");
 
     // Wait a brief moment to ensure logs are processed and printed
-    logly.Utils.sleepMs(200);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(200), .awake) catch {};
 
     // 3. UDP Sink Setup
     std.debug.print("\n3. UDP NetworkSink\n", .{});
@@ -74,7 +77,7 @@ pub fn main() !void {
     try udpSink.write("DEBUG: [UDP] Routing service registered.\n");
     try udpSink.write("SUCCESS: [UDP] Healthcheck ping acknowledged.\n");
 
-    logly.Utils.sleepMs(200);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(200), .awake) catch {};
 
     // 4. Syslog RFC-5424 Formatting
     std.debug.print("\n4. UDP NetworkSink with Syslog RFC-5424 Formatting\n", .{});
@@ -86,7 +89,7 @@ pub fn main() !void {
     std.debug.print("  Sending Syslog-formatted event...\n", .{});
     try syslogSink.write("SEC-AUDIT: User 'admin' successfully escalated privileges via sudo.");
 
-    logly.Utils.sleepMs(200);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(200), .awake) catch {};
 
     // 5. HTTP Chunked Streaming Mode
     std.debug.print("\n5. TCP NetworkSink with HTTP Chunked Streaming Framing\n", .{});
@@ -100,13 +103,13 @@ pub fn main() !void {
     try httpSink.write("Chunk 2: Payment processed successfully.");
     try httpSink.write("Chunk 3: Receipt emailed to customer.");
 
-    logly.Utils.sleepMs(200);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(200), .awake) catch {};
 
     // 6. Resilience, Reconnection, and Retry Budgets
     std.debug.print("\n6. Reconnection and Backoff Resilience\n", .{});
     std.debug.print("  Stopping LogServer temporarily to simulate network drop...\n", .{});
     server.stop();
-    logly.Utils.sleepMs(100);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(100), .awake) catch {};
 
     std.debug.print("  Attempting to write to TCP sink during outage...\n", .{});
     // Reconfigure retry budget to be fast for demo purposes
@@ -122,12 +125,12 @@ pub fn main() !void {
 
     std.debug.print("  Restarting LogServer to restore network...\n", .{});
     try server.startTcp(tcpPort, printMessage);
-    logly.Utils.sleepMs(100);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(100), .awake) catch {};
 
     std.debug.print("  Writing to TCP sink again (should auto-reconnect)...\n", .{});
     try tcpSink.write("INFO: [TCP] Network connection recovered. Flushing backlog.\n");
 
-    logly.Utils.sleepMs(200);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(200), .awake) catch {};
 
     // 7. Network Statistics
     std.debug.print("\n7. Network Statistics Summary\n", .{});

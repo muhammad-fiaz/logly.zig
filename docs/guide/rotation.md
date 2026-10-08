@@ -16,7 +16,7 @@ const config = Config.init(allocator)
 Alternatively, you can use the `logger.add()` shortcut with a configuration struct:
 
 ```zig
-try logger.add(.{
+_ = try logger.add(.{
     .path = "app.log",
     .rotation = "daily",
     .retention = 7,
@@ -102,7 +102,9 @@ Rotates files when they reach a specific size limit.
 
 ```zig
 // Rotate when file hits 100MB, keep 10 files
-const config = SinkConfig.createSizeRotatingSink("app.log", 100 * 1024 * 1024, 10);
+var config = SinkConfig.file("app.log");
+config.sizeLimit = 100 * 1024 * 1024;
+config.retention = 10;
 ```
 
 ### Rotation Helper APIs
@@ -153,7 +155,7 @@ Supported placeholders:
 
 **Example: `app-2023-12-25.log`**
 ```zig
-try logger.add(.{
+_ = try logger.add(.{
     .path = "app.log",
     .rotation = "daily",
     // Custom: Use dots, slashes, or specific ordering
@@ -305,9 +307,9 @@ defer min.deinit();
 
 ```zig
 // Quick sink configuration
-try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
-try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
-try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
+_ = try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
+_ = try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
+_ = try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
 ```
 
 ## Performance

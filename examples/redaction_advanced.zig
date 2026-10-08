@@ -78,11 +78,10 @@ pub fn main() !void {
     std.debug.print("Compliance Audit Log Output\n\n", .{});
 
     // Print compliance audit logs to standard debug print by buffering
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
-    var writerAdapter = logly.Utils.ArrayListWriter.init(&buf, allocator);
-    try redactor.auditLog(&writerAdapter.writer);
-    std.debug.print("{s}", .{buf.items});
+    var out = std.Io.Writer.Allocating.init(allocator);
+    defer out.deinit();
+    try redactor.auditLog(&out.writer);
+    std.debug.print("{s}", .{out.written()});
 
     std.debug.print("\nAdvanced Redaction Example Complete\n", .{});
 }

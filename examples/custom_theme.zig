@@ -6,30 +6,26 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Enable ANSI colors
     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    const Theme = logly.Formatter.Theme;
+    const ThemePreset = logly.Config.LevelColorConfig.ThemePreset;
 
     std.debug.print("\nTheme Presets\n\n", .{});
+    std.debug.print("Available presets (Config.ThemePreset):\n", .{});
+    std.debug.print("  .bright  - Bold/bright colors\n", .{});
+    std.debug.print("  .dim     - Dim colors\n", .{});
+    std.debug.print("  .minimal - Subtle grays\n", .{});
+    std.debug.print("  .neon    - Vivid 256-colors\n", .{});
+    std.debug.print("  .pastel  - Soft colors\n", .{});
+    std.debug.print("  .dark    - Dark terminal\n", .{});
+    std.debug.print("  .light   - Light terminal\n\n", .{});
 
-    // Built-in theme presets
-    std.debug.print("Available presets:\n", .{});
-    std.debug.print("  Theme.bright()  - Bold/bright colors\n", .{});
-    std.debug.print("  Theme.dim()     - Dim colors\n", .{});
-    std.debug.print("  Theme.minimal() - Subtle grays\n", .{});
-    std.debug.print("  Theme.neon()    - Vivid 256-colors\n", .{});
-    std.debug.print("  Theme.pastel()  - Soft colors\n", .{});
-    std.debug.print("  Theme.dark()    - Dark terminal\n", .{});
-    std.debug.print("  Theme.light()   - Light terminal\n\n", .{});
-
-    // Apply neon theme preset
-    if (logger.sinks.items.len > 0) {
-        logger.sinks.items[0].formatter.setTheme(Theme.neon());
-    }
+    // A preset is selected on the level-color config and applies to every sink
+    // that resolves color.
+    logger.config.levelColors.themePreset = ThemePreset.neon;
 
     std.debug.print("Neon Theme\n\n", .{});
     try logger.trace("Trace - neon cyan", @src());
@@ -40,10 +36,8 @@ pub fn main() !void {
     try logger.err("Error - neon red", @src());
     try logger.critical("Critical - bold red", @src());
 
-    // Switch to pastel theme
-    if (logger.sinks.items.len > 0) {
-        logger.sinks.items[0].formatter.setTheme(Theme.pastel());
-    }
+    // Switching presets takes effect on the next record.
+    logger.config.levelColors.themePreset = ThemePreset.pastel;
 
     std.debug.print("\nPastel Theme\n\n", .{});
     try logger.trace("Trace - soft cyan", @src());
@@ -53,35 +47,27 @@ pub fn main() !void {
     try logger.warning("Warning - soft yellow", @src());
     try logger.err("Error - soft red", @src());
 
-    // Switch to dark theme
-    if (logger.sinks.items.len > 0) {
-        logger.sinks.items[0].formatter.setTheme(Theme.dark());
-    }
+    logger.config.levelColors.themePreset = ThemePreset.dark;
 
     std.debug.print("\nDark Theme\n\n", .{});
     try logger.info("Info in dark theme", @src());
     try logger.warning("Warning in dark theme", @src());
     try logger.err("Error in dark theme", @src());
 
-    std.debug.print("\nCustom Theme\n\n", .{});
-
-    // Define a custom theme manually
-    const customTheme = Theme{
-        .trace = logly.Color.parse("90").?,
-        .debug = logly.Color.parse("35").?,
-        .info = logly.Color.parse("36").?,
-        .notice = logly.Color.parse("96;1").?,
-        .success = logly.Color.parse("92").?,
-        .warning = logly.Color.parse("93").?,
-        .err = logly.Color.parse("91").?,
-        .fail = logly.Color.parse("31;1").?,
-        .critical = logly.Color.parse("41;37;1").?,
-        .fatal = logly.Color.parse("41;97;1").?,
-    };
-
-    if (logger.sinks.items.len > 0) {
-        logger.sinks.items[0].formatter.setTheme(customTheme);
-    }
+    // Custom per-level colors. Each level accepts any tint color: an ANSI
+    // name, a #rrggbb hex value, or raw SGR parameters. Overrides win over the
+    // selected preset.
+    std.debug.print("\nCustom Level Colors\n\n", .{});
+    logger.config.levelColors.traceColor = logly.Color.parse("90").?;
+    logger.config.levelColors.debugColor = logly.Color.parse("35").?;
+    logger.config.levelColors.infoColor = logly.Color.parse("36").?;
+    logger.config.levelColors.noticeColor = logly.Color.parse("96").?;
+    logger.config.levelColors.successColor = logly.Color.parse("92").?;
+    logger.config.levelColors.warningColor = logly.Color.parse("93").?;
+    logger.config.levelColors.errorColor = logly.Color.parse("91").?;
+    logger.config.levelColors.failColor = logly.Color.parse("31").?;
+    logger.config.levelColors.criticalColor = logly.Color.parse("red").?;
+    logger.config.levelColors.fatalColor = logly.Color.Tint.color.ansi4.brightRed;
 
     try logger.trace("Trace (Gray)", @src());
     try logger.debug("Debug (Magenta)", @src());
@@ -89,22 +75,18 @@ pub fn main() !void {
     try logger.success("Success (Bright Green)", @src());
     try logger.warning("Warning (Bright Yellow)", @src());
     try logger.err("Error (Bright Red)", @src());
-    try logger.fail("Fail (Red Bold)", @src());
-    try logger.critical("Critical (White on Red)", @src());
+    try logger.fail("Fail (Red)", @src());
+    try logger.critical("Critical (Red)", @src());
 
+    // Rendered sequences for a preset, without emitting a record.
     std.debug.print("\nTheme Colors Reference\n\n", .{});
+    var neon = logly.Config.LevelColorConfig{ .themePreset = ThemePreset.neon };
+    inline for ([_]logly.Level{ .trace, .debug, .info, .success, .warning, .err, .critical, .fatal }) |lvl| {
+        const seq = logly.Color.sequence(neon.getColorForLevel(lvl), .trueColor);
+        std.debug.print("  {s: <10}{s}sample{s}\n", .{ @tagName(lvl), seq.slice(), logly.Color.resetAll });
+    }
 
-    const neon = Theme.neon();
-    std.debug.print("Neon theme colors:\n", .{});
-    std.debug.print("  trace:    {s}sample{s}\n", .{ logly.Color.sequence(neon.trace, .trueColor).slice(), logly.Color.resetAll });
-    std.debug.print("  debug:    {s}sample{s}\n", .{ logly.Color.sequence(neon.debug, .trueColor).slice(), logly.Color.resetAll });
-    std.debug.print("  info:    {s}sample{s}\n", .{ logly.Color.sequence(neon.info, .trueColor).slice(), logly.Color.resetAll });
-    std.debug.print("  success:    {s}sample{s}\n", .{ logly.Color.sequence(neon.success, .trueColor).slice(), logly.Color.resetAll });
-    std.debug.print("  warning:    {s}sample{s}\n", .{ logly.Color.sequence(neon.warning, .trueColor).slice(), logly.Color.resetAll });
-    std.debug.print("  err:    {s}sample{s}\n", .{ logly.Color.sequence(neon.err, .trueColor).slice(), logly.Color.resetAll });
-    std.debug.print("  critical:    {s}sample{s}\n", .{ logly.Color.sequence(neon.critical, .trueColor).slice(), logly.Color.resetAll });
-    std.debug.print("  fatal:    {s}sample{s}\n", .{ logly.Color.sequence(neon.fatal, .trueColor).slice(), logly.Color.resetAll });
-
+    // Custom output templates.
     std.debug.print("\nCustom Format Example\n\n", .{});
 
     var config = logly.Config.default();

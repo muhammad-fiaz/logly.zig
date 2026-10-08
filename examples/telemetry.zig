@@ -1,6 +1,8 @@
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
 pub fn main() !void {
     // Setup allocator
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -660,7 +662,7 @@ fn highThroughputExample(allocator: std.mem.Allocator) !void {
     defer telemetry.deinit();
 
     // Simulate high-throughput span creation
-    const startTime = logly.Utils.currentNanos();
+    const startTime = std.Io.Clock.awake.now(io).toNanoseconds();
     var created: u32 = 0;
     while (created < 100) : (created += 1) {
         var span = try telemetry.startSpan("high_throughput_op", .{});
@@ -668,7 +670,7 @@ fn highThroughputExample(allocator: std.mem.Allocator) !void {
         span.end();
         try telemetry.endSpan(&span);
     }
-    const elapsedNs = logly.Utils.currentNanos() - startTime;
+    const elapsedNs = std.Io.Clock.awake.now(io).toNanoseconds() - startTime;
     const elapsedMs = @as(f64, @floatFromInt(elapsedNs)) / 1_000_000.0;
 
     try telemetry.exportSpans();

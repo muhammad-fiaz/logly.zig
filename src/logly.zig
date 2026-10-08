@@ -21,6 +21,19 @@ pub const Rotation = @import("rotation.zig").Rotation;
 pub const Constants = @import("constants.zig");
 pub const Utils = @import("utils.zig");
 pub const utils = Utils;
+
+/// Installs the `std.Io` handle used for Logly's own I/O, or `null` to restore
+/// the built-in default.
+///
+/// Logging needs no configuration: the default handle serves the synchronous
+/// file, console, and compression paths. Supply your own handle when using
+/// network sinks, which require `async`/`concurrent` Io capability that the
+/// default does not provide. Call once at startup, before creating loggers.
+pub const setIo = Utils.setIo;
+
+/// Returns the Io Logly currently uses for its own I/O.
+pub const currentIo = Utils.io;
+
 pub const Color = @import("color.zig");
 /// Direct access to the tint.zig color engine backing `Color`.
 pub const tint = @import("tint");

@@ -1,9 +1,12 @@
 const std = @import("std");
 const logly = @import("logly");
 
-// Custom callback function matching: ?*const fn (old_path: []const u8, new_path: []const u8) void
-fn onRotateCallback(oldPath: []const u8, newPath: []const u8) void {
-    std.debug.print("[CALLBACK] Log rotated! Old path: {s} -> New path: {s}\n", .{ oldPath, newPath });
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
+/// Sink rotation callback. Receives the archived and current paths.
+fn onRotate(oldPath: []const u8, newPath: []const u8) void {
+    std.debug.print("[CALLBACK] rotated: {s} -> {s}\n", .{ oldPath, newPath });
 }
 
 pub fn main() !void {
@@ -11,76 +14,54 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("Advanced Rotation Demonstration\n\n", .{});
+    std.debug.print("Rotation demonstration\n\n", .{});
 
-    // 1. Configure the logger
     var config = logly.Config.default();
     config.autoSink = false;
-
-    // Use our new parsing helpers to create rotation configurations
-    const sizeRotation = logly.Config.RotationConfig.fromSize("10KB");
-    const intervalRotation = logly.Config.RotationConfig.fromInterval("24h");
-
-    const parsedSizeBytes = logly.Utils.parseSize(sizeRotation.sizeLimitStr orelse "0") orelse 0;
-    const parsedIntervalMs = logly.Utils.parseDuration(intervalRotation.interval orelse "0") orelse 0;
-    std.debug.print("Parsed fromSize('10KB') size limit: {d} bytes\n", .{parsedSizeBytes});
-    std.debug.print("Parsed fromInterval('24h') interval: {d}ms ({d}s)\n", .{ parsedIntervalMs, @divTrunc(parsedIntervalMs, 1000) });
+    // Rotation callbacks are a logger-wide setting, so they belong on the
+    // rotation config rather than on an individual sink.
+    config.rotation.onRotate = onRotate;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    // 2. Add a sink using dynamic, hourly rotation with a custom on_rotate callback
-    var hourlyRotConfig = logly.Config.RotationConfig.fromInterval("hourly");
-    hourlyRotConfig.retentionCount = 3;
-    hourlyRotConfig.maxTotalSize = 50 * 1024; // Limit to 50KB total size across rotated logs
-    hourlyRotConfig.onRotate = onRotateCallback;
-
-    std.debug.print("Adding hourly rotating sink with 50KB total size cap...\n", .{});
+    // Time-based rotation with a retention count.
+    std.debug.print("Adding hourly rotating sink (3 retained files)...\n", .{});
     _ = try logger.addSink(.{
+        .name = "hourly",
         .path = "logs/hourly_rotation.log",
         .rotation = "hourly",
         .retention = 3,
-        // Wait, addSink accepts SinkConfig, so we configure rotation settings
     });
 
-    // 3. Let's create a Rotation instance directly to showcase fine-grained manual/programmatic rotation checks and dry-run
-    std.debug.print("\nCreating programmatic Rotation instance for 'logs/programmatic.log'...\n", .{});
-    var rotation = try logly.Rotation.init(allocator, "logs/programmatic.log", "hourly", 1024, 3);
-    defer rotation.deinit();
+    // Size-based rotation: roll the file once it passes 5KB.
+    std.debug.print("Adding size-based rotating sink (5KB cap)...\n", .{});
+    _ = try logger.addSink(.{
+        .name = "size-based",
+        .path = "logs/size_rotation.log",
+        .sizeLimit = 5 * 1024,
+        .retention = 5,
+        .overwriteMode = true,
+    });
 
-    // Configure additional features
-    rotation.withMaxTotalSize(2048); // enforce 2KB total size limit
-    rotation.withOnRotate(onRotateCallback);
+    // Drive the size-based sink past its threshold so rotation is exercised.
+    // SinkConfig.sizeLimit is a byte count, so the trigger is a real write,
+    // not a simulated size report.
+    const payload = "size-based rotation payload: the quick brown fox jumps over the lazy dog, repeatedly, until the file passes its byte threshold and rolls over.";
+    var i: usize = 0;
+    while (i < 40) : (i += 1) {
+        try logger.info(payload, null);
+    }
+    try logger.flush();
 
-    std.debug.print("Rotation dry-run enabled check: isEnabled() = {}\n", .{rotation.isEnabled()});
-    std.debug.print("Next rotation in seconds: {?d}\n", .{rotation.nextRotationInSeconds()});
+    // A rotating file sink writes one record per line; confirm the file exists
+    // and carries content after the run.
+    const rotated = try std.Io.Dir.cwd().openFile(io, "logs/size_rotation.log", .{});
+    defer rotated.close(io);
+    const stat = try rotated.stat(io);
+    std.debug.print("size_rotation.log is {d} bytes after writing ~{d} records\n", .{ stat.size, i });
 
-    // Let's simulate creating a file and testing shouldRotate
-    const testFilePath = "logs/programmatic.log";
-    // Ensure directory exists
-    std.Io.Dir.cwd().createDirPath(logly.Utils.io(), "logs") catch {};
-    var testFile = try std.Io.Dir.cwd().createFile(logly.Utils.io(), testFilePath, .{ .read = true, .truncate = true });
-    defer testFile.close(logly.Utils.io());
-
-    // Write some bytes
-    var fillA: [500]u8 = @splat('A');
-    try testFile.writeStreamingAll(logly.Utils.io(), &fillA);
-
-    // Dry-run check (shouldRotate does not perform rotation)
-    const wouldRotate = rotation.shouldRotate(&testFile);
-    std.debug.print("Should rotate with 500 bytes of data (limit 1KB)? {}\n", .{wouldRotate});
-
-    // Write more to trigger size limit
-    var fillB: [600]u8 = @splat('B');
-    try testFile.writeStreamingAll(logly.Utils.io(), &fillB);
-    const wouldRotateNow = rotation.shouldRotate(&testFile);
-    std.debug.print("Should rotate with 1100 bytes of data (limit 1KB)? {}\n", .{wouldRotateNow});
-
-    // Force rotate to show custom callback triggers
-    std.debug.print("\nForcing programmatic rotation...\n", .{});
-    try rotation.forceRotate(&testFile);
-
-    try logger.info("Rotation example - advanced capabilities demonstrated successfully", @src());
+    try logger.info("rotation example completed", null);
     try logger.flush();
 
     std.debug.print("\nRotation example completed successfully!\n", .{});

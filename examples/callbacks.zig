@@ -15,6 +15,9 @@ fn mmapResizeCallback(sinkName: []const u8, oldSize: u64, newSize: u64) void {
     std.debug.print("[Mmap Resize Callback] Sink '{s}' resized virtual map: {d} bytes -> {d} bytes\n", .{ sinkName, oldSize, newSize });
 }
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -34,8 +37,8 @@ pub fn main() !void {
     // 2. Cryptographic signature and Mmap Resize Callbacks
     std.debug.print("\nTesting Cryptographic & Memory-Mapped Callbacks\n\n", .{});
     const testPath = "callbacks_demo.log";
-    std.Io.Dir.cwd().deleteFile(logly.Utils.io(), testPath) catch {};
-    defer std.Io.Dir.cwd().deleteFile(logly.Utils.io(), testPath) catch {};
+    std.Io.Dir.cwd().deleteFile(io, testPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(io, testPath) catch {};
 
     var sinkCfg = logly.SinkPresets.file(testPath);
     sinkCfg.name = "tamper_evident_mmap_sink";
@@ -43,8 +46,16 @@ pub fn main() !void {
     sinkCfg.mmap = true;
     sinkCfg.asyncWrite = false;
 
-    const sink = try logly.Sink.init(allocator, sinkCfg);
-    defer sink.deinit();
+    var globalConfig = logly.Config.default();
+    globalConfig.autoSink = false;
+
+    // Register through the logger so the sink is owned and cleaned up, then
+    // take the handle back to attach callbacks.
+    const owner = try logly.Logger.initWithConfig(allocator, globalConfig);
+    defer owner.deinit();
+
+    const sink = owner.getSink(try owner.addSink(sinkCfg)) orelse
+        return error.SinkUnavailable;
 
     // Register our new callbacks
     sink.setSignatureCallback(&signatureCallback);
@@ -52,9 +63,6 @@ pub fn main() !void {
 
     var record1 = logly.Record.init(allocator, .info, "cryptographically chained message #1");
     defer record1.deinit();
-
-    var globalConfig = logly.Config.default();
-    globalConfig.autoSink = false;
 
     try sink.write(&record1, globalConfig);
 

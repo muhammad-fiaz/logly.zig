@@ -14,6 +14,9 @@ fn udpCallback(message: []const u8) void {
 
 // Main Example
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -29,7 +32,7 @@ pub fn main() !void {
     std.debug.print("[UDP Server] Listening on 127.0.0.1:9001\n", .{});
 
     // Give servers a moment to start
-    logly.Utils.sleepMs(500);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(500), .awake) catch {};
 
     // 2. Initialize logger
     var config = logly.Config.default();
@@ -49,7 +52,7 @@ pub fn main() !void {
     const tcpSinkIdx = try logger.addSink(tcpSink);
 
     // Apply a custom theme to the TCP sink to demonstrate color customization
-    var theme = logly.Formatter.Theme{};
+    var theme = logly.Color.Theme{};
     theme.info = logly.Color.parse("36").?; // Cyan
     theme.warning = logly.Color.parse("33").?; // Yellow
     theme.err = logly.Color.parse("31").?; // Red
@@ -124,20 +127,21 @@ pub fn main() !void {
     std.debug.print("\nLogs sent. Waiting for servers to print output...\n", .{});
 
     // Wait a bit for messages to be received/printed by servers
-    logly.Utils.sleepMs(2000);
+    _ = io.sleep(std.Io.Duration.fromMilliseconds(2000), .awake) catch {};
 
     // Demonstrate Syslog formatting with constants
     std.debug.print("\nSyslog Formatting Example\n", .{});
 
-    // Show Syslog severity and facility constants
-    std.debug.print("SyslogFacility.user = {}\n", .{@backingInt(logly.Constants.SyslogConstants.Facility.user)});
-    std.debug.print("SyslogSeverity.info = {}\n", .{@backingInt(logly.Constants.SyslogConstants.Severity.info)});
+    // Syslog facility and severity are plain enums on the public Network
+    // surface; the PRI value is facility*8 + severity per RFC 5424.
+    const Facility = logly.Network.SyslogFacility;
+    const Severity = logly.Network.SyslogSeverity;
+    std.debug.print("SyslogFacility.user = {}\n", .{@backingInt(Facility.user)});
+    std.debug.print("SyslogSeverity.info = {}\n", .{@backingInt(Severity.info)});
 
-    // Show how to convert log levels to Syslog severity
-    const severityInfo = logly.Constants.SyslogConstants.Severity.fromLogLevel(.info);
-    const severityError = logly.Constants.SyslogConstants.Severity.fromLogLevel(.err);
-    std.debug.print("Log level .info -> Syslog severity: {}\n", .{@backingInt(severityInfo)});
-    std.debug.print("Log level .err -> Syslog severity: {}\n", .{@backingInt(severityError)});
+    // How a Logly level maps onto a syslog severity.
+    std.debug.print("Log level .info -> Syslog severity: {}\n", .{@backingInt(Severity.info)});
+    std.debug.print("Log level .err -> Syslog severity: {}\n", .{@backingInt(Severity.err)});
 
     // Format a Syslog message manually
     const syslogMsg = try logly.Network.formatSyslog(allocator, .user, // Facility
