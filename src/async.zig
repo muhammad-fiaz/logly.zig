@@ -620,6 +620,11 @@ pub const AsyncLogger = struct {
                 cb(totalFlushed, totalBytes, @intCast(elapsed));
             }
         }
+
+        // Ensure all registered sinks flush their underlying OS and user buffers
+        for (self.sinks.items) |sink| {
+            sink.flush() catch {};
+        }
     }
 
     /// Signals the worker thread to perform a flush immediately.

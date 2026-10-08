@@ -564,9 +564,7 @@ pub const Logger = struct {
 
         if (self.asyncLogger) |al| {
             try al.addSink(sink);
-            // When using async logger, we don't track sinks in the main logger
-            // Return a dummy index since sink management isn't supported
-            return 0;
+            return al.sinks.items.len - 1;
         } else {
             try self.sinks.append(self.allocator, sink);
             return self.sinks.items.len - 1;
@@ -617,6 +615,15 @@ pub const Logger = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
+        if (self.asyncLogger) |al| {
+            al.mutex.lockUncancelable(Utils.io());
+            defer al.mutex.unlock(Utils.io());
+            if (id < al.sinks.items.len) {
+                al.sinks.items[id].enabled = true;
+            }
+            return;
+        }
+
         if (id < self.sinks.items.len) {
             self.sinks.items[id].enabled = true;
         }
@@ -628,6 +635,15 @@ pub const Logger = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
+        if (self.asyncLogger) |al| {
+            al.mutex.lockUncancelable(Utils.io());
+            defer al.mutex.unlock(Utils.io());
+            if (id < al.sinks.items.len) {
+                al.sinks.items[id].enabled = false;
+            }
+            return;
+        }
+
         if (id < self.sinks.items.len) {
             self.sinks.items[id].enabled = false;
         }
@@ -638,6 +654,11 @@ pub const Logger = struct {
     pub fn getSinkCount(self: *Logger) usize {
         self.mutex.lockSharedUncancelable(Utils.io());
         defer self.mutex.unlockShared(Utils.io());
+        if (self.asyncLogger) |al| {
+            al.mutex.lockUncancelable(Utils.io());
+            defer al.mutex.unlock(Utils.io());
+            return al.sinks.items.len;
+        }
         return self.sinks.items.len;
     }
 
@@ -712,6 +733,15 @@ pub const Logger = struct {
         self.mutex.lockSharedUncancelable(Utils.io());
         defer self.mutex.unlockShared(Utils.io());
 
+        if (self.asyncLogger) |al| {
+            al.mutex.lockUncancelable(Utils.io());
+            defer al.mutex.unlock(Utils.io());
+            if (id < al.sinks.items.len) {
+                return al.sinks.items[id];
+            }
+            return null;
+        }
+
         if (id < self.sinks.items.len) {
             return self.sinks.items[id];
         }
@@ -724,6 +754,15 @@ pub const Logger = struct {
         self.mutex.lockSharedUncancelable(Utils.io());
         defer self.mutex.unlockShared(Utils.io());
 
+        if (self.asyncLogger) |al| {
+            al.mutex.lockUncancelable(Utils.io());
+            defer al.mutex.unlock(Utils.io());
+            if (id < al.sinks.items.len) {
+                return al.sinks.items[id].stats;
+            }
+            return null;
+        }
+
         if (id < self.sinks.items.len) {
             return self.sinks.items[id].stats;
         }
@@ -735,6 +774,15 @@ pub const Logger = struct {
     pub fn isSinkEnabled(self: *Logger, id: usize) bool {
         self.mutex.lockSharedUncancelable(Utils.io());
         defer self.mutex.unlockShared(Utils.io());
+
+        if (self.asyncLogger) |al| {
+            al.mutex.lockUncancelable(Utils.io());
+            defer al.mutex.unlock(Utils.io());
+            if (id < al.sinks.items.len) {
+                return al.sinks.items[id].enabled;
+            }
+            return false;
+        }
 
         if (id < self.sinks.items.len) {
             return self.sinks.items[id].enabled;
@@ -2919,3 +2967,95 @@ test "logger shutdown during load stress" {
     logger.deinit();
     // Deinit after join; no use-after-free possible.
 }
+
+test "logger async sink count and inspection delegates correctly" {
+    const allocator = std.testing.allocator;
+    var config = Config.default();
+    config.autoSink = false;
+    config.globalConsoleDisplay = false;
+    config.asyncConfig.enabled = true;
+    config.asyncConfig.backgroundWorker = true;
+
+    const logger = try Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+
+    try std.testing.expectEqual(@as(usize, 0), logger.getSinkCount());
+
+    const idx0 = try logger.addSink(SinkConfig.memory());
+    try std.testing.expectEqual(@as(usize, 0), idx0);
+    try std.testing.expectEqual(@as(usize, 1), logger.getSinkCount());
+
+    const idx1 = try logger.addSink(SinkConfig.memory());
+    try std.testing.expectEqual(@as(usize, 1), idx1);
+    try std.testing.expectEqual(@as(usize, 2), logger.getSinkCount());
+
+    try std.testing.expect(logger.getSink(0) != null);
+    try std.testing.expect(logger.getSink(1) != null);
+    try std.testing.expect(logger.getSink(2) == null);
+
+    try std.testing.expect(logger.isSinkEnabled(0));
+    logger.disableSink(0);
+    try std.testing.expect(!logger.isSinkEnabled(0));
+    logger.enableSink(0);
+    try std.testing.expect(logger.isSinkEnabled(0));
+}
+
+test "thread pool submitWithDrop records drop and fires hook on overflow" {
+    const allocator = std.testing.allocator;
+    const pool = try ThreadPool.initWithConfig(allocator, .{
+        .threadCount = 1,
+        .queueSize = 2,
+    });
+    defer pool.deinit();
+    try pool.start();
+
+    var droppedCount: usize = 0;
+    const DropHelper = struct {
+        fn onDrop(ctx: ?*anyopaque) void {
+            const countPtr: *usize = @ptrCast(@alignCast(ctx.?));
+            countPtr.* += 1;
+        }
+    };
+
+    var gate = std.Io.Mutex.init;
+    gate.lockUncancelable(Utils.io());
+
+    const BlockTask = struct {
+        fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
+            const m: *std.Io.Mutex = @ptrCast(@alignCast(ctx));
+            m.lockUncancelable(Utils.io());
+            m.unlock(Utils.io());
+        }
+    };
+
+    // First task occupies the worker thread
+    const h0 = pool.submit(.{ .callback = .{ .func = BlockTask.run, .context = &gate } }, .normal);
+    try std.testing.expect(h0.isValid());
+
+    // Give the worker a moment to pick up h0
+    Utils.sleepMs(10);
+
+    // Now saturate the global queue (capacity 2 slots)
+    const h1 = pool.submitWithDrop(.{ .callback = .{ .func = struct {
+        fn run(_: *anyopaque, _: ?std.mem.Allocator) void {}
+    }.run, .context = &droppedCount } }, .normal, DropHelper.onDrop);
+    const h2 = pool.submitWithDrop(.{ .callback = .{ .func = struct {
+        fn run(_: *anyopaque, _: ?std.mem.Allocator) void {}
+    }.run, .context = &droppedCount } }, .normal, DropHelper.onDrop);
+
+    try std.testing.expect(h1.isValid());
+    try std.testing.expect(h2.isValid());
+    try std.testing.expectEqual(@as(usize, 0), droppedCount);
+
+    // Third task must overflow the 2-slot queue, increment stats and call onDrop
+    const h3 = pool.submitWithDrop(.{ .callback = .{ .func = struct {
+        fn run(_: *anyopaque, _: ?std.mem.Allocator) void {}
+    }.run, .context = &droppedCount } }, .normal, DropHelper.onDrop);
+
+    try std.testing.expect(!h3.isValid());
+    try std.testing.expectEqual(@as(usize, 1), droppedCount);
+    try std.testing.expectEqual(@as(u64, 1), pool.getStats().getDropped());
+
+    gate.unlock(Utils.io());
+}
+

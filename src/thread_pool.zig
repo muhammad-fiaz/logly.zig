@@ -634,6 +634,8 @@ pub const ThreadPool = struct {
         }
 
         self.emitQueueOverflow(self.workQueue.size(), self.workQueue.capacity);
+        _ = self.stats.tasksDropped.fetchAdd(1, .monotonic);
+        if (onDrop) |hook| hook(task.dropContext());
         return .{ .id = 0 };
     }
 
@@ -854,7 +856,7 @@ pub const ThreadPool = struct {
                 const waitTimeNs = @as(u64, @intCast(@max(0, waitTimeMs))) * Constants.TimeConstants.nsPerMs;
                 pool.emitTaskDequeued(work.priority, waitTimeNs);
 
-                work.task.execute(null);
+                work.task.execute(pool.allocator);
 
                 const execTime = Utils.currentNanos() - startTime;
                 _ = pool.stats.totalWaitTimeNs.fetchAdd(@truncate(waitTimeNs), .monotonic);
