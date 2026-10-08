@@ -33,7 +33,10 @@ fn render(allocator: std.mem.Allocator, format: ?logly.Config.Format) !void {
     try logger.flush();
 
     const msgs = try sink.getMemoryMessages(allocator);
-    defer allocator.free(msgs);
+    defer {
+        for (msgs) |m| allocator.free(m);
+        allocator.free(msgs);
+    }
     if (msgs.len == 0) return error.NoMessageCaptured;
 
     // Both the scoped record and the context record reach the sink.
