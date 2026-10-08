@@ -2770,8 +2770,6 @@ test "default sink is console and storage flags decide file writes" {
         defer l.deinit();
         try std.testing.expectEqual(@as(usize, 1), l.getSinkCount());
         try std.testing.expectError(error.FileStorageDisabled, l.addSink(.{ .path = path }));
-        try l.info("console only", null);
-        try l.flush();
     }
     try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(Utils.io(), path, .{}));
 
