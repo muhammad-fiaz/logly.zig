@@ -120,6 +120,7 @@ pub const ThreadPool = struct {
         /// Number of tasks stolen via work stealing.
         tasksStolen: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         tasksDropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksCancelled: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         totalWaitTimeNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         totalExecTimeNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         activeThreads: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
@@ -160,6 +161,11 @@ pub const ThreadPool = struct {
         /// Returns total tasks dropped as u64.
         pub fn getDropped(self: *const ThreadPoolStats) u64 {
             return Utils.atomicLoadU64(&self.tasksDropped);
+        }
+
+        /// Returns total tasks cancelled as u64.
+        pub fn getCancelled(self: *const ThreadPoolStats) u64 {
+            return Utils.atomicLoadU64(&self.tasksCancelled);
         }
 
         /// Returns total tasks stolen as u64.
@@ -598,12 +604,18 @@ pub const ThreadPool = struct {
         self.workQueue.mutex.lockUncancelable(Utils.io());
         defer self.workQueue.mutex.unlock(Utils.io());
 
-        if (self.workQueue.removeByIdUnlocked(handle.id)) return true;
+        if (self.workQueue.removeByIdUnlocked(handle.id)) {
+            _ = self.stats.tasksCancelled.fetchAdd(1, .monotonic);
+            return true;
+        }
 
         for (self.workers) |*worker| {
             worker.localQueue.mutex.lockUncancelable(Utils.io());
             defer worker.localQueue.mutex.unlock(Utils.io());
-            if (worker.localQueue.removeByIdUnlocked(handle.id)) return true;
+            if (worker.localQueue.removeByIdUnlocked(handle.id)) {
+                _ = self.stats.tasksCancelled.fetchAdd(1, .monotonic);
+                return true;
+            }
         }
         return false;
     }
@@ -1006,13 +1018,13 @@ pub const ThreadPool = struct {
 
     /// Waits for all pending tasks to complete.
     pub fn waitAll(self: *ThreadPool) void {
-        // Wait until all submitted tasks are completed
+        // Wait until all submitted tasks are completed or cancelled
         while (true) {
             const submitted = self.stats.tasksSubmitted.load(.monotonic);
             const completed = self.stats.tasksCompleted.load(.monotonic);
-            const dropped = self.stats.tasksDropped.load(.monotonic);
+            const cancelled = self.stats.tasksCancelled.load(.monotonic);
 
-            if (completed + dropped >= submitted) break;
+            if (completed + cancelled >= submitted and self.pendingTasks() == 0) break;
 
             Utils.sleepMs(1);
         }
@@ -1027,9 +1039,9 @@ pub const ThreadPool = struct {
         while (true) {
             const submitted = self.stats.tasksSubmitted.load(.monotonic);
             const completed = self.stats.tasksCompleted.load(.monotonic);
-            const dropped = self.stats.tasksDropped.load(.monotonic);
+            const cancelled = self.stats.tasksCancelled.load(.monotonic);
 
-            if (completed + dropped >= submitted) return true;
+            if (completed + cancelled >= submitted and self.pendingTasks() == 0) return true;
 
             if (hasTimedOut(startedAtMs, timeoutMs)) return false;
 

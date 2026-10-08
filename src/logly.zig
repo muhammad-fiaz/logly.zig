@@ -15,6 +15,7 @@ pub const Config = @import("config.zig").Config;
 pub const Sink = @import("sink.zig").Sink;
 pub const SinkConfig = @import("sink.zig").SinkConfig;
 pub const SinkGroup = @import("sink.zig").SinkGroup;
+pub const OwnedMessages = Sink.OwnedMessages;
 pub const OwnedMemoryMessages = Sink.OwnedMemoryMessages;
 pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;

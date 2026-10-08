@@ -45,9 +45,9 @@ pub fn main() !void {
 
     std.debug.print("Messages written: 3. Capacity: 3.\n", .{});
     {
-        var msgs = try memSink.getMemoryMessagesOwned(allocator);
+        var msgs = try memSink.messages(allocator);
         defer msgs.deinit();
-        for (msgs.slice(), 0..) |msg, i| {
+        for (msgs.items, 0..) |msg, i| {
             std.debug.print("  [{d}] {s}\n", .{ i, msg });
         }
     }
@@ -57,11 +57,20 @@ pub fn main() !void {
     try memSink.flush();
 
     {
-        var msgs = try memSink.getMemoryMessagesOwned(allocator);
+        var msgs = try memSink.messages(allocator);
         defer msgs.deinit();
-        for (msgs.slice(), 0..) |msg, i| {
+        for (msgs.items, 0..) |msg, i| {
             std.debug.print("  [{d}] {s}\n", .{ i, msg });
         }
+
+        // Direct zero-allocation iteration
+        std.debug.print("  Direct zero-allocation iteration:\n", .{});
+        const Printer = struct {
+            fn print(msg: []const u8) void {
+                std.debug.print("    -> {s}\n", .{msg});
+            }
+        };
+        try memSink.forEachMessage(Printer.print);
     }
 
     // 2. Sink Groups (Atomic Fan-out)
@@ -93,13 +102,13 @@ pub fn main() !void {
 
     // Verify sub-sinks both received the message
     {
-        var m1 = try s1.getMemoryMessagesOwned(allocator);
+        var m1 = try s1.messages(allocator);
         defer m1.deinit();
-        std.debug.print("  Sink 1 got: '{s}'\n", .{m1.slice()[0]});
+        std.debug.print("  Sink 1 got: '{s}'\n", .{m1.items[0]});
 
-        var m2 = try s2.getMemoryMessagesOwned(allocator);
+        var m2 = try s2.messages(allocator);
         defer m2.deinit();
-        std.debug.print("  Sink 2 got: '{s}'\n", .{m2.slice()[0]});
+        std.debug.print("  Sink 2 got: '{s}'\n", .{m2.items[0]});
     }
 
     // 3. Health check and Rate limiting

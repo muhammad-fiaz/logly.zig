@@ -967,11 +967,11 @@ pub const Sink = struct {
     }
 
     /// An owned collection of in-memory logged messages with self-contained cleanup.
-    pub const OwnedMemoryMessages = struct {
+    pub const OwnedMessages = struct {
         allocator: std.mem.Allocator,
         items: [][]const u8,
 
-        pub fn deinit(self: *OwnedMemoryMessages) void {
+        pub fn deinit(self: *OwnedMessages) void {
             for (self.items) |msg| {
                 self.allocator.free(msg);
             }
@@ -979,26 +979,65 @@ pub const Sink = struct {
             self.* = undefined;
         }
 
-        pub fn len(self: *const OwnedMemoryMessages) usize {
+        pub fn len(self: *const OwnedMessages) usize {
             return self.items.len;
         }
 
-        pub fn slice(self: *const OwnedMemoryMessages) []const []const u8 {
+        pub fn slice(self: *const OwnedMessages) []const []const u8 {
             return self.items;
         }
     };
 
+    /// Backward-compatibility alias.
+    pub const OwnedMemoryMessages = OwnedMessages;
+
     /// Retrieves an owned collection of in-memory messages with convenient single-call deinit().
-    pub fn getMemoryMessagesOwned(self: *Sink, allocator: std.mem.Allocator) !OwnedMemoryMessages {
+    pub fn messages(self: *Sink, allocator: std.mem.Allocator) !OwnedMessages {
         const msgs = try self.getMemoryMessages(allocator);
-        return OwnedMemoryMessages{
+        return OwnedMessages{
             .allocator = allocator,
             .items = msgs,
         };
     }
 
-    /// Iterates through in-memory logged messages in chronological order without allocating.
-    pub fn forEachMemoryMessage(self: *Sink, context: anytype, comptime func: fn (@TypeOf(context), []const u8) void) !void {
+    /// Aliases for messages(allocator).
+    pub const messagesOwned = messages;
+    pub const getMessages = messages;
+    pub const getMessagesOwned = messages;
+    pub const getMemoryMessagesOwned = messages;
+
+    /// Iterates through in-memory logged messages without allocating.
+    /// The callback receives each message slice: `callback(message)`.
+    pub fn forEachMessage(self: *Sink, callback: anytype) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        const ring = self.memoryRing orelse return error.NotAMemorySink;
+        const count = self.memoryRingCount;
+
+        if (count < ring.len) {
+            var i: usize = 0;
+            while (i < count) : (i += 1) {
+                if (ring[i]) |msg| {
+                    callback(msg);
+                }
+            }
+        } else {
+            var i: usize = 0;
+            while (i < ring.len) : (i += 1) {
+                const idx = (self.memoryRingIndex + i) % ring.len;
+                if (ring[idx]) |msg| {
+                    callback(msg);
+                }
+            }
+        }
+    }
+
+    /// Alias for forEachMessage.
+    pub const forEach = forEachMessage;
+
+    /// Iterates through in-memory logged messages with explicit context: `func(context, message)`.
+    pub fn forEachMessageWith(self: *Sink, context: anytype, comptime func: fn (@TypeOf(context), []const u8) void) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
@@ -1022,6 +1061,9 @@ pub const Sink = struct {
             }
         }
     }
+
+    /// Backward-compatibility alias.
+    pub const forEachMemoryMessage = forEachMessageWith;
 
     /// Enables the sink.
     pub fn enable(self: *Sink) void {
@@ -2203,10 +2245,10 @@ pub const Sink = struct {
         }
 
         // Check include_messages - if set, only allow messages containing these substrings
-        if (filter.includeMessages) |messages| {
-            if (messages.len > 0) {
+        if (filter.includeMessages) |inc_msgs| {
+            if (inc_msgs.len > 0) {
                 var found = false;
-                for (messages) |m| {
+                for (inc_msgs) |m| {
                     if (std.mem.indexOf(u8, record.message, m) != null) {
                         found = true;
                         break;
@@ -2217,8 +2259,8 @@ pub const Sink = struct {
         }
 
         // Check exclude_messages - if set, exclude messages containing these substrings
-        if (filter.excludeMessages) |messages| {
-            for (messages) |m| {
+        if (filter.excludeMessages) |exc_msgs| {
+            for (exc_msgs) |m| {
                 if (std.mem.indexOf(u8, record.message, m) != null) {
                     return false;
                 }

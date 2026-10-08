@@ -240,17 +240,17 @@ error instead of creating a dead file or an empty console target:
 const index = try logger.addSink(logly.SinkConfig.memory());
 if (logger.getSink(index)) |sink| {
     // Option A: Owned collection with single deinit()
-    var messages = try sink.getMemoryMessagesOwned(allocator);
-    defer messages.deinit();
-    for (messages.slice()) |m| std.debug.print("{s}\n", .{m});
+    var msgs = try sink.messages(allocator);
+    defer msgs.deinit();
+    for (msgs.items) |m| std.debug.print("{s}\n", .{m});
 
     // Option B: Zero-allocation direct iterator callback
-    const Printer = struct {
-        fn printMsg(_: void, msg: []const u8) void {
+    const print = struct {
+        fn call(msg: []const u8) void {
             std.debug.print("{s}\n", .{msg});
         }
-    };
-    sink.forEachMemoryMessage({}, Printer.printMsg);
+    }.call;
+    try sink.forEachMessage(print);
 }
 ```
 
