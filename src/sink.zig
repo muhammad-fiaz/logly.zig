@@ -966,6 +966,63 @@ pub const Sink = struct {
         return try list.toOwnedSlice(allocator);
     }
 
+    /// An owned collection of in-memory logged messages with self-contained cleanup.
+    pub const OwnedMemoryMessages = struct {
+        allocator: std.mem.Allocator,
+        items: [][]const u8,
+
+        pub fn deinit(self: *OwnedMemoryMessages) void {
+            for (self.items) |msg| {
+                self.allocator.free(msg);
+            }
+            self.allocator.free(self.items);
+            self.* = undefined;
+        }
+
+        pub fn len(self: *const OwnedMemoryMessages) usize {
+            return self.items.len;
+        }
+
+        pub fn slice(self: *const OwnedMemoryMessages) []const []const u8 {
+            return self.items;
+        }
+    };
+
+    /// Retrieves an owned collection of in-memory messages with convenient single-call deinit().
+    pub fn getMemoryMessagesOwned(self: *Sink, allocator: std.mem.Allocator) !OwnedMemoryMessages {
+        const msgs = try self.getMemoryMessages(allocator);
+        return OwnedMemoryMessages{
+            .allocator = allocator,
+            .items = msgs,
+        };
+    }
+
+    /// Iterates through in-memory logged messages in chronological order without allocating.
+    pub fn forEachMemoryMessage(self: *Sink, context: anytype, comptime func: fn (@TypeOf(context), []const u8) void) !void {
+        self.mutex.lockUncancelable(Utils.io());
+        defer self.mutex.unlock(Utils.io());
+
+        const ring = self.memoryRing orelse return error.NotAMemorySink;
+        const count = self.memoryRingCount;
+
+        if (count < ring.len) {
+            var i: usize = 0;
+            while (i < count) : (i += 1) {
+                if (ring[i]) |msg| {
+                    func(context, msg);
+                }
+            }
+        } else {
+            var i: usize = 0;
+            while (i < ring.len) : (i += 1) {
+                const idx = (self.memoryRingIndex + i) % ring.len;
+                if (ring[idx]) |msg| {
+                    func(context, msg);
+                }
+            }
+        }
+    }
+
     /// Enables the sink.
     pub fn enable(self: *Sink) void {
         self.mutex.lockUncancelable(Utils.io());

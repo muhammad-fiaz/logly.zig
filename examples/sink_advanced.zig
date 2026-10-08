@@ -45,12 +45,9 @@ pub fn main() !void {
 
     std.debug.print("Messages written: 3. Capacity: 3.\n", .{});
     {
-        const msgs = try memSink.getMemoryMessages(allocator);
-        defer {
-            for (msgs) |m| allocator.free(m);
-            allocator.free(msgs);
-        }
-        for (msgs, 0..) |msg, i| {
+        var msgs = try memSink.getMemoryMessagesOwned(allocator);
+        defer msgs.deinit();
+        for (msgs.slice(), 0..) |msg, i| {
             std.debug.print("  [{d}] {s}\n", .{ i, msg });
         }
     }
@@ -60,12 +57,9 @@ pub fn main() !void {
     try memSink.flush();
 
     {
-        const msgs = try memSink.getMemoryMessages(allocator);
-        defer {
-            for (msgs) |m| allocator.free(m);
-            allocator.free(msgs);
-        }
-        for (msgs, 0..) |msg, i| {
+        var msgs = try memSink.getMemoryMessagesOwned(allocator);
+        defer msgs.deinit();
+        for (msgs.slice(), 0..) |msg, i| {
             std.debug.print("  [{d}] {s}\n", .{ i, msg });
         }
     }
@@ -99,19 +93,13 @@ pub fn main() !void {
 
     // Verify sub-sinks both received the message
     {
-        const m1 = try s1.getMemoryMessages(allocator);
-        defer {
-            for (m1) |m| allocator.free(m);
-            allocator.free(m1);
-        }
-        std.debug.print("  Sink 1 got: '{s}'\n", .{m1[0]});
+        var m1 = try s1.getMemoryMessagesOwned(allocator);
+        defer m1.deinit();
+        std.debug.print("  Sink 1 got: '{s}'\n", .{m1.slice()[0]});
 
-        const m2 = try s2.getMemoryMessages(allocator);
-        defer {
-            for (m2) |m| allocator.free(m);
-            allocator.free(m2);
-        }
-        std.debug.print("  Sink 2 got: '{s}'\n", .{m2[0]});
+        var m2 = try s2.getMemoryMessagesOwned(allocator);
+        defer m2.deinit();
+        std.debug.print("  Sink 2 got: '{s}'\n", .{m2.slice()[0]});
     }
 
     // 3. Health check and Rate limiting

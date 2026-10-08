@@ -46,12 +46,9 @@ pub fn main() !void {
         try logger.warning("Cache miss, retrying", null);
         try logger.flush();
 
-        const msgs = try sink.getMemoryMessages(allocator);
-        defer {
-            for (msgs) |m| allocator.free(m);
-            allocator.free(msgs);
-        }
-        for (msgs) |m| std.debug.print("{s}\n{s}\n\n", .{ @tagName(sel), m });
+        var msgs = try sink.getMemoryMessagesOwned(allocator);
+        defer msgs.deinit();
+        for (msgs.slice()) |m| std.debug.print("{s}\n{s}\n\n", .{ @tagName(sel), m });
     }
 
     {

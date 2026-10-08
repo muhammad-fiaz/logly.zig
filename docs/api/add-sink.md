@@ -239,12 +239,18 @@ error instead of creating a dead file or an empty console target:
 ```zig
 const index = try logger.addSink(logly.SinkConfig.memory());
 if (logger.getSink(index)) |sink| {
-    const messages = try sink.getMemoryMessages(allocator);
-    defer {
-        for (messages) |m| allocator.free(m);
-        allocator.free(messages);
-    }
-    for (messages) |m| std.debug.print("{s}\n", .{m});
+    // Option A: Owned collection with single deinit()
+    var messages = try sink.getMemoryMessagesOwned(allocator);
+    defer messages.deinit();
+    for (messages.slice()) |m| std.debug.print("{s}\n", .{m});
+
+    // Option B: Zero-allocation direct iterator callback
+    const Printer = struct {
+        fn printMsg(_: void, msg: []const u8) void {
+            std.debug.print("{s}\n", .{msg});
+        }
+    };
+    sink.forEachMemoryMessage({}, Printer.printMsg);
 }
 ```
 

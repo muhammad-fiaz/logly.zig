@@ -32,15 +32,12 @@ fn render(allocator: std.mem.Allocator, format: ?logly.Config.Format) !void {
     try ctx.warning(msg, @src());
     try logger.flush();
 
-    const msgs = try sink.getMemoryMessages(allocator);
-    defer {
-        for (msgs) |m| allocator.free(m);
-        allocator.free(msgs);
-    }
-    if (msgs.len == 0) return error.NoMessageCaptured;
+    var msgs = try sink.getMemoryMessagesOwned(allocator);
+    defer msgs.deinit();
+    if (msgs.len() == 0) return error.NoMessageCaptured;
 
     // Both the scoped record and the context record reach the sink.
-    for (msgs) |m| std.debug.print("{s}\n", .{m});
+    for (msgs.slice()) |m| std.debug.print("{s}\n", .{m});
 }
 
 pub fn main() !void {
@@ -84,12 +81,9 @@ pub fn main() !void {
     try tpl.warning("Database connection latency detected", null);
     try template_logger.flush();
 
-    const tpl_msgs = try template_sink.getMemoryMessages(allocator);
-    defer {
-        for (tpl_msgs) |m| allocator.free(m);
-        allocator.free(tpl_msgs);
-    }
-    for (tpl_msgs) |m| std.debug.print("{s}\n", .{m});
+    var tpl_msgs = try template_sink.getMemoryMessagesOwned(allocator);
+    defer tpl_msgs.deinit();
+    for (tpl_msgs.slice()) |m| std.debug.print("{s}\n", .{m});
 
     std.debug.print("\nAdvanced Formatting Example completed successfully!\n", .{});
 }
