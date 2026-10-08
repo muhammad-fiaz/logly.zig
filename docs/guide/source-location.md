@@ -36,8 +36,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     const config = logly.Config{
-        .show_filename = true,  // Show source filename
-        .show_lineno = true,    // Show line number
+        .showFilename = true,  // Show source filename
+        .showLineno = true,    // Show line number
     };
 
     const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
@@ -77,19 +77,19 @@ try logger.info("Message without source location", null);
 try logger.debug("Another message", null);
 ```
 
-When `@src()` is `null`, the filename and line number fields will be empty, even if `show_filename` and `show_lineno` are enabled.
+When `@src()` is `null`, the filename and line number fields will be empty, even if `showFilename` and `showLineno` are enabled.
 
 ## Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `show_filename` | `bool` | `false` | Display the source filename |
-| `show_lineno` | `bool` | `false` | Display the line number |
-| `show_function` | `bool` | `false` | Display the function name |
+| `showFilename` | `bool` | `false` | Display the source filename |
+| `showLineno` | `bool` | `false` | Display the line number |
+| `showFunction` | `bool` | `false` | Display the function name |
 
 ## Custom Format with `{file}` and `{line}`
 
-Use the `log_format` option to customize how source location appears:
+Use the `logFormat` option to customize how source location appears:
 
 ```zig
 const std = @import("std");
@@ -100,10 +100,10 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     const config = logly.Config{
-        .show_filename = true,
-        .show_lineno = true,
+        .showFilename = true,
+        .showLineno = true,
         // Custom format with file and line placeholders
-        .log_format = "[{time}] {level} ({file}:{line}) - {message}",
+        .logFormat = "[{time}] {level} ({file}:{line}) - {message}",
     };
 
     const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
@@ -120,7 +120,7 @@ pub fn main() !void {
 
 ## Available Format Placeholders
 
-Use these placeholders in `log_format`:
+Use these placeholders in `logFormat`:
 
 | Placeholder | Description | Example |
 |-------------|-------------|---------|
@@ -131,8 +131,8 @@ Use these placeholders in `log_format`:
 | `{line}` | Line number | `42` |
 | `{function}` | Function name | `main` |
 | `{module}` | Module name | `http.server` |
-| `{trace_id}` | Distributed trace ID | `abc123...` |
-| `{span_id}` | Span ID | `def456...` |
+| `{traceId}` | Distributed trace ID | `abc123...` |
+| `{spanId}` | Span ID | `def456...` |
 | `{caller}` | Full caller info | `main.zig:42 in main` |
 | `{thread}` | Thread ID | `12345` |
 
@@ -142,9 +142,9 @@ Use these placeholders in `log_format`:
 
 ```zig
 const config = logly.Config{
-    .show_filename = true,
-    .show_lineno = true,
-    .log_format = "{level} {file}:{line} {message}",
+    .showFilename = true,
+    .showLineno = true,
+    .logFormat = "{level} {file}:{line} {message}",
 };
 ```
 
@@ -157,10 +157,10 @@ INFO main.zig:15 Application started
 
 ```zig
 const config = logly.Config{
-    .show_filename = true,
-    .show_lineno = true,
-    .show_function = true,
-    .log_format = "[{time}] [{level}] {file}:{line} ({function}) {message}",
+    .showFilename = true,
+    .showLineno = true,
+    .showFunction = true,
+    .logFormat = "[{time}] [{level}] {file}:{line} ({function}) {message}",
 };
 ```
 
@@ -173,9 +173,9 @@ const config = logly.Config{
 
 ```zig
 const config = logly.Config{
-    .show_filename = true,
-    .show_lineno = true,
-    .log_format = "{{\"time\":\"{time}\",\"level\":\"{level}\",\"file\":\"{file}\",\"line\":{line},\"msg\":\"{message}\"}}",
+    .showFilename = true,
+    .showLineno = true,
+    .logFormat = "{{\"time\":\"{time}\",\"level\":\"{level}\",\"file\":\"{file}\",\"line\":{line},\"msg\":\"{message}\"}}",
 };
 ```
 
@@ -183,9 +183,9 @@ const config = logly.Config{
 
 ```zig
 const config = logly.Config{
-    .show_filename = true,
-    .show_lineno = true,
-    .log_format = "{message} [{caller}]",
+    .showFilename = true,
+    .showLineno = true,
+    .logFormat = "{message} [{caller}]",
 };
 ```
 
@@ -208,21 +208,21 @@ pub fn main() !void {
 
     // Base config without source location
     const config = logly.Config{
-        .show_filename = false,
-        .show_lineno = false,
-        .auto_sink = false, // We'll add sinks manually
+        .showFilename = false,
+        .showLineno = false,
+        .autoSink = false, // We'll add sinks manually
     };
 
     const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
     defer logger.deinit();
 
     // Console sink: minimal output
-    _ = try logger.add(logly.SinkConfig.default());
+     _ = try logger.add(logly.SinkConfig.default());
 
     // File sink: detailed output with source location
-    var file_config = logly.SinkConfig.file("debug.log");
-    file_config.format = "[{time}] {level} {file}:{line} {message}";
-    _ = try logger.add(file_config);
+    var fileConfig = logly.SinkConfig.file("debug.log");
+    fileConfig.format = "[{time}] {level} {file}:{line} {message}";
+     _ = try logger.add(fileConfig);
 
     try logger.info("Different format per sink", @src());
 }
@@ -240,11 +240,11 @@ pub fn main() !void {
 
     // Full source location configuration
     const config = logly.Config{
-        .show_filename = true,
-        .show_lineno = true,
-        .show_function = true,
-        .time_format = "HH:mm:ss.SSS",
-        .log_format = "[{time}] {level} {file}:{line} ({function}) | {message}",
+        .showFilename = true,
+        .showLineno = true,
+        .showFunction = true,
+        .timeFormat = "HH:mm:ss.SSS",
+        .logFormat = "[{time}] {level} {file}:{line} ({function}) | {message}",
     };
 
     const logger = try logly.Logger.initWithConfig(gpa.allocator(), config);
@@ -289,7 +289,7 @@ try logger.info("With source location", @src());
 try logger.info("Without source location", null);
 
 // Use @src() when debugging, null for minimal logs
-const src_info = if (debug_mode) @src() else null;
+const src_info = if (debugMode) @src() else null;
 try logger.info("Conditional source location", src_info);
 ```
 

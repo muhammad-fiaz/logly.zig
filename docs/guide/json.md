@@ -25,16 +25,16 @@ You can enable JSON output globally or for specific sinks.
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 logger.configure(config);
 ```
 
 ### Per-Sink JSON
 
 ```zig
-_ = try logger.add(.{  // Short alias for addSink()
+ _ = try logger.add(.{  // Short alias for addSink()
     .path = "logs/app.json",
-    .json = true,
+    .format = .json,
 });
 ```
 
@@ -59,9 +59,9 @@ The JSON output contains the following fields:
 
 - `timestamp`: Unix timestamp in milliseconds
 - `level`: Log level string (uses custom level name if set)
-- `service`: Service name (if `distributed.service_name` is set)
-- `trace_id`: Distributed Trace ID (if present)
-- `span_id`: Distributed Span ID (if present)
+- `service`: Service name (if `distributed.serviceName` is set)
+- `traceId`: Distributed Trace ID (if present)
+- `spanId`: Distributed Span ID (if present)
 - `module`: Module name (if enabled)
 - `function`: Function name (if enabled)
 - `file`: Filename (if enabled)
@@ -92,5 +92,5 @@ Output:
 For development or debugging, you can enable pretty printing to format the JSON with indentation.
 
 ```zig
-config.pretty_json = true;
+config.prettyJson = true;
 ```

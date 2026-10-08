@@ -20,7 +20,7 @@ This example demonstrates how to create and apply a custom color theme to your l
 ## Code
 
 ::: code-group
-```zig [custom_theme.zig]
+```zig [customTheme.zig]
 const std = @import("std");
 const logly = @import("logly");
 
@@ -30,7 +30,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -77,13 +77,13 @@ pub fn main() !void {
     // {module} - Module name (if available)
     // {file} - Source file
     // {line} - Line number
-    config.log_format = ">>> {timestamp} | {level} | {message} <<<";
+    config.logFormat = ">>> {timestamp} | {level} | {message} <<<";
     logger.configure(config);
 
     try logger.info("This uses a custom format", @src());
 
     // 3. Minimal Format
-    config.log_format = "[{level}] {message} ({file}:{line})";
+    config.logFormat = "[{level}] {message} ({file}:{line})";
     logger.configure(config);
     
     try logger.warn("Minimal format with location", @src());
@@ -108,5 +108,5 @@ The output will display log messages using the custom colors defined in the `neo
 
 === Custom Format Example ===
 >>> 2025-12-12 14:00:00.000 | INFO | This uses a custom format <<<
-[WARNING] Minimal format with location (custom_theme.zig:65)
+[WARNING] Minimal format with location (customTheme.zig:65)
 ```

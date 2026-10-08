@@ -29,44 +29,44 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     // Disable auto console sink to configure everything manually
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
 
     // Enable filename and line number display (Clickable in VS Code)
-    config.show_filename = true;
-    config.show_lineno = true;
+    config.showFilename = true;
+    config.showLineno = true;
 
     // Custom date format (YYYY-MM-DD HH:MM:SS.mmm)
-    config.time_format = "default";
+    config.timeFormat = "default";
 
     logger.configure(config);
 
     // 1. Standard Console Sink (with colors) - using add() alias
-    _ = try logger.add(.{});
+     _ = try logger.add(.{});
 
     // 2. Plain Text File Sink (no colors)
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/plain.txt",
         .color = false,
     });
 
     // 3. JSON File Sink
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/data.json",
-        .json = true,
+        .format = .json,
     });
 
     // 4. Pretty JSON File Sink
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/pretty.json",
-        .json = true,
-        .pretty_json = true,
+        .format = .json,
+        .prettyJson = true,
     });
 
     try logger.info("This message goes to all sinks in different formats!", @src());

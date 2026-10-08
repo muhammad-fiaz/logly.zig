@@ -82,10 +82,10 @@ Scheduler can be enabled through the central `Config` struct:
 var config = logly.Config.default();
 config.scheduler = .{
     .enabled = true,
-    .cleanup_max_age_days = 14,
-    .max_files = 100,
-    .compress_before_cleanup = true,
-    .file_pattern = "*.log",
+    .cleanupMaxAgeDays = 14,
+    .maxFiles = 100,
+    .compressBeforeCleanup = true,
+    .filePattern = "*.log",
 };
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
@@ -109,7 +109,7 @@ pub const Scheduler = struct {
     stats: SchedulerStats,
     compression: Compression,  // Integrated compression support
     running: std.atomic.Value(bool),
-    worker_thread: ?std.Thread,
+    workerThread: ?std.Thread,
     telemetry: ?*Telemetry,    // Optional telemetry for distributed tracing
 };
 ```
@@ -123,35 +123,35 @@ pub const SchedulerConfig = struct {
     /// Enable the scheduler.
     enabled: bool = false,
     /// Default cleanup max age in days.
-    cleanup_max_age_days: u64 = 7,
+    cleanupMaxAgeDays: u64 = 7,
     /// Default max files to keep.
-    max_files: ?usize = null,
+    maxFiles: ?usize = null,
     /// Enable compression before cleanup.
-    compress_before_cleanup: bool = false,
+    compressBeforeCleanup: bool = false,
     /// Default file pattern for cleanup.
-    file_pattern: []const u8 = "*.log",
+    filePattern: []const u8 = "*.log",
     /// Root directory for compressed/archived files.
-    archive_root_dir: ?[]const u8 = null,
+    archiveRootDir: ?[]const u8 = null,
     /// Create date-based subdirectories (YYYY/MM/DD).
-    create_date_subdirs: bool = false,
+    createDateSubdirs: bool = false,
     /// Compression algorithm for scheduled compression tasks.
-    compression_algorithm: CompressionConfig.CompressionAlgorithm = .gzip,
+    compressionAlgorithm: CompressionConfig.CompressionAlgorithm = .gzip,
     /// Compression level for scheduled tasks.
-    compression_level: CompressionConfig.CompressionLevel = .default,
+    compressionLevel: CompressionConfig.CompressionLevel = .default,
     /// Keep original files after scheduled compression.
-    keep_originals: bool = false,
+    keepOriginals: bool = false,
     /// Custom prefix for archived file names.
-    archive_file_prefix: ?[]const u8 = null,
+    archiveFilePrefix: ?[]const u8 = null,
     /// Custom suffix for archived file names.
-    archive_file_suffix: ?[]const u8 = null,
+    archiveFileSuffix: ?[]const u8 = null,
     /// Preserve directory structure in archive root.
-    preserve_dir_structure: bool = true,
+    preserveDirStructure: bool = true,
     /// Delete empty directories after cleanup.
-    clean_empty_dirs: bool = false,
+    cleanEmptyDirs: bool = false,
     /// Minimum file age in days before compression.
-    min_age_days_for_compression: u64 = 1,
+    minAgeDaysForCompression: u64 = 1,
     /// Maximum concurrent compression tasks.
-    max_concurrent_compressions: usize = 2,
+    maxConcurrentCompressions: usize = 2,
 };
 ```
 
@@ -160,23 +160,23 @@ pub const SchedulerConfig = struct {
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | `bool` | `false` | Enable the scheduler |
-| `cleanup_max_age_days` | `u64` | `7` | Max age for cleanup tasks |
-| `max_files` | `?usize` | `null` | Max files to retain |
-| `compress_before_cleanup` | `bool` | `false` | Compress before deleting |
-| `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
-| `archive_root_dir` | `?[]const u8` | `null` | Centralized archive location |
-| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd, lzma, lzma2, xz, zip, tar.gz, lz4) |
-| `compression_level` | `CompressionLevel` | `.default` | Compression level |
-| `keep_originals` | `bool` | `false` | Keep originals after compression |
-| `archive_file_prefix` | `?[]const u8` | `null` | Prefix for archived files |
-| `archive_file_suffix` | `?[]const u8` | `null` | Suffix for archived files |
-| `preserve_dir_structure` | `bool` | `true` | Keep directory structure |
-| `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
-| `min_age_days_for_compression` | `u64` | `1` | Min age before compression |
-| `max_concurrent_compressions` | `usize` | `2` | Max parallel compressions |
+| `cleanupMaxAgeDays` | `u64` | `7` | Max age for cleanup tasks |
+| `maxFiles` | `?usize` | `null` | Max files to retain |
+| `compressBeforeCleanup` | `bool` | `false` | Compress before deleting |
+| `filePattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
+| `archiveRootDir` | `?[]const u8` | `null` | Centralized archive location |
+| `createDateSubdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
+| `compressionAlgorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd, lzma, lzma2, xz, zip, tar.gz, lz4) |
+| `compressionLevel` | `CompressionLevel` | `.default` | Compression level |
+| `keepOriginals` | `bool` | `false` | Keep originals after compression |
+| `archiveFilePrefix` | `?[]const u8` | `null` | Prefix for archived files |
+| `archiveFileSuffix` | `?[]const u8` | `null` | Suffix for archived files |
+| `preserveDirStructure` | `bool` | `true` | Keep directory structure |
+| `cleanEmptyDirs` | `bool` | `false` | Remove empty directories |
+| `minAgeDaysForCompression` | `u64` | `1` | Min age before compression |
+| `maxConcurrentCompressions` | `usize` | `2` | Max parallel compressions |
 
-> Note: v0.1.6 expanded compression and archiving support — including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 — and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compression_algorithm` and `compression_level` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
+> Note: v0.1.6 expanded compression and archiving support — including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 — and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compressionAlgorithm` and `compressionLevel` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
 
 
 ### ScheduledTask
@@ -188,7 +188,7 @@ pub const ScheduledTask = struct {
     /// Unique task name
     name: []const u8,
     /// Task type
-    task_type: TaskType,
+    taskType: TaskType,
     /// Schedule configuration
     schedule: Schedule,
     /// Task-specific configuration
@@ -202,19 +202,19 @@ pub const ScheduledTask = struct {
     /// Task execution priority
     priority: Priority = .normal,
     /// Retry policy for failed tasks
-    retry_policy: RetryPolicy = .{},
+    retryPolicy: RetryPolicy = .{},
     /// Name of another task that must complete successfully before this one runs
-    depends_on: ?[]const u8 = null,
+    dependsOn: ?[]const u8 = null,
     /// Last execution timestamp
-    last_run: i64 = 0,
+    lastRun: i64 = 0,
     /// Next scheduled execution
-    next_run: i64 = 0,
+    nextRun: i64 = 0,
     /// Number of executions
-    run_count: u64 = 0,
+    runCount: u64 = 0,
     /// Number of failures
-    error_count: u64 = 0,
+    errorCount: u64 = 0,
     /// Retries remaining for current failure
-    retries_remaining: u32 = 0,
+    retriesRemaining: u32 = 0,
 
     pub const Priority = enum {
         low,
@@ -224,9 +224,9 @@ pub const ScheduledTask = struct {
     };
 
     pub const RetryPolicy = struct {
-        max_retries: u32 = 3,
-        interval_ms: u32 = 5000,
-        backoff_multiplier: f32 = 1.5,
+        maxRetries: u32 = 3,
+        intervalMs: u32 = 5000,
+        backoffMultiplier: f32 = 1.5,
     };
 };
 ```
@@ -248,9 +248,9 @@ pub const TaskType = enum {
     /// Custom user-defined task
     custom,
     /// Health check
-    health_check,
+    healthCheck,
     /// Metrics collection
-    metrics_snapshot,
+    metricsSnapshot,
 };
 ```
 
@@ -263,29 +263,29 @@ pub const TaskConfig = struct {
     /// Path for file-based tasks
     path: ?[]const u8 = null,
     /// Maximum age in seconds for cleanup
-    max_age_seconds: u64 = 7 * 24 * 60 * 60,
+    maxAgeSeconds: u64 = 7 * 24 * 60 * 60,
     /// Maximum files to keep
-    max_files: ?usize = null,
+    maxFiles: ?usize = null,
     /// Maximum total size in bytes
-    max_total_size: ?u64 = null,
+    maxTotalSize: ?u64 = null,
     /// Minimum age in seconds (useful for compression)
-    min_age_seconds: u64 = 0,
+    minAgeSeconds: u64 = 0,
     /// File pattern to match (e.g., "*.log")
-    file_pattern: ?[]const u8 = null,
+    filePattern: ?[]const u8 = null,
     /// Compress files before cleanup (compress then delete)
-    compress_before_delete: bool = false,
+    compressBeforeDelete: bool = false,
     /// Compress files and keep both original and compressed (archive mode)
-    compress_and_keep: bool = false,
+    compressAndKeep: bool = false,
     /// Only compress files, don't delete any (pure archival)
-    compress_only: bool = false,
+    compressOnly: bool = false,
     /// Skip files that are already compressed (.gz, .lgz, .zst)
-    skip_already_compressed: bool = true,
+    skipAlreadyCompressed: bool = true,
     /// Recursive directory processing
     recursive: bool = false,
     /// Trigger task only if disk usage exceeds this percentage (0-100)
-    trigger_disk_usage_percent: ?u8 = null,
+    triggerDiskUsagePercent: ?u8 = null,
     /// Required free space in bytes before running task
-    min_free_space_bytes: ?u64 = null,
+    minFreeSpaceBytes: ?u64 = null,
 };
 ```
 
@@ -293,9 +293,9 @@ pub const TaskConfig = struct {
 
 | Field | Behavior |
 |-------|----------|
-| `compress_before_delete` | Compress file, then delete original |
-| `compress_and_keep` | Compress file, keep both versions |
-| `compress_only` | Compress file, never delete anything |
+| `compressBeforeDelete` | Compress file, then delete original |
+| `compressAndKeep` | Compress file, keep both versions |
+| `compressOnly` | Compress file, never delete anything |
 
 ### Schedule
 
@@ -320,9 +320,9 @@ pub const Schedule = union(enum) {
     pub const CronSchedule = struct {
         minute: ?u8 = null,
         hour: ?u8 = null,
-        day_of_month: ?u8 = null,
+        dayOfMonth: ?u8 = null,
         month: ?u8 = null,
-        day_of_week: ?u8 = null,
+        dayOfWeek: ?u8 = null,
     };
 };
 ```
@@ -334,21 +334,21 @@ Thread-safe statistics for scheduled operations using atomic counters. Works cor
 ```zig
 pub const SchedulerStats = struct {
     /// Total tasks executed successfully (atomic).
-    tasks_executed: std.atomic.Value(Constants.AtomicUnsigned),
+    tasksExecuted: std.atomic.Value(Constants.AtomicUnsigned),
     /// Total tasks that failed (atomic).
-    tasks_failed: std.atomic.Value(Constants.AtomicUnsigned),
+    tasksFailed: std.atomic.Value(Constants.AtomicUnsigned),
     /// Total files cleaned up (atomic).
-    files_cleaned: std.atomic.Value(Constants.AtomicUnsigned),
+    filesCleaned: std.atomic.Value(Constants.AtomicUnsigned),
     /// Total files compressed (atomic).
-    files_compressed: std.atomic.Value(Constants.AtomicUnsigned),
+    filesCompressed: std.atomic.Value(Constants.AtomicUnsigned),
     /// Total bytes freed by cleanup operations (atomic).
-    bytes_freed: std.atomic.Value(Constants.AtomicUnsigned),
+    bytesFreed: std.atomic.Value(Constants.AtomicUnsigned),
     /// Total bytes saved by compression (atomic).
-    bytes_saved: std.atomic.Value(Constants.AtomicUnsigned),
+    bytesSaved: std.atomic.Value(Constants.AtomicUnsigned),
     /// Last run time in milliseconds (atomic).
-    last_run_time: std.atomic.Value(i64),
+    lastRunTime: std.atomic.Value(i64),
     /// Scheduler start time for uptime calculation (atomic).
-    start_time: std.atomic.Value(i64),
+    startTime: std.atomic.Value(i64),
 };
 ```
 
@@ -414,19 +414,19 @@ pub fn init(allocator: std.mem.Allocator) !*Scheduler
 Create a new scheduler that uses a thread pool for task execution.
 
 ```zig
-pub fn initWithThreadPool(allocator: std.mem.Allocator, thread_pool: *ThreadPool) !*Scheduler
+pub fn initWithThreadPool(allocator: std.mem.Allocator, threadPool: *ThreadPool) !*Scheduler
 ```
 
 **Parameters:**
 - `allocator`: Memory allocator
-- `thread_pool`: Shared thread pool instance
+- `threadPool`: Shared thread pool instance
 
 ### initFromConfig
 
 Create a scheduler from global configuration.
 
 ```zig
-pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logs_path: ?[]const u8) !*Scheduler
+pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logsPath: ?[]const u8) !*Scheduler
 ```
 
 ### deinit
@@ -458,12 +458,12 @@ pub fn stop(self: *Scheduler) void
 Add a scheduled task.
 
 ```zig
-pub fn addTask(self: *Scheduler, name: []const u8, task_type: TaskType, schedule: Schedule, config: ScheduledTask.TaskConfig) !usize
+pub fn addTask(self: *Scheduler, name: []const u8, taskType: TaskType, schedule: Schedule, config: ScheduledTask.TaskConfig) !usize
 ```
 
 **Parameters:**
 - `name`: Unique task identifier
-- `task_type`: Type of task
+- `taskType`: Type of task
 - `schedule`: Execution schedule
 - `config`: Task configuration
 
@@ -490,7 +490,7 @@ pub fn setTaskRetryPolicy(self: *Scheduler, index: usize, policy: ScheduledTask.
 Set a dependency for a task (it will only run if the dependency is running).
 
 ```zig
-pub fn setTaskDependency(self: *Scheduler, index: usize, dependency_name: []const u8) !void
+pub fn setTaskDependency(self: *Scheduler, index: usize, dependencyName: []const u8) !void
 ```
 
 ### taskIndexByName
@@ -744,7 +744,7 @@ pub fn main() !void {
     defer scheduler.deinit();
 
     // Add daily cleanup task using Presets
-    _ = try scheduler.addTask(
+     _ = try scheduler.addTask(
         "log_cleanup",
         .cleanup,
         SchedulerPresets.dailyAt(2, 30), // Daily at 2:30 AM
@@ -752,14 +752,14 @@ pub fn main() !void {
     );
 
     // Add hourly compression manually
-    _ = try scheduler.addTask(
+     _ = try scheduler.addTask(
         "log_compression",
         .compression,
         .{ .interval = 3600 * 1000 }, // Every hour (ms)
         .{
             .path = "logs",
-            .min_age_seconds = 3600, // Compress files older than 1 hour
-            .file_pattern = "*.log",
+            .minAgeSeconds = 3600, // Compress files older than 1 hour
+            .filePattern = "*.log",
         },
     );
 
@@ -823,12 +823,12 @@ Helper functions for creating common schedules and task configurations.
 | `compressAndKeep(path, days)` | Compress, keep both versions |
 | `compressOnly(path, days)` | Compress only, never delete |
 | `archiveOldLogs(path, compress_days, delete_days)` | Archive with age limits |
-| `aggressiveCleanup(path, days, max_files)` | Compress + file count limit |
+| `aggressiveCleanup(path, days, maxFiles)` | Compress + file count limit |
 | `hourlyArchive(path)` | Compress files older than 1 day (v0.1.8+) |
 | `compressOnRotation(path)` | Compress just-rotated files (v0.1.8+) |
 | `sizeBasedCompression(path, bytes)` | Compress when size exceeds threshold (v0.1.8+) |
 | `diskUsageTriggered(path, percent)` | Compress when disk usage high (v0.1.8+) |
-| `lowDiskSpaceTriggered(path, min_free)` | Compress when disk space low (v0.1.8+) |
+| `lowDiskSpaceTriggered(path, minFree)` | Compress when disk space low (v0.1.8+) |
 | `recursiveCompression(path, days)` | Recursive directory compression (v0.1.8+) |
 
 ```zig
@@ -849,17 +849,17 @@ pub const SchedulerPresets = struct {
     pub fn metricsSchedule() Schedule;         // v0.1.8+
 
     // Task Configurations
-    pub fn dailyCleanup(path: []const u8, max_age_days: u64) TaskConfig;
-    pub fn compressThenDelete(path: []const u8, min_age_days: u64) TaskConfig;
-    pub fn compressAndKeep(path: []const u8, min_age_days: u64) TaskConfig;
-    pub fn compressOnly(path: []const u8, min_age_days: u64) TaskConfig;
+    pub fn dailyCleanup(path: []const u8, maxAgeDays: u64) TaskConfig;
+    pub fn compressThenDelete(path: []const u8, minAgeDays: u64) TaskConfig;
+    pub fn compressAndKeep(path: []const u8, minAgeDays: u64) TaskConfig;
+    pub fn compressOnly(path: []const u8, minAgeDays: u64) TaskConfig;
     pub fn archiveOldLogs(path: []const u8, compress_days: u64, delete_days: u64) TaskConfig;
-    pub fn aggressiveCleanup(path: []const u8, max_age_days: u64, max_files: usize) TaskConfig;
+    pub fn aggressiveCleanup(path: []const u8, maxAgeDays: u64, maxFiles: usize) TaskConfig;
     pub fn hourlyArchive(path: []const u8) TaskConfig;             // v0.1.8+
     pub fn compressOnRotation(path: []const u8) TaskConfig;        // v0.1.8+
     pub fn sizeBasedCompression(path: []const u8, bytes: u64) TaskConfig;  // v0.1.8+
     pub fn diskUsageTriggered(path: []const u8, percent: u8) TaskConfig;   // v0.1.8+
-    pub fn lowDiskSpaceTriggered(path: []const u8, min_free: u64) TaskConfig;  // v0.1.8+
+    pub fn lowDiskSpaceTriggered(path: []const u8, minFree: u64) TaskConfig;  // v0.1.8+
     pub fn recursiveCompression(path: []const u8, days: u64) TaskConfig;   // v0.1.8+
 };
 ```
@@ -883,7 +883,7 @@ const logly = @import("logly");
 // Create telemetry instance
 var telemetry = try logly.Telemetry.init(allocator, .{
     .provider = .file,
-    .exporter_file_path = "telemetry_spans.jsonl",
+    .exporterFilePath = "telemetry_spans.jsonl",
 });
 defer telemetry.deinit();
 
@@ -902,20 +902,20 @@ Task execution spans include the following attributes:
 |-----------|------|-------------|
 | `task.type` | string | Task type (cleanup, compression, etc.) |
 | `task.priority` | string | Task priority level |
-| `task.duration_ms` | integer | Execution duration in milliseconds |
-| `cleanup.files_deleted` | integer | Files deleted (cleanup tasks) |
-| `cleanup.bytes_freed` | integer | Bytes freed (cleanup tasks) |
+| `task.durationMs` | integer | Execution duration in milliseconds |
+| `cleanup.filesDeleted` | integer | Files deleted (cleanup tasks) |
+| `cleanup.bytesFreed` | integer | Bytes freed (cleanup tasks) |
 | `compression.files` | integer | Files compressed (compression tasks) |
-| `compression.bytes_saved` | integer | Bytes saved (compression tasks) |
-| `health.healthy` | boolean | Health status (health_check tasks) |
-| `metrics.log_count` | integer | Log count (metrics_snapshot tasks) |
-| `metrics.error_count` | integer | Error count (metrics_snapshot tasks) |
+| `compression.bytesSaved` | integer | Bytes saved (compression tasks) |
+| `health.healthy` | boolean | Health status (healthCheck tasks) |
+| `metrics.logCount` | integer | Log count (metricsSnapshot tasks) |
+| `metrics.errorCount` | integer | Error count (metricsSnapshot tasks) |
 
 ### Telemetry Metrics
 
 The scheduler also records counter and gauge metrics:
 
-- `scheduler.tasks_executed` (counter): Incremented for each task execution
+- `scheduler.tasksExecuted` (counter): Incremented for each task execution
 - `scheduler.task_duration_ms` (gauge): Task execution duration
 
 ### Example Output

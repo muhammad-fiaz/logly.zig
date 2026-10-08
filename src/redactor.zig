@@ -1,32 +1,6 @@
-//! Sensitive Data Redaction Module
+//! Sensitive data redaction.
 //!
-//! Provides pattern-based and field-based redaction to prevent sensitive
-//! information from appearing in log output.
-//!
-//! Redaction Patterns:
-//! - Password fields: password, passwd, secret, key, token
-//! - Credentials: auth, authorization, cookie
-//! - Personal data: email, phone, ssn, credit_card
-//! - Network: ip_address, hostname
-//! - Custom: User-defined regex patterns
-//!
-//! Strategies:
-//! - Fixed mask: Replace with "***" or custom string
-//! - Partial mask: Show first/last N characters
-//! - Hash: Replace with hash of original value
-//! - Truncate: Show only first N characters
-//!
-//! Configuration:
-//! - Field names to redact
-//! - Pattern-based matching
-//! - Mask character customization
-//! - JSON key redaction
-//!
-//! Performance:
-//! - O(n) pattern evaluation
-//! - Early exit on first match
-//! - Pre-compiled patterns
-
+//! Masks fields and patterns (emails, IPs, tokens) before output.
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
@@ -42,70 +16,70 @@ pub const Redactor = struct {
 
     /// Redactor statistics for monitoring and diagnostics.
     pub const RedactorStats = struct {
-        total_values_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        values_redacted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        patterns_matched: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        fields_redacted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        redaction_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        totalValuesProcessed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        valuesRedacted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        patternsMatched: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        fieldsRedacted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        redactionErrors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Get total values processed.
         pub fn getTotalProcessed(self: *const RedactorStats) u64 {
-            return Utils.atomicLoadU64(&self.total_values_processed);
+            return Utils.atomicLoadU64(&self.totalValuesProcessed);
         }
 
         /// Get total values redacted.
         pub fn getValuesRedacted(self: *const RedactorStats) u64 {
-            return Utils.atomicLoadU64(&self.values_redacted);
+            return Utils.atomicLoadU64(&self.valuesRedacted);
         }
 
         /// Get total patterns matched.
         pub fn getPatternsMatched(self: *const RedactorStats) u64 {
-            return Utils.atomicLoadU64(&self.patterns_matched);
+            return Utils.atomicLoadU64(&self.patternsMatched);
         }
 
         /// Get total fields redacted.
         pub fn getFieldsRedacted(self: *const RedactorStats) u64 {
-            return Utils.atomicLoadU64(&self.fields_redacted);
+            return Utils.atomicLoadU64(&self.fieldsRedacted);
         }
 
         /// Get total redaction errors.
         pub fn getRedactionErrors(self: *const RedactorStats) u64 {
-            return Utils.atomicLoadU64(&self.redaction_errors);
+            return Utils.atomicLoadU64(&self.redactionErrors);
         }
 
         /// Check if any values have been processed.
         pub fn hasProcessed(self: *const RedactorStats) bool {
-            return Utils.atomicLoadU64(&self.total_values_processed) > 0;
+            return Utils.atomicLoadU64(&self.totalValuesProcessed) > 0;
         }
 
         /// Check if any values have been redacted.
         pub fn hasRedacted(self: *const RedactorStats) bool {
-            return Utils.atomicLoadU64(&self.values_redacted) > 0;
+            return Utils.atomicLoadU64(&self.valuesRedacted) > 0;
         }
 
         /// Check if any patterns have matched.
         pub fn hasMatchedPatterns(self: *const RedactorStats) bool {
-            return Utils.atomicLoadU64(&self.patterns_matched) > 0;
+            return Utils.atomicLoadU64(&self.patternsMatched) > 0;
         }
 
         /// Check if any errors have occurred.
         pub fn hasErrors(self: *const RedactorStats) bool {
-            return Utils.atomicLoadU64(&self.redaction_errors) > 0;
+            return Utils.atomicLoadU64(&self.redactionErrors) > 0;
         }
 
         /// Calculate redaction rate (0.0 - 1.0)
         pub fn redactionRate(self: *const RedactorStats) f64 {
             return Utils.calculateRate(
-                Utils.atomicLoadU64(&self.values_redacted),
-                Utils.atomicLoadU64(&self.total_values_processed),
+                Utils.atomicLoadU64(&self.valuesRedacted),
+                Utils.atomicLoadU64(&self.totalValuesProcessed),
             );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const RedactorStats) f64 {
             return Utils.calculateErrorRate(
-                Utils.atomicLoadU64(&self.redaction_errors),
-                Utils.atomicLoadU64(&self.total_values_processed),
+                Utils.atomicLoadU64(&self.redactionErrors),
+                Utils.atomicLoadU64(&self.totalValuesProcessed),
             );
         }
 
@@ -117,78 +91,27 @@ pub const Redactor = struct {
         /// Calculate pattern match rate (patterns matched / values redacted).
         pub fn patternMatchRate(self: *const RedactorStats) f64 {
             return Utils.calculateRate(
-                Utils.atomicLoadU64(&self.patterns_matched),
-                Utils.atomicLoadU64(&self.values_redacted),
+                Utils.atomicLoadU64(&self.patternsMatched),
+                Utils.atomicLoadU64(&self.valuesRedacted),
             );
         }
 
         /// Calculate average redactions per processed value.
         pub fn avgRedactionsPerValue(self: *const RedactorStats) f64 {
             return Utils.calculateAverage(
-                Utils.atomicLoadU64(&self.values_redacted),
-                Utils.atomicLoadU64(&self.total_values_processed),
+                Utils.atomicLoadU64(&self.valuesRedacted),
+                Utils.atomicLoadU64(&self.totalValuesProcessed),
             );
         }
 
         /// Reset all statistics to initial state.
         pub fn reset(self: *RedactorStats) void {
-            self.total_values_processed.store(0, .monotonic);
-            self.values_redacted.store(0, .monotonic);
-            self.patterns_matched.store(0, .monotonic);
-            self.fields_redacted.store(0, .monotonic);
-            self.redaction_errors.store(0, .monotonic);
+            self.totalValuesProcessed.store(0, .monotonic);
+            self.valuesRedacted.store(0, .monotonic);
+            self.patternsMatched.store(0, .monotonic);
+            self.fieldsRedacted.store(0, .monotonic);
+            self.redactionErrors.store(0, .monotonic);
         }
-
-        /// Alias for getTotalProcessed
-        pub const totalProcessed = getTotalProcessed;
-        pub const processedCount = getTotalProcessed;
-
-        /// Alias for getValuesRedacted
-        pub const valuesRedacted = getValuesRedacted;
-        pub const redactedCount = getValuesRedacted;
-
-        /// Alias for getPatternsMatched
-        pub const patternsMatched = getPatternsMatched;
-        pub const matchedCount = getPatternsMatched;
-
-        /// Alias for getFieldsRedacted
-        pub const fieldsRedacted = getFieldsRedacted;
-        pub const fieldRedactionCount = getFieldsRedacted;
-
-        /// Alias for getRedactionErrors
-        pub const redactionErrors = getRedactionErrors;
-        pub const errorCount = getRedactionErrors;
-
-        /// Alias for hasProcessed
-        pub const processed = hasProcessed;
-
-        /// Alias for hasRedacted
-        pub const redacted = hasRedacted;
-
-        /// Alias for hasMatchedPatterns
-        pub const matchedPatterns = hasMatchedPatterns;
-
-        /// Alias for hasErrors
-        pub const hasRedactionErrors = hasErrors;
-
-        /// Alias for redactionRate
-        pub const redactionPercentage = redactionRate;
-
-        /// Alias for errorRate
-        pub const errorPercentage = errorRate;
-
-        /// Alias for successRate
-        pub const successPercentage = successRate;
-
-        /// Alias for patternMatchRate
-        pub const patternMatchPercentage = patternMatchRate;
-
-        /// Alias for avgRedactionsPerValue
-        pub const avgRedactions = avgRedactionsPerValue;
-
-        /// Alias for reset
-        pub const clear = reset;
-        pub const zero = reset;
     };
 
     /// Re-export RedactionConfig from global config.
@@ -208,29 +131,24 @@ pub const Redactor = struct {
     mutex: std.Io.Mutex = std.Io.Mutex.init,
 
     /// Callback invoked when redaction is applied.
-    /// Parameters: (original_length: u64, redacted_length: u64, redaction_type: u32)
-    on_redaction_applied: ?*const fn (u64, u64, u32) void = null,
+    onRedactionApplied: ?*const fn (u64, u64, u32) void = null,
 
     /// Callback invoked when a pattern matches.
-    /// Parameters: (pattern_name: []const u8, matched_value: []const u8)
-    on_pattern_matched: ?*const fn ([]const u8, []const u8) void = null,
+    onPatternMatched: ?*const fn ([]const u8, []const u8) void = null,
 
     /// Callback invoked with redaction details showing original and redacted values.
-    /// Parameters: (pattern_name: []const u8, original_value: []const u8, redacted_value: []const u8)
-    on_redaction_detail: ?*const fn ([]const u8, []const u8, []const u8) void = null,
+    onRedactionDetail: ?*const fn ([]const u8, []const u8, []const u8) void = null,
 
     /// Callback invoked when redactor is initialized.
-    /// Parameters: (stats: *const RedactorStats)
-    on_redactor_initialized: ?*const fn (*const RedactorStats) void = null,
+    onRedactorInitialized: ?*const fn (*const RedactorStats) void = null,
 
     /// Callback invoked on redaction error.
-    /// Parameters: (error_msg: []const u8)
-    on_redaction_error: ?*const fn ([]const u8) void = null,
+    onRedactionError: ?*const fn ([]const u8) void = null,
 
     /// Pattern-based redaction configuration.
     pub const RedactionPattern = struct {
         name: []const u8,
-        pattern_type: PatternType,
+        patternType: PatternType,
         pattern: []const u8,
         replacement: []const u8,
 
@@ -240,7 +158,7 @@ pub const Redactor = struct {
             suffix,
             contains,
             regex,
-            regex_replace,
+            regexReplace,
             email,
             ip,
             jwt,
@@ -251,16 +169,16 @@ pub const Redactor = struct {
     /// Type of redaction to apply.
     pub const RedactionType = enum {
         full,
-        partial_start,
-        partial_end,
+        partialStart,
+        partialEnd,
         hash,
-        mask_middle,
+        maskMiddle,
         truncate,
 
         pub fn apply(self: RedactionType, allocator: std.mem.Allocator, value: []const u8) ![]u8 {
             return switch (self) {
                 .full => try allocator.dupe(u8, Constants.RedactionDefaults.replacement),
-                .partial_start => blk: {
+                .partialStart => blk: {
                     if (value.len <= 4) {
                         break :blk try allocator.dupe(u8, "****");
                     }
@@ -269,7 +187,7 @@ pub const Redactor = struct {
                     @memcpy(result[value.len - 4 ..], value[value.len - 4 ..]);
                     break :blk result;
                 },
-                .partial_end => blk: {
+                .partialEnd => blk: {
                     if (value.len <= 4) {
                         break :blk try allocator.dupe(u8, "****");
                     }
@@ -281,11 +199,11 @@ pub const Redactor = struct {
                 .hash => blk: {
                     var hash: [32]u8 = undefined;
                     std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
-                    const hex_val = try Utils.bytesToHexLowerAlloc(allocator, hash[0..8]);
-                    defer allocator.free(hex_val);
-                    break :blk try std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hex_val});
+                    const hexVal = try Utils.bytesToHexLowerAlloc(allocator, hash[0..8]);
+                    defer allocator.free(hexVal);
+                    break :blk try std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hexVal});
                 },
-                .mask_middle => blk: {
+                .maskMiddle => blk: {
                     if (value.len <= 6) {
                         break :blk try allocator.dupe(u8, "***");
                     }
@@ -296,31 +214,24 @@ pub const Redactor = struct {
                     break :blk result;
                 },
                 .truncate => blk: {
-                    const max_len: usize = Constants.RedactionDefaults.truncate_length;
-                    const suffix = Constants.RedactionDefaults.truncate_suffix;
-                    if (value.len <= max_len) {
+                    const maxLen: usize = Constants.RedactionDefaults.truncateLength;
+                    const suffix = Constants.RedactionDefaults.truncateSuffix;
+                    if (value.len <= maxLen) {
                         break :blk try allocator.dupe(u8, value);
                     }
-                    const result = try allocator.alloc(u8, max_len + suffix.len);
-                    @memcpy(result[0..max_len], value[0..max_len]);
-                    @memcpy(result[max_len..], suffix);
+                    const result = try allocator.alloc(u8, maxLen + suffix.len);
+                    @memcpy(result[0..maxLen], value[0..maxLen]);
+                    @memcpy(result[maxLen..], suffix);
                     break :blk result;
                 },
             };
         }
-
-        /// Alias for apply
-        pub const redact = apply;
-        pub const mask = apply;
     };
 
     /// Initializes a new Redactor instance with default configuration.
     pub fn init(allocator: std.mem.Allocator) Redactor {
         return initWithConfig(allocator, .{});
     }
-
-    /// Alias for init().
-    pub const create = init;
 
     /// Initializes a new Redactor instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: RedactionConfig) Redactor {
@@ -332,7 +243,7 @@ pub const Redactor = struct {
         };
 
         // Invoke initialized callback if set
-        if (redactor.on_redactor_initialized) |callback| {
+        if (redactor.onRedactorInitialized) |callback| {
             callback(&redactor.stats);
         }
 
@@ -344,18 +255,18 @@ pub const Redactor = struct {
     /// This does not mutate existing rules; it only adds new ones from config.
     pub fn applyConfigRules(self: *Redactor) !void {
         if (self.config.fields) |fields| {
-            const mapped = mapConfigRedactionType(self.config.default_type);
-            for (fields) |field_name| {
-                try self.addField(field_name, mapped);
+            const mapped = mapConfigRedactionType(self.config.defaultType);
+            for (fields) |fieldName| {
+                try self.addField(fieldName, mapped);
             }
         }
 
         if (self.config.patterns) |patterns| {
-            const pattern_type: RedactionPattern.PatternType = if (self.config.enable_regex) .regex else .contains;
+            const patternType: RedactionPattern.PatternType = if (self.config.enableRegex) .regex else .contains;
             for (patterns, 0..) |pattern, i| {
                 const name = try std.fmt.allocPrint(self.allocator, "config_pattern_{d}", .{i});
                 defer self.allocator.free(name);
-                try self.addPattern(name, pattern_type, pattern, self.config.replacement);
+                try self.addPattern(name, patternType, pattern, self.config.replacement);
             }
         }
     }
@@ -376,49 +287,46 @@ pub const Redactor = struct {
         self.fields.deinit();
     }
 
-    /// Alias for deinit().
-    pub const destroy = deinit;
-
     /// Sets the callback for redaction applied events.
     pub fn setCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_redaction_applied = callback;
+        self.onRedactionApplied = callback;
     }
 
     /// Sets the callback for redaction applied events.
     pub fn setRedactionAppliedCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_redaction_applied = callback;
+        self.onRedactionApplied = callback;
     }
 
     /// Sets the callback for pattern matched events.
     pub fn setPatternMatchedCallback(self: *Redactor, callback: *const fn ([]const u8, []const u8) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_pattern_matched = callback;
+        self.onPatternMatched = callback;
     }
 
     /// Sets the callback for redaction detail events (shows original and redacted values).
     pub fn setRedactionDetailCallback(self: *Redactor, callback: *const fn ([]const u8, []const u8, []const u8) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_redaction_detail = callback;
+        self.onRedactionDetail = callback;
     }
 
     /// Sets the callback for redactor initialization.
     pub fn setInitializedCallback(self: *Redactor, callback: *const fn (*const RedactorStats) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_redactor_initialized = callback;
+        self.onRedactorInitialized = callback;
     }
 
     /// Sets the callback for redaction errors.
     pub fn setErrorCallback(self: *Redactor, callback: *const fn ([]const u8) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_redaction_error = callback;
+        self.onRedactionError = callback;
     }
 
     /// Returns redactor statistics.
@@ -430,46 +338,36 @@ pub const Redactor = struct {
     }
 
     /// Adds a sensitive field for redaction.
-    ///
-    /// Arguments:
-    ///     field_name: The name of the field to redact.
-    ///     redaction_type: The type of redaction to apply.
-    pub fn addField(self: *Redactor, field_name: []const u8, redaction_type: RedactionType) !void {
+    pub fn addField(self: *Redactor, fieldName: []const u8, redactionType: RedactionType) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        if (self.fields.getPtr(field_name)) |existing| {
-            existing.* = redaction_type;
+        if (self.fields.getPtr(fieldName)) |existing| {
+            existing.* = redactionType;
             return;
         }
 
-        const owned_name = try self.allocator.dupe(u8, field_name);
-        try self.fields.put(owned_name, redaction_type);
+        const ownedName = try self.allocator.dupe(u8, fieldName);
+        try self.fields.put(ownedName, redactionType);
     }
 
     /// Adds multiple sensitive fields using the same redaction type.
     ///
     /// Returns the number of fields added.
-    pub fn addFields(self: *Redactor, field_names: []const []const u8, redaction_type: RedactionType) !usize {
+    pub fn addFields(self: *Redactor, fieldNames: []const []const u8, redactionType: RedactionType) !usize {
         var added: usize = 0;
-        for (field_names) |name| {
-            try self.addField(name, redaction_type);
+        for (fieldNames) |name| {
+            try self.addField(name, redactionType);
             added += 1;
         }
         return added;
     }
 
     /// Adds a pattern-based redaction rule.
-    ///
-    /// Arguments:
-    ///     name: A descriptive name for the pattern.
-    ///     pattern_type: The type of pattern matching to use.
-    ///     pattern: The pattern to match.
-    ///     replacement: The replacement text.
     pub fn addPattern(
         self: *Redactor,
         name: []const u8,
-        pattern_type: RedactionPattern.PatternType,
+        patternType: RedactionPattern.PatternType,
         pattern: []const u8,
         replacement: []const u8,
     ) !void {
@@ -478,7 +376,7 @@ pub const Redactor = struct {
 
         try self.patterns.append(self.allocator, .{
             .name = try self.allocator.dupe(u8, name),
-            .pattern_type = pattern_type,
+            .patternType = patternType,
             .pattern = try self.allocator.dupe(u8, pattern),
             .replacement = try self.allocator.dupe(u8, replacement),
         });
@@ -490,7 +388,7 @@ pub const Redactor = struct {
     pub fn addPatterns(self: *Redactor, patterns: []const RedactionPattern) !usize {
         var added: usize = 0;
         for (patterns) |pattern| {
-            try self.addPattern(pattern.name, pattern.pattern_type, pattern.pattern, pattern.replacement);
+            try self.addPattern(pattern.name, pattern.patternType, pattern.pattern, pattern.replacement);
             added += 1;
         }
         return added;
@@ -499,26 +397,26 @@ pub const Redactor = struct {
     /// Removes a field rule by name.
     ///
     /// Returns true when a matching field was removed.
-    pub fn removeField(self: *Redactor, field_name: []const u8) bool {
+    pub fn removeField(self: *Redactor, fieldName: []const u8) bool {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        if (self.fields.fetchRemove(field_name)) |entry| {
+        if (self.fields.fetchRemove(fieldName)) |entry| {
             self.allocator.free(entry.key);
             return true;
         }
 
-        if (self.config.case_insensitive) {
-            var key_to_remove: ?[]const u8 = null;
+        if (self.config.caseInsensitive) {
+            var keyToRemove: ?[]const u8 = null;
             var it = self.fields.iterator();
             while (it.next()) |entry| {
-                if (std.ascii.eqlIgnoreCase(entry.key_ptr.*, field_name)) {
-                    key_to_remove = entry.key_ptr.*;
+                if (std.ascii.eqlIgnoreCase(entry.key_ptr.*, fieldName)) {
+                    keyToRemove = entry.key_ptr.*;
                     break;
                 }
             }
 
-            if (key_to_remove) |key| {
+            if (keyToRemove) |key| {
                 if (self.fields.fetchRemove(key)) |entry| {
                     self.allocator.free(entry.key);
                     return true;
@@ -562,8 +460,8 @@ pub const Redactor = struct {
     /// Redacts sensitive data from a message using an optional scratch allocator.
     /// If scratch_allocator is provided, it will be used for temporary allocations.
     /// This is useful for arena allocators that batch-free memory.
-    pub fn redactWithAllocator(self: *Redactor, message: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
-        return self.redactInternal(message, scratch_allocator, .track);
+    pub fn redactWithAllocator(self: *Redactor, message: []const u8, scratchAllocator: ?std.mem.Allocator) ![]u8 {
+        return self.redactInternal(message, scratchAllocator, .track);
     }
 
     /// Redacts sensitive data from a message without mutating stats.
@@ -572,53 +470,68 @@ pub const Redactor = struct {
     }
 
     /// Redacts sensitive data from a message without mutating stats using an optional allocator.
-    pub fn previewRedactionWithAllocator(self: *Redactor, message: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8 {
-        return self.redactInternal(message, scratch_allocator, .preview);
+    pub fn previewRedactionWithAllocator(self: *Redactor, message: []const u8, scratchAllocator: ?std.mem.Allocator) ![]u8 {
+        return self.redactInternal(message, scratchAllocator, .preview);
     }
 
-    fn redactInternal(self: *Redactor, message: []const u8, scratch_allocator: ?std.mem.Allocator, mode: RedactionApplyMode) ![]u8 {
-        const alloc = scratch_allocator orelse self.allocator;
+    fn redactInternal(self: *Redactor, message: []const u8, scratchAllocator: ?std.mem.Allocator, mode: RedactionApplyMode) ![]u8 {
+        return self.redactInner(message, scratchAllocator, mode) catch |err| {
+            // Count the failure and report it; the error still propagates
+            // so the caller drops the record fail-closed (never forwards
+            // unredacted text). Preview mode stays side-effect free.
+            if (mode == .track) {
+                _ = self.stats.redactionErrors.fetchAdd(1, .monotonic);
+                if (self.onRedactionError) |callback| {
+                    callback(@errorName(err));
+                }
+            }
+            return err;
+        };
+    }
+
+    fn redactInner(self: *Redactor, message: []const u8, scratchAllocator: ?std.mem.Allocator, mode: RedactionApplyMode) ![]u8 {
+        const alloc = scratchAllocator orelse self.allocator;
 
         if (mode == .track) {
-            _ = self.stats.total_values_processed.fetchAdd(1, .monotonic);
+            _ = self.stats.totalValuesProcessed.fetchAdd(1, .monotonic);
         }
 
         var result = try alloc.dupe(u8, message);
         errdefer alloc.free(result);
 
-        var was_redacted = false;
+        var wasRedacted = false;
         for (self.patterns.items) |pattern| {
             if (!patternMatchesMessage(pattern, result)) continue;
 
-            const original_value = result;
+            const originalValue = result;
             result = try self.applyPatternWithAllocator(result, pattern, alloc);
 
-            was_redacted = true;
+            wasRedacted = true;
             if (mode == .track) {
-                _ = self.stats.patterns_matched.fetchAdd(1, .monotonic);
+                _ = self.stats.patternsMatched.fetchAdd(1, .monotonic);
 
                 // Invoke pattern matched callback
-                if (self.on_pattern_matched) |callback| {
-                    callback(pattern.name, original_value);
+                if (self.onPatternMatched) |callback| {
+                    callback(pattern.name, originalValue);
                 }
 
                 // Invoke redaction detail callback (shows original and redacted values)
-                if (self.on_redaction_detail) |callback| {
-                    callback(pattern.name, original_value, result);
+                if (self.onRedactionDetail) |callback| {
+                    callback(pattern.name, originalValue, result);
                 }
             }
         }
 
-        if (mode == .track and was_redacted) {
-            _ = self.stats.values_redacted.fetchAdd(1, .monotonic);
+        if (mode == .track and wasRedacted) {
+            _ = self.stats.valuesRedacted.fetchAdd(1, .monotonic);
 
             // Invoke redaction applied callback
-            if (self.on_redaction_applied) |callback| {
+            if (self.onRedactionApplied) |callback| {
                 callback(@intCast(message.len), @intCast(result.len), 0);
             }
 
             // Audit logging if enabled
-            if (self.config.audit_redactions) {
+            if (self.config.auditRedactions) {
                 // The callback handles audit logging
             }
         }
@@ -627,43 +540,52 @@ pub const Redactor = struct {
     }
 
     /// Redacts a field value based on field rules.
-    pub fn redactField(self: *Redactor, field_name: []const u8, value: []const u8) ![]u8 {
-        _ = self.stats.total_values_processed.fetchAdd(1, .monotonic);
+    pub fn redactField(self: *Redactor, fieldName: []const u8, value: []const u8) ![]u8 {
+        _ = self.stats.totalValuesProcessed.fetchAdd(1, .monotonic);
 
         // Check if field should be redacted
-        const redaction_type = self.getFieldRedactionWithConfig(field_name);
-        if (redaction_type) |rtype| {
-            _ = self.stats.fields_redacted.fetchAdd(1, .monotonic);
-            _ = self.stats.values_redacted.fetchAdd(1, .monotonic);
+        const redactionType = self.getFieldRedactionWithConfig(fieldName);
+        if (redactionType) |rtype| {
+            _ = self.stats.fieldsRedacted.fetchAdd(1, .monotonic);
+            _ = self.stats.valuesRedacted.fetchAdd(1, .monotonic);
 
             // Apply the redaction with config settings
-            return self.applyRedactionType(rtype, value);
+            return self.applyRedactionType(rtype, value) catch |err| {
+                _ = self.stats.redactionErrors.fetchAdd(1, .monotonic);
+                if (self.onRedactionError) |callback| {
+                    callback(@errorName(err));
+                }
+                return err;
+            };
         }
 
-        return self.allocator.dupe(u8, value);
+        return self.allocator.dupe(u8, value) catch |err| {
+            _ = self.stats.redactionErrors.fetchAdd(1, .monotonic);
+            return err;
+        };
     }
 
     /// Previews how a field would be redacted without changing counters.
-    pub fn previewFieldRedaction(self: *Redactor, field_name: []const u8, value: []const u8) ![]u8 {
-        const redaction_type = self.getFieldRedactionWithConfig(field_name);
-        if (redaction_type) |rtype| {
+    pub fn previewFieldRedaction(self: *Redactor, fieldName: []const u8, value: []const u8) ![]u8 {
+        const redactionType = self.getFieldRedactionWithConfig(fieldName);
+        if (redactionType) |rtype| {
             return self.applyRedactionType(rtype, value);
         }
         return self.allocator.dupe(u8, value);
     }
 
     /// Get field redaction type considering config settings.
-    fn getFieldRedactionWithConfig(self: *const Redactor, field_name: []const u8) ?RedactionType {
+    fn getFieldRedactionWithConfig(self: *const Redactor, fieldName: []const u8) ?RedactionType {
         // Check explicit field rules first
-        if (self.fields.get(field_name)) |rtype| {
+        if (self.fields.get(fieldName)) |rtype| {
             return rtype;
         }
 
         // Case-insensitive matching if enabled
-        if (self.config.case_insensitive) {
+        if (self.config.caseInsensitive) {
             var it = self.fields.iterator();
             while (it.next()) |entry| {
-                if (std.ascii.eqlIgnoreCase(entry.key_ptr.*, field_name)) {
+                if (std.ascii.eqlIgnoreCase(entry.key_ptr.*, fieldName)) {
                     return entry.value_ptr.*;
                 }
             }
@@ -674,33 +596,33 @@ pub const Redactor = struct {
 
     /// Apply redaction type with config settings.
     fn applyRedactionType(self: *Redactor, rtype: RedactionType, value: []const u8) ![]u8 {
-        const mask_char = self.config.mask_char;
-        const start_chars = self.config.partial_start_chars;
-        const end_chars = self.config.partial_end_chars;
+        const maskChar = self.config.maskChar;
+        const startChars = self.config.partialStartChars;
+        const endChars = self.config.partialEndChars;
 
         return switch (rtype) {
             .full => try self.allocator.dupe(u8, self.config.replacement),
-            .partial_start => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .partial_start),
-            .partial_end => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .partial_end),
+            .partialStart => Utils.maskString(self.allocator, value, maskChar, startChars, endChars, .partialStart),
+            .partialEnd => Utils.maskString(self.allocator, value, maskChar, startChars, endChars, .partialEnd),
             .hash => self.computeRedactionHash(value),
-            .mask_middle => Utils.maskString(self.allocator, value, mask_char, start_chars, end_chars, .mask_middle),
+            .maskMiddle => Utils.maskString(self.allocator, value, maskChar, startChars, endChars, .maskMiddle),
             .truncate => self.applyTruncate(value),
         };
     }
 
     fn applyTruncate(self: *Redactor, value: []const u8) ![]u8 {
-        const max_len = self.config.truncate_length;
-        const suffix = self.config.truncate_suffix;
-        if (max_len == 0) return self.allocator.dupe(u8, suffix);
-        if (value.len <= max_len) return self.allocator.dupe(u8, value);
-        const result = try self.allocator.alloc(u8, max_len + suffix.len);
-        @memcpy(result[0..max_len], value[0..max_len]);
-        @memcpy(result[max_len..], suffix);
+        const maxLen = self.config.truncateLength;
+        const suffix = self.config.truncateSuffix;
+        if (maxLen == 0) return self.allocator.dupe(u8, suffix);
+        if (value.len <= maxLen) return self.allocator.dupe(u8, value);
+        const result = try self.allocator.alloc(u8, maxLen + suffix.len);
+        @memcpy(result[0..maxLen], value[0..maxLen]);
+        @memcpy(result[maxLen..], suffix);
         return result;
     }
 
     fn computeRedactionHash(self: *Redactor, value: []const u8) ![]u8 {
-        return switch (self.config.hash_algorithm) {
+        return switch (self.config.hashAlgorithm) {
             .sha256 => Utils.computeRedactionHash(self.allocator, value),
             .sha512 => blk: {
                 var hash: [64]u8 = undefined;
@@ -715,19 +637,19 @@ pub const Redactor = struct {
         };
     }
 
-    fn formatHashTag(allocator: std.mem.Allocator, hash_bytes: []const u8) ![]u8 {
-        const hex_val = try Utils.bytesToHexLowerAlloc(allocator, hash_bytes);
-        defer allocator.free(hex_val);
-        return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hex_val});
+    fn formatHashTag(allocator: std.mem.Allocator, hashBytes: []const u8) ![]u8 {
+        const hexVal = try Utils.bytesToHexLowerAlloc(allocator, hashBytes);
+        defer allocator.free(hexVal);
+        return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hexVal});
     }
 
     fn mapConfigRedactionType(rtype: RedactionConfig.RedactionType) RedactionType {
         return switch (rtype) {
             .full => .full,
-            .partial_start => .partial_start,
-            .partial_end => .partial_end,
+            .partialStart => .partialStart,
+            .partialEnd => .partialEnd,
             .hash => .hash,
-            .mask_middle => .mask_middle,
+            .maskMiddle => .maskMiddle,
             .truncate => .truncate,
         };
     }
@@ -735,43 +657,43 @@ pub const Redactor = struct {
     fn matchIpv6(input: []const u8) ?usize {
         if (input.len < 3) return null;
         var colons: usize = 0;
-        var hex_segments: usize = 0;
+        var hexSegments: usize = 0;
         var i: usize = 0;
-        var last_was_colon = false;
+        var lastWasColon = false;
 
         // An IPv6 address can start with ::
         if (std.mem.startsWith(u8, input, "::")) {
             colons += 2;
             i += 2;
-            last_was_colon = true;
+            lastWasColon = true;
         }
 
         while (i < input.len) {
             const c = input[i];
             if (std.ascii.isHex(c)) {
                 // Read hex segment (max 4 chars)
-                var seg_len: usize = 0;
+                var segLen: usize = 0;
                 while (i < input.len and std.ascii.isHex(input[i])) : (i += 1) {
-                    seg_len += 1;
+                    segLen += 1;
                 }
-                if (seg_len > 4) return null; // Invalid segment length
-                hex_segments += 1;
-                last_was_colon = false;
+                if (segLen > 4) return null; // Invalid segment length
+                hexSegments += 1;
+                lastWasColon = false;
             } else if (c == ':') {
-                if (last_was_colon) {
+                if (lastWasColon) {
                     // Double colon `::`
                     if (colons > 0 and i > 0 and input[i - 1] == ':') {
                         // Allowed at most one double colon
                         colons += 1;
                         i += 1;
-                        last_was_colon = true;
+                        lastWasColon = true;
                     } else {
                         return null;
                     }
                 } else {
                     colons += 1;
                     i += 1;
-                    last_was_colon = true;
+                    lastWasColon = true;
                 }
             } else {
                 break;
@@ -779,8 +701,8 @@ pub const Redactor = struct {
         }
 
         // Valid IPv6 should have at least 2 colons and some hex segments/colons, and not end with a single colon (unless ::)
-        if (colons >= 2 and (hex_segments >= 1 or colons >= 2)) {
-            if (last_was_colon and !std.mem.endsWith(u8, input[0..i], "::")) {
+        if (colons >= 2 and (hexSegments >= 1 or colons >= 2)) {
+            if (lastWasColon and !std.mem.endsWith(u8, input[0..i], "::")) {
                 return null; // Can't end with a single colon
             }
             return i;
@@ -798,15 +720,15 @@ pub const Redactor = struct {
         i += 1; // skip '.'
 
         // Part 2: Payload
-        const payload_start = i;
+        const payloadStart = i;
         while (i < input.len and (std.ascii.isAlphanumeric(input[i]) or input[i] == '_' or input[i] == '-')) : (i += 1) {}
-        if (i == payload_start or i >= input.len or input[i] != '.') return null;
+        if (i == payloadStart or i >= input.len or input[i] != '.') return null;
         i += 1; // skip '.'
 
         // Part 3: Signature
-        const sig_start = i;
+        const sigStart = i;
         while (i < input.len and (std.ascii.isAlphanumeric(input[i]) or input[i] == '_' or input[i] == '-')) : (i += 1) {}
-        if (i == sig_start) return null;
+        if (i == sigStart) return null;
 
         return i;
     }
@@ -830,33 +752,33 @@ pub const Redactor = struct {
         if (input.len < 13) return null;
         if (!std.ascii.isDigit(input[0])) return null;
 
-        var digit_buf: [32]u8 = undefined;
-        var digit_count: usize = 0;
+        var digitBuf: [32]u8 = undefined;
+        var digitCount: usize = 0;
         var i: usize = 0;
-        var last_digit_idx: usize = 0;
+        var lastDigitIdx: usize = 0;
 
         while (i < input.len) : (i += 1) {
             const c = input[i];
             if (std.ascii.isDigit(c)) {
-                if (digit_count < 32) {
-                    digit_buf[digit_count] = c;
-                    digit_count += 1;
+                if (digitCount < 32) {
+                    digitBuf[digitCount] = c;
+                    digitCount += 1;
                 }
-                last_digit_idx = i;
+                lastDigitIdx = i;
             } else if (c == ' ' or c == '-') {
                 // separator allowed
             } else {
                 break;
             }
 
-            if (digit_count > 19) {
+            if (digitCount > 19) {
                 break;
             }
         }
 
-        if (digit_count >= 13 and digit_count <= 19) {
-            if (Utils.isLuhnValid(digit_buf[0..digit_count])) {
-                return last_digit_idx + 1;
+        if (digitCount >= 13 and digitCount <= 19) {
+            if (Utils.isLuhnValid(digitBuf[0..digitCount])) {
+                return lastDigitIdx + 1;
             }
         }
 
@@ -869,7 +791,7 @@ pub const Redactor = struct {
 
     fn applyPatternWithAllocator(self: *Redactor, input: []u8, pattern: RedactionPattern, alloc: std.mem.Allocator) ![]u8 {
         _ = self; // self only needed for stats/callbacks in caller
-        switch (pattern.pattern_type) {
+        switch (pattern.patternType) {
             .contains => {
                 const result = try Utils.replaceString(alloc, input, pattern.pattern, pattern.replacement);
                 alloc.free(input);
@@ -877,27 +799,27 @@ pub const Redactor = struct {
             },
             .prefix => {
                 if (std.mem.startsWith(u8, input, pattern.pattern)) {
-                    const new_result = try alloc.alloc(
+                    const newResult = try alloc.alloc(
                         u8,
                         pattern.replacement.len + input.len - pattern.pattern.len,
                     );
-                    @memcpy(new_result[0..pattern.replacement.len], pattern.replacement);
-                    @memcpy(new_result[pattern.replacement.len..], input[pattern.pattern.len..]);
+                    @memcpy(newResult[0..pattern.replacement.len], pattern.replacement);
+                    @memcpy(newResult[pattern.replacement.len..], input[pattern.pattern.len..]);
                     alloc.free(input);
-                    return new_result;
+                    return newResult;
                 }
                 return input;
             },
             .suffix => {
                 if (std.mem.endsWith(u8, input, pattern.pattern)) {
-                    const new_result = try alloc.alloc(
+                    const newResult = try alloc.alloc(
                         u8,
                         input.len - pattern.pattern.len + pattern.replacement.len,
                     );
-                    @memcpy(new_result[0 .. input.len - pattern.pattern.len], input[0 .. input.len - pattern.pattern.len]);
-                    @memcpy(new_result[input.len - pattern.pattern.len ..], pattern.replacement);
+                    @memcpy(newResult[0 .. input.len - pattern.pattern.len], input[0 .. input.len - pattern.pattern.len]);
+                    @memcpy(newResult[input.len - pattern.pattern.len ..], pattern.replacement);
                     alloc.free(input);
-                    return new_result;
+                    return newResult;
                 }
                 return input;
             },
@@ -908,7 +830,7 @@ pub const Redactor = struct {
                 }
                 return input;
             },
-            .regex, .regex_replace => {
+            .regex, .regexReplace => {
                 // Simple regex-like pattern matching for common cases
                 // Supports: * (any chars), ? (single char), \d (digit), \w (word char), \s (whitespace)
                 var result: std.ArrayList(u8) = .empty;
@@ -916,9 +838,9 @@ pub const Redactor = struct {
 
                 var i: usize = 0;
                 while (i < input.len) {
-                    if (matchRegexPattern(input[i..], pattern.pattern)) |match_len| {
+                    if (matchRegexPattern(input[i..], pattern.pattern)) |matchLen| {
                         try result.appendSlice(alloc, pattern.replacement);
-                        i += match_len;
+                        i += matchLen;
                     } else {
                         try result.append(alloc, input[i]);
                         i += 1;
@@ -934,10 +856,10 @@ pub const Redactor = struct {
 
                 var i: usize = 0;
                 while (i < input.len) {
-                    if (Utils.matchRegexPattern(input[i..], "\\w+@\\w+\\.\\w+")) |match_len| {
-                        if (match_len > 0) {
+                    if (Utils.matchRegexPattern(input[i..], "\\w+@\\w+\\.\\w+")) |matchLen| {
+                        if (matchLen > 0) {
                             try result.appendSlice(alloc, pattern.replacement);
-                            i += match_len;
+                            i += matchLen;
                             continue;
                         }
                     }
@@ -954,17 +876,17 @@ pub const Redactor = struct {
 
                 var i: usize = 0;
                 while (i < input.len) {
-                    if (Utils.matchRegexPattern(input[i..], "\\d+\\.\\d+\\.\\d+\\.\\d+")) |match_len| {
-                        if (match_len > 0) {
+                    if (Utils.matchRegexPattern(input[i..], "\\d+\\.\\d+\\.\\d+\\.\\d+")) |matchLen| {
+                        if (matchLen > 0) {
                             try result.appendSlice(alloc, pattern.replacement);
-                            i += match_len;
+                            i += matchLen;
                             continue;
                         }
                     }
-                    if (matchIpv6(input[i..])) |match_len| {
-                        if (match_len > 0) {
+                    if (matchIpv6(input[i..])) |matchLen| {
+                        if (matchLen > 0) {
                             try result.appendSlice(alloc, pattern.replacement);
-                            i += match_len;
+                            i += matchLen;
                             continue;
                         }
                     }
@@ -981,9 +903,9 @@ pub const Redactor = struct {
 
                 var i: usize = 0;
                 while (i < input.len) {
-                    if (matchJwt(input[i..])) |match_len| {
+                    if (matchJwt(input[i..])) |matchLen| {
                         try result.appendSlice(alloc, pattern.replacement);
-                        i += match_len;
+                        i += matchLen;
                         continue;
                     }
                     try result.append(alloc, input[i]);
@@ -1000,9 +922,9 @@ pub const Redactor = struct {
                 var i: usize = 0;
                 while (i < input.len) {
                     if (isStartOfNumber(input, i)) {
-                        if (matchLuhn(input[i..])) |match_len| {
+                        if (matchLuhn(input[i..])) |matchLen| {
                             try result.appendSlice(alloc, pattern.replacement);
-                            i += match_len;
+                            i += matchLen;
                             continue;
                         }
                     }
@@ -1018,12 +940,12 @@ pub const Redactor = struct {
 
     /// Checks if a pattern would match a message.
     fn patternMatchesMessage(pattern: RedactionPattern, message: []const u8) bool {
-        return switch (pattern.pattern_type) {
+        return switch (pattern.patternType) {
             .contains => std.mem.indexOf(u8, message, pattern.pattern) != null,
             .prefix => std.mem.startsWith(u8, message, pattern.pattern),
             .suffix => std.mem.endsWith(u8, message, pattern.pattern),
             .exact => std.mem.eql(u8, message, pattern.pattern),
-            .regex, .regex_replace => Utils.findRegexPattern(message, pattern.pattern) != null,
+            .regex, .regexReplace => Utils.findRegexPattern(message, pattern.pattern) != null,
             .email => Utils.findRegexPattern(message, "\\w+@\\w+\\.\\w+") != null,
             .ip => (Utils.findRegexPattern(message, "\\d+\\.\\d+\\.\\d+\\.\\d+") != null) or blk: {
                 var i: usize = 0;
@@ -1058,19 +980,13 @@ pub const Redactor = struct {
     }
 
     /// Checks if a field should be redacted.
-    ///
-    /// Arguments:
-    ///     field_name: The name of the field to check.
-    ///
-    /// Returns:
-    ///     The redaction type if the field should be redacted, null otherwise.
-    pub fn getFieldRedaction(self: *const Redactor, field_name: []const u8) ?RedactionType {
-        return self.fields.get(field_name);
+    pub fn getFieldRedaction(self: *const Redactor, fieldName: []const u8) ?RedactionType {
+        return self.fields.get(fieldName);
     }
 
     /// Returns true when the provided field has a redaction rule.
-    pub fn hasFieldRule(self: *const Redactor, field_name: []const u8) bool {
-        return self.getFieldRedactionWithConfig(field_name) != null;
+    pub fn hasFieldRule(self: *const Redactor, fieldName: []const u8) bool {
+        return self.getFieldRedactionWithConfig(fieldName) != null;
     }
 
     /// Returns true when at least one configured pattern would redact this message.
@@ -1139,64 +1055,8 @@ pub const Redactor = struct {
         self.stats.reset();
     }
 
-    /// Alias for addPattern
-    pub const addRule = addPattern;
-
-    /// Alias for addField
-    pub const field = addField;
-    pub const sensitiveField = addField;
-
-    /// Alias for addFields
-    pub const addFieldsBatch = addFields;
-    pub const addSensitiveFields = addFields;
-
-    /// Alias for addPatterns
-    pub const addPatternBatch = addPatterns;
-    pub const addRules = addPatterns;
-
-    /// Alias for redact
-    pub const mask = redact;
-    pub const sanitize = redact;
-    pub const process = redact;
-
-    /// Alias for previewRedaction
-    pub const previewMessage = previewRedaction;
-    pub const preview = previewRedaction;
-
-    /// Alias for previewRedactionWithAllocator
-    pub const previewMessageWithAllocator = previewRedactionWithAllocator;
-
-    /// Alias for redactField
-    pub const maskField = redactField;
-
-    /// Alias for previewFieldRedaction
-    pub const previewField = previewFieldRedaction;
-
-    /// Alias for getStats
-    pub const statistics = getStats;
-
-    /// Alias for initWithConfig
-    pub const createWithConfig = initWithConfig;
-
-    /// Alias for applyConfigRules
-    pub const applyConfig = applyConfigRules;
-    pub const loadConfigRules = applyConfigRules;
-
     /// Alias for setCallback
     // pub const callback = setCallback; // shadows parameters
-
-    /// Alias for setRedactionAppliedCallback
-    pub const onRedactionApplied = setRedactionAppliedCallback;
-
-    /// Alias for setPatternMatchedCallback
-    pub const onPatternMatched = setPatternMatchedCallback;
-    pub const onRedactionDetail = setRedactionDetailCallback;
-
-    /// Alias for setInitializedCallback
-    pub const onInitialized = setInitializedCallback;
-
-    /// Alias for setErrorCallback
-    pub const onError = setErrorCallback;
 
     /// Alias for addPattern
     // pub const addRule = addPattern; // already exists
@@ -1210,59 +1070,12 @@ pub const Redactor = struct {
     // pub const sanitize = redact; // already exists
     // pub const process = redact; // already exists
 
-    /// Alias for redactWithAllocator
-    pub const maskWithAllocator = redactWithAllocator;
-    pub const sanitizeWithAllocator = redactWithAllocator;
-
     /// Alias for redactField
     // pub const maskField = redactField; // already exists
 
-    /// Alias for getFieldRedaction
-    pub const getFieldRule = getFieldRedaction;
-
-    /// Alias for hasFieldRule
-    pub const hasRuleForField = hasFieldRule;
-
-    /// Alias for wouldRedact
-    pub const shouldRedact = wouldRedact;
-    pub const needsRedaction = wouldRedact;
-
-    /// Alias for matchingPatternCount
-    pub const matchingPatterns = matchingPatternCount;
-    pub const matchedPatternCount = matchingPatternCount;
-
-    /// Alias for removeField
-    pub const deleteField = removeField;
-    pub const removeSensitiveField = removeField;
-
-    /// Alias for removePatternByName
-    pub const removePattern = removePatternByName;
-    pub const deletePattern = removePatternByName;
-
-    /// Alias for patternCount
-    pub const ruleCount = patternCount;
-
-    /// Alias for fieldCount
-    pub const sensitiveFieldCount = fieldCount;
-
-    /// Alias for hasRules
-    pub const hasConfiguration = hasRules;
-
-    /// Alias for clearPatterns
-    pub const clearRules = clearPatterns;
-
-    /// Alias for clearFields
-    pub const clearSensitiveFields = clearFields;
-
-    /// Alias for clear
-    pub const clearAll = clear;
-
-    /// Alias for resetStats
-    pub const resetStatistics = resetStats;
-
     /// Formats and dumps redaction statistics for compliance.
     pub fn auditLog(self: *const Redactor, writer: anytype) !void {
-        try writer.print("=== REDACTION COMPLIANCE AUDIT LOG ===\n", .{});
+        try writer.print("Redaction compliance audit log\n", .{});
         try writer.print("Total values processed: {d}\n", .{self.stats.getTotalProcessed()});
         try writer.print("Values redacted: {d}\n", .{self.stats.getValuesRedacted()});
         try writer.print("Patterns matched: {d}\n", .{self.stats.getPatternsMatched()});
@@ -1270,7 +1083,6 @@ pub const Redactor = struct {
         try writer.print("Redaction errors: {d}\n", .{self.stats.getRedactionErrors()});
         try writer.print("Redaction rate: {d:.2}%\n", .{self.stats.redactionRate() * 100.0});
         try writer.print("Success rate: {d:.2}%\n", .{self.stats.successRate() * 100.0});
-        try writer.print("======================================\n", .{});
     }
 };
 
@@ -1305,11 +1117,11 @@ pub const RedactionPresets = struct {
 
         try redactor.addField("password", .full);
         try redactor.addField("secret", .full);
-        try redactor.addField("api_key", .partial_end);
-        try redactor.addField("token", .partial_end);
-        try redactor.addField("credit_card", .mask_middle);
-        try redactor.addField("ssn", .mask_middle);
-        try redactor.addField("email", .partial_start);
+        try redactor.addField("api_key", .partialEnd);
+        try redactor.addField("token", .partialEnd);
+        try redactor.addField("credit_card", .maskMiddle);
+        try redactor.addField("ssn", .maskMiddle);
+        try redactor.addField("email", .partialStart);
 
         return redactor;
     }
@@ -1319,10 +1131,10 @@ pub const RedactionPresets = struct {
         var redactor = Redactor.init(allocator);
         errdefer redactor.deinit();
 
-        try redactor.addField("pan", .mask_middle);
+        try redactor.addField("pan", .maskMiddle);
         try redactor.addField("cvv", .full);
         try redactor.addField("pin", .full);
-        try redactor.addField("card_number", .mask_middle);
+        try redactor.addField("card_number", .maskMiddle);
         try redactor.addField("expiry", .full);
 
         return redactor;
@@ -1336,9 +1148,9 @@ pub const RedactionPresets = struct {
         try redactor.addField("patient_id", .hash);
         try redactor.addField("ssn", .full);
         try redactor.addField("dob", .full);
-        try redactor.addField("address", .partial_end);
-        try redactor.addField("phone", .partial_start);
-        try redactor.addField("email", .partial_start);
+        try redactor.addField("address", .partialEnd);
+        try redactor.addField("phone", .partialStart);
+        try redactor.addField("email", .partialStart);
         try redactor.addField("medical_record", .hash);
 
         return redactor;
@@ -1349,12 +1161,12 @@ pub const RedactionPresets = struct {
         var redactor = Redactor.init(allocator);
         errdefer redactor.deinit();
 
-        try redactor.addField("name", .partial_end);
-        try redactor.addField("email", .partial_start);
-        try redactor.addField("phone", .partial_start);
+        try redactor.addField("name", .partialEnd);
+        try redactor.addField("email", .partialStart);
+        try redactor.addField("phone", .partialStart);
         try redactor.addField("address", .full);
-        try redactor.addField("ip", .partial_end);
-        try redactor.addField("ip_address", .partial_end);
+        try redactor.addField("ip", .partialEnd);
+        try redactor.addField("ip_address", .partialEnd);
         try redactor.addField("user_id", .hash);
 
         return redactor;
@@ -1365,12 +1177,12 @@ pub const RedactionPresets = struct {
         var redactor = Redactor.init(allocator);
         errdefer redactor.deinit();
 
-        try redactor.addField("api_key", .mask_middle);
+        try redactor.addField("api_key", .maskMiddle);
         try redactor.addField("secret_key", .full);
-        try redactor.addField("access_token", .mask_middle);
+        try redactor.addField("access_token", .maskMiddle);
         try redactor.addField("refresh_token", .full);
-        try redactor.addField("bearer_token", .mask_middle);
-        try redactor.addField("authorization", .partial_end);
+        try redactor.addField("bearer_token", .maskMiddle);
+        try redactor.addField("authorization", .partialEnd);
 
         return redactor;
     }
@@ -1380,28 +1192,28 @@ pub const RedactionPresets = struct {
         var redactor = Redactor.init(allocator);
         errdefer redactor.deinit();
 
-        try redactor.addField("account_number", .mask_middle);
+        try redactor.addField("account_number", .maskMiddle);
         try redactor.addField("routing_number", .full);
         try redactor.addField("balance", .full);
         try redactor.addField("amount", .full);
-        try redactor.addField("iban", .mask_middle);
-        try redactor.addField("swift", .partial_end);
+        try redactor.addField("iban", .maskMiddle);
+        try redactor.addField("swift", .partialEnd);
 
         return redactor;
     }
 
     /// Creates a secure sink configuration with redaction enabled.
-    pub fn createSecureSink(file_path: []const u8) SinkConfig {
+    pub fn createSecureSink(filePath: []const u8) SinkConfig {
         return SinkConfig{
-            .path = file_path,
-            .json = true,
+            .path = filePath,
+            .format = .json,
             .color = false,
         };
     }
 };
 
 test "redactor field" {
-    const result = try Redactor.RedactionType.partial_end.apply(std.testing.allocator, "secret123456");
+    const result = try Redactor.RedactionType.partialEnd.apply(std.testing.allocator, "secret123456");
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("secr********", result);
 }
@@ -1456,15 +1268,15 @@ test "redactor batch patterns remove helpers and matching count" {
     defer redactor.deinit();
 
     const patterns = [_]Redactor.RedactionPattern{
-        .{ .name = "token_pattern", .pattern_type = .contains, .pattern = "token=", .replacement = "token=" ++ Constants.RedactionDefaults.replacement },
-        .{ .name = "password_pattern", .pattern_type = .contains, .pattern = "password=", .replacement = "password=" ++ Constants.RedactionDefaults.replacement },
+        .{ .name = "token_pattern", .patternType = .contains, .pattern = "token=", .replacement = "token=" ++ Constants.RedactionDefaults.replacement },
+        .{ .name = "password_pattern", .patternType = .contains, .pattern = "password=", .replacement = "password=" ++ Constants.RedactionDefaults.replacement },
     };
 
     const added = try redactor.addPatterns(patterns[0..]);
     try std.testing.expectEqual(@as(usize, 2), added);
     try std.testing.expectEqual(@as(usize, 2), redactor.patternCount());
 
-    try redactor.addField("api_key", .mask_middle);
+    try redactor.addField("api_key", .maskMiddle);
     try std.testing.expect(redactor.removeField("API_KEY"));
     try std.testing.expect(!redactor.removeField("API_KEY"));
 
@@ -1482,30 +1294,30 @@ test "redactor preview message does not mutate stats" {
 
     try redactor.addPattern("token_pattern", .contains, "token=", "token=" ++ Constants.RedactionDefaults.replacement);
 
-    const before_processed = redactor.getStats().getTotalProcessed();
-    const before_redacted = redactor.getStats().getValuesRedacted();
+    const beforeProcessed = redactor.getStats().getTotalProcessed();
+    const beforeRedacted = redactor.getStats().getValuesRedacted();
 
     const preview = try redactor.previewRedaction("token=abc");
     defer std.testing.allocator.free(preview);
     try std.testing.expect(std.mem.indexOf(u8, preview, Constants.RedactionDefaults.replacement) != null);
 
-    const after_processed = redactor.getStats().getTotalProcessed();
-    const after_redacted = redactor.getStats().getValuesRedacted();
-    try std.testing.expectEqual(before_processed, after_processed);
-    try std.testing.expectEqual(before_redacted, after_redacted);
+    const afterProcessed = redactor.getStats().getTotalProcessed();
+    const afterRedacted = redactor.getStats().getValuesRedacted();
+    try std.testing.expectEqual(beforeProcessed, afterProcessed);
+    try std.testing.expectEqual(beforeRedacted, afterRedacted);
 
     const actual = try redactor.redact("token=abc");
     defer std.testing.allocator.free(actual);
     try std.testing.expect(std.mem.indexOf(u8, actual, Constants.RedactionDefaults.replacement) != null);
-    try std.testing.expect(redactor.getStats().getTotalProcessed() > after_processed);
+    try std.testing.expect(redactor.getStats().getTotalProcessed() > afterProcessed);
 }
 
 test "redactor truncate redaction" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    redactor.config.truncate_length = 4;
-    redactor.config.truncate_suffix = "...";
+    redactor.config.truncateLength = 4;
+    redactor.config.truncateSuffix = "...";
     try redactor.addField("token", .truncate);
 
     const redacted = try redactor.redactField("token", "abcdef");
@@ -1518,7 +1330,7 @@ test "redactor hash algorithm selection" {
     var redactor = Redactor.init(std.testing.allocator);
     defer redactor.deinit();
 
-    redactor.config.hash_algorithm = .md5;
+    redactor.config.hashAlgorithm = .md5;
     try redactor.addField("secret", .hash);
 
     const redacted = try redactor.redactField("secret", "super-secret");
@@ -1533,46 +1345,46 @@ test "redactor advanced patterns email, ip, jwt, luhn, presets and audit" {
 
     // 1. Email redaction
     try redactor.addPattern("email_pat", .email, "", "[EMAIL]");
-    const email_res = try redactor.redact("Contact me at john_doe@example.com for info");
-    defer std.testing.allocator.free(email_res);
-    try std.testing.expectEqualStrings("Contact me at [EMAIL] for info", email_res);
+    const emailRes = try redactor.redact("Contact me at john_doe@example.com for info");
+    defer std.testing.allocator.free(emailRes);
+    try std.testing.expectEqualStrings("Contact me at [EMAIL] for info", emailRes);
 
     // 2. IP address redaction
     try redactor.addPattern("ip_pat", .ip, "", "[IP]");
-    const ip_res = try redactor.redact("IPs: 192.168.1.100 and 2001:0db8:85a3:0000:0000:8a2e:0370:7334 or ::1");
-    defer std.testing.allocator.free(ip_res);
-    try std.testing.expectEqualStrings("IPs: [IP] and [IP] or [IP]", ip_res);
+    const ipRes = try redactor.redact("IPs: 192.168.1.100 and 2001:0db8:85a3:0000:0000:8a2e:0370:7334 or ::1");
+    defer std.testing.allocator.free(ipRes);
+    try std.testing.expectEqualStrings("IPs: [IP] and [IP] or [IP]", ipRes);
 
     // 3. JWT redaction
     try redactor.addPattern("jwt_pat", .jwt, "", "[JWT]");
-    const jwt_res = try redactor.redact("Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c here");
-    defer std.testing.allocator.free(jwt_res);
-    try std.testing.expectEqualStrings("Token: [JWT] here", jwt_res);
+    const jwtRes = try redactor.redact("Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c here");
+    defer std.testing.allocator.free(jwtRes);
+    try std.testing.expectEqualStrings("Token: [JWT] here", jwtRes);
 
     // 4. Luhn (credit card) redaction
     try redactor.addPattern("luhn_pat", .luhn, "", "[CARD]");
     // 4111-1111-1111-1111 is a valid Luhn (Visa test card)
-    const luhn_res = try redactor.redact("Pay using 4111 1111 1111 1111 (valid) or 4111-1111-1111-1112 (invalid)");
-    defer std.testing.allocator.free(luhn_res);
-    try std.testing.expectEqualStrings("Pay using [CARD] (valid) or 4111-1111-1111-1112 (invalid)", luhn_res);
+    const luhnRes = try redactor.redact("Pay using 4111 1111 1111 1111 (valid) or 4111-1111-1111-1112 (invalid)");
+    defer std.testing.allocator.free(luhnRes);
+    try std.testing.expectEqualStrings("Pay using [CARD] (valid) or 4111-1111-1111-1112 (invalid)", luhnRes);
 
     // 5. Presets
-    var gdpr_email_red = try RedactionPresets.gdprEmail(std.testing.allocator);
-    defer gdpr_email_red.deinit();
-    const gr = try gdpr_email_red.redact("email is test@domain.org");
+    var gdprEmailRed = try RedactionPresets.gdprEmail(std.testing.allocator);
+    defer gdprEmailRed.deinit();
+    const gr = try gdprEmailRed.redact("email is test@domain.org");
     defer std.testing.allocator.free(gr);
     try std.testing.expectEqualStrings("email is [EMAIL REDACTED]", gr);
 
-    var pci_card_red = try RedactionPresets.pciCard(std.testing.allocator);
-    defer pci_card_red.deinit();
-    const pr = try pci_card_red.redact("card 4111-1111-1111-1111");
+    var pciCardRed = try RedactionPresets.pciCard(std.testing.allocator);
+    defer pciCardRed.deinit();
+    const pr = try pciCardRed.redact("card 4111-1111-1111-1111");
     defer std.testing.allocator.free(pr);
     try std.testing.expectEqualStrings("card [CARD REDACTED]", pr);
 
     // 6. Audit Log
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(std.testing.allocator);
-    var writer_adapter = Utils.ArrayListWriter.init(&buf, std.testing.allocator);
-    try gdpr_email_red.auditLog(&writer_adapter.writer);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "REDACTION COMPLIANCE AUDIT LOG") != null);
+    var writerAdapter = Utils.ArrayListWriter.init(&buf, std.testing.allocator);
+    try gdprEmailRed.auditLog(&writerAdapter.writer);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "Redaction compliance audit log") != null);
 }

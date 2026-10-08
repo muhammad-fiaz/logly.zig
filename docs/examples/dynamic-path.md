@@ -20,7 +20,7 @@ Because dynamic paths are resolved at startup (or file creation time), they prev
 
 **How it works with Rotation:**
 1. **Dynamic Path** determines where the *Active* (current) log file is written (example: `logs/2023-10-25/app.log`).
-2. **Rotation** takes this file, renames it (example: `app-2023-10-25-14.log`), and either leaves it in that folder or moves it to a configured `archive_dir`.
+2. **Rotation** takes this file, renames it (example: `app-2023-10-25-14.log`), and either leaves it in that folder or moves it to a configured `archiveDir`.
 
 This separation allows you to have:
 *   Daily Date Folders: `logs/{date}/`
@@ -52,9 +52,8 @@ This configuration:
 3. Rotates within that folder.
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs_dynamic/{date}/test-{HH}-{mm}-{ss}.log",
-    .json = false,
 });
 
 try logger.info("This log should be in a date-stamped folder", null);

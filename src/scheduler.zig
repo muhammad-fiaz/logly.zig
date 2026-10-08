@@ -1,29 +1,6 @@
-//! Task Scheduler Module
+//! Task scheduler.
 //!
-//! Provides automated scheduling for log maintenance tasks such as
-//! cleanup, rotation, compression, and custom operations.
-//!
-//! Task Types:
-//! - cleanup: Remove old log files based on age or count
-//! - rotation: Rotate log files on schedule
-//! - compression: Compress archived log files
-//! - flush: Flush all sink buffers
-//! - health_check: System health monitoring
-//! - metrics_snapshot: Periodic metrics collection
-//! - custom: User-defined callback tasks
-//!
-//! Schedule Types:
-//! - once: Run once after delay
-//! - interval: Run at fixed intervals
-//! - daily: Run at specific time each day
-//! - cron: Cron-like flexible scheduling
-//!
-//! Features:
-//! - Priority-based task execution
-//! - Retry policies with exponential backoff
-//! - Task dependencies
-//! - Thread pool integration
-
+//! Runs maintenance (cleanup, rotation, compression) on interval, daily, or cron schedules.
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Compression = @import("compression.zig").Compression;
@@ -49,45 +26,43 @@ pub const Scheduler = struct {
     /// Whether the scheduler is currently running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Whether the scheduler is paused.
-    is_paused: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    isPaused: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Background worker thread for task execution.
-    worker_thread: ?std.Thread = null,
+    workerThread: ?std.Thread = null,
     /// Mutex for thread-safe access to tasks.
     mutex: std.Io.Mutex = std.Io.Mutex.init,
     /// Condition variable for worker thread signaling.
     condition: std.Io.Condition = .init,
+    /// Wakeup generation bumped on every schedule mutation so the worker
+    /// loop re-evaluates deadlines instead of sleeping through them.
+    wakeGeneration: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
     /// Scheduler statistics (tasks executed, failed, etc.).
     stats: SchedulerStats,
     /// Compression utility for compression tasks.
     compression: Compression,
     /// Whether compression has been initialized.
-    compression_initialized: bool = false,
+    compressionInitialized: bool = false,
     /// Optional thread pool for parallel task execution.
-    thread_pool: ?*ThreadPool = null,
+    threadPool: ?*ThreadPool = null,
     /// Callback for health status checks.
-    health_callback: ?*const fn () HealthStatus = null,
+    healthCallback: ?*const fn () HealthStatus = null,
     /// Callback for metrics collection.
-    metrics_callback: ?*const fn () MetricsSnapshot = null,
+    metricsCallback: ?*const fn () MetricsSnapshot = null,
 
     /// Callback invoked when a task starts execution.
-    /// Parameters: (task_name: []const u8, run_count: u64)
-    on_task_started: ?*const fn ([]const u8, u64) void = null,
+    onTaskStarted: ?*const fn ([]const u8, u64) void = null,
 
     /// Callback invoked when a task completes successfully.
-    /// Parameters: (task_name: []const u8, duration_ms: u64)
-    on_task_completed: ?*const fn ([]const u8, u64) void = null,
+    onTaskCompleted: ?*const fn ([]const u8, u64) void = null,
 
     /// Callback invoked when a task encounters an error.
-    /// Parameters: (task_name: []const u8, error_msg: []const u8)
-    on_task_error: ?*const fn ([]const u8, []const u8) void = null,
+    onTaskError: ?*const fn ([]const u8, []const u8) void = null,
 
     /// Callback invoked on each scheduler cycle.
-    /// Parameters: (tasks_ready: u32, tasks_total: u32)
-    on_schedule_tick: ?*const fn (u32, u32) void = null,
+    onScheduleTick: ?*const fn (u32, u32) void = null,
 
     /// Callback invoked during health checks.
-    /// Parameters: (status: *const HealthStatus)
-    on_health_check: ?*const fn (*const HealthStatus) void = null,
+    onHealthCheck: ?*const fn (*const HealthStatus) void = null,
 
     /// Optional telemetry instance for distributed tracing.
     /// When enabled, task executions create spans for observability.
@@ -100,37 +75,37 @@ pub const Scheduler = struct {
     /// Health status returned by health checks.
     pub const HealthStatus = struct {
         healthy: bool = true,
-        disk_space_ok: bool = true,
-        memory_ok: bool = true,
-        write_latency_ms: u64 = 0,
+        diskSpaceOk: bool = true,
+        memoryOk: bool = true,
+        writeLatencyMs: u64 = 0,
         message: ?[]const u8 = null,
     };
 
     /// Metrics snapshot for monitoring.
     pub const MetricsSnapshot = struct {
         timestamp: i64 = 0,
-        log_count: u64 = 0,
-        bytes_written: u64 = 0,
-        error_count: u64 = 0,
-        avg_latency_ms: f64 = 0,
+        logCount: u64 = 0,
+        bytesWritten: u64 = 0,
+        errorCount: u64 = 0,
+        avgLatencyMs: f64 = 0,
     };
 
     /// A scheduled task configuration.
     pub const ScheduledTask = struct {
         name: []const u8,
-        task_type: TaskType,
+        taskType: TaskType,
         schedule: Schedule,
         callback: ?*const fn (*ScheduledTask) anyerror!void = null,
-        last_run: i64 = 0,
-        next_run: i64 = 0,
-        run_count: u64 = 0,
-        error_count: u64 = 0,
-        retries_remaining: u32 = 0,
+        lastRun: i64 = 0,
+        nextRun: i64 = 0,
+        runCount: u64 = 0,
+        errorCount: u64 = 0,
+        retriesRemaining: u32 = 0,
         enabled: bool = true,
         running: bool = false,
         priority: Priority = .normal,
-        retry_policy: RetryPolicy = .{},
-        depends_on: ?[]const u8 = null,
+        retryPolicy: RetryPolicy = .{},
+        dependsOn: ?[]const u8 = null,
         config: TaskConfig = .{},
 
         /// Task execution priority.
@@ -147,9 +122,9 @@ pub const Scheduler = struct {
 
         /// Retry behavior for failed task executions.
         pub const RetryPolicy = struct {
-            max_retries: u32 = 3,
-            interval_ms: u32 = Constants.SchedulerDefaults.retry_interval_ms,
-            backoff_multiplier: f32 = 1.5,
+            maxRetries: u32 = 3,
+            intervalMs: u32 = Constants.SchedulerDefaults.retryIntervalMs,
+            backoffMultiplier: f32 = 1.5,
         };
 
         /// Task-specific configuration.
@@ -157,41 +132,41 @@ pub const Scheduler = struct {
             /// Path for file-based tasks
             path: ?[]const u8 = null,
             /// Maximum age in seconds for cleanup
-            max_age_seconds: u64 = Constants.SchedulerDefaults.max_age_seconds,
+            maxAgeSeconds: u64 = Constants.SchedulerDefaults.maxAgeSeconds,
             /// Maximum files to keep
-            max_files: ?usize = null,
+            maxFiles: ?usize = null,
             /// Maximum total size in bytes
-            max_total_size: ?u64 = null,
+            maxTotalSize: ?u64 = null,
             /// Minimum age in seconds (useful for compression - e.g. compress files older than 1 day)
-            min_age_seconds: u64 = 0,
+            minAgeSeconds: u64 = 0,
             /// Maximum number of retries
-            max_retries: u32 = 0,
+            maxRetries: u32 = 0,
             /// Retry backoff time in milliseconds
-            retry_backoff_ms: u64 = 0,
+            retryBackoffMs: u64 = 0,
             /// File pattern to match (e.g., "*.log")
-            file_pattern: ?[]const u8 = null,
+            filePattern: ?[]const u8 = null,
             /// Compress files before cleanup (compress then delete)
-            compress_before_delete: bool = false,
+            compressBeforeDelete: bool = false,
             /// Compress files and keep both original and compressed (archive mode)
-            compress_and_keep: bool = false,
+            compressAndKeep: bool = false,
             /// Only compress files, don't delete any (pure archival)
-            compress_only: bool = false,
+            compressOnly: bool = false,
             /// Skip files that are already compressed (.gz, .lgz, .zst)
-            skip_already_compressed: bool = true,
+            skipAlreadyCompressed: bool = true,
             /// Recursive directory processing
             recursive: bool = false,
             /// Trigger task only if disk usage exceeds this percentage (0-100, null to disable)
-            trigger_disk_usage_percent: ?u8 = null,
+            triggerDiskUsagePercent: ?u8 = null,
             /// Required free space in bytes before running task
-            min_free_space_bytes: ?u64 = null,
+            minFreeSpaceBytes: ?u64 = null,
 
             /// Create from centralized Config.SchedulerConfig.
             pub fn fromCentralized(cfg: SchedulerConfig) TaskConfig {
                 return .{
-                    .max_age_seconds = cfg.cleanup_max_age_days * Constants.TimeConstants.seconds_per_day,
-                    .max_files = cfg.max_files,
-                    .file_pattern = cfg.file_pattern,
-                    .compress_before_delete = cfg.compress_before_cleanup,
+                    .maxAgeSeconds = cfg.cleanupMaxAgeDays * Constants.TimeConstants.secondsPerDay,
+                    .maxFiles = cfg.maxFiles,
+                    .filePattern = cfg.filePattern,
+                    .compressBeforeDelete = cfg.compressBeforeCleanup,
                 };
             }
 
@@ -205,14 +180,14 @@ pub const Scheduler = struct {
             /// Returns a copy with the specified max age in days.
             pub fn withMaxAgeDays(self: TaskConfig, days: u64) TaskConfig {
                 var result = self;
-                result.max_age_seconds = days * Constants.TimeConstants.seconds_per_day;
+                result.maxAgeSeconds = days * Constants.TimeConstants.secondsPerDay;
                 return result;
             }
 
             /// Returns a copy with the specified file pattern.
             pub fn withFilePattern(self: TaskConfig, pattern: []const u8) TaskConfig {
                 var result = self;
-                result.file_pattern = pattern;
+                result.filePattern = pattern;
                 return result;
             }
         };
@@ -221,14 +196,14 @@ pub const Scheduler = struct {
     /// Immutable task state snapshot for introspection APIs.
     pub const TaskSnapshot = struct {
         name: []const u8,
-        task_type: TaskType,
+        taskType: TaskType,
         enabled: bool,
         running: bool,
-        next_run: i64,
-        last_run: i64,
-        run_count: u64,
-        error_count: u64,
-        retries_remaining: u32,
+        nextRun: i64,
+        lastRun: i64,
+        runCount: u64,
+        errorCount: u64,
+        retriesRemaining: u32,
     };
 
     /// Types of scheduled tasks.
@@ -244,9 +219,9 @@ pub const Scheduler = struct {
         /// Custom user-defined task
         custom,
         /// Health check
-        health_check,
+        healthCheck,
         /// Metrics collection
-        metrics_snapshot,
+        metricsSnapshot,
     };
 
     /// Schedule configuration.
@@ -270,61 +245,61 @@ pub const Scheduler = struct {
         pub const CronSchedule = struct {
             minute: ?u8 = null, // 0-59 or null for any
             hour: ?u8 = null, // 0-23 or null for any
-            day_of_month: ?u8 = null, // 1-31 or null for any
+            dayOfMonth: ?u8 = null, // 1-31 or null for any
             month: ?u8 = null, // 1-12 or null for any
-            day_of_week: ?u8 = null, // 0-6 (Sunday=0) or null for any
+            dayOfWeek: ?u8 = null, // 0-6 (Sunday=0) or null for any
         };
 
         /// Calculates the next run time from now.
-        pub fn nextRunTime(self: Schedule, from_time: i64) i64 {
-            const now_ms = from_time;
+        pub fn nextRunTime(self: Schedule, fromTime: i64) i64 {
+            const nowMs = fromTime;
             return switch (self) {
-                .once => |delay| now_ms + @as(i64, @intCast(delay)),
-                .interval => |interval| now_ms + @as(i64, @intCast(interval)),
+                .once => |delay| nowMs + @as(i64, @intCast(delay)),
+                .interval => |interval| nowMs + @as(i64, @intCast(interval)),
                 .daily => |daily| blk: {
-                    const now_sec = Utils.currentSeconds();
-                    const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(now_sec) };
-                    const day_seconds = epoch.getDaySeconds();
+                    const nowSec = Utils.currentSeconds();
+                    const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(nowSec) };
+                    const daySeconds = epoch.getDaySeconds();
 
-                    const target_seconds = @as(u64, daily.hour) * @as(u64, Constants.TimeConstants.seconds_per_hour) + @as(u64, daily.minute) * @as(u64, Constants.TimeConstants.seconds_per_minute);
-                    const current_seconds = day_seconds.secs;
+                    const targetSeconds = @as(u64, daily.hour) * @as(u64, Constants.TimeConstants.secondsPerHour) + @as(u64, daily.minute) * @as(u64, Constants.TimeConstants.secondsPerMinute);
+                    const currentSeconds = daySeconds.secs;
 
-                    if (current_seconds < target_seconds) {
+                    if (currentSeconds < targetSeconds) {
                         // Today
-                        break :blk now_ms + @as(i64, @intCast((target_seconds - current_seconds) * @as(u64, Constants.TimeConstants.ms_per_second)));
+                        break :blk nowMs + @as(i64, @intCast((targetSeconds - currentSeconds) * @as(u64, Constants.TimeConstants.msPerSecond)));
                     } else {
                         // Tomorrow
-                        break :blk now_ms + @as(i64, @intCast((@as(u64, Constants.TimeConstants.seconds_per_day) - current_seconds + target_seconds) * @as(u64, Constants.TimeConstants.ms_per_second)));
+                        break :blk nowMs + @as(i64, @intCast((@as(u64, Constants.TimeConstants.secondsPerDay) - currentSeconds + targetSeconds) * @as(u64, Constants.TimeConstants.msPerSecond)));
                     }
                 },
                 .cron => |cron| blk: {
-                    var check_time = now_ms + Constants.SchedulerDefaults.cron_fallback_interval_ms;
+                    var checkTime = nowMs + Constants.SchedulerDefaults.cronFallbackIntervalMs;
                     // Find closest match within the next 30 days
-                    const limit = now_ms + @as(i64, @intCast(30 * @as(u64, Constants.TimeConstants.seconds_per_day) * @as(u64, Constants.TimeConstants.ms_per_second)));
-                    while (check_time < limit) : (check_time += @as(i64, @intCast(@as(u64, Constants.TimeConstants.seconds_per_minute) * @as(u64, Constants.TimeConstants.ms_per_second)))) {
-                        const sec = @divFloor(check_time, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
+                    const limit = nowMs + @as(i64, @intCast(30 * @as(u64, Constants.TimeConstants.secondsPerDay) * @as(u64, Constants.TimeConstants.msPerSecond)));
+                    while (checkTime < limit) : (checkTime += @as(i64, @intCast(@as(u64, Constants.TimeConstants.secondsPerMinute) * @as(u64, Constants.TimeConstants.msPerSecond)))) {
+                        const sec = @divFloor(checkTime, @as(i64, @intCast(Constants.TimeConstants.msPerSecond)));
                         const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(sec) };
                         const day = epoch.getEpochDay();
-                        const year_day = day.calculateYearDay();
-                        const month_day = year_day.calculateMonthDay();
-                        const day_sec = epoch.getDaySeconds();
+                        const yearDay = day.calculateYearDay();
+                        const monthDay = yearDay.calculateMonthDay();
+                        const daySec = epoch.getDaySeconds();
 
-                        const minute = @divFloor(day_sec.secs % @as(u64, Constants.TimeConstants.seconds_per_hour), @as(u64, Constants.TimeConstants.seconds_per_minute));
-                        const hour = @divFloor(day_sec.secs, @as(u64, Constants.TimeConstants.seconds_per_hour));
-                        const month = month_day.month.numeric();
-                        const mday = month_day.day_index + 1;
+                        const minute = @divFloor(daySec.secs % @as(u64, Constants.TimeConstants.secondsPerHour), @as(u64, Constants.TimeConstants.secondsPerMinute));
+                        const hour = @divFloor(daySec.secs, @as(u64, Constants.TimeConstants.secondsPerHour));
+                        const month = monthDay.month.numeric();
+                        const mday = monthDay.day_index + 1;
                         // Unix epoch (Jan 1, 1970) was a Thursday (4)
                         const wday = @as(u8, @intCast((day.day + 4) % 7));
 
                         if (cron.minute != null and cron.minute.? != minute) continue;
                         if (cron.hour != null and cron.hour.? != hour) continue;
                         if (cron.month != null and cron.month.? != month) continue;
-                        if (cron.day_of_month != null and cron.day_of_month.? != mday) continue;
-                        if (cron.day_of_week != null and cron.day_of_week.? != wday) continue;
+                        if (cron.dayOfMonth != null and cron.dayOfMonth.? != mday) continue;
+                        if (cron.dayOfWeek != null and cron.dayOfWeek.? != wday) continue;
 
-                        break :blk check_time;
+                        break :blk checkTime;
                     }
-                    break :blk now_ms + Constants.SchedulerDefaults.cron_fallback_interval_ms; // Fallback
+                    break :blk nowMs + Constants.SchedulerDefaults.cronFallbackIntervalMs; // Fallback
                 },
             };
         }
@@ -333,111 +308,105 @@ pub const Scheduler = struct {
     /// Statistics for scheduler operations with atomic counters for thread safety.
     pub const SchedulerStats = struct {
         /// Total tasks executed successfully.
-        tasks_executed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksExecuted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total tasks that failed.
-        tasks_failed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksFailed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total files cleaned up.
-        files_cleaned: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        filesCleaned: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total files compressed.
-        files_compressed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        filesCompressed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total bytes freed by cleanup operations.
-        bytes_freed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytesFreed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total bytes saved by compression.
-        bytes_saved: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytesSaved: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Last run time in milliseconds (uses AtomicSigned for 32-bit platform compatibility).
-        last_run_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+        lastRunTime: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
         /// Scheduler start time for uptime calculation (uses AtomicSigned for 32-bit platform compatibility).
-        start_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+        startTime: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
         /// Calculate task success rate (0.0 - 1.0).
         pub fn successRate(self: *const SchedulerStats) f64 {
-            const executed = Utils.atomicLoadU64(&self.tasks_executed);
-            const failed = Utils.atomicLoadU64(&self.tasks_failed);
+            const executed = Utils.atomicLoadU64(&self.tasksExecuted);
+            const failed = Utils.atomicLoadU64(&self.tasksFailed);
             const total = executed + failed;
             return Utils.calculateRate(executed, total);
         }
 
         /// Calculate task failure rate (0.0 - 1.0).
         pub fn failureRate(self: *const SchedulerStats) f64 {
-            const executed = Utils.atomicLoadU64(&self.tasks_executed);
-            const failed = Utils.atomicLoadU64(&self.tasks_failed);
+            const executed = Utils.atomicLoadU64(&self.tasksExecuted);
+            const failed = Utils.atomicLoadU64(&self.tasksFailed);
             return Utils.calculateErrorRate(failed, executed + failed);
         }
 
         /// Returns true if any tasks have failed.
         pub fn hasFailures(self: *const SchedulerStats) bool {
-            return Utils.atomicLoadU64(&self.tasks_failed) > 0;
+            return Utils.atomicLoadU64(&self.tasksFailed) > 0;
         }
 
         /// Returns total tasks executed as u64.
         pub fn getExecuted(self: *const SchedulerStats) u64 {
-            return Utils.atomicLoadU64(&self.tasks_executed);
+            return Utils.atomicLoadU64(&self.tasksExecuted);
         }
 
         /// Returns total tasks failed as u64.
         pub fn getFailed(self: *const SchedulerStats) u64 {
-            return Utils.atomicLoadU64(&self.tasks_failed);
+            return Utils.atomicLoadU64(&self.tasksFailed);
         }
 
         /// Returns total files cleaned as u64.
         pub fn getFilesCleaned(self: *const SchedulerStats) u64 {
-            return Utils.atomicLoadU64(&self.files_cleaned);
+            return Utils.atomicLoadU64(&self.filesCleaned);
         }
 
         /// Returns total files compressed as u64.
         pub fn getFilesCompressed(self: *const SchedulerStats) u64 {
-            return Utils.atomicLoadU64(&self.files_compressed);
+            return Utils.atomicLoadU64(&self.filesCompressed);
         }
 
         /// Returns total bytes freed as u64.
         pub fn getBytesFreed(self: *const SchedulerStats) u64 {
-            return Utils.atomicLoadU64(&self.bytes_freed);
+            return Utils.atomicLoadU64(&self.bytesFreed);
         }
 
         /// Returns total bytes saved by compression as u64.
         pub fn getBytesSaved(self: *const SchedulerStats) u64 {
-            return Utils.atomicLoadU64(&self.bytes_saved);
+            return Utils.atomicLoadU64(&self.bytesSaved);
         }
 
         /// Returns uptime in seconds since scheduler started.
         pub fn uptimeSeconds(self: *const SchedulerStats) i64 {
-            const start_ts = self.start_time.load(.monotonic);
-            if (start_ts == 0) return 0;
-            return @intCast(Utils.elapsedSeconds(start_ts));
+            const startTs = self.startTime.load(.monotonic);
+            if (startTs == 0) return 0;
+            return @intCast(Utils.elapsedSeconds(startTs));
         }
 
         /// Returns average tasks per hour.
         pub fn tasksPerHour(self: *const SchedulerStats) f64 {
             const uptime = self.uptimeSeconds();
             if (uptime <= 0) return 0;
-            const executed = Utils.atomicLoadU64(&self.tasks_executed);
+            const executed = Utils.atomicLoadU64(&self.tasksExecuted);
             const hours = @as(f64, @floatFromInt(uptime)) / 3600.0;
             return Utils.safeFloatDiv(@as(f64, @floatFromInt(executed)), hours);
         }
 
         /// Calculate compression ratio (bytes saved / total bytes).
         pub fn compressionRatio(self: *const SchedulerStats) f64 {
-            const saved = Utils.atomicLoadU64(&self.bytes_saved);
-            const freed = Utils.atomicLoadU64(&self.bytes_freed);
+            const saved = Utils.atomicLoadU64(&self.bytesSaved);
+            const freed = Utils.atomicLoadU64(&self.bytesFreed);
             return Utils.calculateRate(saved, saved + freed);
         }
     };
 
     /// Cleanup result information.
     pub const CleanupResult = struct {
-        files_deleted: usize = 0,
-        files_compressed: usize = 0,
-        bytes_freed: u64 = 0,
+        filesDeleted: usize = 0,
+        filesCompressed: usize = 0,
+        bytesFreed: u64 = 0,
         errors: usize = 0,
     };
 
     /// Initializes a new Scheduler.
-    ///
-    /// Arguments:
-    ///     allocator: Memory allocator for internal operations.
-    ///
-    /// Returns:
-    ///     A pointer to the new Scheduler instance.
     pub fn init(allocator: std.mem.Allocator) !*Scheduler {
         const self = try allocator.create(Scheduler);
         self.* = .{
@@ -445,40 +414,29 @@ pub const Scheduler = struct {
             .tasks = .empty,
             .stats = .{},
             .compression = Compression.init(allocator),
-            .compression_initialized = true,
-            .health_callback = null,
-            .metrics_callback = null,
+            .compressionInitialized = true,
+            .healthCallback = null,
+            .metricsCallback = null,
         };
 
         return self;
     }
 
-    /// Alias for init().
-    pub const create = init;
-
     /// Initializes a new Scheduler with a ThreadPool.
-    pub fn initWithThreadPool(allocator: std.mem.Allocator, thread_pool: *ThreadPool) !*Scheduler {
+    pub fn initWithThreadPool(allocator: std.mem.Allocator, threadPool: *ThreadPool) !*Scheduler {
         const self = try init(allocator);
-        self.thread_pool = thread_pool;
+        self.threadPool = threadPool;
         return self;
     }
 
     /// Initializes a Scheduler from global Config.SchedulerConfig.
-    ///
-    /// Arguments:
-    ///     allocator: Memory allocator for internal operations.
-    ///     config: Global scheduler configuration from Config.
-    ///     logs_path: Optional path for log files (used for auto-setup cleanup task).
-    ///
-    /// Returns:
-    ///     A pointer to the new Scheduler instance with configured tasks.
-    pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logs_path: ?[]const u8) !*Scheduler {
+    pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logsPath: ?[]const u8) !*Scheduler {
         const self = try init(allocator);
         errdefer self.deinit();
 
         // If scheduler is enabled and path is provided, auto-setup default cleanup task
         if (config.enabled) {
-            if (logs_path) |path| {
+            if (logsPath) |path| {
                 _ = try self.addTask(
                     "auto_cleanup",
                     .cleanup,
@@ -491,143 +449,114 @@ pub const Scheduler = struct {
         return self;
     }
 
-    /// Alias for initFromConfig
-    pub const fromConfig = initFromConfig;
-
     /// Releases all resources.
     pub fn deinit(self: *Scheduler) void {
         self.stop();
 
         // Deinit compression if initialized
-        if (self.compression_initialized) {
+        if (self.compressionInitialized) {
             self.compression.deinit();
         }
 
         for (self.tasks.items) |*task| {
             self.allocator.free(task.name);
             if (task.config.path) |p| self.allocator.free(p);
-            if (task.config.file_pattern) |p| self.allocator.free(p);
-            if (task.depends_on) |p| self.allocator.free(p);
+            if (task.config.filePattern) |p| self.allocator.free(p);
+            if (task.dependsOn) |p| self.allocator.free(p);
         }
         self.tasks.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
-    /// Alias for deinit().
-    pub const destroy = deinit;
-
     /// Sets health check callback.
     pub fn setHealthCallback(self: *Scheduler, callback: *const fn () HealthStatus) void {
-        self.health_callback = callback;
+        self.healthCallback = callback;
     }
-
-    /// Alias for setHealthCallback
-    pub const onHealth = setHealthCallback;
 
     /// Sets metrics callback.
     pub fn setMetricsCallback(self: *Scheduler, callback: *const fn () MetricsSnapshot) void {
-        self.metrics_callback = callback;
+        self.metricsCallback = callback;
     }
-
-    /// Alias for setMetricsCallback
-    pub const onMetrics = setMetricsCallback;
 
     /// Gets current health status.
     pub fn getHealthStatus(self: *Scheduler) HealthStatus {
-        if (self.health_callback) |cb| {
+        if (self.healthCallback) |cb| {
             return cb();
         }
         // Default health check - check disk space on current directory
         return self.performBasicHealthCheck();
     }
 
-    /// Alias for getHealthStatus
-    pub const healthStatus = getHealthStatus;
-
     /// Gets current metrics snapshot.
     pub fn getMetrics(self: *Scheduler) MetricsSnapshot {
-        if (self.metrics_callback) |cb| {
+        if (self.metricsCallback) |cb| {
             return cb();
         }
         return .{
             .timestamp = Utils.currentMillis(),
-            .log_count = self.stats.getExecuted(),
-            .error_count = self.stats.getFailed(),
+            .logCount = self.stats.getExecuted(),
+            .errorCount = self.stats.getFailed(),
         };
     }
-
-    /// Alias for getMetrics
-    pub const snapshot = getMetrics;
 
     fn performBasicHealthCheck(_: *Scheduler) HealthStatus {
         var status = HealthStatus{};
 
         // Check if we can write to current directory
-        const test_file = std.Io.Dir.cwd().createFile(Utils.io(), ".health_check_temp", .{}) catch {
+        const testFile = std.Io.Dir.cwd().createFile(Utils.io(), ".health_check_temp", .{}) catch {
             status.healthy = false;
             status.message = "Cannot write to disk";
             return status;
         };
-        test_file.close(Utils.io());
+        testFile.close(Utils.io());
         std.Io.Dir.cwd().deleteFile(Utils.io(), ".health_check_temp") catch {};
 
         return status;
     }
 
     /// Adds a scheduled task.
-    ///
-    /// Arguments:
-    ///     name: Task identifier.
-    ///     task_type: Type of task to schedule.
-    ///     schedule: When to run the task.
-    ///     config: Task-specific configuration.
-    ///
-    /// Returns:
-    ///     Index of the added task.
     pub fn addTask(
         self: *Scheduler,
         name: []const u8,
-        task_type: TaskType,
+        taskType: TaskType,
         schedule: Schedule,
         config: ScheduledTask.TaskConfig,
     ) !usize {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        const owned_name = try self.allocator.dupe(u8, name);
-        errdefer self.allocator.free(owned_name);
+        const ownedName = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(ownedName);
 
-        var owned_config = config;
+        var ownedConfig = config;
         if (config.path) |p| {
-            owned_config.path = try self.allocator.dupe(u8, p);
+            ownedConfig.path = try self.allocator.dupe(u8, p);
         }
-        errdefer if (owned_config.path) |p| self.allocator.free(p);
+        errdefer if (ownedConfig.path) |p| self.allocator.free(p);
 
-        if (config.file_pattern) |p| {
-            owned_config.file_pattern = try self.allocator.dupe(u8, p);
+        if (config.filePattern) |p| {
+            ownedConfig.filePattern = try self.allocator.dupe(u8, p);
         }
-        errdefer if (owned_config.file_pattern) |p| self.allocator.free(p);
+        errdefer if (ownedConfig.filePattern) |p| self.allocator.free(p);
 
         const now = Utils.currentMillis();
         const task = ScheduledTask{
-            .name = owned_name,
-            .task_type = task_type,
+            .name = ownedName,
+            .taskType = taskType,
             .schedule = schedule,
-            .next_run = schedule.nextRunTime(now),
-            .config = owned_config,
-            .retries_remaining = if (owned_config.max_retries > 0) owned_config.max_retries else 3,
-            .retry_policy = if (owned_config.max_retries > 0) .{
-                .max_retries = owned_config.max_retries,
-                .interval_ms = @as(u32, @intCast(owned_config.retry_backoff_ms)),
+            .nextRun = schedule.nextRunTime(now),
+            .config = ownedConfig,
+            .retriesRemaining = if (ownedConfig.maxRetries > 0) ownedConfig.maxRetries else 3,
+            .retryPolicy = if (ownedConfig.maxRetries > 0) .{
+                .maxRetries = ownedConfig.maxRetries,
+                .intervalMs = @as(u32, @intCast(ownedConfig.retryBackoffMs)),
             } else .{},
         };
 
         try self.tasks.append(self.allocator, task);
+        self.kick();
         return self.tasks.items.len - 1;
     }
-
-    /// Alias for addTask
-    pub const add = addTask;
 
     /// Configures priority for a specific task.
     pub fn setTaskPriority(self: *Scheduler, index: usize, priority: ScheduledTask.Priority) void {
@@ -638,34 +567,25 @@ pub const Scheduler = struct {
         }
     }
 
-    /// Alias for setTaskPriority
-    pub const setPriority = setTaskPriority;
-
     /// Configures retry policy for a specific task.
     pub fn setTaskRetryPolicy(self: *Scheduler, index: usize, policy: ScheduledTask.RetryPolicy) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
         if (index < self.tasks.items.len) {
-            self.tasks.items[index].retry_policy = policy;
-            self.tasks.items[index].retries_remaining = policy.max_retries;
+            self.tasks.items[index].retryPolicy = policy;
+            self.tasks.items[index].retriesRemaining = policy.maxRetries;
         }
     }
 
-    /// Alias for setTaskRetryPolicy
-    pub const retry = setTaskRetryPolicy;
-
     /// Sets a dependency for a task.
-    pub fn setTaskDependency(self: *Scheduler, index: usize, dependency_name: []const u8) !void {
+    pub fn setTaskDependency(self: *Scheduler, index: usize, dependencyName: []const u8) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
         if (index < self.tasks.items.len) {
-            if (self.tasks.items[index].depends_on) |p| self.allocator.free(p);
-            self.tasks.items[index].depends_on = try self.allocator.dupe(u8, dependency_name);
+            if (self.tasks.items[index].dependsOn) |p| self.allocator.free(p);
+            self.tasks.items[index].dependsOn = try self.allocator.dupe(u8, dependencyName);
         }
     }
-
-    /// Alias for setTaskDependency
-    pub const dependsOn = setTaskDependency;
 
     /// Validates that every task dependency resolves and that no dependency cycle exists.
     ///
@@ -675,57 +595,48 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        for (self.tasks.items, 0..) |task, start_index| {
+        for (self.tasks.items, 0..) |task, startIndex| {
             _ = task;
-            var current_index: usize = start_index;
+            var currentIndex: usize = startIndex;
             var hops: usize = 0;
 
             while (true) {
                 if (hops > self.tasks.items.len) return error.DependencyCycle;
 
-                const current_task = self.tasks.items[current_index];
-                const dep_name = current_task.depends_on orelse break;
+                const currentTask = self.tasks.items[currentIndex];
+                const depName = currentTask.dependsOn orelse break;
 
-                var next_index: ?usize = null;
-                for (self.tasks.items, 0..) |candidate, candidate_index| {
-                    if (std.mem.eql(u8, candidate.name, dep_name)) {
-                        next_index = candidate_index;
+                var nextIndex: ?usize = null;
+                for (self.tasks.items, 0..) |candidate, candidateIndex| {
+                    if (std.mem.eql(u8, candidate.name, depName)) {
+                        nextIndex = candidateIndex;
                         break;
                     }
                 }
 
-                const resolved_index = next_index orelse return error.MissingDependency;
-                if (resolved_index == start_index) return error.DependencyCycle;
+                const resolvedIndex = nextIndex orelse return error.MissingDependency;
+                if (resolvedIndex == startIndex) return error.DependencyCycle;
 
-                current_index = resolved_index;
+                currentIndex = resolvedIndex;
                 hops += 1;
             }
         }
     }
 
     /// Adds a cleanup task for old log files.
-    ///
-    /// Arguments:
-    ///     name: Task identifier.
-    ///     path: Directory path to clean.
-    ///     max_age_days: Maximum age of files in days.
-    ///     schedule: When to run cleanup.
     pub fn addCleanupTask(
         self: *Scheduler,
         name: []const u8,
         path: []const u8,
-        max_age_days: u64,
+        maxAgeDays: u64,
         schedule: Schedule,
     ) !usize {
         return self.addTask(name, .cleanup, schedule, .{
             .path = path,
-            .max_age_seconds = max_age_days * Constants.TimeConstants.seconds_per_day,
-            .file_pattern = "*.log",
+            .maxAgeSeconds = maxAgeDays * Constants.TimeConstants.secondsPerDay,
+            .filePattern = "*.log",
         });
     }
-
-    /// Alias for addCleanupTask
-    pub const cleanup = addCleanupTask;
 
     /// Adds a compression task for log files.
     pub fn addCompressionTask(
@@ -736,12 +647,9 @@ pub const Scheduler = struct {
     ) !usize {
         return self.addTask(name, .compression, schedule, .{
             .path = path,
-            .file_pattern = "*.log",
+            .filePattern = "*.log",
         });
     }
-
-    /// Alias for addCompressionTask
-    pub const compress = addCompressionTask;
 
     /// Adds a custom callback task.
     pub fn addCustomTask(
@@ -753,15 +661,15 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        const owned_name = try self.allocator.dupe(u8, name);
+        const ownedName = try self.allocator.dupe(u8, name);
         const now = Utils.currentMillis();
 
         const task = ScheduledTask{
-            .name = owned_name,
-            .task_type = .custom,
+            .name = ownedName,
+            .taskType = .custom,
             .schedule = schedule,
             .callback = callback,
-            .next_run = schedule.nextRunTime(now),
+            .nextRun = schedule.nextRunTime(now),
         };
 
         try self.tasks.append(self.allocator, task);
@@ -779,29 +687,26 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        const owned_name = try self.allocator.dupe(u8, name);
+        const ownedName = try self.allocator.dupe(u8, name);
         const now = Utils.currentMillis();
 
         const task = ScheduledTask{
-            .name = owned_name,
-            .task_type = .custom,
+            .name = ownedName,
+            .taskType = .custom,
             .schedule = schedule,
             .callback = callback,
-            .next_run = schedule.nextRunTime(now),
+            .nextRun = schedule.nextRunTime(now),
             .config = config,
-            .retries_remaining = if (config.max_retries > 0) config.max_retries else 3,
-            .retry_policy = if (config.max_retries > 0) .{
-                .max_retries = config.max_retries,
-                .interval_ms = @as(u32, @intCast(config.retry_backoff_ms)),
+            .retriesRemaining = if (config.maxRetries > 0) config.maxRetries else 3,
+            .retryPolicy = if (config.maxRetries > 0) .{
+                .maxRetries = config.maxRetries,
+                .intervalMs = @as(u32, @intCast(config.retryBackoffMs)),
             } else .{},
         };
 
         try self.tasks.append(self.allocator, task);
         return self.tasks.items.len - 1;
     }
-
-    /// Alias for addCustomTask
-    pub const custom = addCustomTask;
 
     /// Enables or disables a task.
     pub fn setTaskEnabled(self: *Scheduler, index: usize, enabled: bool) void {
@@ -810,10 +715,8 @@ pub const Scheduler = struct {
         if (index < self.tasks.items.len) {
             self.tasks.items[index].enabled = enabled;
         }
+        self.kick();
     }
-
-    /// Alias for setTaskEnabled
-    pub const enable = setTaskEnabled;
 
     /// Removes a task by index.
     pub fn removeTask(self: *Scheduler, index: usize) void {
@@ -823,13 +726,11 @@ pub const Scheduler = struct {
             const task = self.tasks.orderedRemove(index);
             self.allocator.free(task.name);
             if (task.config.path) |p| self.allocator.free(p);
-            if (task.config.file_pattern) |p| self.allocator.free(p);
-            if (task.depends_on) |p| self.allocator.free(p);
+            if (task.config.filePattern) |p| self.allocator.free(p);
+            if (task.dependsOn) |p| self.allocator.free(p);
         }
+        self.kick();
     }
-
-    /// Alias for removeTask
-    pub const remove = removeTask;
 
     /// Finds a task index by name.
     pub fn taskIndexByName(self: *Scheduler, name: []const u8) ?usize {
@@ -851,14 +752,14 @@ pub const Scheduler = struct {
         const task = self.tasks.items[index];
         return .{
             .name = task.name,
-            .task_type = task.task_type,
+            .taskType = task.taskType,
             .enabled = task.enabled,
             .running = task.running,
-            .next_run = task.next_run,
-            .last_run = task.last_run,
-            .run_count = task.run_count,
-            .error_count = task.error_count,
-            .retries_remaining = task.retries_remaining,
+            .nextRun = task.nextRun,
+            .lastRun = task.lastRun,
+            .runCount = task.runCount,
+            .errorCount = task.errorCount,
+            .retriesRemaining = task.retriesRemaining,
         };
     }
 
@@ -871,14 +772,14 @@ pub const Scheduler = struct {
             if (std.mem.eql(u8, task.name, name)) {
                 return .{
                     .name = task.name,
-                    .task_type = task.task_type,
+                    .taskType = task.taskType,
                     .enabled = task.enabled,
                     .running = task.running,
-                    .next_run = task.next_run,
-                    .last_run = task.last_run,
-                    .run_count = task.run_count,
-                    .error_count = task.error_count,
-                    .retries_remaining = task.retries_remaining,
+                    .nextRun = task.nextRun,
+                    .lastRun = task.lastRun,
+                    .runCount = task.runCount,
+                    .errorCount = task.errorCount,
+                    .retriesRemaining = task.retriesRemaining,
                 };
             }
         }
@@ -900,6 +801,7 @@ pub const Scheduler = struct {
         for (self.tasks.items) |*task| {
             if (std.mem.eql(u8, task.name, name)) {
                 task.enabled = enabled;
+                self.kick();
                 return true;
             }
         }
@@ -919,8 +821,9 @@ pub const Scheduler = struct {
                 const removed = self.tasks.orderedRemove(i);
                 self.allocator.free(removed.name);
                 if (removed.config.path) |p| self.allocator.free(p);
-                if (removed.config.file_pattern) |p| self.allocator.free(p);
-                if (removed.depends_on) |p| self.allocator.free(p);
+                if (removed.config.filePattern) |p| self.allocator.free(p);
+                if (removed.dependsOn) |p| self.allocator.free(p);
+                self.kick();
                 return true;
             }
         }
@@ -933,11 +836,11 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        var enabled_total: usize = 0;
+        var enabledTotal: usize = 0;
         for (self.tasks.items) |task| {
-            if (task.enabled) enabled_total += 1;
+            if (task.enabled) enabledTotal += 1;
         }
-        return enabled_total;
+        return enabledTotal;
     }
 
     /// Returns running task count.
@@ -945,11 +848,11 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        var running_total: usize = 0;
+        var runningTotal: usize = 0;
         for (self.tasks.items) |task| {
-            if (task.running) running_total += 1;
+            if (task.running) runningTotal += 1;
         }
-        return running_total;
+        return runningTotal;
     }
 
     /// Returns milliseconds until task next run.
@@ -958,7 +861,7 @@ pub const Scheduler = struct {
         defer self.mutex.unlock(Utils.io());
 
         if (index >= self.tasks.items.len) return null;
-        const delta = self.tasks.items[index].next_run - Utils.currentMillis();
+        const delta = self.tasks.items[index].nextRun - Utils.currentMillis();
         return if (delta > 0) delta else 0;
     }
 
@@ -969,7 +872,7 @@ pub const Scheduler = struct {
 
         for (self.tasks.items) |task| {
             if (std.mem.eql(u8, task.name, name)) {
-                const delta = task.next_run - Utils.currentMillis();
+                const delta = task.nextRun - Utils.currentMillis();
                 return if (delta > 0) delta else 0;
             }
         }
@@ -985,7 +888,8 @@ pub const Scheduler = struct {
         if (index >= self.tasks.items.len) return false;
 
         self.tasks.items[index].schedule = schedule;
-        self.tasks.items[index].next_run = schedule.nextRunTime(Utils.currentMillis());
+        self.tasks.items[index].nextRun = schedule.nextRunTime(Utils.currentMillis());
+        self.kick();
         return true;
     }
 
@@ -996,8 +900,9 @@ pub const Scheduler = struct {
 
         if (index >= self.tasks.items.len) return false;
 
-        self.tasks.items[index].next_run = Utils.currentMillis();
-        self.tasks.items[index].retries_remaining = self.tasks.items[index].retry_policy.max_retries;
+        self.tasks.items[index].nextRun = Utils.currentMillis();
+        self.tasks.items[index].retriesRemaining = self.tasks.items[index].retryPolicy.maxRetries;
+        self.kick();
         return true;
     }
 
@@ -1005,72 +910,64 @@ pub const Scheduler = struct {
     pub fn setTaskStartedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_task_started = callback;
+        self.onTaskStarted = callback;
     }
-
-    /// Alias for setTaskStartedCallback
-    pub const onStarted = setTaskStartedCallback;
 
     /// Sets the callback for task completed events.
     pub fn setTaskCompletedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_task_completed = callback;
+        self.onTaskCompleted = callback;
     }
-
-    /// Alias for setTaskCompletedCallback
-    pub const onCompleted = setTaskCompletedCallback;
 
     /// Sets the callback for task error events.
     pub fn setTaskErrorCallback(self: *Scheduler, callback: *const fn ([]const u8, []const u8) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_task_error = callback;
+        self.onTaskError = callback;
     }
-
-    /// Alias for setTaskErrorCallback
-    pub const onError = setTaskErrorCallback;
 
     /// Sets the callback for schedule tick events.
     pub fn setScheduleTickCallback(self: *Scheduler, callback: *const fn (u32, u32) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_schedule_tick = callback;
+        self.onScheduleTick = callback;
     }
-
-    /// Alias for setScheduleTickCallback
-    pub const onTick = setScheduleTickCallback;
 
     /// Sets the callback for health check events.
     pub fn setHealthCheckCallback(self: *Scheduler, callback: *const fn (*const HealthStatus) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_health_check = callback;
+        self.onHealthCheck = callback;
     }
-
-    /// Alias for setHealthCheckCallback
-    pub const onHealthCheck = setHealthCheckCallback;
 
     /// Starts the scheduler.
     pub fn start(self: *Scheduler) !void {
         if (self.running.load(.acquire)) return;
 
-        // Record start time for uptime calculations (truncated on 32-bit platforms)
-        self.stats.start_time.store(@truncate(Utils.currentMillis()), .monotonic);
+        // Record start time with the monotonic clock: uptimeSeconds() feeds
+        // it to Utils.elapsedSeconds(), which requires monotonic input.
+        self.stats.startTime.store(@truncate(Utils.monotonicMillis()), .monotonic);
 
         self.running.store(true, .release);
-        self.is_paused.store(false, .release);
-        self.worker_thread = try std.Thread.spawn(.{}, schedulerLoop, .{self});
+        self.isPaused.store(false, .release);
+        self.workerThread = try std.Thread.spawn(.{}, schedulerLoop, .{self});
     }
 
     /// Pauses the scheduler.
     pub fn pause(self: *Scheduler) void {
-        self.is_paused.store(true, .release);
+        self.isPaused.store(true, .release);
     }
 
     /// Resumes the scheduler.
     pub fn unpause(self: *Scheduler) void {
-        self.is_paused.store(false, .release);
+        self.isPaused.store(false, .release);
+        self.kick();
+    }
+
+    /// Wake the worker loop so it re-evaluates task deadlines immediately.
+    fn kick(self: *Scheduler) void {
+        _ = self.wakeGeneration.fetchAdd(1, .monotonic);
         self.condition.broadcast(Utils.io());
     }
 
@@ -1080,28 +977,28 @@ pub const Scheduler = struct {
         if (!self.running.load(.acquire)) return;
 
         self.running.store(false, .release);
-        self.condition.broadcast(Utils.io());
+        self.kick();
 
         // Join the worker loop thread
-        if (self.worker_thread) |thread| {
+        if (self.workerThread) |thread| {
             thread.join();
-            self.worker_thread = null;
+            self.workerThread = null;
         }
 
         // Wait for running tasks to complete (with a 5-second graceful shutdown timeout)
-        var wait_loops: u8 = 0;
-        while (wait_loops < 50) : (wait_loops += 1) { // 5 second max wait
-            var any_running = false;
+        var waitLoops: u8 = 0;
+        while (waitLoops < 50) : (waitLoops += 1) { // 5 second max wait
+            var anyRunning = false;
             self.mutex.lockUncancelable(Utils.io());
             for (self.tasks.items) |task| {
                 if (task.running) {
-                    any_running = true;
+                    anyRunning = true;
                     break;
                 }
             }
             self.mutex.unlock(Utils.io());
 
-            if (!any_running) break;
+            if (!anyRunning) break;
             Utils.sleepMs(100);
         }
     }
@@ -1115,9 +1012,6 @@ pub const Scheduler = struct {
         try self.executeTask(&self.tasks.items[index]);
     }
 
-    /// Alias for runNow
-    pub const run = runNow;
-
     /// Runs a task immediately by task name.
     ///
     /// Returns true when task exists and was executed.
@@ -1128,9 +1022,9 @@ pub const Scheduler = struct {
     }
 
     fn dependenciesSatisfiedLocked(self: *Scheduler, task: *const ScheduledTask) bool {
-        if (task.depends_on) |dep_name| {
+        if (task.dependsOn) |depName| {
             for (self.tasks.items) |t| {
-                if (std.mem.eql(u8, t.name, dep_name) and t.running) {
+                if (std.mem.eql(u8, t.name, depName) and t.running) {
                     return false;
                 }
             }
@@ -1139,22 +1033,26 @@ pub const Scheduler = struct {
     }
 
     fn resourceThresholdsSatisfied(task: *const ScheduledTask, scheduler: *Scheduler) bool {
-        if (task.config.trigger_disk_usage_percent) |threshold| {
+        if (task.config.triggerDiskUsagePercent) |threshold| {
             const usage = scheduler.getDiskUsage(task.config.path orelse ".") catch return false;
             if (usage < threshold) return false;
         }
 
-        if (task.config.min_free_space_bytes) |min_free| {
+        if (task.config.minFreeSpaceBytes) |minFree| {
             const free = scheduler.getFreeSpace(task.config.path orelse ".") catch return false;
-            if (free < min_free) return false;
+            if (free < minFree) return false;
         }
 
         return true;
     }
 
+    fn isTimeReadyLocked(self: *Scheduler, task: *const ScheduledTask, now: i64) bool {
+        if (!task.enabled or task.running or task.nextRun > now) return false;
+        return self.dependenciesSatisfiedLocked(task);
+    }
+
     fn isTaskReadyLocked(self: *Scheduler, task: *const ScheduledTask, now: i64) bool {
-        if (!task.enabled or task.running or task.next_run > now) return false;
-        if (!self.dependenciesSatisfiedLocked(task)) return false;
+        if (!self.isTimeReadyLocked(task, now)) return false;
         return resourceThresholdsSatisfied(task, self);
     }
 
@@ -1164,68 +1062,76 @@ pub const Scheduler = struct {
         defer self.mutex.unlock(Utils.io());
 
         const now = Utils.currentMillis();
-        var ready_total: usize = 0;
+        var readyTotal: usize = 0;
         for (self.tasks.items) |task| {
-            if (self.isTaskReadyLocked(&task, now)) ready_total += 1;
+            if (self.isTaskReadyLocked(&task, now)) readyTotal += 1;
         }
-        return ready_total;
+        return readyTotal;
     }
 
     /// Runs all pending tasks.
+    ///
+    /// The precheck pass uses only the time gate (no filesystem I/O), so
+    /// idle ticks cost a single clock read plus integer compares. Disk
+    /// usage gates run at most once per time-ready task in the execute pass.
     pub fn runPending(self: *Scheduler) void {
-        var tick_cb: ?*const fn (u32, u32) void = null;
-        var ready_count: u32 = 0;
-        var total_count: u32 = 0;
+        var tickCb: ?*const fn (u32, u32) void = null;
+        var readyCount: u32 = 0;
+        var totalCount: u32 = 0;
 
         self.mutex.lockUncancelable(Utils.io());
-        const precheck_now = Utils.currentMillis();
-        total_count = @as(u32, @intCast(@min(self.tasks.items.len, std.math.maxInt(u32))));
+        const now = Utils.currentMillis();
+        totalCount = @as(u32, @intCast(@min(self.tasks.items.len, std.math.maxInt(u32))));
         for (self.tasks.items) |task| {
-            if (self.isTaskReadyLocked(&task, precheck_now)) {
-                ready_count += 1;
+            if (self.isTimeReadyLocked(&task, now)) {
+                readyCount += 1;
             }
         }
-        tick_cb = self.on_schedule_tick;
+        tickCb = self.onScheduleTick;
         self.mutex.unlock(Utils.io());
 
-        if (tick_cb) |cb| cb(ready_count, total_count);
+        if (tickCb) |cb| cb(readyCount, totalCount);
 
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        const now = Utils.currentMillis();
         for (self.tasks.items, 0..) |*task, i| {
             if (self.isTaskReadyLocked(task, now)) {
-                if (self.thread_pool) |tp| {
+                if (self.threadPool) |tp| {
                     task.running = true;
                     const TaskCtx = struct {
                         scheduler: *Scheduler,
-                        task_index: usize,
+                        taskIndex: usize,
 
-                        fn run(ctx_ptr: *anyopaque, _: ?std.mem.Allocator) void {
-                            const ctx = @as(*@This(), @ptrCast(@alignCast(ctx_ptr)));
+                        fn run(ctxPtr: *anyopaque, _: ?std.mem.Allocator) void {
+                            const ctx = @as(*@This(), @ptrCast(@alignCast(ctxPtr)));
                             defer ctx.scheduler.allocator.destroy(ctx);
 
-                            ctx.scheduler.runTaskByIndex(ctx.task_index) catch |err| {
-                                ctx.scheduler.handleTaskError(ctx.task_index, err);
+                            ctx.scheduler.runTaskByIndex(ctx.taskIndex) catch |err| {
+                                ctx.scheduler.handleTaskError(ctx.taskIndex, err);
                             };
+                        }
+
+                        fn drop(ctxPtr: ?*anyopaque) void {
+                            const ctx = @as(*@This(), @ptrCast(@alignCast(ctxPtr.?)));
+                            ctx.scheduler.allocator.destroy(ctx);
                         }
                     };
 
                     const ctx = self.allocator.create(TaskCtx) catch continue;
                     ctx.* = .{
                         .scheduler = self,
-                        .task_index = i,
+                        .taskIndex = i,
                     };
 
-                    const tp_prio: ThreadPool.WorkItem.Priority = switch (task.priority) {
+                    const tpPrio: ThreadPool.WorkItem.Priority = switch (task.priority) {
                         .low => .low,
                         .normal => .normal,
                         .high => .high,
                         .critical => .critical,
                     };
 
-                    if (!tp.submit(.{ .callback = .{ .func = TaskCtx.run, .context = ctx } }, tp_prio).isValid()) {
+                    if (!tp.submitWithDrop(.{ .callback = .{ .func = TaskCtx.run, .context = ctx } }, tpPrio, TaskCtx.drop).isValid()) {
                         self.allocator.destroy(ctx);
                         self.executeTask(task) catch |err| {
                             self.handleTaskErrorLocked(i, err);
@@ -1241,9 +1147,6 @@ pub const Scheduler = struct {
         }
     }
 
-    /// Alias for runPending
-    pub const pending = runPending;
-
     fn handleTaskError(self: *Scheduler, index: usize, err: anyerror) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
@@ -1255,17 +1158,17 @@ pub const Scheduler = struct {
         if (index >= self.tasks.items.len) return;
         const task = &self.tasks.items[index];
 
-        task.error_count += 1;
-        _ = self.stats.tasks_failed.fetchAdd(1, .monotonic);
+        task.errorCount += 1;
+        _ = self.stats.tasksFailed.fetchAdd(1, .monotonic);
 
-        if (task.retries_remaining > 0) {
-            task.retries_remaining -= 1;
-            const delay = @as(u64, @intFromFloat(@as(f32, @floatFromInt(task.retry_policy.interval_ms)) * std.math.pow(f32, task.retry_policy.backoff_multiplier, @floatFromInt(task.retry_policy.max_retries - task.retries_remaining))));
-            task.next_run = Utils.currentMillis() + @as(i64, @intCast(delay));
+        if (task.retriesRemaining > 0) {
+            task.retriesRemaining -= 1;
+            const delay = @as(u64, @intFromFloat(@as(f32, @floatFromInt(task.retryPolicy.intervalMs)) * std.math.pow(f32, task.retryPolicy.backoffMultiplier, @floatFromInt(task.retryPolicy.maxRetries - task.retriesRemaining))));
+            task.nextRun = Utils.currentMillis() + @as(i64, @intCast(delay));
 
-            std.log.warn("Scheduled task '{s}' failed ({s}), retrying in {d}ms ({d} retries left)", .{ task.name, @errorName(err), delay, task.retries_remaining });
+            std.log.warn("Scheduled task '{s}' failed ({s}), retrying in {d}ms ({d} retries left)", .{ task.name, @errorName(err), delay, task.retriesRemaining });
         } else {
-            if (self.on_task_error) |cb| {
+            if (self.onTaskError) |cb| {
                 cb(task.name, @errorName(err));
             } else {
                 std.log.err("Scheduled task '{s}' failed: {s}", .{ task.name, @errorName(err) });
@@ -1293,45 +1196,71 @@ pub const Scheduler = struct {
 
     fn schedulerLoop(self: *Scheduler) void {
         while (self.running.load(.acquire)) {
-            if (!self.is_paused.load(.acquire)) {
+            if (!self.isPaused.load(.acquire)) {
                 self.runPending();
             }
 
-            // Check every 500ms for more responsive scheduling
-            var i: usize = 0;
-            while (i < 5 and self.running.load(.acquire)) : (i += 1) {
-                Utils.sleepMs(100);
-            }
+            self.waitForWork();
+        }
+    }
+
+    /// Sleeps until the next task deadline, a schedule mutation, unpause,
+    /// or shutdown. Sleeps in short slices so stop() joins promptly even
+    /// when the next deadline is far away.
+    fn waitForWork(self: *Scheduler) void {
+        const gen = self.wakeGeneration.load(.acquire);
+
+        var waitMs: i64 = 60_000;
+        var foundTasks = false;
+        self.mutex.lockUncancelable(Utils.io());
+        const now = Utils.currentMillis();
+        for (self.tasks.items) |task| {
+            if (!task.enabled) continue;
+            foundTasks = true;
+            const delta = task.nextRun - now;
+            if (delta < waitMs) waitMs = delta;
+        }
+        self.mutex.unlock(Utils.io());
+
+        if (!foundTasks) waitMs = 1_000;
+        if (waitMs < 0) waitMs = 0;
+
+        var remaining = waitMs;
+        while (remaining > 0 and self.running.load(.acquire)) {
+            if (self.wakeGeneration.load(.acquire) != gen) break;
+            const slice: u64 = @intCast(@min(remaining, 100));
+            Utils.sleepMs(slice);
+            remaining -= @as(i64, @intCast(slice));
         }
     }
 
     fn executeTask(self: *Scheduler, task: *ScheduledTask) !void {
         const now = Utils.currentMillis();
-        const start_ns = Utils.currentNanos();
+        const startNs = Utils.currentNanos();
 
         // Start telemetry span if enabled
-        var maybe_span: ?Span = null;
+        var maybeSpan: ?Span = null;
         if (self.telemetry) |t| {
-            maybe_span = t.startSpan(task.name, .{
+            maybeSpan = t.startSpan(task.name, .{
                 .kind = SpanKind.internal,
             }) catch null;
-            if (maybe_span) |*span| {
-                span.setAttribute("task.type", .{ .string = @tagName(task.task_type) }) catch {};
+            if (maybeSpan) |*span| {
+                span.setAttribute("task.type", .{ .string = @tagName(task.taskType) }) catch {};
                 span.setAttribute("task.priority", .{ .string = @tagName(task.priority) }) catch {};
             }
         }
 
         // Execute task based on type with error tracking
-        const exec_result = self.executeTaskCore(task, &maybe_span);
+        const execResult = self.executeTaskCore(task, &maybeSpan);
 
         // Calculate duration
-        const duration_ns = Utils.durationSinceNs(start_ns);
-        const duration_ms: i64 = @intCast(@divFloor(duration_ns, Constants.TimeConstants.ns_per_ms));
+        const durationNs = Utils.durationSinceNs(startNs);
+        const durationMs: i64 = @intCast(@divFloor(durationNs, Constants.TimeConstants.nsPerMs));
 
         // End telemetry span
-        if (maybe_span) |*span| {
-            span.setAttribute("task.duration_ms", .{ .integer = duration_ms }) catch {};
-            if (exec_result) |_| {} else |err| {
+        if (maybeSpan) |*span| {
+            span.setAttribute("task.duration_ms", .{ .integer = durationMs }) catch {};
+            if (execResult) |_| {} else |err| {
                 span.setStatusWithMessage(.err, @errorName(err)) catch {};
             }
             if (self.telemetry) |t| {
@@ -1342,45 +1271,45 @@ pub const Scheduler = struct {
         // Record task execution metrics in telemetry
         if (self.telemetry) |t| {
             t.recordCounter("scheduler.tasks_executed", 1.0) catch {};
-            t.recordGauge("scheduler.task_duration_ms", @floatFromInt(duration_ms)) catch {};
+            t.recordGauge("scheduler.task_duration_ms", @floatFromInt(durationMs)) catch {};
         }
 
         // Propagate error if task failed
-        try exec_result;
+        try execResult;
 
-        task.last_run = now;
-        task.next_run = task.schedule.nextRunTime(now);
-        task.run_count += 1;
-        _ = self.stats.tasks_executed.fetchAdd(1, .monotonic);
-        self.stats.last_run_time.store(@truncate(now), .monotonic);
+        task.lastRun = now;
+        task.nextRun = task.schedule.nextRunTime(now);
+        task.runCount += 1;
+        _ = self.stats.tasksExecuted.fetchAdd(1, .monotonic);
+        self.stats.lastRunTime.store(@truncate(now), .monotonic);
     }
 
     /// Core task execution logic (separated for telemetry tracking).
-    fn executeTaskCore(self: *Scheduler, task: *ScheduledTask, maybe_span: *?Span) !void {
-        switch (task.task_type) {
+    fn executeTaskCore(self: *Scheduler, task: *ScheduledTask, maybeSpan: *?Span) !void {
+        switch (task.taskType) {
             .cleanup => {
                 if (task.config.path) |path| {
                     const result = try self.performCleanup(path, task.config);
-                    _ = self.stats.files_cleaned.fetchAdd(@intCast(result.files_deleted), .monotonic);
-                    _ = self.stats.bytes_freed.fetchAdd(@intCast(result.bytes_freed), .monotonic);
+                    _ = self.stats.filesCleaned.fetchAdd(@intCast(result.filesDeleted), .monotonic);
+                    _ = self.stats.bytesFreed.fetchAdd(@intCast(result.bytesFreed), .monotonic);
 
                     // Record cleanup stats in span
-                    if (maybe_span.*) |*span| {
-                        span.setAttribute("cleanup.files_deleted", .{ .integer = @intCast(result.files_deleted) }) catch {};
-                        span.setAttribute("cleanup.bytes_freed", .{ .integer = @intCast(result.bytes_freed) }) catch {};
+                    if (maybeSpan.*) |*span| {
+                        span.setAttribute("cleanup.files_deleted", .{ .integer = @intCast(result.filesDeleted) }) catch {};
+                        span.setAttribute("cleanup.bytes_freed", .{ .integer = @intCast(result.bytesFreed) }) catch {};
                     }
                 }
             },
             .compression => {
                 if (task.config.path) |path| {
                     const result = try self.performCompression(path, task.config);
-                    _ = self.stats.files_compressed.fetchAdd(@intCast(result.files_compressed), .monotonic);
-                    _ = self.stats.bytes_saved.fetchAdd(@intCast(result.bytes_saved), .monotonic);
+                    _ = self.stats.filesCompressed.fetchAdd(@intCast(result.filesCompressed), .monotonic);
+                    _ = self.stats.bytesSaved.fetchAdd(@intCast(result.bytesSaved), .monotonic);
 
                     // Record compression stats in span
-                    if (maybe_span.*) |*span| {
-                        span.setAttribute("compression.files", .{ .integer = @intCast(result.files_compressed) }) catch {};
-                        span.setAttribute("compression.bytes_saved", .{ .integer = @intCast(result.bytes_saved) }) catch {};
+                    if (maybeSpan.*) |*span| {
+                        span.setAttribute("compression.files", .{ .integer = @intCast(result.filesCompressed) }) catch {};
+                        span.setAttribute("compression.bytes_saved", .{ .integer = @intCast(result.bytesSaved) }) catch {};
                     }
                 }
             },
@@ -1397,23 +1326,23 @@ pub const Scheduler = struct {
                     try cb(task);
                 }
             },
-            .health_check => {
+            .healthCheck => {
                 // Perform health check and store result
                 const health = self.getHealthStatus();
                 if (!health.healthy) {
-                    task.error_count += 1;
+                    task.errorCount += 1;
                 }
                 // Record health status in span
-                if (maybe_span.*) |*span| {
+                if (maybeSpan.*) |*span| {
                     span.setAttribute("health.healthy", .{ .boolean = health.healthy }) catch {};
                 }
             },
-            .metrics_snapshot => {
+            .metricsSnapshot => {
                 // Capture metrics snapshot
                 const metrics = self.getMetrics();
-                if (maybe_span.*) |*span| {
-                    span.setAttribute("metrics.log_count", .{ .integer = @intCast(metrics.log_count) }) catch {};
-                    span.setAttribute("metrics.error_count", .{ .integer = @intCast(metrics.error_count) }) catch {};
+                if (maybeSpan.*) |*span| {
+                    span.setAttribute("metrics.log_count", .{ .integer = @intCast(metrics.logCount) }) catch {};
+                    span.setAttribute("metrics.error_count", .{ .integer = @intCast(metrics.errorCount) }) catch {};
                 }
             },
         }
@@ -1422,7 +1351,7 @@ pub const Scheduler = struct {
     fn performCleanup(self: *Scheduler, path: []const u8, config: ScheduledTask.TaskConfig) !CleanupResult {
         var result = CleanupResult{};
         const now = Utils.currentSeconds();
-        const max_age = @as(i64, @intCast(config.max_age_seconds));
+        const maxAge = @as(i64, @intCast(config.maxAgeSeconds));
 
         var dir = std.Io.Dir.cwd().openDir(Utils.io(), path, .{ .iterate = true }) catch {
             return result;
@@ -1439,12 +1368,12 @@ pub const Scheduler = struct {
         }
 
         var iter = dir.iterate();
-        var total_size: u64 = 0;
+        var totalSize: u64 = 0;
         while (try iter.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
 
             // Check file pattern
-            if (config.file_pattern) |pattern| {
+            if (config.filePattern) |pattern| {
                 if (!matchPattern(entry.name, pattern)) continue;
             }
 
@@ -1459,17 +1388,17 @@ pub const Scheduler = struct {
             const mtime = stat.mtime.toSeconds();
             const age = now - mtime;
 
-            const name_copy = self.allocator.dupe(u8, entry.name) catch continue;
+            const nameCopy = self.allocator.dupe(u8, entry.name) catch continue;
             files.append(self.allocator, .{
-                .name = name_copy,
+                .name = nameCopy,
                 .mtime = mtime,
                 .size = stat.size,
                 .age = age,
             }) catch {
-                self.allocator.free(name_copy);
+                self.allocator.free(nameCopy);
                 continue;
             };
-            total_size += stat.size;
+            totalSize += stat.size;
         }
 
         // Sort by modification time (oldest first)
@@ -1480,41 +1409,51 @@ pub const Scheduler = struct {
         }.lessThan);
 
         // Track what we delete
-        var deleted_indices = std.DynamicBitSet.initEmpty(self.allocator, files.items.len) catch return result;
-        defer deleted_indices.deinit();
+        var deletedIndices = std.DynamicBitSet.initEmpty(self.allocator, files.items.len) catch return result;
+        defer deletedIndices.deinit();
 
         // 1. Delete files based on age (or compress based on mode)
         for (files.items, 0..) |fi, i| {
-            if (fi.age > max_age) {
-                const already_compressed = Constants.CompressionExtensions.isCompressed(fi.name);
-                const should_skip_compressed = config.skip_already_compressed and already_compressed;
+            if (fi.age > maxAge) {
+                const alreadyCompressed = Constants.CompressionExtensions.isCompressed(fi.name);
+                const shouldSkipCompressed = config.skipAlreadyCompressed and alreadyCompressed;
 
                 // Mode: Compress only (no deletion)
-                if (config.compress_only) {
-                    if (self.compression_initialized and !should_skip_compressed) {
-                        const full_path = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
-                        defer self.allocator.free(full_path);
-                        _ = self.compression.compressFile(full_path, null) catch {};
-                        result.files_compressed += 1;
+                if (config.compressOnly) {
+                    if (self.compressionInitialized and !shouldSkipCompressed) {
+                        const fullPath = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
+                        defer self.allocator.free(fullPath);
+                        _ = self.compression.compressFile(fullPath, null) catch {
+                            result.errors += 1;
+                            continue;
+                        };
+                        result.filesCompressed += 1;
                     }
                     continue; // Don't delete anything
                 }
 
                 // Mode: Compress and keep both original and compressed
-                if (config.compress_and_keep and self.compression_initialized and !should_skip_compressed) {
-                    const full_path = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
-                    defer self.allocator.free(full_path);
-                    _ = self.compression.compressFile(full_path, null) catch {};
-                    result.files_compressed += 1;
+                if (config.compressAndKeep and self.compressionInitialized and !shouldSkipCompressed) {
+                    const fullPath = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
+                    defer self.allocator.free(fullPath);
+                    _ = self.compression.compressFile(fullPath, null) catch {
+                        result.errors += 1;
+                        continue;
+                    };
+                    result.filesCompressed += 1;
                     continue; // Keep original, don't delete
                 }
 
-                // Mode: Compress before delete (compress then delete original)
-                if (config.compress_before_delete and self.compression_initialized and !should_skip_compressed) {
-                    const full_path = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
-                    defer self.allocator.free(full_path);
-                    _ = self.compression.compressFile(full_path, null) catch {};
-                    result.files_compressed += 1;
+                // Mode: Compress before delete (compress then delete original).
+                // Count only successful compressions, never failures.
+                if (config.compressBeforeDelete and self.compressionInitialized and !shouldSkipCompressed) {
+                    const fullPath = try std.fs.path.join(self.allocator, &[_][]const u8{ path, fi.name });
+                    defer self.allocator.free(fullPath);
+                    _ = self.compression.compressFile(fullPath, null) catch {
+                        result.errors += 1;
+                        continue;
+                    };
+                    result.filesCompressed += 1;
                 }
 
                 // Default: Delete the file
@@ -1523,51 +1462,51 @@ pub const Scheduler = struct {
                     continue;
                 };
 
-                result.files_deleted += 1;
-                result.bytes_freed += fi.size;
-                total_size -= fi.size;
-                deleted_indices.set(i);
+                result.filesDeleted += 1;
+                result.bytesFreed += fi.size;
+                totalSize -= fi.size;
+                deletedIndices.set(i);
             }
         }
 
         // 2. Enforce max files limit
-        if (config.max_files) |max| {
-            var current_count = files.items.len - result.files_deleted;
-            if (current_count > max) {
+        if (config.maxFiles) |max| {
+            var currentCount = files.items.len - result.filesDeleted;
+            if (currentCount > max) {
                 for (files.items, 0..) |fi, i| {
-                    if (deleted_indices.isSet(i)) continue;
-                    if (current_count <= max) break;
+                    if (deletedIndices.isSet(i)) continue;
+                    if (currentCount <= max) break;
 
                     dir.deleteFile(Utils.io(), fi.name) catch {
                         result.errors += 1;
                         continue;
                     };
 
-                    result.files_deleted += 1;
-                    result.bytes_freed += fi.size;
-                    total_size -= fi.size;
-                    deleted_indices.set(i);
-                    current_count -= 1;
+                    result.filesDeleted += 1;
+                    result.bytesFreed += fi.size;
+                    totalSize -= fi.size;
+                    deletedIndices.set(i);
+                    currentCount -= 1;
                 }
             }
         }
 
         // 3. Enforce max total size limit
-        if (config.max_total_size) |max_size| {
-            if (total_size > max_size) {
+        if (config.maxTotalSize) |maxSize| {
+            if (totalSize > maxSize) {
                 for (files.items, 0..) |fi, i| {
-                    if (deleted_indices.isSet(i)) continue;
-                    if (total_size <= max_size) break;
+                    if (deletedIndices.isSet(i)) continue;
+                    if (totalSize <= maxSize) break;
 
                     dir.deleteFile(Utils.io(), fi.name) catch {
                         result.errors += 1;
                         continue;
                     };
 
-                    result.files_deleted += 1;
-                    result.bytes_freed += fi.size;
-                    total_size -= fi.size;
-                    deleted_indices.set(i);
+                    result.filesDeleted += 1;
+                    result.bytesFreed += fi.size;
+                    totalSize -= fi.size;
+                    deletedIndices.set(i);
                 }
             }
         }
@@ -1585,17 +1524,17 @@ pub const Scheduler = struct {
 
     /// Compression result information.
     pub const CompressionTaskResult = struct {
-        files_compressed: usize = 0,
-        bytes_before: u64 = 0,
-        bytes_after: u64 = 0,
-        bytes_saved: u64 = 0,
+        filesCompressed: usize = 0,
+        bytesBefore: u64 = 0,
+        bytesAfter: u64 = 0,
+        bytesSaved: u64 = 0,
         errors: usize = 0,
     };
 
     fn performCompression(self: *Scheduler, path: []const u8, config: ScheduledTask.TaskConfig) !CompressionTaskResult {
         var result = CompressionTaskResult{};
 
-        if (!self.compression_initialized) return result;
+        if (!self.compressionInitialized) return result;
 
         var dir = std.Io.Dir.cwd().openDir(Utils.io(), path, .{ .iterate = true }) catch return result;
         defer dir.close(Utils.io());
@@ -1609,12 +1548,12 @@ pub const Scheduler = struct {
             if (Constants.CompressionExtensions.isCompressed(entry.name)) continue;
 
             // Check pattern
-            if (config.file_pattern) |pattern| {
+            if (config.filePattern) |pattern| {
                 if (!matchPattern(entry.name, pattern)) continue;
             }
 
             // Check age if min_age_seconds is set
-            if (config.min_age_seconds > 0) {
+            if (config.minAgeSeconds > 0) {
                 const file = dir.openFile(Utils.io(), entry.name, .{}) catch continue;
                 const stat = file.stat(Utils.io()) catch {
                     file.close(Utils.io());
@@ -1622,30 +1561,30 @@ pub const Scheduler = struct {
                 };
                 file.close(Utils.io());
                 const mtime = stat.mtime.toSeconds();
-                if (now - mtime < @as(i64, @intCast(config.min_age_seconds))) continue;
+                if (now - mtime < @as(i64, @intCast(config.minAgeSeconds))) continue;
             }
 
             // Build full path
-            const full_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ path, entry.name }) catch continue;
-            defer self.allocator.free(full_path);
+            const fullPath = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ path, entry.name }) catch continue;
+            defer self.allocator.free(fullPath);
 
             // Compress the file
-            const comp_result = self.compression.compressFile(full_path, null) catch {
+            const compResult = self.compression.compressFile(fullPath, null) catch {
                 result.errors += 1;
                 continue;
             };
 
-            if (comp_result.success) {
-                result.files_compressed += 1;
-                result.bytes_before += comp_result.original_size;
-                result.bytes_after += comp_result.compressed_size;
-                if (comp_result.original_size > comp_result.compressed_size) {
-                    result.bytes_saved += comp_result.original_size - comp_result.compressed_size;
+            if (compResult.success) {
+                result.filesCompressed += 1;
+                result.bytesBefore += compResult.originalSize;
+                result.bytesAfter += compResult.compressedSize;
+                if (compResult.originalSize > compResult.compressedSize) {
+                    result.bytesSaved += compResult.originalSize - compResult.compressedSize;
                 }
 
                 // Free the output path if allocated
-                if (comp_result.output_path) |out_path| {
-                    self.allocator.free(out_path);
+                if (compResult.outputPath) |outPath| {
+                    self.allocator.free(outPath);
                 }
             } else {
                 result.errors += 1;
@@ -1660,13 +1599,17 @@ pub const Scheduler = struct {
         return self.stats;
     }
 
-    /// Resets statistics.
+    /// Resets statistics (per-field atomic stores; safe against concurrent readers).
     pub fn resetStats(self: *Scheduler) void {
-        self.stats = .{};
+        self.stats.tasksExecuted.store(0, .monotonic);
+        self.stats.tasksFailed.store(0, .monotonic);
+        self.stats.filesCleaned.store(0, .monotonic);
+        self.stats.filesCompressed.store(0, .monotonic);
+        self.stats.bytesFreed.store(0, .monotonic);
+        self.stats.bytesSaved.store(0, .monotonic);
+        self.stats.lastRunTime.store(0, .monotonic);
+        self.stats.startTime.store(@truncate(Utils.monotonicMillis()), .monotonic);
     }
-
-    /// Alias for resetStats
-    pub const clearStats = resetStats;
 
     /// Sets the telemetry instance for distributed tracing.
     /// When set, task executions will create spans for observability.
@@ -1674,122 +1617,52 @@ pub const Scheduler = struct {
         self.telemetry = telemetry;
     }
 
-    /// Alias for setTelemetry
-    pub const trace = setTelemetry;
-
     /// Clears the telemetry instance.
     pub fn clearTelemetry(self: *Scheduler) void {
         self.telemetry = null;
     }
-
-    /// Alias for clearTelemetry
-    pub const noTelemetry = clearTelemetry;
 
     /// Gets list of all tasks.
     pub fn getTasks(self: *const Scheduler) []const ScheduledTask {
         return self.tasks.items;
     }
 
-    /// Alias for getTasks
-    pub const tasks_ = getTasks;
-
     /// Returns the number of tasks.
     pub fn taskCount(self: *const Scheduler) usize {
         return self.tasks.items.len;
     }
-
-    /// Alias for taskCount
-    pub const count = taskCount;
-
-    /// Alias for taskIndexByName
-    pub const indexOfTask = taskIndexByName;
-
-    /// Alias for getTaskSnapshot
-    pub const snapshotTask = getTaskSnapshot;
-
-    /// Alias for getTaskSnapshotByName
-    pub const snapshotTaskByName = getTaskSnapshotByName;
-
-    /// Alias for hasTaskNamed
-    pub const hasTask = hasTaskNamed;
-
-    /// Alias for setTaskEnabledByName
-    pub const enableByName = setTaskEnabledByName;
-
-    /// Alias for removeTaskByName
-    pub const removeNamed = removeTaskByName;
-
-    /// Alias for enabledTaskCount
-    pub const enabledCount = enabledTaskCount;
-
-    /// Alias for runningTaskCount
-    pub const runningCount = runningTaskCount;
-
-    /// Alias for readyTaskCount
-    pub const readyCount = readyTaskCount;
-
-    /// Alias for nextRunInMs
-    pub const nextRunMs = nextRunInMs;
-
-    /// Alias for nextRunInMsByName
-    pub const nextRunForTask = nextRunInMsByName;
-
-    /// Alias for setTaskSchedule
-    pub const updateSchedule = setTaskSchedule;
-
-    /// Alias for rescheduleNow
-    pub const runSoon = rescheduleNow;
-
-    /// Alias for runNowByName
-    pub const runNamed = runNowByName;
 
     /// Returns true if the scheduler is running.
     pub fn isRunning(self: *const Scheduler) bool {
         return self.running.load(.acquire);
     }
 
-    /// Alias for isRunning
-    pub const running_ = isRunning;
-
     /// Returns true if any tasks are scheduled.
     pub fn hasTasks(self: *const Scheduler) bool {
         return self.tasks.items.len > 0;
     }
 
-    /// Alias for hasTasks
-    pub const has_ = hasTasks;
-
-    /// Alias for start
-    pub const begin = start;
-
-    /// Alias for stop
-    pub const end = stop;
-    pub const halt = stop;
-
-    /// Alias for getStats
-    pub const statistics = getStats;
-
-    fn getDiskUsage(_: *Scheduler, path: []const u8) !u8 {
+    fn getDiskUsage(self: *Scheduler, path: []const u8) !u8 {
         if (@import("builtin").os.tag == .windows) {
-            var free_bytes: u64 = 0;
-            var total_bytes: u64 = 0;
-            var total_free: u64 = 0;
+            var freeBytes: u64 = 0;
+            var totalBytes: u64 = 0;
+            var totalFree: u64 = 0;
 
-            const path_w = try std.unicode.utf8ToUtf16LeAllocZ(std.heap.page_allocator, path);
-            defer std.heap.page_allocator.free(path_w);
+            const pathW = try std.unicode.utf8ToUtf16LeAllocZ(self.allocator, path);
+            defer self.allocator.free(pathW);
 
-            if (GetDiskFreeSpaceExW(path_w.ptr, &free_bytes, &total_bytes, &total_free) == 0) {
+            if (GetDiskFreeSpaceExW(pathW.ptr, &freeBytes, &totalBytes, &totalFree) == 0) {
                 return 0;
             }
-            if (total_bytes == 0) return 0;
-            return @intCast(100 - (free_bytes * 100 / total_bytes));
+            if (totalBytes == 0) return 0;
+            return @intCast(100 - (freeBytes * 100 / totalBytes));
         } else {
             if (comptime @hasDecl(std.posix, "statvfs")) {
-                const path_c = try std.heap.page_allocator.dupeZ(u8, path);
-                defer std.heap.page_allocator.free(path_c);
+                const pathC = try self.allocator.dupeSentinel(u8, path, 0);
+                defer self.allocator.free(pathC);
 
                 var stat: std.posix.statvfs = undefined;
-                try std.posix.statvfs(path_c, &stat);
+                try std.posix.statvfs(pathC, &stat);
 
                 if (stat.blocks == 0) return 0;
                 return @intCast(100 - (stat.bfree * 100 / stat.blocks));
@@ -1799,26 +1672,26 @@ pub const Scheduler = struct {
         }
     }
 
-    fn getFreeSpace(_: *Scheduler, path: []const u8) !u64 {
+    fn getFreeSpace(self: *Scheduler, path: []const u8) !u64 {
         if (@import("builtin").os.tag == .windows) {
-            var free_bytes: u64 = 0;
-            var total_bytes: u64 = 0;
-            var total_free: u64 = 0;
+            var freeBytes: u64 = 0;
+            var totalBytes: u64 = 0;
+            var totalFree: u64 = 0;
 
-            const path_w = try std.unicode.utf8ToUtf16LeAllocZ(std.heap.page_allocator, path);
-            defer std.heap.page_allocator.free(path_w);
+            const pathW = try std.unicode.utf8ToUtf16LeAllocZ(self.allocator, path);
+            defer self.allocator.free(pathW);
 
-            if (GetDiskFreeSpaceExW(path_w.ptr, &free_bytes, &total_bytes, &total_free) == 0) {
+            if (GetDiskFreeSpaceExW(pathW.ptr, &freeBytes, &totalBytes, &totalFree) == 0) {
                 return 0;
             }
-            return free_bytes;
+            return freeBytes;
         } else {
             if (comptime @hasDecl(std.posix, "statvfs")) {
-                const path_c = try std.heap.page_allocator.dupeZ(u8, path);
-                defer std.heap.page_allocator.free(path_c);
+                const pathC = try self.allocator.dupeSentinel(u8, path, 0);
+                defer self.allocator.free(pathC);
 
                 var stat: std.posix.statvfs = undefined;
-                try std.posix.statvfs(path_c, &stat);
+                try std.posix.statvfs(pathC, &stat);
 
                 return stat.bfree * stat.frsize;
             } else {
@@ -1842,11 +1715,11 @@ fn matchPattern(name: []const u8, pattern: []const u8) bool {
 /// Preset scheduler configurations.
 pub const SchedulerPresets = struct {
     /// Daily cleanup at midnight.
-    pub fn dailyCleanup(path: []const u8, max_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn dailyCleanup(path: []const u8, maxAgeDays: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .max_age_seconds = max_age_days * Constants.TimeConstants.seconds_per_day,
-            .file_pattern = "*.log",
+            .maxAgeSeconds = maxAgeDays * Constants.TimeConstants.secondsPerDay,
+            .filePattern = "*.log",
         };
     }
 
@@ -1855,18 +1728,18 @@ pub const SchedulerPresets = struct {
         return .{ .cron = .{
             .hour = 2,
             .minute = 0,
-            .day_of_week = 0,
+            .dayOfWeek = 0,
         } };
     }
 
     /// Hourly compression.
     pub fn hourlyCompression() Scheduler.Schedule {
-        return .{ .interval = Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond };
     }
 
     /// Every N minutes.
     pub fn everyMinutes(n: u64) Scheduler.Schedule {
-        return .{ .interval = n * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = n * Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond };
     }
 
     /// Daily at specific time.
@@ -1875,9 +1748,9 @@ pub const SchedulerPresets = struct {
     }
 
     /// Creates a scheduled log sink configuration.
-    pub fn createScheduledSink(file_path: []const u8, rotation: []const u8) SinkConfig {
+    pub fn createScheduledSink(filePath: []const u8, rotation: []const u8) SinkConfig {
         return SinkConfig{
-            .path = file_path,
+            .path = filePath,
             .rotation = rotation,
             .retention = 7,
             .color = false,
@@ -1886,17 +1759,17 @@ pub const SchedulerPresets = struct {
 
     /// Every 30 minutes.
     pub fn every30Minutes() Scheduler.Schedule {
-        return .{ .interval = 30 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = 30 * Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond };
     }
 
     /// Every 6 hours.
     pub fn every6Hours() Scheduler.Schedule {
-        return .{ .interval = 6 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = 6 * Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond };
     }
 
     /// Every 12 hours.
     pub fn every12Hours() Scheduler.Schedule {
-        return .{ .interval = 12 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = 12 * Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond };
     }
 
     /// Daily at midnight.
@@ -1910,68 +1783,68 @@ pub const SchedulerPresets = struct {
     }
 
     /// Creates a weekly cleanup config.
-    pub fn weeklyCleanupConfig(path: []const u8, max_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
-        return dailyCleanup(path, max_age_days);
+    pub fn weeklyCleanupConfig(path: []const u8, maxAgeDays: u64) Scheduler.ScheduledTask.TaskConfig {
+        return dailyCleanup(path, maxAgeDays);
     }
 
     /// Compress files older than N days, then delete originals.
     /// Use this to archive logs before cleanup.
-    pub fn compressThenDelete(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn compressThenDelete(path: []const u8, minAgeDays: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
-            .file_pattern = "*.log",
-            .compress_before_delete = true,
-            .skip_already_compressed = true,
+            .minAgeSeconds = minAgeDays * Constants.TimeConstants.secondsPerDay,
+            .filePattern = "*.log",
+            .compressBeforeDelete = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
     /// Compress files older than N days, keep both original and compressed.
     /// Use this for redundant archival where you need both versions.
-    pub fn compressAndKeep(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn compressAndKeep(path: []const u8, minAgeDays: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
-            .file_pattern = "*.log",
-            .compress_and_keep = true,
-            .skip_already_compressed = true,
+            .minAgeSeconds = minAgeDays * Constants.TimeConstants.secondsPerDay,
+            .filePattern = "*.log",
+            .compressAndKeep = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
     /// Only compress files, never delete anything.
     /// Use this for pure archival without any deletion.
-    pub fn compressOnly(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn compressOnly(path: []const u8, minAgeDays: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
-            .file_pattern = "*.log",
-            .compress_only = true,
-            .skip_already_compressed = true,
+            .minAgeSeconds = minAgeDays * Constants.TimeConstants.secondsPerDay,
+            .filePattern = "*.log",
+            .compressOnly = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
     /// Archive old logs: compress files older than N days, delete originals after compression.
     /// Similar to compressThenDelete but with max_age enforcement.
-    pub fn archiveOldLogs(path: []const u8, compress_after_days: u64, delete_after_days: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn archiveOldLogs(path: []const u8, compressAfterDays: u64, deleteAfterDays: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = compress_after_days * Constants.TimeConstants.seconds_per_day,
-            .max_age_seconds = delete_after_days * Constants.TimeConstants.seconds_per_day,
-            .file_pattern = "*.log",
-            .compress_before_delete = true,
-            .skip_already_compressed = true,
+            .minAgeSeconds = compressAfterDays * Constants.TimeConstants.secondsPerDay,
+            .maxAgeSeconds = deleteAfterDays * Constants.TimeConstants.secondsPerDay,
+            .filePattern = "*.log",
+            .compressBeforeDelete = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
     /// Aggressive cleanup: compress and delete files older than N days, enforce max file count.
-    pub fn aggressiveCleanup(path: []const u8, max_age_days: u64, max_files: usize) Scheduler.ScheduledTask.TaskConfig {
+    pub fn aggressiveCleanup(path: []const u8, maxAgeDays: u64, maxFiles: usize) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .max_age_seconds = max_age_days * Constants.TimeConstants.seconds_per_day,
-            .max_files = max_files,
-            .file_pattern = "*.log",
-            .compress_before_delete = true,
-            .skip_already_compressed = true,
+            .maxAgeSeconds = maxAgeDays * Constants.TimeConstants.secondsPerDay,
+            .maxFiles = maxFiles,
+            .filePattern = "*.log",
+            .compressBeforeDelete = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
@@ -1979,10 +1852,10 @@ pub const SchedulerPresets = struct {
     pub fn hourlyArchive(path: []const u8) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = Constants.TimeConstants.seconds_per_day, // 1 day
-            .file_pattern = "*.log",
-            .compress_only = true,
-            .skip_already_compressed = true,
+            .minAgeSeconds = Constants.TimeConstants.secondsPerDay, // 1 day
+            .filePattern = "*.log",
+            .compressOnly = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
@@ -1990,76 +1863,76 @@ pub const SchedulerPresets = struct {
     pub fn compressOnRotation(path: []const u8) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = Constants.TimeConstants.seconds_per_minute, // At least 1 minute old (just rotated)
-            .file_pattern = "*.log.*",
-            .compress_only = true,
-            .skip_already_compressed = true,
+            .minAgeSeconds = Constants.TimeConstants.secondsPerMinute, // At least 1 minute old (just rotated)
+            .filePattern = "*.log.*",
+            .compressOnly = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
     /// Size-based compression trigger: compress when total size exceeds threshold.
-    pub fn sizeBasedCompression(path: []const u8, max_total_bytes: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn sizeBasedCompression(path: []const u8, maxTotalBytes: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .max_total_size = max_total_bytes,
-            .file_pattern = "*.log",
-            .compress_only = true,
-            .skip_already_compressed = true,
+            .maxTotalSize = maxTotalBytes,
+            .filePattern = "*.log",
+            .compressOnly = true,
+            .skipAlreadyCompressed = true,
         };
     }
 
     /// Disk usage triggered compression: only run when disk usage exceeds threshold.
-    pub fn diskUsageTriggered(path: []const u8, disk_usage_percent: u8) Scheduler.ScheduledTask.TaskConfig {
+    pub fn diskUsageTriggered(path: []const u8, diskUsagePercent: u8) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .file_pattern = "*.log",
-            .compress_before_delete = true,
-            .skip_already_compressed = true,
-            .trigger_disk_usage_percent = disk_usage_percent,
+            .filePattern = "*.log",
+            .compressBeforeDelete = true,
+            .skipAlreadyCompressed = true,
+            .triggerDiskUsagePercent = diskUsagePercent,
         };
     }
 
     /// Low disk space triggered: only run when free space is below threshold.
-    pub fn lowDiskSpaceTriggered(path: []const u8, min_free_bytes: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn lowDiskSpaceTriggered(path: []const u8, minFreeBytes: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .file_pattern = "*.log",
-            .compress_before_delete = true,
-            .skip_already_compressed = true,
-            .min_free_space_bytes = min_free_bytes,
+            .filePattern = "*.log",
+            .compressBeforeDelete = true,
+            .skipAlreadyCompressed = true,
+            .minFreeSpaceBytes = minFreeBytes,
         };
     }
 
     /// Recursive directory compression for nested log structures.
-    pub fn recursiveCompression(path: []const u8, min_age_days: u64) Scheduler.ScheduledTask.TaskConfig {
+    pub fn recursiveCompression(path: []const u8, minAgeDays: u64) Scheduler.ScheduledTask.TaskConfig {
         return .{
             .path = path,
-            .min_age_seconds = min_age_days * Constants.TimeConstants.seconds_per_day,
-            .file_pattern = "*.log",
-            .compress_only = true,
-            .skip_already_compressed = true,
+            .minAgeSeconds = minAgeDays * Constants.TimeConstants.secondsPerDay,
+            .filePattern = "*.log",
+            .compressOnly = true,
+            .skipAlreadyCompressed = true,
             .recursive = true,
         };
     }
 
     /// Every 15 minutes.
     pub fn every15Minutes() Scheduler.Schedule {
-        return .{ .interval = 15 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = 15 * Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond };
     }
 
     /// Once after delay in seconds.
     pub fn onceAfter(seconds: u64) Scheduler.Schedule {
-        return .{ .once = seconds * Constants.TimeConstants.ms_per_second };
+        return .{ .once = seconds * Constants.TimeConstants.msPerSecond };
     }
 
     /// Creates a health check schedule (every 5 minutes).
     pub fn healthCheckSchedule() Scheduler.Schedule {
-        return .{ .interval = 5 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = 5 * Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond };
     }
 
     /// Creates a metrics collection schedule (every minute).
     pub fn metricsSchedule() Scheduler.Schedule {
-        return .{ .interval = Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second };
+        return .{ .interval = Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond };
     }
 };
 
@@ -2071,7 +1944,7 @@ test "scheduler basic" {
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    _ = try scheduler.addTask("test", .cleanup, .{ .interval = Constants.TimeConstants.rotation_check_interval_ms }, .{});
+    _ = try scheduler.addTask("test", .cleanup, .{ .interval = Constants.TimeConstants.rotationCheckIntervalMs }, .{});
 
     try std.testing.expectEqual(@as(usize, 1), scheduler.tasks.items.len);
 }
@@ -2079,11 +1952,11 @@ test "scheduler basic" {
 test "schedule next run time" {
     const now = Utils.currentMillis();
 
-    const interval = Scheduler.Schedule{ .interval = Constants.SchedulerDefaults.retry_interval_ms };
+    const interval = Scheduler.Schedule{ .interval = Constants.SchedulerDefaults.retryIntervalMs };
     const next = interval.nextRunTime(now);
 
     try std.testing.expect(next > now);
-    try std.testing.expect(next <= now + @as(i64, @intCast(Constants.SchedulerDefaults.retry_interval_ms)));
+    try std.testing.expect(next <= now + @as(i64, @intCast(Constants.SchedulerDefaults.retryIntervalMs)));
 }
 
 test "pattern matching" {
@@ -2097,11 +1970,11 @@ test "scheduler maintenance task" {
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    const tmp_path = ".test_logs_maintenance";
-    std.Io.Dir.cwd().createDir(Utils.io(), tmp_path, .default_dir) catch {};
-    defer std.Io.Dir.cwd().deleteTree(Utils.io(), tmp_path) catch {};
+    const tmpPath = ".test_logs_maintenance";
+    std.Io.Dir.cwd().createDir(Utils.io(), tmpPath, .default_dir) catch {};
+    defer std.Io.Dir.cwd().deleteTree(Utils.io(), tmpPath) catch {};
 
-    var dir = try std.Io.Dir.cwd().openDir(Utils.io(), tmp_path, .{ .iterate = true });
+    var dir = try std.Io.Dir.cwd().openDir(Utils.io(), tmpPath, .{ .iterate = true });
     defer dir.close(Utils.io());
 
     // Create initial set of log files for testing limit enforcement
@@ -2125,13 +1998,13 @@ test "scheduler maintenance task" {
 
     // Verify max_files constraint enforcement
     var config = Scheduler.ScheduledTask.TaskConfig{
-        .path = tmp_path,
-        .max_files = 5,
-        .file_pattern = "*.log",
+        .path = tmpPath,
+        .maxFiles = 5,
+        .filePattern = "*.log",
     };
 
-    const result = try scheduler.performCleanup(tmp_path, config);
-    try std.testing.expectEqual(@as(usize, 10), result.files_deleted);
+    const result = try scheduler.performCleanup(tmpPath, config);
+    try std.testing.expectEqual(@as(usize, 10), result.filesDeleted);
 
     var count: usize = 0;
     var iter = dir.iterate();
@@ -2143,15 +2016,16 @@ test "scheduler maintenance task" {
     // Verify max_total_size constraint enforcement
     {
         const file = try dir.createFile(Utils.io(), "large.log", .{});
-        try file.writeStreamingAll(Utils.io(), &([_]u8{'A'} ** Constants.SizeConstants.bytes_per_kb));
+        var fill: [Constants.SizeConstants.bytesPerKb]u8 = @splat('A');
+        try file.writeStreamingAll(Utils.io(), &fill);
         file.close(Utils.io());
     }
 
-    config.max_files = null;
-    config.max_total_size = 500;
+    config.maxFiles = null;
+    config.maxTotalSize = 500;
 
-    const result2 = try scheduler.performCleanup(tmp_path, config);
-    try std.testing.expect(result2.files_deleted >= 1);
+    const result2 = try scheduler.performCleanup(tmpPath, config);
+    try std.testing.expect(result2.filesDeleted >= 1);
 }
 
 test "scheduler task introspection helpers" {
@@ -2159,22 +2033,22 @@ test "scheduler task introspection helpers" {
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    const idx_a = try scheduler.addTask("introspect-a", .custom, .{ .once = 0 }, .{});
-    const idx_b = try scheduler.addTask("introspect-b", .custom, .{ .interval = Constants.TimeConstants.rotation_check_interval_ms }, .{});
+    const idxA = try scheduler.addTask("introspect-a", .custom, .{ .once = 0 }, .{});
+    const idxB = try scheduler.addTask("introspect-b", .custom, .{ .interval = Constants.TimeConstants.rotationCheckIntervalMs }, .{});
 
-    try std.testing.expectEqual(@as(?usize, idx_a), scheduler.taskIndexByName("introspect-a"));
+    try std.testing.expectEqual(@as(?usize, idxA), scheduler.taskIndexByName("introspect-a"));
     try std.testing.expect(scheduler.hasTaskNamed("introspect-b"));
     try std.testing.expect(!scheduler.hasTaskNamed("missing-task"));
 
-    scheduler.setTaskEnabled(idx_b, false);
+    scheduler.setTaskEnabled(idxB, false);
     try std.testing.expectEqual(@as(usize, 1), scheduler.enabledTaskCount());
 
-    const next_a = scheduler.nextRunInMs(idx_a);
-    try std.testing.expect(next_a != null);
-    try std.testing.expect(next_a.? >= 0);
+    const nextA = scheduler.nextRunInMs(idxA);
+    try std.testing.expect(nextA != null);
+    try std.testing.expect(nextA.? >= 0);
 
-    try std.testing.expect(scheduler.setTaskSchedule(idx_b, .{ .once = 0 }));
-    try std.testing.expect(scheduler.rescheduleNow(idx_b));
+    try std.testing.expect(scheduler.setTaskSchedule(idxB, .{ .once = 0 }));
+    try std.testing.expect(scheduler.rescheduleNow(idxB));
 }
 
 test "scheduler name based controls and snapshots" {
@@ -2182,7 +2056,7 @@ test "scheduler name based controls and snapshots" {
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    const idx = try scheduler.addTask("named-task", .custom, .{ .interval = Constants.TimeConstants.rotation_check_interval_ms }, .{});
+    const idx = try scheduler.addTask("named-task", .custom, .{ .interval = Constants.TimeConstants.rotationCheckIntervalMs }, .{});
     try std.testing.expectEqual(@as(usize, 0), idx);
 
     const snapshot = scheduler.getTaskSnapshot(idx);
@@ -2190,9 +2064,9 @@ test "scheduler name based controls and snapshots" {
     try std.testing.expectEqualStrings("named-task", snapshot.?.name);
     try std.testing.expect(snapshot.?.enabled);
 
-    const named_snapshot = scheduler.getTaskSnapshotByName("named-task");
-    try std.testing.expect(named_snapshot != null);
-    try std.testing.expectEqual(Scheduler.TaskType.custom, named_snapshot.?.task_type);
+    const namedSnapshot = scheduler.getTaskSnapshotByName("named-task");
+    try std.testing.expect(namedSnapshot != null);
+    try std.testing.expectEqual(Scheduler.TaskType.custom, namedSnapshot.?.taskType);
 
     try std.testing.expect(scheduler.setTaskEnabledByName("named-task", false));
     try std.testing.expect(!scheduler.getTaskSnapshotByName("named-task").?.enabled);
@@ -2225,14 +2099,14 @@ test "scheduler dependency validation" {
     try std.testing.expectError(error.DependencyCycle, scheduler.validateDependencies());
 }
 
-var scheduler_tick_called = false;
-var scheduler_tick_ready: u32 = 0;
-var scheduler_tick_total: u32 = 0;
+var schedulerTickCalled = false;
+var schedulerTickReady: u32 = 0;
+var schedulerTickTotal: u32 = 0;
 
 fn testSchedulerTickCallback(ready: u32, total: u32) void {
-    scheduler_tick_called = true;
-    scheduler_tick_ready = ready;
-    scheduler_tick_total = total;
+    schedulerTickCalled = true;
+    schedulerTickReady = ready;
+    schedulerTickTotal = total;
 }
 
 test "scheduler tick callback receives ready and total" {
@@ -2240,18 +2114,18 @@ test "scheduler tick callback receives ready and total" {
     const scheduler = try Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    scheduler_tick_called = false;
-    scheduler_tick_ready = 0;
-    scheduler_tick_total = 0;
+    schedulerTickCalled = false;
+    schedulerTickReady = 0;
+    schedulerTickTotal = 0;
 
     _ = try scheduler.addTask("tick-task", .custom, .{ .once = 0 }, .{});
     scheduler.setScheduleTickCallback(&testSchedulerTickCallback);
 
     scheduler.runPending();
 
-    try std.testing.expect(scheduler_tick_called);
-    try std.testing.expect(scheduler_tick_total >= 1);
-    try std.testing.expect(scheduler_tick_ready >= 1);
+    try std.testing.expect(schedulerTickCalled);
+    try std.testing.expect(schedulerTickTotal >= 1);
+    try std.testing.expect(schedulerTickReady >= 1);
 }
 
 // Windows helper functions
@@ -2266,25 +2140,25 @@ test "scheduler phase 3 features (pause/resume)" {
     var sched = try Scheduler.init(std.testing.allocator);
     defer sched.deinit();
 
-    try std.testing.expect(!sched.is_paused.load(.acquire));
+    try std.testing.expect(!sched.isPaused.load(.acquire));
     sched.pause();
-    try std.testing.expect(sched.is_paused.load(.acquire));
+    try std.testing.expect(sched.isPaused.load(.acquire));
     sched.unpause();
-    try std.testing.expect(!sched.is_paused.load(.acquire));
+    try std.testing.expect(!sched.isPaused.load(.acquire));
 }
 
 test "scheduler task retries and jitter" {
     const task = Scheduler.ScheduledTask{
         .name = "retry_task",
-        .task_type = .custom,
+        .taskType = .custom,
         .schedule = .{ .interval = 1000 },
-        .retry_policy = .{
-            .max_retries = 3,
-            .interval_ms = 500,
-            .backoff_multiplier = 1.5,
+        .retryPolicy = .{
+            .maxRetries = 3,
+            .intervalMs = 500,
+            .backoffMultiplier = 1.5,
         },
     };
-    try std.testing.expectEqual(@as(u32, 3), task.retry_policy.max_retries);
-    try std.testing.expectEqual(@as(u32, 500), task.retry_policy.interval_ms);
-    try std.testing.expectEqual(@as(f32, 1.5), task.retry_policy.backoff_multiplier);
+    try std.testing.expectEqual(@as(u32, 3), task.retryPolicy.maxRetries);
+    try std.testing.expectEqual(@as(u32, 500), task.retryPolicy.intervalMs);
+    try std.testing.expectEqual(@as(f32, 1.5), task.retryPolicy.backoffMultiplier);
 }

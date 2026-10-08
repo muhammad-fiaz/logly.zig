@@ -32,7 +32,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();

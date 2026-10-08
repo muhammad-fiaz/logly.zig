@@ -6,12 +6,14 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    std.debug.print("Redaction Truncate Example\n\n", .{});
+
     var redactor = logly.Redactor.init(allocator);
     defer redactor.deinit();
 
-    redactor.config.truncate_length = 8;
-    redactor.config.truncate_suffix = "...";
-    redactor.config.hash_algorithm = .sha512;
+    redactor.config.truncateLength = 8;
+    redactor.config.truncateSuffix = "...";
+    redactor.config.hashAlgorithm = .sha512;
 
     try redactor.addField("token", .truncate);
     try redactor.addField("user_id", .hash);
@@ -24,4 +26,5 @@ pub fn main() !void {
 
     std.debug.print("Truncated: {s}\n", .{truncated});
     std.debug.print("Hashed: {s}\n", .{hashed});
+    std.debug.print("\nRedaction truncate example completed!\n", .{});
 }

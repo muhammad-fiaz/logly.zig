@@ -6,7 +6,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Log Sampling Example ===\n\n", .{});
+    std.debug.print("Log Sampling Example\n\n", .{});
 
     // Create logger with probability sampling (50%)
     const logger = try logly.Logger.init(allocator);
@@ -18,59 +18,62 @@ pub fn main() !void {
 
     logger.setSampler(&sampler);
 
-    std.debug.print("--- Probability Sampling (50%) ---\n", .{});
+    std.debug.print("Probability Sampling (50%)\n", .{});
     std.debug.print("Logging 10 messages with 50% sampling:\n\n", .{});
 
     var i: u32 = 0;
     while (i < 10) : (i += 1) {
         try logger.infof("Message {d} of 10", .{i + 1}, @src());
     }
+    try logger.flush();
 
-    std.debug.print("\n--- Rate Limiting ---\n", .{});
+    std.debug.print("\nRate Limiting\n", .{});
 
     // Create a new logger with rate limiting
-    const rate_logger = try logly.Logger.init(allocator);
-    defer rate_logger.deinit();
+    const rateLogger = try logly.Logger.init(allocator);
+    defer rateLogger.deinit();
 
     // Rate limit to 5 messages per second
-    var rate_sampler = logly.Sampler.init(allocator, .{ .rate_limit = .{
-        .max_records = 5,
-        .window_ms = 1000,
+    var rateSampler = logly.Sampler.init(allocator, .{ .rateLimit = .{
+        .maxRecords = 5,
+        .windowMs = 1000,
     } });
-    defer rate_sampler.deinit();
+    defer rateSampler.deinit();
 
-    rate_logger.setSampler(&rate_sampler);
+    rateLogger.setSampler(&rateSampler);
 
     std.debug.print("Rate limited to 5 messages per second:\n\n", .{});
 
     i = 0;
     while (i < 10) : (i += 1) {
-        try rate_logger.infof("Rate limited message {d}", .{i + 1}, @src());
+        try rateLogger.infof("Rate limited message {d}", .{i + 1}, @src());
     }
+    try rateLogger.flush();
 
-    std.debug.print("\n--- Every N Sampling ---\n", .{});
+    std.debug.print("\nEvery N Sampling\n", .{});
 
     // Sample every 3rd message
-    const every_logger = try logly.Logger.init(allocator);
-    defer every_logger.deinit();
+    const everyLogger = try logly.Logger.init(allocator);
+    defer everyLogger.deinit();
 
-    var every_sampler = logly.Sampler.init(allocator, .{ .every_n = 3 });
-    defer every_sampler.deinit();
+    var everySampler = logly.Sampler.init(allocator, .{ .everyN = 3 });
+    defer everySampler.deinit();
 
-    every_logger.setSampler(&every_sampler);
+    everyLogger.setSampler(&everySampler);
 
     std.debug.print("Sampling every 3rd message:\n\n", .{});
 
     i = 0;
     while (i < 9) : (i += 1) {
-        try every_logger.infof("Every-N message {d}", .{i + 1}, @src());
+        try everyLogger.infof("Every-N message {d}", .{i + 1}, @src());
     }
+    try everyLogger.flush();
 
-    std.debug.print("\n--- Using Sampler Presets ---\n", .{});
+    std.debug.print("\nUsing Sampler Presets\n", .{});
 
     // Use preset for no sampling (all messages pass)
-    var no_sampler = logly.SamplerPresets.none(allocator);
-    defer no_sampler.deinit();
+    var noSampler = logly.SamplerPresets.none(allocator);
+    defer noSampler.deinit();
 
     std.debug.print("No sampling preset - all messages logged\n", .{});
 
@@ -81,10 +84,10 @@ pub fn main() !void {
     std.debug.print("10%% sampling preset - ~10%% of messages logged\n", .{});
 
     // Use preset for rate limiting (100/second)
-    var rate_limited = logly.SamplerPresets.limit100PerSecond(allocator);
-    defer rate_limited.deinit();
+    var rateLimited = logly.SamplerPresets.limit100PerSecond(allocator);
+    defer rateLimited.deinit();
 
     std.debug.print("Rate limited preset - max 100 messages/second\n", .{});
 
-    std.debug.print("\n=== Sampling Example Complete ===\n", .{});
+    std.debug.print("\nSampling Example Complete\n", .{});
 }

@@ -8,10 +8,10 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     var config = Config.default();
-    config.json = true;
+    config.format = .json;
     config.distributed = .{
         .enabled = true,
-        .service_name = "test-service",
+        .serviceName = "test-service",
         .environment = "staging",
         .region = "us-west-2",
         .datacenter = "dc1",
@@ -20,7 +20,7 @@ pub fn main() !void {
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    const request_logger = logger.withTrace("trace-123", "span-456");
+    const requestLogger = logger.withTrace("trace-123", "span-456");
 
-    try request_logger.info("Test distributed log", @src());
+    try requestLogger.info("Test distributed log", @src());
 }

@@ -35,7 +35,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -167,10 +167,10 @@ Logly supports filtering at both the logger level and per-sink level. Per-sink f
 
 ```zig
 pub const FilterConfig = struct {
-    include_modules: ?[]const []const u8 = null,   // Only log these modules
-    exclude_modules: ?[]const []const u8 = null,   // Exclude these modules
-    include_messages: ?[]const []const u8 = null,  // Only log messages containing these
-    exclude_messages: ?[]const []const u8 = null,  // Exclude messages containing these
+    includeModules: ?[]const []const u8 = null,   // Only log these modules
+    excludeModules: ?[]const []const u8 = null,   // Exclude these modules
+    includeMessages: ?[]const []const u8 = null,  // Only log messages containing these
+    excludeMessages: ?[]const []const u8 = null,  // Exclude messages containing these
 };
 ```
 
@@ -185,17 +185,17 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     // Console sink that only logs auth and database modules
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .level = .debug,
         .filter = .{
-            .include_modules = &.{ "auth", "database" },
-            .exclude_messages = &.{ "heartbeat", "ping" },
+            .includeModules = &.{ "auth", "database" },
+            .excludeMessages = &.{ "heartbeat", "ping" },
         },
     });
 
@@ -228,30 +228,30 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Error log file - only errors and critical
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/errors.log",
         .level = .err,
-        .max_level = .critical,
+        .maxLevel = .critical,
         .filter = .{
-            .exclude_messages = &.{ "health_check", "monitoring" },
+            .excludeMessages = &.{ "health_check", "monitoring" },
         },
     });
 
     // Audit log file - only specific modules
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/audit.log",
         .level = .info,
         .filter = .{
-            .include_modules = &.{ "auth", "security", "admin" },
+            .includeModules = &.{ "auth", "security", "admin" },
         },
     });
 
     // Debug log file - everything except noisy modules
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/debug.log",
         .level = .debug,
         .filter = .{
-            .exclude_modules = &.{ "metrics", "heartbeat" },
+            .excludeModules = &.{ "metrics", "heartbeat" },
         },
     });
 
@@ -281,23 +281,23 @@ pub fn main() !void {
     defer logger.deinit();
 
     // JSON logs for production - structured data
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/app.json",
         .format = .json,
         .level = .info,
         .filter = .{
-            .include_modules = &.{ "api", "service", "handler" },
-            .exclude_messages = &.{ "DEBUG", "TRACE" },
+            .includeModules = &.{ "api", "service", "handler" },
+            .excludeMessages = &.{ "DEBUG", "TRACE" },
         },
     });
 
     // JSON error logs for alerting systems
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/alerts.json",
         .format = .json,
         .level = .err,
         .filter = .{
-            .include_messages = &.{ "CRITICAL", "ALERT", "FATAL" },
+            .includeMessages = &.{ "CRITICAL", "ALERT", "FATAL" },
         },
     });
 
@@ -323,41 +323,41 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     // Console - development view (all debug+)
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .level = .debug,
     });
 
     // File - production logs (info+, no debug noise)
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/production.log",
         .level = .info,
         .filter = .{
-            .exclude_modules = &.{ "debug", "test", "mock" },
+            .excludeModules = &.{ "debug", "test", "mock" },
         },
     });
 
     // JSON - structured logs for log aggregation
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/structured.json",
         .format = .json,
         .level = .info,
         .filter = .{
-            .include_modules = &.{ "api", "database", "auth", "service" },
+            .includeModules = &.{ "api", "database", "auth", "service" },
         },
     });
 
     // Errors file - critical errors only
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/critical.log",
         .level = .err,
         .filter = .{
-            .exclude_messages = &.{ "warning", "notice" },
+            .excludeMessages = &.{ "warning", "notice" },
         },
     });
 
@@ -393,19 +393,19 @@ pub fn main() !void {
     logger.setFilter(&global_filter);
 
     // Console sink - additional module filter
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .level = .info,
         .filter = .{
-            .include_modules = &.{ "app", "core" },
+            .includeModules = &.{ "app", "core" },
         },
     });
 
     // File sink - different module focus
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/database.log",
         .level = .info,
         .filter = .{
-            .include_modules = &.{ "database", "query" },
+            .includeModules = &.{ "database", "query" },
         },
     });
 

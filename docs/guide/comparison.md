@@ -17,8 +17,8 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 
 | Feature | logly.zig | nexlog | log.zig | std.log |
 |:--------|:----------|:-------|:--------|:--------|
-| Current Version | 0.1.7 | 0.7.2 | 0.0.0 | Built-in |
-| Min Zig Version | 0.15.0+ | 0.14, 0.15-dev | 0.11+ | Any |
+| Current Version | 0.2.2 | 0.7.2 | 0.0.0 | Built-in |
+| Min Zig Version | 0.17.0+ | 0.14, 0.15-dev | 0.11+ | Any |
 | API Style | User-friendly | Builder/Fluent | Pool/Fluent | Basic/Manual |
 | Structured Logging | ✅ Automatic | ✅ JSON/logfmt | ✅ JSON/logfmt | ❌ Manual |
 | File Formats (.json, .txt, .log) | ✅ Automatic | ✅ | ✅ | ❌ |
@@ -32,7 +32,7 @@ This page provides a comprehensive comparison between Logly.zig and other Zig lo
 | Compression | ✅ Automatic (gzip/zlib/deflate/zstd, lzma, lzma2, xz, tar.gz, zip, lz4) | ❌ | ❌ | ❌ |
 | Zstd Compression (v0.1.5+) | ✅ Levels 1-22, presets, batch ops | ❌ | ❌ | ❌ |
 | Rotation Presets (v0.1.5+) | ✅ 25+ presets (time/size/hybrid/production) | ❌ | ❌ | ❌ |
-| Performance Defaults (v0.1.6+) | ✅ Optimized auto_flush/callbacks defaults | ❌ | ❌ | ❌ |
+| Performance Defaults (v0.1.6+) | ✅ Optimized autoFlush/callbacks defaults | ❌ | ❌ | ❌ |
 | Network Logging | ✅ Automatic (TCP/UDP) | ❌ | ❌ | ❌ |
 | Stack Traces | ✅ Automatic | ❌ | ❌ | ❌ Manual |
 | Redaction (PII) | ✅ Automatic | ❌ | ❌ | ❌ |
@@ -112,9 +112,9 @@ Logly.zig includes a unique **Invoke System** that attaches extra messages to lo
 // Define a trigger that fires on error logs containing "Database"
 try invoke.add(.{
     .id = 1,
-    .level_match = .{ .exact = .err },
-    .message_contains = "Database",
-    .messages = &[_]logly.Invoke.Message{
+    .levelMatch = .{ .exact = .err },
+    .messageContains = "Database",
+    .messages = &[]logly.Invoke.Message{
         ">> [ERROR] Connection pool exhausted",
         ">> [FIX] Increase max_connections in config",
         ">> [DOC] DB Guide: https://docs.example.com/db",
@@ -170,7 +170,7 @@ Logly.zig supports multiple compression and archive algorithms for log archival 
 | **lzma** | 5-8x | ~40 MB/s | ~120 MB/s | `.lzma` | Long-term archival (highest ratio) |
 | **lzma2** | 5-8x | ~50 MB/s | ~120 MB/s | `.lzma` | Large file archival (multi-block LZMA) |
 | **xz** | 5-8x | ~60 MB/s | ~120 MB/s | `.xz` | Distribution packages and high-ratio archives |
-| **tar_gz** | 3-5x | ~180 MB/s | ~290 MB/s | `.tar.gz` | Multi-file Unix archives |
+| **tarGz** | 3-5x | ~180 MB/s | ~290 MB/s | `.tar.gz` | Multi-file Unix archives |
 | **zip** | 3-5x | ~190 MB/s | ~290 MB/s | `.zip` | Cross-platform archives |
 | **lz4** | 1-2x | ~600 MB/s | ~1000 MB/s | `.lz4` | Real-time, ultra-fast compression |
 

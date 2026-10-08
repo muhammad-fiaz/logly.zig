@@ -49,3 +49,8 @@ docs/.vitepress/dist
 logs/
 logs_dynamic/
 logs_test_batch/
+
+# Benchmark output
+benchmark-results.md
+NUL
+NUL.*

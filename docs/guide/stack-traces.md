@@ -56,7 +56,7 @@ Stack Trace:
 
 ### JSON Format
 
-When using JSON output, the stack trace is included as an array of address strings in the `stack_trace` field.
+When using JSON output, the stack trace is included as an array of address strings in the `stackTrace` field.
 
 ```json
 {
@@ -77,7 +77,7 @@ You can configure the stack size allocated for capturing traces (default is 1MB)
 
 ```zig
 var config = logly.Config.default();
-config.stack_size = 2 * 1024 * 1024; // 2MB
+config.stackSize = 2 * 1024 * 1024; // 2MB
 logger.configure(config);
 ```
 
@@ -87,7 +87,7 @@ You can enable runtime symbolization to resolve addresses to function names. Not
 
 ```zig
 var config = logly.Config.default();
-config.symbolize_stack_trace = true;
+config.symbolizeStackTrace = true;
 logger.configure(config);
 ```
 

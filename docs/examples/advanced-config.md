@@ -29,10 +29,10 @@ const AsyncConfig = logly.AsyncConfig;
 
 // Build comprehensive config using helper methods
 var config = logly.Config.default()
-  .withThreadPool(.{ .enabled = true, .thread_count = 4 })
-  .withScheduler(.{ .enabled = true, .cleanup_max_age_days = 7 })
+  .withThreadPool(.{ .enabled = true, .threadCount = 4 })
+  .withScheduler(.{ .enabled = true, .cleanupMaxAgeDays = 7 })
   .withCompression(.{ .enabled = true, .level = .default })
-  .withAsync(.{ .enabled = true, .buffer_size = 4096 });
+  .withAsync(.{ .enabled = true, .bufferSize = 4096 });
 ```
 
 ## Code Example
@@ -47,7 +47,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     // Initialize logger
     const logger = try logly.Logger.init(allocator);
@@ -60,8 +60,8 @@ pub fn main() !void {
     
     // Available placeholders:
     // {time}, {level}, {message}, {module}, {function}, {file}, {line}, {trace_id}, {span_id}
-    config.log_format = "{time} | {level} | {message}";
-    config.time_format = logly.Config.TimeFormat.default_pattern;
+    config.logFormat = "{time} | {level} | {message}";
+    config.timeFormat = logly.Config.TimeFormat.defaultPattern;
     config.timezone = .utc;
     
     logger.configure(config);
@@ -72,7 +72,7 @@ pub fn main() !void {
     // ============================================
     // SECTION 2: Unix Timestamp Format
     // ============================================
-    config.time_format = logly.Config.TimeFormat.unix;
+    config.timeFormat = logly.Config.TimeFormat.unix;
     logger.configure(config);
     
     try logger.info("Now using Unix timestamp", @src());
@@ -80,10 +80,10 @@ pub fn main() !void {
     // ============================================
     // SECTION 3: Clickable File Links
     // ============================================
-    config.time_format = logly.Config.TimeFormat.default_pattern;
-    config.show_filename = true;
-    config.show_lineno = true;
-    config.log_format = null;  // Use default format to show file:line
+    config.timeFormat = logly.Config.TimeFormat.defaultPattern;
+    config.showFilename = true;
+    config.showLineno = true;
+    config.logFormat = null;  // Use default format to show file:line
     logger.configure(config);
     
     try logger.debug("This shows file:line for VS Code clickable links", @src());
@@ -93,7 +93,7 @@ pub fn main() !void {
     // ============================================
     
     // Global color control
-    config.global_color_display = true;  // Master switch for all colors
+    config.globalColorDisplay = true;  // Master switch for all colors
     config.color = true;                  // Enable ANSI color codes
     logger.configure(config);
     
@@ -102,13 +102,13 @@ pub fn main() !void {
     try logger.err("Red error message", @src());
 
     // Disable colors
-    config.global_color_display = false;
+    config.globalColorDisplay = false;
     logger.configure(config);
     
     try logger.info("Colors now disabled", @src());
 
     // Re-enable for remaining examples
-    config.global_color_display = true;
+    config.globalColorDisplay = true;
     logger.configure(config);
 
     // ============================================
@@ -130,9 +130,9 @@ pub fn main() !void {
     // SECTION 6: JSON Configuration
     // ============================================
     
-    config.json = true;
-    config.pretty_json = true;
-    config.global_color_display = false;  // Colors don't apply to JSON structure
+    config.format = .json;
+    config.prettyJson = true;
+    config.globalColorDisplay = false;  // Colors don't apply to JSON structure
     logger.configure(config);
     
     try logger.info("JSON formatted output", @src());
@@ -143,32 +143,31 @@ pub fn main() !void {
     // ============================================
     
     // Reset to text format
-    config.json = false;
-    config.global_color_display = true;
-    config.auto_sink = false;  // Disable default console sink
+    config.globalColorDisplay = true;
+    config.autoSink = false;  // Disable default console sink
     logger.configure(config);
     
     // Console sink with colors (using add() alias)
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .color = true,
     });
     
     // File sink without colors
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/app.log",
         .color = false,
     });
     
     // JSON file sink
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/app.json",
-        .json = true,
-        .pretty_json = false,
+        .format = .json,
+        .prettyJson = false,
         .color = false,
     });
     
     // Error-only file sink
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/errors.log",
         .level = .err,
         .color = false,
@@ -193,26 +192,26 @@ pub fn main() !void {
 | `{function}` | Function name | `handleRequest` |
 | `{file}` | Source filename | `src/main.zig` |
 | `{line}` | Line number | `42` |
-| `{trace_id}` | Distributed trace ID | `trace-abc-123` |
-| `{span_id}` | Span ID | `span-xyz-789` |
+| `{traceId}` | Distributed trace ID | `trace-abc-123` |
+| `{spanId}` | Span ID | `span-xyz-789` |
 
 ## Format Examples
 
 ```zig
 // Pipe-separated format
-config.log_format = "{time} | {level} | {message}";
+config.logFormat = "{time} | {level} | {message}";
 // Output: 2024-01-15 10:30:45 | INFO | Hello
 
 // Compact format
-config.log_format = "[{level}] {message}";
+config.logFormat = "[{level}] {message}";
 // Output: [INFO] Hello
 
 // With source location
-config.log_format = "{time} [{level}] {file}:{line} - {message}";
+config.logFormat = "{time} [{level}] {file}:{line} - {message}";
 // Output: 2024-01-15 10:30:45 [INFO] src/main.zig:42 - Hello
 
 // With tracing
-config.log_format = "[{trace_id}:{span_id}] {level}: {message}";
+config.logFormat = "[{trace_id}:{span_id}] {level}: {message}";
 // Output: [trace-abc:span-123] INFO: Hello
 ```
 

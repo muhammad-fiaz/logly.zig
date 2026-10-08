@@ -71,8 +71,8 @@ logger.setFilteredCallback(&onRecordFiltered);
 Called when a sink encounters an error:
 
 ```zig
-fn onSinkError(sink_name: []const u8, error_msg: []const u8) void {
-    std.debug.print("Sink '{s}' error: {s}\n", .{sink_name, error_msg});
+fn onSinkError(sinkName: []const u8, errorMsg: []const u8) void {
+    std.debug.print("Sink '{s}' error: {s}\n", .{sinkName, errorMsg});
 }
 
 logger.setSinkErrorCallback(&onSinkError);
@@ -102,8 +102,8 @@ logger.setDestroyedCallback(&onLoggerDestroyed);
 Called after each successful write:
 
 ```zig
-fn onSinkWrite(record_count: u64, bytes_written: u64) void {
-    metrics.track("sink.bytes_written", bytes_written);
+fn onSinkWrite(recordCount: u64, bytesWritten: u64) void {
+    metrics.track("sink.bytes_written", bytesWritten);
 }
 
 sink.setWriteCallback(&onSinkWrite);
@@ -114,9 +114,9 @@ sink.setWriteCallback(&onSinkWrite);
 Called after a flush operation:
 
 ```zig
-fn onFlush(bytes_flushed: u64, duration_ns: u64) void {
-    const duration_ms = duration_ns / 1_000_000;
-    std.debug.print("Flushed {d} bytes in {d}ms\n", .{bytes_flushed, duration_ms});
+fn onFlush(bytesFlushed: u64, durationNs: u64) void {
+    const durationMs = durationNs / 1_000_000;
+    std.debug.print("Flushed {d} bytes in {d}ms\n", .{bytesFlushed, durationMs});
 }
 
 sink.setFlushCallback(&onFlush);
@@ -139,8 +139,8 @@ sink.setRotationCallback(&onRotation);
 Called when a cryptographic signature is generated for a log record (under cryptographic log chaining):
 
 ```zig
-fn onSignature(sink_name: []const u8, signature: []const u8) void {
-    std.debug.print("Sink '{s}' computed SHA-256 signature: {s}\n", .{sink_name, signature});
+fn onSignature(sinkName: []const u8, signature: []const u8) void {
+    std.debug.print("Sink '{s}' computed SHA-256 signature: {s}\n", .{sinkName, signature});
 }
 
 sink.setSignatureCallback(&onSignature);
@@ -151,8 +151,8 @@ sink.setSignatureCallback(&onSignature);
 Called when a memory-mapped sink grows in virtual memory capacity:
 
 ```zig
-fn onMmapResize(sink_name: []const u8, old_size: u64, new_size: u64) void {
-    std.debug.print("Sink '{s}' virtual map grown: {d} -> {d} bytes\n", .{sink_name, old_size, new_size});
+fn onMmapResize(sinkName: []const u8, oldSize: u64, newSize: u64) void {
+    std.debug.print("Sink '{s}' virtual map grown: {d} -> {d} bytes\n", .{sinkName, oldSize, newSize});
 }
 
 sink.setMmapResizeCallback(&onMmapResize);
@@ -163,22 +163,22 @@ sink.setMmapResizeCallback(&onMmapResize);
 ### Buffer Overflow Callback
 
 ```zig
-fn onOverflow(dropped_count: u64) void {
-    alerting.critical("Async buffer overflow! Dropped {d} records", .{dropped_count});
+fn onOverflow(droppedCount: u64) void {
+    alerting.critical("Async buffer overflow! Dropped {d} records", .{droppedCount});
 }
 
-async_logger.overflow_callback = &onOverflow;
+asyncLogger.overflowCallback = &onOverflow;
 ```
 
 ### Batch Processed Callback
 
 ```zig
-fn onBatchProcessed(batch_size: usize, processing_time_us: u64) void {
-    metrics.histogram("async.batch_size", batch_size);
+fn onBatchProcessed(batchSize: usize, processing_time_us: u64) void {
+    metrics.histogram("async.batch_size", batchSize);
     metrics.histogram("async.processing_time_us", processing_time_us);
 }
 
-async_logger.on_batch_processed = &onBatchProcessed;
+asyncLogger.onBatchProcessed = &onBatchProcessed;
 ```
 
 ### Latency Threshold Callback
@@ -189,7 +189,7 @@ fn onLatencyExceeded(actual_latency_us: u64, threshold_us: u64) void {
         .{actual_latency_us, threshold_us});
 }
 
-async_logger.on_latency_threshold_exceeded = &onLatencyExceeded;
+asyncLogger.onLatencyThresholdExceeded = &onLatencyExceeded;
 ```
 
 ## Filter Callbacks
@@ -214,11 +214,11 @@ filter.setDeniedCallback(&onRecordDenied);
 ### Sample Accept/Reject
 
 ```zig
-fn onSampleAccept(sample_rate: f64) void {
+fn onSampleAccept(sampleRate: f64) void {
     metrics.increment("sampler.accepted", 1);
 }
 
-fn onSampleReject(sample_rate: f64, reason: logly.Sampler.SampleRejectReason) void {
+fn onSampleReject(sampleRate: f64, reason: logly.Sampler.SampleRejectReason) void {
     metrics.increment("sampler.rejected", 1);
 }
 
@@ -229,8 +229,8 @@ sampler.setRejectCallback(&onSampleReject);
 ### Rate Limit Exceeded
 
 ```zig
-fn onRateExceeded(window_count: u32, max_allowed: u32) void {
-    std.debug.print("Rate limit hit: {d}/{d}\n", .{window_count, max_allowed});
+fn onRateExceeded(windowCount: u32, max_allowed: u32) void {
+    std.debug.print("Rate limit hit: {d}/{d}\n", .{windowCount, max_allowed});
 }
 
 sampler.setRateLimitCallback(&onRateExceeded);
@@ -239,9 +239,9 @@ sampler.setRateLimitCallback(&onRateExceeded);
 ### Adaptive Rate Adjustment
 
 ```zig
-fn onRateAdjustment(old_rate: f64, new_rate: f64, reason: []const u8) void {
+fn onRateAdjustment(oldRate: f64, new_rate: f64, reason: []const u8) void {
     std.debug.print("Sample rate adjusted: {d:.2} -> {d:.2} ({s})\n", 
-        .{old_rate, new_rate, reason});
+        .{oldRate, new_rate, reason});
 }
 
 sampler.setAdjustmentCallback(&onRateAdjustment);
@@ -252,7 +252,7 @@ sampler.setAdjustmentCallback(&onRateAdjustment);
 ### Redaction Applied
 
 ```zig
-fn onRedactionApplied(original_len: u64, redacted_len: u64, redaction_type: u32) void {
+fn onRedactionApplied(original_len: u64, redacted_len: u64, redactionType: u32) void {
     metrics.increment("redaction.applied", 1);
 }
 
@@ -274,8 +274,8 @@ redactor.setPatternMatchedCallback(&onPatternMatched);
 Called when a redaction occurs, providing the pattern name, original value, and the redacted replacement:
 
 ```zig
-fn onRedactionDetail(pattern_name: []const u8, original_value: []const u8, redacted_value: []const u8) void {
-    audit.log("Redacted '{s}': '{s}' -> '{s}'", .{ pattern_name, original_value, redacted_value });
+fn onRedactionDetail(pattern_name: []const u8, originalValue: []const u8, redacted_value: []const u8) void {
+    audit.log("Redacted '{s}': '{s}' -> '{s}'", .{ pattern_name, originalValue, redacted_value });
 }
 
 redactor.setRedactionDetailCallback(&onRedactionDetail);
@@ -284,11 +284,11 @@ redactor.setRedactionDetailCallback(&onRedactionDetail);
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `pattern_name` | `[]const u8` | Name of the redaction pattern that matched (e.g., `"password"`, `"card"`) |
-| `original_value` | `[]const u8` | The original sensitive value before redaction |
+| `originalValue` | `[]const u8` | The original sensitive value before redaction |
 | `redacted_value` | `[]const u8` | The replacement value after redaction (e.g., `"[REDACTED]"`) |
 
 > [!NOTE]
-> The `on_redaction_detail` callback is invoked for each individual redaction within a log record. A single record may trigger multiple redactions if multiple patterns match.
+> The `onRedactionDetail` callback is invoked for each individual redaction within a log record. A single record may trigger multiple redactions if multiple patterns match.
 
 ## Rotation Callbacks
 
@@ -299,21 +299,21 @@ fn onRotationStart(old_file: []const u8) void {
     std.debug.print("Starting rotation: {s}\n", .{old_file});
 }
 
-fn onRotationComplete(old_file: []const u8, new_file: []const u8, duration_ns: u64) void {
-    const duration_ms = duration_ns / 1_000_000;
+fn onRotationComplete(old_file: []const u8, new_file: []const u8, durationNs: u64) void {
+    const durationMs = durationNs / 1_000_000;
     std.debug.print("Rotation complete in {d}ms: {s} -> {s}\n", 
-        .{duration_ms, old_file, new_file});
+        .{durationMs, old_file, new_file});
 }
 
-rotation.on_rotation_start = &onRotationStart;
-rotation.on_rotation_complete = &onRotationComplete;
+rotation.onRotationStart = &onRotationStart;
+rotation.onRotationComplete = &onRotationComplete;
 ```
 
 ### Archive and Cleanup
 
 ```zig
-fn onFileArchived(archived_file: []const u8, archive_path: []const u8) void {
-    std.debug.print("Archived: {s} -> {s}\n", .{archived_file, archive_path});
+fn onFileArchived(archived_file: []const u8, archivePath: []const u8) void {
+    std.debug.print("Archived: {s} -> {s}\n", .{archived_file, archivePath});
 }
 
 fn onRetentionCleanup(deleted_count: u32, freed_bytes: u64) void {
@@ -321,102 +321,102 @@ fn onRetentionCleanup(deleted_count: u32, freed_bytes: u64) void {
         .{deleted_count, freed_bytes});
 }
 
-rotation.on_file_archived = &onFileArchived;
-rotation.on_retention_cleanup = &onRetentionCleanup;
+rotation.onFileArchived = &onFileArchived;
+rotation.onRetentionCleanup = &onRetentionCleanup;
 ```
 
 ## Compression Callbacks
 
 ```zig
-fn onCompressionStart(file_path: []const u8, original_size: u64) void {
-    std.debug.print("Compressing: {s} ({d} bytes)\n", .{file_path, original_size});
+fn onCompressionStart(filePath: []const u8, originalSize: u64) void {
+    std.debug.print("Compressing: {s} ({d} bytes)\n", .{filePath, originalSize});
 }
 
-fn onCompressionComplete(file_path: []const u8, ratio: f64, duration_ns: u64) void {
+fn onCompressionComplete(filePath: []const u8, ratio: f64, durationNs: u64) void {
     std.debug.print("Compressed: {s}, ratio: {d:.2}, time: {d}ms\n", 
-        .{file_path, ratio, duration_ns / 1_000_000});
+        .{filePath, ratio, durationNs / 1_000_000});
 }
 
-compression.on_compression_start = &onCompressionStart;
-compression.on_compression_complete = &onCompressionComplete;
+compression.onCompressionStart = &onCompressionStart;
+compression.onCompressionComplete = &onCompressionComplete;
 ```
 
 ## Metrics Callbacks
 
 ```zig
 fn onMetricsSnapshot(snapshot: *const logly.Metrics.Snapshot) void {
-    const drop_rate = snapshot.getDropRate();
-    if (drop_rate > 0.05) { // 5% drop rate
-        alerting.warn("High drop rate: {d:.2}%", .{drop_rate * 100});
+    const dropRate = snapshot.getDropRate();
+    if (dropRate > 0.05) { // 5% drop rate
+        alerting.warn("High drop rate: {d:.2}%", .{dropRate * 100});
     }
 }
 
-fn onThresholdExceeded(metric_type: logly.Metrics.MetricType, value: u64, threshold: u64) void {
+fn onThresholdExceeded(metricType: logly.Metrics.MetricType, value: u64, threshold: u64) void {
     std.debug.print("Threshold exceeded: {s} = {d} (limit: {d})\n", 
-        .{@tagName(metric_type), value, threshold});
+        .{@tagName(metricType), value, threshold});
 }
 
-metrics.on_metrics_snapshot = &onMetricsSnapshot;
-metrics.on_threshold_exceeded = &onThresholdExceeded;
+metrics.onMetricsSnapshot = &onMetricsSnapshot;
+metrics.onThresholdExceeded = &onThresholdExceeded;
 ```
 
 ## Thread Pool Callbacks
 
 ```zig
-fn onThreadStart(thread_id: usize) void {
-    std.debug.print("Thread {d} started\n", .{thread_id});
+fn onThreadStart(threadId: usize) void {
+    std.debug.print("Thread {d} started\n", .{threadId});
 }
 
-fn onThreadStop(thread_id: usize, tasks_processed: u64, uptime_ms: u64) void {
-    std.debug.print("Thread {d} stopped after {d} tasks in {d}ms\n", .{thread_id, tasks_processed, uptime_ms});
+fn onThreadStop(threadId: usize, tasksProcessed: u64, uptimeMs: u64) void {
+    std.debug.print("Thread {d} stopped after {d} tasks in {d}ms\n", .{threadId, tasksProcessed, uptimeMs});
 }
 
-fn onTaskSubmitted(priority: u8, queue_depth: usize) void {
+fn onTaskSubmitted(priority: u8, queueDepth: usize) void {
     metrics.increment("threadpool.submitted", 1);
-    _ = priority;
-    _ = queue_depth;
+     _ = priority;
+     _ = queueDepth;
 }
 
 fn onTaskDequeued(priority: u8, wait_time_us: u64) void {
     metrics.histogram("threadpool.wait_time_us", wait_time_us);
-    _ = priority;
+     _ = priority;
 }
 
 fn onTaskExecuted(exec_time_us: u64, success: bool) void {
     metrics.histogram("threadpool.execution_time_us", exec_time_us);
-    _ = success;
+     _ = success;
 }
 
-fn onWorkStolen(victim_thread: usize, thief_thread: usize) void {
-    std.debug.print("Work stolen from {d} to {d}\n", .{victim_thread, thief_thread});
+fn onWorkStolen(victimThread: usize, thiefThread: usize) void {
+    std.debug.print("Work stolen from {d} to {d}\n", .{victimThread, thiefThread});
 }
 
-fn onQueueOverflow(queue_size: usize, capacity: usize) void {
-    std.debug.print("Thread pool full: {d}/{d}\n", .{queue_size, capacity});
+fn onQueueOverflow(queueSize: usize, capacity: usize) void {
+    std.debug.print("Thread pool full: {d}/{d}\n", .{queueSize, capacity});
 }
 
-thread_pool.setThreadStartCallback(&onThreadStart);
-thread_pool.setThreadStopCallback(&onThreadStop);
-thread_pool.setTaskSubmittedCallback(&onTaskSubmitted);
-thread_pool.setTaskDequeuedCallback(&onTaskDequeued);
-thread_pool.setTaskExecutedCallback(&onTaskExecuted);
-thread_pool.setWorkStolenCallback(&onWorkStolen);
-thread_pool.setQueueOverflowCallback(&onQueueOverflow);
+threadPool.setThreadStartCallback(&onThreadStart);
+threadPool.setThreadStopCallback(&onThreadStop);
+threadPool.setTaskSubmittedCallback(&onTaskSubmitted);
+threadPool.setTaskDequeuedCallback(&onTaskDequeued);
+threadPool.setTaskExecutedCallback(&onTaskExecuted);
+threadPool.setWorkStolenCallback(&onWorkStolen);
+threadPool.setQueueOverflowCallback(&onQueueOverflow);
 ```
 
 ## Scheduler Callbacks
 
 ```zig
-fn onTaskStarted(task_name: []const u8, run_count: u64) void {
-    std.debug.print("Task '{s}' started (run #{d})\n", .{task_name, run_count});
+fn onTaskStarted(task_name: []const u8, runCount: u64) void {
+    std.debug.print("Task '{s}' started (run #{d})\n", .{task_name, runCount});
 }
 
-fn onTaskCompleted(task_name: []const u8, duration_ms: u64) void {
-    metrics.histogram("scheduler.task_duration_ms", duration_ms);
+fn onTaskCompleted(task_name: []const u8, durationMs: u64) void {
+    metrics.histogram("scheduler.task_duration_ms", durationMs);
 }
 
-fn onTaskError(task_name: []const u8, error_msg: []const u8) void {
-    alerting.error("Scheduled task '{s}' failed: {s}", .{task_name, error_msg});
+fn onTaskError(task_name: []const u8, errorMsg: []const u8) void {
+    alerting.error("Scheduled task '{s}' failed: {s}", .{task_name, errorMsg});
 }
 
 scheduler.setTaskStartedCallback(&onTaskStarted);
@@ -467,8 +467,8 @@ fn onAfterEvaluate(record: *const logly.Record, matched_count: usize) void {
     std.debug.print("{d} triggers matched for this record\n", .{matched_count});
 }
 
-fn onEvaluationError(error_msg: []const u8) void {
-    std.debug.print("Invoke evaluation error: {s}\n", .{error_msg});
+fn onEvaluationError(errorMsg: []const u8) void {
+    std.debug.print("Invoke evaluation error: {s}\n", .{errorMsg});
 }
 
 invoke.on_before_evaluate = &onBeforeEvaluate;
@@ -495,7 +495,7 @@ logly.crash.setCrashCallback(&onCrash);
 | `on_messages_attached` | `(record, count)` | Messages attached to record |
 | `on_before_evaluate` | `(record)` | Before evaluation starts |
 | `on_after_evaluate` | `(record, count)` | After evaluation completes |
-| `on_evaluation_error` | `(error_msg)` | Evaluation error occurred |
+| `on_evaluation_error` | `(errorMsg)` | Evaluation error occurred |
 
 ## Best Practices
 
@@ -603,16 +603,16 @@ const std = @import("std");
 const logly = @import("logly");
 
 const MonitoringSystem = struct {
-    error_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    errorCount: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
     drop_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
     
     fn onError(self: *MonitoringSystem) fn([]const u8, []const u8) void {
         return struct {
-            fn callback(sink_name: []const u8, error_msg: []const u8) void {
-                _ = sink_name;
-                _ = error_msg;
-                _ = self.error_count.fetchAdd(1, .monotonic);
-                if (self.error_count.load(.monotonic) > 100) {
+            fn callback(sinkName: []const u8, errorMsg: []const u8) void {
+                 _ = sinkName;
+                 _ = errorMsg;
+                 _ = self.errorCount.fetchAdd(1, .monotonic);
+                if (self.errorCount.load(.monotonic) > 100) {
                     // Alert on high error rate
                 }
             }
@@ -622,7 +622,7 @@ const MonitoringSystem = struct {
     fn onDrop(self: *MonitoringSystem) fn(u64) void {
         return struct {
             fn callback(dropped: u64) void {
-                _ = self.drop_count.fetchAdd(dropped, .monotonic);
+                 _ = self.drop_count.fetchAdd(dropped, .monotonic);
             }
         }.callback;
     }
@@ -646,7 +646,7 @@ pub fn main() !void {
     
     // Get statistics
     const stats = logger.getStats();
-    std.debug.print("Total errors: {d}\\n", .{monitor.error_count.load(.monotonic)});
+    std.debug.print("Total errors: {d}\\n", .{monitor.errorCount.load(.monotonic)});
     std.debug.print("Records logged: {d}\\n", .{stats.getTotalLogged()});
 }
 ```

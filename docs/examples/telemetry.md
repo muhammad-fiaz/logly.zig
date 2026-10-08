@@ -30,8 +30,8 @@ pub fn main() !void {
 
     // Configure Jaeger backend
     var config = logly.TelemetryConfig.jaeger();
-    config.service_name = "my-service";
-    config.service_version = "1.0.0";
+    config.serviceName = "my-service";
+    config.serviceVersion = "1.0.0";
     config.environment = "production";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -56,24 +56,24 @@ pub fn main() !void {
 
 ```zig
 var config = logly.TelemetryConfig.jaeger();
-config.service_name = "user-service";
-config.service_version = "2.1.0";
-config.sampling_strategy = .trace_id_ratio;
-config.sampling_rate = 0.1; // Sample 10% of traces
+config.serviceName = "user-service";
+config.serviceVersion = "2.1.0";
+config.samplingStrategy = .traceIdRatio;
+config.samplingRate = 0.1; // Sample 10% of traces
 ```
 
 ### Zipkin
 
 ```zig
 var config = logly.TelemetryConfig.zipkin();
-config.service_name = "order-service";
+config.serviceName = "order-service";
 ```
 
 ### Datadog APM
 
 ```zig
 var config = logly.TelemetryConfig.datadog("your-api-key");
-config.service_name = "payment-service";
+config.serviceName = "payment-service";
 config.environment = "production";
 ```
 
@@ -81,7 +81,7 @@ config.environment = "production";
 
 ```zig
 var config = logly.TelemetryConfig.googleCloud("my-project-id", "my-api-key");
-config.service_name = "gcp-service";
+config.serviceName = "gcp-service";
 config.region = "us-central1";
 ```
 
@@ -89,7 +89,7 @@ config.region = "us-central1";
 
 ```zig
 var config = logly.TelemetryConfig.googleAnalytics("G-XXXXXXXXXX", "api_secret_xxx");
-config.service_name = "analytics-service";
+config.serviceName = "analytics-service";
 ```
 
 ### Google Tag Manager
@@ -99,35 +99,35 @@ var config = logly.TelemetryConfig.googleTagManager(
     "https://gtm.example.com/collect",
     "gtm-api-key"
 );
-config.service_name = "gtm-service";
+config.serviceName = "gtm-service";
 ```
 
 ### AWS X-Ray
 
 ```zig
 var config = logly.TelemetryConfig.awsXray("us-east-1");
-config.service_name = "lambda-function";
+config.serviceName = "lambda-function";
 ```
 
 ### Azure Application Insights
 
 ```zig
 var config = logly.TelemetryConfig.azure("InstrumentationKey=xxx;IngestionEndpoint=https://...");
-config.service_name = "azure-app";
+config.serviceName = "azure-app";
 ```
 
 ### Generic OTEL Collector
 
 ```zig
 var config = logly.TelemetryConfig.otelCollector("http://localhost:4317");
-config.service_name = "otel-client";
+config.serviceName = "otel-client";
 ```
 
 ### File-Based (Development)
 
 ```zig
 var config = logly.TelemetryConfig.file("telemetry_spans.jsonl");
-config.service_name = "dev-app";
+config.serviceName = "dev-app";
 ```
 
 Note: the output path is relative to the current working directory. When running
@@ -139,8 +139,8 @@ via `zig build run-telemetry`, this is often `zig-out/bin`.
 var config = logly.TelemetryConfig.development()
     .withPrometheusMetrics("telemetry_metric_names.prom")
     .withMetricPrefix("api.v1");
-config.metric_prefix_separator = ":";
-config.sanitize_metric_names = true;
+config.metricPrefixSeparator = ":";
+config.sanitizeMetricNames = true;
 
 var telemetry = try logly.Telemetry.init(allocator, config);
 defer telemetry.deinit();
@@ -165,7 +165,7 @@ fn myCustomExporter() anyerror!void {
 }
 
 var config = logly.TelemetryConfig.custom(&myCustomExporter);
-config.service_name = "custom-service";
+config.serviceName = "custom-service";
 ```
 
 ## Span Operations
@@ -234,8 +234,8 @@ std.debug.print("traceparent: {s}\n", .{traceparent});
 ```zig
 const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 if (logly.Telemetry.parseTraceparentHeader(incoming)) |ctx| {
-    std.debug.print("Trace ID: {s}\n", .{ctx.trace_id});
-    std.debug.print("Span ID: {s}\n", .{ctx.span_id});
+    std.debug.print("Trace ID: {s}\n", .{ctx.traceId});
+    std.debug.print("Span ID: {s}\n", .{ctx.spanId});
     std.debug.print("Sampled: {}\n", .{ctx.sampled});
 }
 ```
@@ -304,8 +304,8 @@ try telemetry.exportMetrics();
 
 ```zig
 var config = logly.TelemetryConfig.development();
-config.metric_format = .json; // or .prometheus
-config.metrics_file_path = "telemetry_metrics.jsonl";
+config.metricFormat = .json; // or .prometheus
+config.metricsFilePath = "telemetry_metrics.jsonl";
 
 var telemetry = try logly.Telemetry.init(allocator, config);
 defer telemetry.deinit();
@@ -317,12 +317,12 @@ try telemetry.exportMetrics();
 ## Custom Callbacks
 
 ```zig
-fn onSpanStart(span_id: []const u8, name: []const u8) void {
-    std.debug.print("Span started: {s} ({s})\n", .{name, span_id});
+fn onSpanStart(spanId: []const u8, name: []const u8) void {
+    std.debug.print("Span started: {s} ({s})\n", .{name, spanId});
 }
 
-fn onSpanEnd(span_id: []const u8, duration_ns: u64) void {
-    const ms = @as(f64, @floatFromInt(duration_ns)) / 1_000_000.0;
+fn onSpanEnd(spanId: []const u8, durationNs: u64) void {
+    const ms = @as(f64, @floatFromInt(durationNs)) / 1_000_000.0;
     std.debug.print("Span ended: {d:.2}ms\n", .{ms});
 }
 
@@ -336,10 +336,10 @@ fn onError(msg: []const u8) void {
 
 // Configure callbacks
 var config = logly.TelemetryConfig.file("spans.jsonl");
-config.on_span_start = onSpanStart;
-config.on_span_end = onSpanEnd;
-config.on_metric_recorded = onMetricRecorded;
-config.on_error = onError;
+config.onSpanStart = onSpanStart;
+config.onSpanEnd = onSpanEnd;
+config.onMetricRecorded = onMetricRecorded;
+config.onError = onError;
 ```
 
 ## Exporter Statistics
@@ -357,24 +357,24 @@ std.debug.print("Error rate: {d:.2}%\n", .{stats.getErrorRate() * 100.0});
 
 ```zig
 // Always sample all traces (development)
-config.sampling_strategy = .always_on;
+config.samplingStrategy = .alwaysOn;
 
 // Never sample (disabled)
-config.sampling_strategy = .always_off;
+config.samplingStrategy = .alwaysOff;
 
 // Sample percentage of traces (production)
-config.sampling_strategy = .trace_id_ratio;
-config.sampling_rate = 0.1; // 10%
+config.samplingStrategy = .traceIdRatio;
+config.samplingRate = 0.1; // 10%
 
 // Follow parent decision (distributed systems)
-config.sampling_strategy = .parent_based;
+config.samplingStrategy = .parentBased;
 ```
 
 ## High-Throughput Configuration
 
 ```zig
 var config = logly.TelemetryConfig.highThroughput();
-config.service_name = "high-volume-service";
+config.serviceName = "high-volume-service";
 // Pre-configured with:
 // - batch_size = 1024
 // - batch_timeout_ms = 2000

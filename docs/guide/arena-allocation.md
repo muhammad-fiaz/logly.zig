@@ -57,9 +57,9 @@ When using the Thread Pool, each worker thread receives the allocator you pass t
 
 ```zig
 var config = logly.Config.default();
-config.thread_pool = .{
+config.threadPool = .{
     .enabled = true,
-    .thread_count = 4,
+    .threadCount = 4,
 };
 
 const logger = try logly.Logger.initWithConfig(allocator, config);

@@ -51,8 +51,7 @@ pub fn main() !void {
 
     // Enable MessagePack formatting globally
     var config = logly.Config.default();
-    config.msgpack = true; // [!code hl] // Force binary MessagePack output
-    config.json = false;
+    config.format = .msgpack; // [!code hl] // Force binary MessagePack output
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();

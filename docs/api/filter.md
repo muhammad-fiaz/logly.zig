@@ -51,10 +51,10 @@ pub const Filter = struct {
     enabled: bool = true,
     
     // Callbacks
-    on_record_allowed: ?*const fn (*const Record, u32) void,
-    on_record_denied: ?*const fn (*const Record, u32) void,
-    on_filter_created: ?*const fn (*const FilterStats) void,
-    on_rule_added: ?*const fn (u32, u32) void,
+    onRecordAllowed: ?*const fn (*const Record, u32) void,
+    onRecordDenied: ?*const fn (*const Record, u32) void,
+    onFilterCreated: ?*const fn (*const FilterStats) void,
+    onRuleAdded: ?*const fn (u32, u32) void,
 };
 ```
 
@@ -67,7 +67,7 @@ Logical mode for combining multiple filter rules.
 | `all` | All rules must pass (AND) |
 | `any` | At least one rule must pass (OR) |
 | `none` | Record allowed only if NO rules match (NOR) |
-| `not_all` | Invert result of `all` (NAND) |
+| `notAll` | Invert result of `all` (NAND) |
 ```
 
 ### FilterStats
@@ -76,11 +76,11 @@ Statistics tracking for filter operations with cross-platform atomic counters.
 
 ```zig
 pub const FilterStats = struct {
-    total_records_evaluated: std.atomic.Value(Constants.AtomicUnsigned),
-    records_allowed: std.atomic.Value(Constants.AtomicUnsigned),
-    records_denied: std.atomic.Value(Constants.AtomicUnsigned),
-    rules_added: std.atomic.Value(Constants.AtomicUnsigned),
-    evaluation_errors: std.atomic.Value(Constants.AtomicUnsigned),
+    totalRecordsEvaluated: std.atomic.Value(Constants.AtomicUnsigned),
+    recordsAllowed: std.atomic.Value(Constants.AtomicUnsigned),
+    recordsDenied: std.atomic.Value(Constants.AtomicUnsigned),
+    rulesAdded: std.atomic.Value(Constants.AtomicUnsigned),
+    evaluationErrors: std.atomic.Value(Constants.AtomicUnsigned),
 
     /// Calculate allow rate (0.0 - 1.0)
     pub fn allowRate(self: *const FilterStats) f64;
@@ -110,7 +110,7 @@ pub const FilterStats = struct {
     pub fn getRulesAdded(self: *const FilterStats) u64;
 
     /// Calculate throughput records per second.
-    pub fn throughput(self: *const FilterStats, elapsed_ms: i64) f64;
+    pub fn throughput(self: *const FilterStats, elapsedMs: i64) f64;
 
     /// Reset all statistics to zero.
     pub fn reset(self: *FilterStats) void;
@@ -123,33 +123,33 @@ A single rule definition.
 
 ```zig
 pub const FilterRule = struct {
-    rule_type: RuleType,
+    ruleType: RuleType,
     pattern: ?[]const u8 = null,
     level: ?Level = null,
     action: Action = .allow,
-    context_key: ?[]const u8 = null,
+    contextKey: ?[]const u8 = null,
     predicate: ?*const fn (*const Record) bool = null,
 
     pub const RuleType = enum {
-        level_min,
-        level_max,
-        level_exact,
-        module_match,
-        module_prefix,
-        module_regex,
-        message_contains,
-        message_regex,
-        source_file_match,
-        source_file_regex,
-        function_match,
-        function_regex,
-        trace_id_match,
-        span_id_match,
-        context_has_key,
-        context_value_match,
-        context_path_match,
-        thread_id_match,
-        has_error,
+        levelMin,
+        levelMax,
+        levelExact,
+        moduleMatch,
+        modulePrefix,
+        moduleRegex,
+        messageContains,
+        messageRegex,
+        sourceFileMatch,
+        sourceFileRegex,
+        functionMatch,
+        functionRegex,
+        traceIdMatch,
+        spanIdMatch,
+        contextHasKey,
+        contextValueMatch,
+        contextPathMatch,
+        threadIdMatch,
+        hasError,
         custom,
     };
 
@@ -180,7 +180,7 @@ Adds a new rule to the filter chain.
 
 ```zig
 try filter.addRule(.{
-    .rule_type = .module_match,
+    .ruleType = .moduleMatch,
     .pattern = "network",
     .action = .deny,
 });
@@ -210,11 +210,11 @@ Adds a message content filter rule.
 
 **Alias**: `messageFilter`
 
-#### `addMinPriority(min_priority: u8) !void`
+#### `addMinPriority(minPriority: u8) !void`
 
 Adds a custom level priority filter (for custom levels).
 
-#### `addPriorityRange(min_priority: u8, max_priority: u8) !void`
+#### `addPriorityRange(minPriority: u8, maxPriority: u8) !void`
 
 Adds a priority range filter for custom levels.
 
@@ -242,7 +242,7 @@ Filter based on context values matching a pattern.
 
 Filters log records using structured nested context keys (e.g. `user.id` or `network.ip`) using dot-notation syntax. Recursively traverses nested JSON maps to match the targeted property.
 
-#### `addTimeWindowRule(start_hour: u8, end_hour: u8, timezone_offset_hours: i8) !void`
+#### `addTimeWindowRule(startHour: u8, endHour: u8, timezone_offset_hours: i8) !void`
 
 Adds a time window rule that denies records outside the configured hour range. Useful for implementing "quiet hours".
 
@@ -417,8 +417,8 @@ const stats = filter.getStats();
 std.debug.print("Allow rate: {d:.2}%\n", .{stats.allowRate() * 100});
 
 // Use presets
-var prod_filter = try FilterPresets.production(allocator);
-defer prod_filter.deinit();
+var prodFilter = try FilterPresets.production(allocator);
+defer prodFilter.deinit();
 ```
 
 ## Performance

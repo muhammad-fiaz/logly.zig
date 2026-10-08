@@ -20,13 +20,13 @@ This example demonstrates how to configure asynchronous logging for high-perform
 const logly = @import("logly");
 
 var config = logly.Config.default();
-config.async_config = logly.AsyncConfig{
-    .buffer_size = 8192,           // Ring buffer size
-    .flush_interval_ms = 100,      // Auto-flush interval
-    .min_flush_interval_ms = 10,   // Min interval
-    .max_latency_ms = 5000,        // Max latency
-    .overflow_policy = .drop_oldest,
-    .batch_size = 64,
+config.asyncConfig = logly.AsyncConfig{
+    .bufferSize = 8192,           // Ring buffer size
+    .flushIntervalMs = 100,      // Auto-flush interval
+    .minFlushIntervalMs = 10,   // Min interval
+    .maxLatencyMs = 5000,        // Max latency
+    .overflowPolicy = .dropOldest,
+    .batchSize = 64,
 };
 
 // Or use helper method
@@ -45,30 +45,30 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     // Configure logger with async settings
     var config = logly.Config.default();
-    config.auto_sink = false;
-    config.async_config = logly.AsyncConfig{
-        .buffer_size = 8192,
-        .flush_interval_ms = 100,
+    config.autoSink = false;
+    config.asyncConfig = logly.AsyncConfig{
+        .bufferSize = 8192,
+        .flushIntervalMs = 100,
     };
     logger.configure(config);
 
     // Add a file sink with async writing enabled (default)
     // Using add() alias (same as addSink())
-    _ = try logger.add(.{
+     _ = try logger.add(.{
         .path = "logs/async.log",
-        .async_write = true,
-        .buffer_size = 4096, // 4KB buffer
+        .asyncWrite = true,
+        .bufferSize = 4096, // 4KB buffer
     });
 
     // Add a console sink
-    _ = try logger.add(.{});
+     _ = try logger.add(.{});
 
     try logger.info("Starting async logging test...", @src());
 

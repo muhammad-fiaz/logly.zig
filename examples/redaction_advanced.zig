@@ -6,7 +6,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Advanced Sensitive Data Redaction & Compliance Audit Example ===\n\n", .{});
+    std.debug.print("Advanced Sensitive Data Redaction & Compliance Audit Example\n\n", .{});
 
     // 1. Initialize an advanced redactor
     var redactor = logly.Redactor.init(allocator);
@@ -30,7 +30,7 @@ pub fn main() !void {
     defer logger.deinit();
     logger.setRedactor(&redactor);
 
-    std.debug.print("--- Testing Redaction on Various Data Formats ---\n\n", .{});
+    std.debug.print("Testing Redaction on Various Data Formats\n\n", .{});
 
     // Email test
     std.debug.print("[Test 1] Email Pattern:\n", .{});
@@ -64,25 +64,25 @@ pub fn main() !void {
     std.debug.print("  Original: {s}\n", .{msg4});
     std.debug.print("  Redacted: {s}\n\n", .{red4});
 
-    std.debug.print("--- Using Redaction Presets ---\n\n", .{});
+    std.debug.print("Using Redaction Presets\n\n", .{});
 
-    var gdpr_redactor = try logly.RedactionPresets.gdprEmail(allocator);
-    defer gdpr_redactor.deinit();
-    const preset_msg = "GDPR sensitive data: admin@domain.org was processed.";
-    const preset_red = try gdpr_redactor.redact(preset_msg);
-    defer allocator.free(preset_red);
+    var gdprRedactor = try logly.RedactionPresets.gdprEmail(allocator);
+    defer gdprRedactor.deinit();
+    const presetMsg = "GDPR sensitive data: admin@domain.org was processed.";
+    const presetRed = try gdprRedactor.redact(presetMsg);
+    defer allocator.free(presetRed);
     std.debug.print("GDPR Preset:\n", .{});
-    std.debug.print("  Original: {s}\n", .{preset_msg});
-    std.debug.print("  Redacted: {s}\n\n", .{preset_red});
+    std.debug.print("  Original: {s}\n", .{presetMsg});
+    std.debug.print("  Redacted: {s}\n\n", .{presetRed});
 
-    std.debug.print("--- Compliance Audit Log Output ---\n\n", .{});
+    std.debug.print("Compliance Audit Log Output\n\n", .{});
 
     // Print compliance audit logs to standard debug print by buffering
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
-    var writer_adapter = logly.Utils.ArrayListWriter.init(&buf, allocator);
-    try redactor.auditLog(&writer_adapter.writer);
+    var writerAdapter = logly.Utils.ArrayListWriter.init(&buf, allocator);
+    try redactor.auditLog(&writerAdapter.writer);
     std.debug.print("{s}", .{buf.items});
 
-    std.debug.print("\n=== Advanced Redaction Example Complete ===\n", .{});
+    std.debug.print("\nAdvanced Redaction Example Complete\n", .{});
 }

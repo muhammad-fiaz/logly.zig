@@ -27,22 +27,22 @@ pub fn main() !void {
     std.debug.print("=== Logly v0.2.0 Memory-Mapped Sink Example ===\n\n", .{});
 
     // Configure a sink with mmap enabled for high-performance writes
-    const log_path = "mmap_example.log";
+    const logPath = "mmap_example.log";
     const io = logly.Utils.io();
 
-    var sink_config = logly.SinkConfig.file(log_path);
-    sink_config.name = "mmap_sink";
-    sink_config.mmap = true; // Enable memory-mapped I/O for high-performance writes
+    var sinkConfig = logly.SinkConfig.file(logPath);
+    sinkConfig.name = "mmap_sink";
+    sinkConfig.mmap = true; // Enable memory-mapped I/O for high-performance writes
 
     // Use log-only mode (no console output — we write to our mmap file sink)
     var config = logly.Config.logOnly();
-    config.auto_sink = false; // Disable auto console sink so our mmap sink is the only one
+    config.autoSink = false; // Disable auto console sink so our mmap sink is the only one
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
     // Add the mmap sink
-    _ = try logger.addSink(sink_config);
+     _ = try logger.addSink(sinkConfig);
 
     std.debug.print("[mmap] Writing 100 log records via memory-mapped sink...\n", .{});
 
@@ -56,22 +56,22 @@ pub fn main() !void {
     // Flush all sinks to ensure data is persisted
     try logger.flush();
 
-    std.debug.print("[mmap] Completed. Log written to: {s}\n", .{log_path});
+    std.debug.print("[mmap] Completed. Log written to: {s}\n", .{logPath});
 
     // Read back and show first bytes using Zig 0.16 IO API
-    const f = std.Io.Dir.cwd().openFile(io, log_path, .{}) catch |err| {
+    const f = std.Io.Dir.cwd().openFile(io, logPath, .{}) catch |err| {
         std.debug.print("[mmap] Could not open output file: {any}\n", .{err});
         return;
     };
     defer f.close(io);
-    defer std.Io.Dir.cwd().deleteFile(io, log_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(io, logPath) catch {};
 
-    var preview_buf: [256]u8 = undefined;
-    var file_buf: [512]u8 = undefined;
-    var reader = f.reader(io, &file_buf);
-    const n = reader.interface.readSliceShort(&preview_buf) catch 0;
+    var previewBuf: [256]u8 = undefined;
+    var fileBuf: [512]u8 = undefined;
+    var reader = f.reader(io, &fileBuf);
+    const n = reader.interface.readSliceShort(&previewBuf) catch 0;
     if (n > 0) {
-        std.debug.print("[mmap] First {d} bytes of log file:\n{s}\n", .{ n, preview_buf[0..n] });
+        std.debug.print("[mmap] First {d} bytes of log file:\n{s}\n", .{ n, previewBuf[0..n] });
     }
 
     std.debug.print("\n=== mmap Sink Example Complete ===\n", .{});

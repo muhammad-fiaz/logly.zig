@@ -74,15 +74,15 @@ try redactor.addPattern("ssn_format", .regex, "\\d\\d\\d-\\d\\d-\\d\\d\\d\\d", "
 // Add fields for redaction with different types
 try redactor.addField("password", .full);         // -> "[REDACTED]"
 try redactor.addField("secret", .full);           // -> "[REDACTED]"
-try redactor.addField("api_key", .partial_end);   // -> "api_********"
-try redactor.addField("token", .partial_end);     // -> "tok_********"
-try redactor.addField("credit_card", .mask_middle); // -> "411*****1234"
-try redactor.addField("ssn", .mask_middle);       // -> "123***6789"
-try redactor.addField("email", .partial_start);   // -> "******@example.com"
+try redactor.addField("api_key", .partialEnd);   // -> "api_********"
+try redactor.addField("token", .partialEnd);     // -> "tok_********"
+try redactor.addField("credit_card", .maskMiddle); // -> "411*****1234"
+try redactor.addField("ssn", .maskMiddle);       // -> "123***6789"
+try redactor.addField("email", .partialStart);   // -> "******@example.com"
 
 // Check if a field should be redacted
-if (redactor.getFieldRedaction("password")) |redaction_type| {
-    const redacted_value = try redaction_type.apply(allocator, "mysecretpassword");
+if (redactor.getFieldRedaction("password")) |redactionType| {
+    const redacted_value = try redactionType.apply(allocator, "mysecretpassword");
     defer allocator.free(redacted_value);
     // redacted_value is "[REDACTED]"
 }
@@ -98,11 +98,11 @@ const full = try RedactionType.full.apply(allocator, "secret");
 // Result: "[REDACTED]"
 
 // Partial start - masks all but last 4 characters
-const partial_start = try RedactionType.partial_start.apply(allocator, "1234567890");
+const partialStart = try RedactionType.partialStart.apply(allocator, "1234567890");
 // Result: "******7890"
 
 // Partial end - shows only first 4 characters
-const partial_end = try RedactionType.partial_end.apply(allocator, "1234567890");
+const partialEnd = try RedactionType.partialEnd.apply(allocator, "1234567890");
 // Result: "1234******"
 
 // Hash - replaces with SHA256 hash prefix
@@ -110,7 +110,7 @@ const hashed = try RedactionType.hash.apply(allocator, "sensitive");
 // Result: "[HASH:a1b2c3d4...]"
 
 // Mask middle - shows first 3 and last 3 characters
-const masked = try RedactionType.mask_middle.apply(allocator, "1234567890");
+const masked = try RedactionType.maskMiddle.apply(allocator, "1234567890");
 // Result: "123****890"
 ```
 
@@ -120,9 +120,9 @@ const masked = try RedactionType.mask_middle.apply(allocator, "1234567890");
 var redactor = Redactor.init(allocator);
 defer redactor.deinit();
 
-redactor.config.truncate_length = 8;
-redactor.config.truncate_suffix = "...";
-redactor.config.hash_algorithm = .sha512;
+redactor.config.truncateLength = 8;
+redactor.config.truncateSuffix = "...";
+redactor.config.hashAlgorithm = .sha512;
 
 try redactor.addField("token", .truncate);
 try redactor.addField("user_id", .hash);
@@ -138,8 +138,8 @@ defer allocator.free(truncated);
 const RedactionPresets = logly.RedactionPresets;
 
 // Common sensitive data preset: password, secret, api_key, token, credit_card, ssn, email
-var common_redactor = try RedactionPresets.common(allocator);
-defer common_redactor.deinit();
+var commonRedactor = try RedactionPresets.common(allocator);
+defer commonRedactor.deinit();
 
 // PCI-DSS compliance preset: pan, cvv, pin, card_number, expiry
 var pci_redactor = try RedactionPresets.pciDss(allocator);
@@ -194,8 +194,8 @@ defer allocator.free(message);
 const RedactionPresets = logly.RedactionPresets;
 
 // GDPR compliance preset
-var gdpr_redactor = try RedactionPresets.gdpr(allocator);
-defer gdpr_redactor.deinit();
+var gdprRedactor = try RedactionPresets.gdpr(allocator);
+defer gdprRedactor.deinit();
 
 // API secrets preset (API keys, tokens, secrets)
 var api_redactor = try RedactionPresets.apiSecrets(allocator);

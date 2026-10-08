@@ -39,7 +39,7 @@ To enable distributed features, configure `DistributedConfig` in your global con
 var config = logly.Config.production();
 config.distributed = .{
     .enabled = true,
-    .service_name = "payment-service",
+    .serviceName = "payment-service",
     .region = "us-east-1",
     .environment = "production",
 };
@@ -52,14 +52,14 @@ In concurrent applications (like web servers), use `withTrace()` to create a lig
 
 ```zig
 // In your request handler
-const trace_id = request.headers.get("X-Trace-ID") orelse "generated-id";
-const span_id = request.headers.get("X-Span-ID");
+const traceId = request.headers.get("X-Trace-ID") orelse "generated-id";
+const spanId = request.headers.get("X-Span-ID");
 
 // Create a scoped logger
-const req_logger = logger.withTrace(trace_id, span_id);
+const reqLogger = logger.withTrace(traceId, spanId);
 
 // Logs will include trace_id, span_id, and service context
-try req_logger.info("Processing payment"); 
+try reqLogger.info("Processing payment"); 
 ```
 
 ## Legacy Usage (Global State)
@@ -98,10 +98,10 @@ pub fn main() !void {
 // In HTTP handler
 fn handleRequest(req: *Request, logger: *logly.Logger) !void {
     // Extract trace context from headers
-    const trace_id = req.getHeader("X-Trace-ID") orelse generateTraceId();
-    const span_id = req.getHeader("X-Span-ID");
+    const traceId = req.getHeader("X-Trace-ID") orelse generateTraceId();
+    const spanId = req.getHeader("X-Span-ID");
 
-    try logger.setTraceContext(trace_id, span_id);
+    try logger.setTraceContext(traceId, spanId);
     defer logger.clearTraceContext();
 
     try logger.info("Handling request");
@@ -162,12 +162,12 @@ Enable trace IDs in JSON output:
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 logger.configure(config);
 
-_ = try logger.addSink(.{
-    .json = true,
-    .include_trace_id = true,
+ _ = try logger.addSink(.{
+    .format = .json,
+    .includeTraceId = true,
 });
 
 try logger.setTraceContext("trace-123", "span-456");
@@ -191,9 +191,9 @@ const logly = @import("logly");
 
 // Simulated HTTP request context
 const RequestContext = struct {
-    trace_id: []const u8,
-    span_id: ?[]const u8,
-    correlation_id: ?[]const u8,
+    traceId: []const u8,
+    spanId: ?[]const u8,
+    correlationId: ?[]const u8,
 };
 
 pub fn handleHttpRequest(
@@ -201,8 +201,8 @@ pub fn handleHttpRequest(
     ctx: RequestContext,
 ) !void {
     // Set trace context from request
-    try logger.setTraceContext(ctx.trace_id, ctx.span_id);
-    if (ctx.correlation_id) |corr_id| {
+    try logger.setTraceContext(ctx.traceId, ctx.spanId);
+    if (ctx.correlationId) |corr_id| {
         try logger.setCorrelationId(corr_id);
     }
     defer logger.clearTraceContext();
@@ -234,16 +234,16 @@ pub fn main() !void {
     defer logger.deinit();
 
     // JSON sink with trace IDs
-    _ = try logger.addSink(.{
-        .json = true,
-        .include_trace_id = true,
+     _ = try logger.addSink(.{
+        .format = .json,
+        .includeTraceId = true,
     });
 
     // Simulate incoming request
     const ctx = RequestContext{
-        .trace_id = "trace-abc-123-def-456",
-        .span_id = "span-parent-789",
-        .correlation_id = "user-request-001",
+        .traceId = "trace-abc-123-def-456",
+        .spanId = "span-parent-789",
+        .correlationId = "user-request-001",
     };
 
     try handleHttpRequest(logger, ctx);
@@ -257,8 +257,8 @@ The `SpanContext` returned by `startSpan` contains:
 ```zig
 pub const SpanContext = struct {
     logger: *Logger,
-    parent_span_id: ?[]const u8,  // Previous span to restore on end
-    start_time: i128,
+    parentSpanId: ?[]const u8,  // Previous span to restore on end
+    startTime: i128,
 
     /// End the span and log duration with optional message
     pub fn end(self: *SpanContext, message: ?[]const u8) !void {
@@ -315,12 +315,12 @@ Export trace IDs to integrate with APM tools:
 
 ```zig
 // Include trace ID in error reports
-if (logger.trace_id) |trace_id| {
-    error_reporter.setContext("trace_id", trace_id);
+if (logger.traceId) |traceId| {
+    error_reporter.setContext("trace_id", traceId);
 }
 
 // Include in API responses for debugging
-response.setHeader("X-Trace-ID", logger.trace_id orelse "none");
+response.setHeader("X-Trace-ID", logger.traceId orelse "none");
 ```
 
 ## See Also

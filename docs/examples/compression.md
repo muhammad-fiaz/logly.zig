@@ -39,17 +39,17 @@ pub fn main() !void {
     var comp = logly.Compression.init(allocator);
     defer comp.deinit();
 
-    const test_data = "This is test log data that will be compressed. " ** 10;
-    std.debug.print("   Original data size: {d} bytes\n", .{test_data.len});
+    const testData = "This is test log data that will be compressed. " ** 10;
+    std.debug.print("   Original data size: {d} bytes\n", .{testData.len});
 
-    const compressed = try comp.compress(test_data);
+    const compressed = try comp.compress(testData);
     defer allocator.free(compressed);
     std.debug.print("   Compressed size: {d} bytes\n", .{compressed.len});
 
     const decompressed = try comp.decompress(compressed);
     defer allocator.free(decompressed);
     std.debug.print("   Decompressed size: {d} bytes\n", .{decompressed.len});
-    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, test_data, decompressed)) "âœ“ Verified" else "âœ— Failed"});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, testData, decompressed)) "âœ“ Verified" else "âœ— Failed"});
 
     // Example 2: Compression presets
     std.debug.print("2. Compression Presets\n", .{});
@@ -59,57 +59,57 @@ pub fn main() !void {
     std.debug.print("6. GZIP Algorithm\n", .{});
     std.debug.print("   ------------------------\n", .{});
 
-    var gzip_comp = logly.Compression.initWithConfig(allocator, .{
+    var gzipComp = logly.Compression.initWithConfig(allocator, .{
         .algorithm = .gzip,
         .level = .default,
     });
-    defer gzip_comp.deinit();
+    defer gzipComp.deinit();
 
-    const gzip_data = "Data compressed with GZIP algorithm";
-    const gzip_compressed = try gzip_comp.compress(gzip_data);
-    defer allocator.free(gzip_compressed);
+    const gzipData = "Data compressed with GZIP algorithm";
+    const gzipCompressed = try gzipComp.compress(gzipData);
+    defer allocator.free(gzipCompressed);
 
-    std.debug.print("   GZIP compressed size: {d} bytes\n\n", .{gzip_compressed.len});
+    std.debug.print("   GZIP compressed size: {d} bytes\n\n", .{gzipCompressed.len});
 
     // Example 7: Zstd Compression (v0.1.8+)
     std.debug.print("7. Zstd Compression (v0.1.8+)\n", .{});
     std.debug.print("   ---------------------------\n", .{});
 
-    var zstd_comp = logly.Compression.zstdCompression(allocator);
-    defer zstd_comp.deinit();
+    var zstdComp = logly.Compression.zstdCompression(allocator);
+    defer zstdComp.deinit();
 
-    const zstd_data = "Data compressed with Zstandard algorithm - very fast decompression! " ** 5;
-    const zstd_compressed = try zstd_comp.compress(zstd_data);
-    defer allocator.free(zstd_compressed);
+    const zstdData = "Data compressed with Zstandard algorithm - very fast decompression! " ** 5;
+    const zstdCompressed = try zstdComp.compress(zstdData);
+    defer allocator.free(zstdCompressed);
 
-    std.debug.print("   Original size: {d} bytes\n", .{zstd_data.len});
-    std.debug.print("   Zstd compressed size: {d} bytes\n", .{zstd_compressed.len});
+    std.debug.print("   Original size: {d} bytes\n", .{zstdData.len});
+    std.debug.print("   Zstd compressed size: {d} bytes\n", .{zstdCompressed.len});
 
-    const zstd_decompressed = try zstd_comp.decompress(zstd_compressed);
-    defer allocator.free(zstd_decompressed);
-    std.debug.print("   Zstd decompressed: {d} bytes\n", .{zstd_decompressed.len});
-    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, zstd_data, zstd_decompressed)) "âœ“ Verified" else "âœ— Failed"});
+    const zstdDecompressed = try zstdComp.decompress(zstdCompressed);
+    defer allocator.free(zstdDecompressed);
+    std.debug.print("   Zstd decompressed: {d} bytes\n", .{zstdDecompressed.len});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, zstdData, zstdDecompressed)) "âœ“ Verified" else "âœ— Failed"});
 
     // Example 8: Streaming Compression
     std.debug.print("8. Streaming Compression\n", .{});
     std.debug.print("   ---------------------\n", .{});
 
-    var stream_comp = logly.Compression.init(allocator);
-    defer stream_comp.deinit();
+    var streamComp = logly.Compression.init(allocator);
+    defer streamComp.deinit();
 
-    const stream_data = "Data to be compressed via stream" ** 5;
-    var input_stream = std.Io.Reader.fixed(stream_data);
-    var output_buffer: std.ArrayList(u8) = .empty;
-    defer output_buffer.deinit(allocator);
+    const streamData = "Data to be compressed via stream" ** 5;
+    var input_stream = std.Io.Reader.fixed(streamData);
+    var outputBuffer: std.ArrayList(u8) = .empty;
+    defer outputBuffer.deinit(allocator);
 
-    var output_writer = logly.Utils.ArrayListWriter.init(&output_buffer, allocator);
-    try stream_comp.compressStream(&input_stream, &output_writer.writer);
-    std.debug.print("   Stream compressed size: {d} bytes\n", .{output_buffer.items.len});
+    var outputWriter = logly.Utils.ArrayListWriter.init(&outputBuffer, allocator);
+    try streamComp.compressStream(&input_stream, &outputWriter.writer);
+    std.debug.print("   Stream compressed size: {d} bytes\n", .{outputBuffer.items.len});
 
     // Example 9: Directory Compression
     std.debug.print("9. Directory Compression\n", .{});
-    const files_processed = try stream_comp.compressDirectory("logs_test_batch");
-    std.debug.print("   Batch compressed {d} files\n", .{files_processed});
+    const filesProcessed = try streamComp.compressDirectory("logs_test_batch");
+    std.debug.print("   Batch compressed {d} files\n", .{filesProcessed});
 }
 ```
 
@@ -156,7 +156,7 @@ var config = logly.Config.default();
 config.compression = logly.CompressionConfig{
     .algorithm = .gzip, // Supports .deflate, .gzip, .zlib, .raw_deflate, .zstd, .lzma, .lzma2, .xz, .zip, .tar_gz, .lz4
     .level = .default,
-    .mode = .on_rotation,
+    .mode = .onRotation,
 };
 ```
 
@@ -175,7 +175,7 @@ You can compress all log files in a directory at once:
 
 ```zig
 // Compress all log files in the "logs" folder
-const files_processed = try compression.compressDirectory("logs");
+const filesProcessed = try compression.compressDirectory("logs");
 ```
 });
 ```
@@ -217,18 +217,18 @@ High-ratio compression for archiving:
 
 ```zig
 // LZMA - Maximum compression ratio
-var lzma_comp = logly.Compression.lzmaCompression(allocator);
-defer lzma_comp.deinit();
+var lzmaComp = logly.Compression.lzmaCompression(allocator);
+defer lzmaComp.deinit();
 
-const lzma_compressed = try lzma_comp.compress(log_data);
-defer allocator.free(lzma_compressed);
+const lzmaCompressed = try lzmaComp.compress(log_data);
+defer allocator.free(lzmaCompressed);
 
 // XZ - Standard archive format
-var xz_comp = logly.Compression.xzCompression(allocator);
-defer xz_comp.deinit();
+var xzComp = logly.Compression.xzCompression(allocator);
+defer xzComp.deinit();
 
-const xz_compressed = try xz_comp.compress(log_data);
-defer allocator.free(xz_compressed);
+const xzCompressed = try xzComp.compress(log_data);
+defer allocator.free(xzCompressed);
 ```
 
 ### ZIP Archive
@@ -236,14 +236,14 @@ defer allocator.free(xz_compressed);
 Cross-platform compatible archives:
 
 ```zig
-var zip_comp = logly.Compression.zipCompression(allocator);
-defer zip_comp.deinit();
+var zipComp = logly.Compression.zipCompression(allocator);
+defer zipComp.deinit();
 
-const zipped = try zip_comp.compress(log_data);
+const zipped = try zipComp.compress(log_data);
 defer allocator.free(zipped);
 
 // Decompress
-const unzipped = try zip_comp.decompress(zipped);
+const unzipped = try zipComp.decompress(zipped);
 defer allocator.free(unzipped);
 ```
 
@@ -252,10 +252,10 @@ defer allocator.free(unzipped);
 Unix-style archives:
 
 ```zig
-var targz_comp = logly.Compression.tarGzCompression(allocator);
-defer targz_comp.deinit();
+var targzComp = logly.Compression.tarGzCompression(allocator);
+defer targzComp.deinit();
 
-const archived = try targz_comp.compress(log_content);
+const archived = try targzComp.compress(log_content);
 defer allocator.free(archived);
 ```
 
@@ -264,11 +264,11 @@ defer allocator.free(archived);
 Ultra-fast for real-time logging:
 
 ```zig
-var lz4_comp = logly.Compression.lz4Compression(allocator);
-defer lz4_comp.deinit();
+var lz4Comp = logly.Compression.lz4Compression(allocator);
+defer lz4Comp.deinit();
 
 // LZ4 prioritizes speed over ratio
-const fast_compressed = try lz4_comp.compress(log_data);
+const fast_compressed = try lz4Comp.compress(log_data);
 defer allocator.free(fast_compressed);
 ```
 
@@ -281,7 +281,7 @@ defer allocator.free(fast_compressed);
 | `lzma` | ★★ | ★★★★★ | Long-term storage |
 | `xz` | ★★ | ★★★★★ | Distribution |
 | `zip` | ★★★★ | ★★★ | Cross-platform |
-| `tar_gz` | ★★★ | ★★★★ | Unix archives |
+| `tarGz` | ★★★ | ★★★★ | Unix archives |
 | `lz4` | ★★★★★ | ★★ | Real-time |
 
 ## See Also

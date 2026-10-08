@@ -12,7 +12,7 @@ const Constants = logly.Constants;
 
 pub fn main() void {
     // Check internal buffer limits
-    const max_msg = Constants.BufferSizes.max_message;
+    const max_msg = Constants.BufferSizes.maxMessage;
     std.debug.print("Logly max message size: {d} bytes\n", .{max_msg});
     
     // Check thread pool defaults
@@ -30,8 +30,8 @@ Defines the static buffer sizes used for various operations to avoid dynamic all
 - `message`: Default log message buffer size (Default: 4KB)
 - `format`: Buffer size for formatting operations (Default: 8KB)
 - `sink`: Buffer size for sink operations (Default: 16KB)
-- `async_queue`: Buffer size for async queue (Default: 8KB)
-- `max_message`: Maximum allowed log message size (Default: 1MB)
+- `asyncQueue`: Buffer size for async queue (Default: 8KB)
+- `maxMessage`: Maximum allowed log message size (Default: 1MB)
 
 ### Thread Defaults (`Constants.ThreadDefaults`)
 Helper functions and constants for configuring the thread pool.
@@ -41,13 +41,13 @@ Helper functions and constants for configuring the thread pool.
 
 ### Time Constants (`Constants.TimeConstants`)
 Time conversion factors and default intervals.
-- `default_flush_interval_ms`: Default flush interval (100ms).
-- `rotation_check_interval_ms`: Default file rotation check interval (1 min).
+- `defaultFlushIntervalMs`: Default flush interval (100ms).
+- `rotationCheckIntervalMs`: Default file rotation check interval (1 min).
 
 ### Rotation Constants (`Constants.RotationConstants`)
 Defaults for file rotation policies.
-- `default_max_size`: Default max file size before rotation (10MB).
-- `default_max_files`: Default number of backup files to keep (5).
+- `defaultMaxSize`: Default max file size before rotation (10MB).
+- `defaultMaxFiles`: Default number of backup files to keep (5).
 
 ## Platform-Specific Atomic Types
 

@@ -39,7 +39,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     // Enable invoke in config
     var config = logly.Config{};
@@ -53,7 +53,7 @@ pub fn main() !void {
     invoke.enable();
 
     // 1. Database error trigger
-    const err_msgs = [_]logly.Invoke.Message{
+    const err_msgs = []logly.Invoke.Message{
         ">> [ERROR] Database connection pool exhausted",
         ">> [FIX] Increase max_connections in database.yml",
         ">> [DOC] https://docs.example.com/db-pooling",
@@ -62,13 +62,13 @@ pub fn main() !void {
     try invoke.add(.{
         .id = 1,
         .name = "db_pool_detector",
-        .level_match = .{ .exact = .err },
-        .message_contains = "database",
+        .levelMatch = .{ .exact = .err },
+        .messageContains = "database",
         .messages = &err_msgs,
     });
 
     // 2. Performance warning trigger
-    const perf_msgs = [_]logly.Invoke.Message{
+    const perf_msgs = []logly.Invoke.Message{
         ">> [WARN] Operation exceeded performance threshold",
         ">> [TIP] Consider caching frequently accessed data",
     };
@@ -76,12 +76,12 @@ pub fn main() !void {
     try invoke.add(.{
         .id = 2,
         .name = "perf_hint",
-        .level_match = .{ .exact = .warning },
+        .levelMatch = .{ .exact = .warning },
         .messages = &perf_msgs,
     });
 
     // 3. SQL injection detector (any level)
-    const security_msgs = [_]logly.Invoke.Message{
+    const security_msgs = []logly.Invoke.Message{
         ">> [SECURITY] Possible SQL injection detected",
         ">> [ACTION] Reject request and log attacker IP",
     };
@@ -89,33 +89,33 @@ pub fn main() !void {
     try invoke.add(.{
         .id = 3,
         .name = "sqli_detector",
-        .level_match = .{ .any = {} },
-        .message_contains = "SELECT * FROM",
+        .levelMatch = .{ .any = {} },
+        .messageContains = "SELECT * FROM",
         .messages = &security_msgs,
     });
 
     // 4. Custom level trigger
-    const audit_msgs = [_]logly.Invoke.Message{
+    const audit_msgs = []logly.Invoke.Message{
         ">> [AUDIT] Sensitive data accessed",
     };
 
     try invoke.add(.{
         .id = 4,
         .name = "audit_detector",
-        .level_match = .{ .custom_name = "audit" },
+        .levelMatch = .{ .customName = "audit" },
         .messages = &audit_msgs,
     });
 
     // 5. Slow operation detector (duration-based)
-    const slow_msgs = [_]logly.Invoke.Message{
+    const slow_msgs = []logly.Invoke.Message{
         ">> [SLOW] Operation exceeded 500ms latency budget",
     };
 
     try invoke.add(.{
         .id = 5,
         .name = "slow_op_detector",
-        .level_match = .{ .any = {} },
-        .min_duration_ns = 500_000_000,
+        .levelMatch = .{ .any = {} },
+        .minDurationNs = 500_000_000,
         .messages = &slow_msgs,
     });
 

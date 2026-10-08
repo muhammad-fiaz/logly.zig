@@ -165,7 +165,7 @@ pub fn fromMilliTimestampLocal(timestamp: i64) TimeComponents
 ### localUtcOffsetMinutes
 
 Returns local UTC offset (in minutes) for a millisecond timestamp.
-The result is bounded to `Constants.TimeConstants.min_utc_offset_minutes` through `Constants.TimeConstants.max_utc_offset_minutes`.
+The result is bounded to `Constants.TimeConstants.minUtcOffsetMinutes` through `Constants.TimeConstants.maxUtcOffsetMinutes`.
 
 ```zig
 pub fn localUtcOffsetMinutes(timestamp: i64) i16
@@ -176,7 +176,7 @@ pub fn localUtcOffsetMinutes(timestamp: i64) i16
 Writes a UTC offset in `+HH:MM`/`-HH:MM` form.
 
 ```zig
-pub fn writeUtcOffset(writer: anytype, offset_minutes: i16) !void
+pub fn writeUtcOffset(writer: anytype, offsetMinutes: i16) !void
 ```
 
 ### writeUtcOffsetCompact
@@ -184,7 +184,7 @@ pub fn writeUtcOffset(writer: anytype, offset_minutes: i16) !void
 Writes a compact UTC offset in `+HHMM`/`-HHMM` form.
 
 ```zig
-pub fn writeUtcOffsetCompact(writer: anytype, offset_minutes: i16) !void
+pub fn writeUtcOffsetCompact(writer: anytype, offsetMinutes: i16) !void
 ```
 
 ### nowComponents
@@ -253,18 +253,18 @@ pub fn startOfHour(timestamp: i64) i64
 
 ### elapsedMs
 
-Calculates elapsed time in milliseconds since start_time.
+Calculates elapsed time in milliseconds since startTime.
 
 ```zig
-pub fn elapsedMs(start_time: i64) u64
+pub fn elapsedMs(startTime: i64) u64
 ```
 
 ### elapsedSeconds
 
-Calculates elapsed time in seconds since start_time.
+Calculates elapsed time in seconds since startTime.
 
 ```zig
-pub fn elapsedSeconds(start_time: i64) u64
+pub fn elapsedSeconds(startTime: i64) u64
 ```
 
 ### durationSinceNs
@@ -272,7 +272,7 @@ pub fn elapsedSeconds(start_time: i64) u64
 Calculates duration in nanoseconds since a start time.
 
 ```zig
-pub fn durationSinceNs(start_time: i128) u64
+pub fn durationSinceNs(startTime: i128) u64
 ```
 
 ## Math & Rate Utilities
@@ -306,7 +306,7 @@ pub fn calculateAverage(sum: u64, count: u64) f64
 Calculates throughput (items/sec) given a count and duration in nanoseconds.
 
 ```zig
-pub fn calculateThroughput(count: u64, elapsed_ns: u64) f64
+pub fn calculateThroughput(count: u64, elapsedNs: u64) f64
 ```
 
 ### calculateBytesPerSecond
@@ -314,7 +314,7 @@ pub fn calculateThroughput(count: u64, elapsed_ns: u64) f64
 Calculates bytes per second given bytes and duration in milliseconds.
 
 ```zig
-pub fn calculateBytesPerSecond(bytes: u64, elapsed_ms: i64) f64
+pub fn calculateBytesPerSecond(bytes: u64, elapsedMs: i64) f64
 ```
 
 ### calculateCRC32
@@ -358,8 +358,8 @@ Parsed W3C trace context fields returned by `parseTraceparentHeader`.
 ```zig
 pub const TraceparentContext = struct {
     version: []const u8,
-    trace_id: []const u8,
-    span_id: []const u8,
+    traceId: []const u8,
+    spanId: []const u8,
     flags: []const u8,
     sampled: bool,
 };
@@ -395,16 +395,16 @@ Formats a W3C `traceparent` header string from validated IDs.
 ```zig
 pub fn formatTraceparentHeader(
     allocator: std.mem.Allocator,
-    trace_id: []const u8,
-    span_id: []const u8,
+    traceId: []const u8,
+    spanId: []const u8,
     sampled: bool
 ) ![]u8
 ```
 
 Returns:
 
-- `TraceparentError.InvalidTraceId` when `trace_id` is invalid.
-- `TraceparentError.InvalidSpanId` when `span_id` is invalid.
+- `TraceparentError.InvalidTraceId` when `traceId` is invalid.
+- `TraceparentError.InvalidSpanId` when `spanId` is invalid.
 
 Example:
 
@@ -453,7 +453,7 @@ pub fn formatDatePatternWithOffset(
     minute: u64,
     second: u64,
     millis: u64,
-    timezone_offset_minutes: i16
+    timezoneOffsetMinutes: i16
 ) !void
 ```
 
@@ -487,7 +487,7 @@ pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8
 Formats a date/time pattern to a buffer with timezone token support.
 
 ```zig
-pub fn formatDateToBufWithOffset(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: i16) ![]u8
+pub fn formatDateToBufWithOffset(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezoneOffsetMinutes: i16) ![]u8
 ```
 
 ### formatIsoDate
@@ -539,7 +539,7 @@ pub fn matchRegexPattern(input: []const u8, pattern: []const u8) ?usize
 - `+` - One or more of previous token
 - `?` - Zero or one of previous token
 - `\d`, `\D` - Digit / Non-digit
-- `\w`, `\W` - Alphanumeric + `_` / Non-alphanumeric
+- `\w`, `\W` - Alphanumeric + `` / Non-alphanumeric
 - `\s`, `\S` - Whitespace / Non-whitespace
 
 ### findRegexPattern
@@ -576,19 +576,19 @@ Masks a string for redaction purposes. Supports full masking, partial start/end,
 pub fn maskString(
     allocator: std.mem.Allocator,
     value: []const u8,
-    mask_char: u8,
-    start_reveal: usize,
-    end_reveal: usize,
-    mode: enum { full, partial_start, partial_end, mask_middle }
+    maskChar: u8,
+    startReveal: usize,
+    endReveal: usize,
+    mode: enum { full, partialStart, partialEnd, maskMiddle }
 ) ![]u8
 ```
 
 **Modes:**
 
 - `full`: Masks the entire string (result length = input length).
-- `partial_start`: Shows the beginning of the string, masks the rest.
-- `partial_end`: Shows the end of the string, masks the beginning.
-- `mask_middle`: Shows start and end, masks the middle (e.g., credit cards).
+- `partialStart`: Shows the beginning of the string, masks the rest.
+- `partialEnd`: Shows the end of the string, masks the beginning.
+- `maskMiddle`: Shows start and end, masks the middle (e.g., credit cards).
 
 ### computeRedactionHash
 
@@ -607,7 +607,7 @@ pub fn computeRedactionHash(allocator: std.mem.Allocator, value: []const u8) ![]
 Clamps a value between min and max bounds.
 
 ```zig
-pub fn clamp(comptime T: type, value: T, min_val: T, max_val: T) T
+pub fn clamp(comptime T: type, value: T, minVal: T, max_val: T) T
 ```
 
 ### safeToUnsigned
@@ -635,7 +635,7 @@ const logly = @import("logly");
 
 pub fn main() !void {
     // Parse configuration sizes
-    const max_size = logly.Utils.parseSize("10MB") orelse 10485760;
+    const maxSize = logly.Utils.parseSize("10MB") orelse 10485760;
     const timeout = logly.Utils.parseDuration("30s") orelse 30000;
     
     // Get current time

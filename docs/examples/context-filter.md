@@ -24,14 +24,14 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     std.debug.print("=== Logly v0.2.0 Dot-Notation Context Filtering Example ===\\n\\n", .{});
 
     // Create logger (display-only: no file writes)
     // Disable async writes so messages appear immediately for this demo
     var config = logly.Config.displayOnly();
-    config.auto_flush = true;
+    config.autoFlush = true;
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 

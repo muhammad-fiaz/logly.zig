@@ -85,7 +85,7 @@ Sample a percentage of messages randomly:
 var sampler = Sampler.init(allocator, .{ .probability = 0.25 });
 defer sampler.deinit();
 
-for (0..1000) |_| {
+for (0..1000) || {
     if (sampler.shouldSample()) {
         // Approximately 250 messages will reach here
     }
@@ -98,9 +98,9 @@ Limit to a maximum number of messages per time window:
 
 ```zig
 // Allow 100 messages per 1000ms window
-var sampler = Sampler.init(allocator, .{ .rate_limit = .{
-    .max_records = 100,
-    .window_ms = 1000,
+var sampler = Sampler.init(allocator, .{ .rateLimit = .{
+    .maxRecords = 100,
+    .windowMs = 1000,
 }});
 defer sampler.deinit();
 
@@ -113,7 +113,7 @@ Keep every Nth message:
 
 ```zig
 // Keep every 10th message
-var sampler = Sampler.init(allocator, .{ .every_n = 10 });
+var sampler = Sampler.init(allocator, .{ .everyN = 10 });
 defer sampler.deinit();
 
 // Messages 10, 20, 30, 40, etc. will pass through
@@ -125,10 +125,10 @@ Automatically adjust sampling rate based on throughput:
 
 ```zig
 var sampler = Sampler.init(allocator, .{ .adaptive = .{
-    .target_rate = 1000,          // Target 1000 msgs/sec
-    .min_sample_rate = 0.01,      // Never below 1%
-    .max_sample_rate = 1.0,       // Up to 100%
-    .adjustment_interval_ms = 1000, // Adjust every second
+    .targetRate = 1000,          // Target 1000 msgs/sec
+    .minSampleRate = 0.01,      // Never below 1%
+    .maxSampleRate = 1.0,       // Up to 100%
+    .adjustmentIntervalMs = 1000, // Adjust every second
 }});
 defer sampler.deinit();
 ```
@@ -138,7 +138,7 @@ defer sampler.deinit();
 Allows temporary bursts of logs over the limit, useful for startup sequences or sudden error spikes:
 
 ```zig
-var sampler = Sampler.init(allocator, .{ .token_bucket = .{
+var sampler = Sampler.init(allocator, .{ .tokenBucket = .{
     .capacity = 1000,          // Max burst size
     .refill_rate = 100,        // Tokens per second
     .refill_interval_ms = 100, // Refill every 100ms
@@ -169,8 +169,8 @@ You can configure the Sampler to always allow specific log levels regardless of 
 var config = logly.SamplerConfig{
     .probability = 0.5,
 };
-config.bypass_levels.enable(.err);
-config.bypass_levels.enable(.critical);
+config.bypassLevels.enable(.err);
+config.bypassLevels.enable(.critical);
 
 var sampler = Sampler.init(allocator, config);
 // Errors will skip sampling and return true instantly!
@@ -201,8 +201,8 @@ var sampler = Sampler.init(allocator, .{ .probability = 0.5 });
 defer sampler.deinit();
 
 // Sample some logs
-for (0..100) |_| {
-    _ = sampler.shouldSample();
+for (0..100) || {
+     _ = sampler.shouldSample();
 }
 
 // Get statistics

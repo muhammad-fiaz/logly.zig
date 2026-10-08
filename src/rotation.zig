@@ -1,30 +1,6 @@
-//! Log File Rotation Module
+//! Log file rotation.
 //!
-//! Handles automatic log file rotation with comprehensive features
-//! for enterprise use including time-based, size-based, and hybrid rotation.
-//!
-//! Rotation Triggers:
-//! - Time-based: Minutely, hourly, daily, weekly, monthly, yearly
-//! - Size-based: Rotate when file exceeds specified size
-//! - Hybrid: Combine time and size triggers
-//!
-//! Naming Strategies:
-//! - timestamp: Unix timestamp suffix (app.log.1704067200)
-//! - date: Date suffix (app.log.2024-01-01)
-//! - iso_datetime: ISO 8601 datetime (app.log.2024-01-01T120000)
-//! - index: Numbered suffix with shifting (app.log.1, app.log.2)
-//! - custom: User-defined format string
-//!
-//! Features:
-//! - Automatic compression of rotated files
-//! - Retention policies (max files, max age)
-//! - Archive directory support
-//! - Configurable callbacks for rotation events
-//!
-//! Performance:
-//! - Minimal I/O during rotation checks
-//! - Background compression option
-
+//! Size- and time-based rotation with retention, archival, and compression.
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const SinkConfig = @import("sink.zig").SinkConfig;
@@ -54,12 +30,12 @@ pub const Rotation = struct {
         /// Returns the interval duration in seconds (reuse central TimeConstants).
         pub fn seconds(self: RotationInterval) i64 {
             return switch (self) {
-                .minutely => @as(i64, Constants.TimeConstants.seconds_per_minute),
-                .hourly => @as(i64, Constants.TimeConstants.seconds_per_hour),
-                .daily => @as(i64, Constants.TimeConstants.seconds_per_day),
-                .weekly => @as(i64, Constants.TimeConstants.seconds_per_week),
-                .monthly => @as(i64, Constants.TimeConstants.seconds_per_month),
-                .yearly => @as(i64, Constants.TimeConstants.seconds_per_year),
+                .minutely => @as(i64, Constants.TimeConstants.secondsPerMinute),
+                .hourly => @as(i64, Constants.TimeConstants.secondsPerHour),
+                .daily => @as(i64, Constants.TimeConstants.secondsPerDay),
+                .weekly => @as(i64, Constants.TimeConstants.secondsPerWeek),
+                .monthly => @as(i64, Constants.TimeConstants.secondsPerMonth),
+                .yearly => @as(i64, Constants.TimeConstants.secondsPerYear),
             };
         }
 
@@ -86,18 +62,6 @@ pub const Rotation = struct {
                 .yearly => "Yearly",
             };
         }
-
-        /// Alias for seconds
-        pub const duration = seconds;
-        pub const intervalSeconds = seconds;
-
-        /// Alias for fromString
-        pub const parse = fromString;
-        pub const fromStr = fromString;
-
-        /// Alias for name
-        pub const displayName = name;
-        pub const string = name;
     };
 
     /// Naming strategy for rotated files.
@@ -107,180 +71,143 @@ pub const Rotation = struct {
     pub const RotationReason = enum {
         interval,
         size,
-        interval_and_size,
+        intervalAndSize,
     };
 
     /// Rotation statistics for monitoring.
     pub const RotationStats = struct {
         /// Total number of rotations performed.
-        total_rotations: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        totalRotations: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of files moved to archive.
-        files_archived: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        filesArchived: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of files deleted during cleanup.
-        files_deleted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        filesDeleted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Timestamp of last rotation in milliseconds.
-        last_rotation_time_ms: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        lastRotationTimeMs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of rotation errors.
-        rotation_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        rotationErrors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of compression errors during rotation.
-        compression_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        compressionErrors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Resets all statistics to zero.
         pub fn reset(self: *RotationStats) void {
-            self.total_rotations.store(0, .monotonic);
-            self.files_archived.store(0, .monotonic);
-            self.files_deleted.store(0, .monotonic);
-            self.last_rotation_time_ms.store(0, .monotonic);
-            self.rotation_errors.store(0, .monotonic);
-            self.compression_errors.store(0, .monotonic);
+            self.totalRotations.store(0, .monotonic);
+            self.filesArchived.store(0, .monotonic);
+            self.filesDeleted.store(0, .monotonic);
+            self.lastRotationTimeMs.store(0, .monotonic);
+            self.rotationErrors.store(0, .monotonic);
+            self.compressionErrors.store(0, .monotonic);
         }
 
         /// Returns total rotation count as u64.
         pub fn rotationCount(self: *const RotationStats) u64 {
-            return Utils.atomicLoadU64(&self.total_rotations);
+            return Utils.atomicLoadU64(&self.totalRotations);
         }
 
         /// Returns total error count as u64.
         pub fn errorCount(self: *const RotationStats) u64 {
-            return Utils.atomicLoadU64(&self.rotation_errors);
+            return Utils.atomicLoadU64(&self.rotationErrors);
         }
 
         /// Returns files archived count as u64.
         pub fn getFilesArchived(self: *const RotationStats) u64 {
-            return Utils.atomicLoadU64(&self.files_archived);
+            return Utils.atomicLoadU64(&self.filesArchived);
         }
 
         /// Returns files deleted count as u64.
         pub fn getFilesDeleted(self: *const RotationStats) u64 {
-            return Utils.atomicLoadU64(&self.files_deleted);
+            return Utils.atomicLoadU64(&self.filesDeleted);
         }
 
         /// Returns compression error count as u64.
         pub fn getCompressionErrors(self: *const RotationStats) u64 {
-            return Utils.atomicLoadU64(&self.compression_errors);
+            return Utils.atomicLoadU64(&self.compressionErrors);
         }
 
         /// Returns last rotation timestamp in milliseconds.
         pub fn getLastRotationTimeMs(self: *const RotationStats) u64 {
-            return Utils.atomicLoadU64(&self.last_rotation_time_ms);
+            return Utils.atomicLoadU64(&self.lastRotationTimeMs);
         }
 
         /// Checks if any rotation errors occurred.
         pub fn hasErrors(self: *const RotationStats) bool {
-            return self.rotation_errors.load(.monotonic) > 0;
+            return self.rotationErrors.load(.monotonic) > 0;
         }
 
         /// Checks if any compression errors occurred.
         pub fn hasCompressionErrors(self: *const RotationStats) bool {
-            return self.compression_errors.load(.monotonic) > 0;
+            return self.compressionErrors.load(.monotonic) > 0;
         }
 
         /// Calculate rotation success rate (0.0 - 1.0).
         pub fn successRate(self: *const RotationStats) f64 {
-            const total = Utils.atomicLoadU64(&self.total_rotations);
-            const errors = Utils.atomicLoadU64(&self.rotation_errors);
+            const total = Utils.atomicLoadU64(&self.totalRotations);
+            const errors = Utils.atomicLoadU64(&self.rotationErrors);
             if (total == 0) return 1.0;
             return 1.0 - Utils.calculateErrorRate(errors, total);
         }
 
         /// Calculate total error rate (0.0 - 1.0).
         pub fn totalErrorRate(self: *const RotationStats) f64 {
-            const total = Utils.atomicLoadU64(&self.total_rotations);
-            const rot_errors = Utils.atomicLoadU64(&self.rotation_errors);
-            const comp_errors = Utils.atomicLoadU64(&self.compression_errors);
-            return Utils.calculateErrorRate(rot_errors + comp_errors, total);
+            const total = Utils.atomicLoadU64(&self.totalRotations);
+            const rotErrors = Utils.atomicLoadU64(&self.rotationErrors);
+            const compErrors = Utils.atomicLoadU64(&self.compressionErrors);
+            return Utils.calculateErrorRate(rotErrors + compErrors, total);
         }
-
-        /// Alias for reset
-        pub const clear = reset;
-        pub const zero = reset;
-
-        /// Alias for rotationCount
-        pub const rotations = rotationCount;
-        pub const totalRotations = rotationCount;
-
-        /// Alias for errorCount
-        // pub const errors = errorCount; // shadows local var
-        pub const totalErrors = errorCount;
-
-        /// Alias for getFilesArchived
-        pub const filesArchived = getFilesArchived;
-        pub const archivedCount = getFilesArchived;
-
-        /// Alias for getFilesDeleted
-        pub const filesDeleted = getFilesDeleted;
-        pub const deletedCount = getFilesDeleted;
-
-        /// Alias for getCompressionErrors
-        pub const compressionErrors = getCompressionErrors;
-        pub const compressErrors = getCompressionErrors;
-
-        /// Alias for getLastRotationTimeMs
-        pub const lastRotationTimeMs = getLastRotationTimeMs;
-
-        /// Alias for hasErrors
-        pub const hasRotationErrors = hasErrors;
-
-        /// Alias for successRate
-        pub const successPercentage = successRate;
-
-        /// Alias for totalErrorRate
-        pub const errorPercentage = totalErrorRate;
-        pub const totalErrorPercentage = totalErrorRate;
     };
 
     /// Memory allocator for file operations.
     allocator: std.mem.Allocator,
     /// Base path of the log file to rotate.
-    base_path: []const u8,
+    basePath: []const u8,
     /// Time-based rotation interval (null to disable).
     interval: ?RotationInterval = null,
     /// Size-based rotation limit in bytes (null to disable).
-    size_limit: ?u64 = null,
+    sizeLimit: ?u64 = null,
     /// Maximum number of rotated files to keep.
     retention: ?usize = null,
     /// Maximum age of rotated files in seconds.
-    max_age_seconds: ?i64 = null,
+    maxAgeSeconds: ?i64 = null,
     /// Maximum total size of all rotated files in bytes.
-    max_total_size: ?u64 = null,
+    maxTotalSize: ?u64 = null,
     /// Custom rotation callback.
-    on_rotate: ?*const fn (old_path: []const u8, new_path: []const u8) void = null,
+    onRotate: ?*const fn (oldPath: []const u8, newPath: []const u8) void = null,
     /// Timestamp of last rotation.
-    last_rotation: i64,
+    lastRotation: i64,
     /// Naming strategy for rotated files.
     naming: NamingStrategy = .timestamp,
     /// Custom naming format string.
-    naming_format: ?[]const u8 = null,
+    namingFormat: ?[]const u8 = null,
     /// Compression configuration for rotated files.
     compression: ?CompressionConfig = null,
     /// Compression engine instance.
     compressor: ?Compression = null,
     /// Directory for archived/compressed files.
-    archive_dir: ?[]const u8 = null,
+    archiveDir: ?[]const u8 = null,
     /// Clean empty directories after rotation.
-    clean_empty_dirs: bool = false,
+    cleanEmptyDirs: bool = false,
 
     /// Keep original file after compression (default: false - delete original).
-    keep_original: bool = false,
+    keepOriginal: bool = false,
 
     /// Compress files during retention cleanup instead of deleting them.
     /// When true, old files exceeding retention limits are compressed rather than deleted.
-    compress_on_retention: bool = false,
+    compressOnRetention: bool = false,
 
     /// Delete files after compression during retention (only applies when compress_on_retention is true).
     /// When false, compressed files are kept; when true, originals are deleted after compression.
-    delete_after_retention_compress: bool = true,
+    deleteAfterRetentionCompress: bool = true,
 
     /// Callback invoked when rotation starts.
-    on_rotation_start: ?*const fn (old_path: []const u8, new_path: []const u8) void = null,
+    onRotationStart: ?*const fn (oldPath: []const u8, newPath: []const u8) void = null,
     /// Callback invoked when rotation completes successfully.
-    on_rotation_complete: ?*const fn (old_path: []const u8, new_path: []const u8, elapsed_ms: u64) void = null,
+    onRotationComplete: ?*const fn (oldPath: []const u8, newPath: []const u8, elapsedMs: u64) void = null,
     /// Callback invoked when rotation encounters an error.
-    on_rotation_error: ?*const fn (path: []const u8, err: anyerror) void = null,
+    onRotationError: ?*const fn (path: []const u8, err: anyerror) void = null,
     /// Callback invoked when a file is archived.
-    on_file_archived: ?*const fn (original_path: []const u8, archive_path: []const u8) void = null,
+    onFileArchived: ?*const fn (originalPath: []const u8, archivePath: []const u8) void = null,
     /// Callback invoked during retention cleanup.
-    on_retention_cleanup: ?*const fn (path: []const u8) void = null,
+    onRetentionCleanup: ?*const fn (path: []const u8) void = null,
 
     /// Rotation statistics.
     stats: RotationStats = .{},
@@ -291,20 +218,20 @@ pub const Rotation = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         path: []const u8,
-        interval_str: ?[]const u8,
-        size_limit: ?u64,
+        intervalStr: ?[]const u8,
+        sizeLimit: ?u64,
         retention: ?usize,
     ) !Rotation {
-        const interval = if (interval_str) |s| RotationInterval.fromString(s) else null;
+        const interval = if (intervalStr) |s| RotationInterval.fromString(s) else null;
         var r = Rotation{
             .allocator = allocator,
-            .base_path = try allocator.dupe(u8, path),
+            .basePath = try allocator.dupe(u8, path),
             .interval = interval,
-            .size_limit = size_limit,
+            .sizeLimit = sizeLimit,
             .retention = retention,
-            .max_total_size = null,
-            .on_rotate = null,
-            .last_rotation = Utils.currentSeconds(),
+            .maxTotalSize = null,
+            .onRotate = null,
+            .lastRotation = Utils.currentSeconds(),
         };
 
         // Smart default naming based on interval
@@ -320,9 +247,6 @@ pub const Rotation = struct {
         return r;
     }
 
-    /// Alias for init().
-    pub const create = init;
-
     /// Enables compression for rotated files.
     pub fn withCompression(self: *Rotation, config: CompressionConfig) !void {
         self.compression = config;
@@ -337,14 +261,14 @@ pub const Rotation = struct {
 
     /// Sets a custom naming format and switches to custom naming strategy.
     pub fn withNamingFormat(self: *Rotation, format: []const u8) !void {
-        if (self.naming_format) |f| self.allocator.free(f);
-        self.naming_format = try self.allocator.dupe(u8, format);
+        if (self.namingFormat) |f| self.allocator.free(f);
+        self.namingFormat = try self.allocator.dupe(u8, format);
         self.naming = .custom;
     }
 
     /// Sets max retention age in seconds.
     pub fn withMaxAge(self: *Rotation, seconds: i64) void {
-        self.max_age_seconds = seconds;
+        self.maxAgeSeconds = seconds;
     }
 
     /// Sets the time-based interval directly.
@@ -355,8 +279,8 @@ pub const Rotation = struct {
     /// Sets the interval from a string value.
     ///
     /// Returns true when parsing succeeds. Passing null disables interval rotation.
-    pub fn setIntervalFromString(self: *Rotation, interval_str: ?[]const u8) bool {
-        if (interval_str) |value| {
+    pub fn setIntervalFromString(self: *Rotation, intervalStr: ?[]const u8) bool {
+        if (intervalStr) |value| {
             const parsed = RotationInterval.fromString(value) orelse return false;
             self.interval = parsed;
             return true;
@@ -367,62 +291,62 @@ pub const Rotation = struct {
     }
 
     /// Sets size-based rotation threshold in bytes.
-    pub fn setSizeLimit(self: *Rotation, size_limit: ?u64) void {
-        self.size_limit = size_limit;
+    pub fn setSizeLimit(self: *Rotation, sizeLimit: ?u64) void {
+        self.sizeLimit = sizeLimit;
     }
 
     /// Sets max number of retained rotated files.
-    pub fn setRetentionCount(self: *Rotation, retention_count: ?usize) void {
-        self.retention = retention_count;
+    pub fn setRetentionCount(self: *Rotation, retentionCount: ?usize) void {
+        self.retention = retentionCount;
     }
 
     /// Sets retention count and max age in a single call.
-    pub fn setRetentionPolicy(self: *Rotation, retention_count: ?usize, max_age_seconds: ?i64) void {
-        self.retention = retention_count;
-        self.max_age_seconds = max_age_seconds;
+    pub fn setRetentionPolicy(self: *Rotation, retentionCount: ?usize, maxAgeSeconds: ?i64) void {
+        self.retention = retentionCount;
+        self.maxAgeSeconds = maxAgeSeconds;
     }
 
     /// Sets max total size in bytes for all rotated files combined.
     pub fn setMaxTotalSize(self: *Rotation, limit: ?u64) void {
-        self.max_total_size = limit;
+        self.maxTotalSize = limit;
     }
 
     /// Builder for setting max total size.
     pub fn withMaxTotalSize(self: *Rotation, limit: u64) void {
-        self.max_total_size = limit;
+        self.maxTotalSize = limit;
     }
 
     /// Sets custom rotation callback.
-    pub fn withOnRotate(self: *Rotation, callback: ?*const fn (old_path: []const u8, new_path: []const u8) void) void {
-        self.on_rotate = callback;
+    pub fn withOnRotate(self: *Rotation, callback: ?*const fn (oldPath: []const u8, newPath: []const u8) void) void {
+        self.onRotate = callback;
     }
 
     /// Sets archive directory for rotated files.
     pub fn withArchiveDir(self: *Rotation, dir: []const u8) !void {
-        if (self.archive_dir) |d| self.allocator.free(d);
-        self.archive_dir = try self.allocator.dupe(u8, dir);
+        if (self.archiveDir) |d| self.allocator.free(d);
+        self.archiveDir = try self.allocator.dupe(u8, dir);
     }
 
     /// Enables or disables cleanup of empty directories during retention cleanup.
     pub fn setCleanEmptyDirs(self: *Rotation, clean: bool) void {
-        self.clean_empty_dirs = clean;
+        self.cleanEmptyDirs = clean;
     }
 
     /// Set whether to keep original files after compression.
     pub fn withKeepOriginal(self: *Rotation, keep: bool) void {
-        self.keep_original = keep;
+        self.keepOriginal = keep;
     }
 
     /// Enable compression during retention cleanup instead of deletion.
     /// Old files will be compressed rather than deleted when they exceed retention limits.
     pub fn withCompressOnRetention(self: *Rotation, enable: bool) void {
-        self.compress_on_retention = enable;
+        self.compressOnRetention = enable;
     }
 
     /// Set whether to delete original files after retention compression.
     /// Only applies when compress_on_retention is true.
     pub fn withDeleteAfterRetentionCompress(self: *Rotation, delete: bool) void {
-        self.delete_after_retention_compress = delete;
+        self.deleteAfterRetentionCompress = delete;
     }
 
     /// Applies global rotation configuration where local settings are missing.
@@ -431,45 +355,43 @@ pub const Rotation = struct {
             const s = config.interval.?;
             if (RotationInterval.fromString(s)) |inv| {
                 self.interval = inv;
-            } else if (Utils.parseDuration(s)) |dur_ms| {
-                self.max_age_seconds = @divTrunc(dur_ms, Constants.TimeConstants.ms_per_second);
+            } else if (Utils.parseDuration(s)) |durMs| {
+                self.maxAgeSeconds = @divTrunc(durMs, Constants.TimeConstants.msPerSecond);
             }
         }
-        if (self.size_limit == null) {
-            if (config.size_limit) |l| self.size_limit = l else if (config.size_limit_str) |s| {
-                self.size_limit = Utils.parseSize(s);
+        if (self.sizeLimit == null) {
+            if (config.sizeLimit) |l| self.sizeLimit = l else if (config.sizeLimitStr) |s| {
+                self.sizeLimit = Utils.parseSize(s);
             }
         }
-        if (self.max_total_size == null) {
-            if (config.max_total_size) |l| {
-                self.max_total_size = l;
-            } else if (config.max_total_size_str) |s| {
-                self.max_total_size = Utils.parseSize(s);
+        if (self.maxTotalSize == null) {
+            if (config.maxTotalSize) |l| {
+                self.maxTotalSize = l;
+            } else if (config.maxTotalSizeStr) |s| {
+                self.maxTotalSize = Utils.parseSize(s);
             }
         }
-        if (self.on_rotate == null) {
-            self.on_rotate = config.on_rotate;
+        if (self.onRotate == null) {
+            self.onRotate = config.onRotate;
         }
-        if (self.retention == null) self.retention = config.retention_count;
-        if (self.max_age_seconds == null) self.max_age_seconds = config.max_age_seconds;
-        self.naming = config.naming_strategy;
-        if (config.naming_format) |f| try self.withNamingFormat(f);
-        if (config.archive_dir) |d| try self.withArchiveDir(d);
-        self.clean_empty_dirs = config.clean_empty_dirs;
-        self.keep_original = config.keep_original;
-        self.compress_on_retention = config.compress_on_retention;
-        self.delete_after_retention_compress = config.delete_after_retention_compress;
+        if (self.retention == null) self.retention = config.retentionCount;
+        if (self.maxAgeSeconds == null) self.maxAgeSeconds = config.maxAgeSeconds;
+        self.naming = config.namingStrategy;
+        if (config.namingFormat) |f| try self.withNamingFormat(f);
+        if (config.archiveDir) |d| try self.withArchiveDir(d);
+        self.cleanEmptyDirs = config.cleanEmptyDirs;
+        self.keepOriginal = config.keepOriginal;
+        self.compressOnRetention = config.compressOnRetention;
+        self.deleteAfterRetentionCompress = config.deleteAfterRetentionCompress;
     }
 
     /// Releases rotation-owned allocations.
     pub fn deinit(self: *Rotation) void {
-        self.allocator.free(self.base_path);
-        if (self.archive_dir) |d| self.allocator.free(d);
-        // Compressor doesn't strictly need deinit if it holds no state
+        self.allocator.free(self.basePath);
+        if (self.archiveDir) |d| self.allocator.free(d);
+        if (self.namingFormat) |f| self.allocator.free(f);
+        if (self.compressor) |*comp| comp.deinit();
     }
-
-    /// Alias for deinit().
-    pub const destroy = deinit;
 
     /// Returns current rotation statistics.
     pub fn getStats(self: *const Rotation) RotationStats {
@@ -478,7 +400,7 @@ pub const Rotation = struct {
 
     /// Returns whether any rotation trigger is currently enabled.
     pub fn isEnabled(self: *const Rotation) bool {
-        return self.interval != null or self.size_limit != null;
+        return self.interval != null or self.sizeLimit != null;
     }
 
     /// Returns current interval name, or `"none"` when disabled.
@@ -488,39 +410,41 @@ pub const Rotation = struct {
     }
 
     /// Computes rotation reason without taking locks.
-    fn computeRotationReason(self: *Rotation, file_ptr: *std.Io.File, now: i64) ?RotationReason {
-        var by_interval = false;
-        var by_size = false;
+    /// Both triggers are always evaluated so hybrid setups report the
+    /// exact reason via getRotationReason().
+    fn computeRotationReason(self: *Rotation, filePtr: *std.Io.File, now: i64) ?RotationReason {
+        var byInterval = false;
+        var bySize = false;
 
         if (self.interval) |interval| {
-            by_interval = now - self.last_rotation >= interval.seconds();
+            byInterval = now - self.lastRotation >= interval.seconds();
         }
 
-        if (self.size_limit) |limit| {
-            if (file_ptr.stat(Utils.io())) |stat| {
-                by_size = stat.size >= limit;
+        if (self.sizeLimit) |limit| {
+            if (filePtr.stat(Utils.io())) |stat| {
+                bySize = stat.size >= limit;
             } else |_| {
                 // Ignore stat errors and retry on next check.
             }
         }
 
-        if (by_interval and by_size) return .interval_and_size;
-        if (by_interval) return .interval;
-        if (by_size) return .size;
+        if (byInterval and bySize) return .intervalAndSize;
+        if (byInterval) return .interval;
+        if (bySize) return .size;
         return null;
     }
 
     /// Returns why rotation would occur for the current file state.
-    pub fn getRotationReason(self: *Rotation, file_ptr: *std.Io.File) ?RotationReason {
+    pub fn getRotationReason(self: *Rotation, filePtr: *std.Io.File) ?RotationReason {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        return self.computeRotationReason(file_ptr, Utils.currentSeconds());
+        return self.computeRotationReason(filePtr, Utils.currentSeconds());
     }
 
     /// Returns true when rotation conditions are currently met.
-    pub fn shouldRotate(self: *Rotation, file_ptr: *std.Io.File) bool {
-        return self.getRotationReason(file_ptr) != null;
+    pub fn shouldRotate(self: *Rotation, filePtr: *std.Io.File) bool {
+        return self.getRotationReason(filePtr) != null;
     }
 
     /// Returns remaining seconds until next time-based rotation.
@@ -528,7 +452,7 @@ pub const Rotation = struct {
     /// Returns null when interval rotation is disabled.
     pub fn nextRotationInSeconds(self: *const Rotation) ?i64 {
         const interval = self.interval orelse return null;
-        const elapsed = Utils.currentSeconds() - self.last_rotation;
+        const elapsed = Utils.currentSeconds() - self.lastRotation;
         const remaining = interval.seconds() - elapsed;
         return if (remaining > 0) remaining else 0;
     }
@@ -543,15 +467,15 @@ pub const Rotation = struct {
 
     /// Returns how many seconds have elapsed since the last rotation.
     pub fn rotationAgeSeconds(self: *const Rotation) i64 {
-        return Utils.currentSeconds() - self.last_rotation;
+        return Utils.currentSeconds() - self.lastRotation;
     }
 
     /// Forces immediate rotation regardless of current interval/size checks.
-    pub fn forceRotate(self: *Rotation, file_ptr: *std.Io.File) !void {
+    pub fn forceRotate(self: *Rotation, filePtr: *std.Io.File) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        try self.performRotation(file_ptr);
+        try self.performRotation(filePtr);
     }
 
     /// Returns the next rotated path without mutating state.
@@ -561,18 +485,43 @@ pub const Rotation = struct {
         return self.generateRotatedPath();
     }
 
+    /// Whether rotation is due right now.
+    ///
+    /// Single source of truth for the trigger decision shared by
+    /// checkAndRotate and external callers. When contentSize is provided it
+    /// replaces the file stat for the size check (mmap files: stat sees
+    /// preallocation, not content); otherwise the file is statted.
+    /// Pure predicate: no locks, no mutation.
+    pub fn rotationDue(self: *Rotation, filePtr: *std.Io.File, now: i64, contentSize: ?u64) bool {
+        if (self.interval) |interval| {
+            if (now - self.lastRotation >= interval.seconds()) return true;
+        }
+        if (self.sizeLimit) |limit| {
+            if (contentSize) |size| {
+                if (size >= limit) return true;
+            } else {
+                if (filePtr.stat(Utils.io())) |stat| {
+                    if (stat.size >= limit) return true;
+                } else |_| {}
+            }
+        }
+        return false;
+    }
+
     /// Performs rotation when interval and/or size triggers are met.
-    pub fn checkAndRotate(self: *Rotation, file_ptr: *std.Io.File) !void {
+    ///
+    /// Hot-path fast path: the interval check is pure integer arithmetic,
+    /// so when it fires the size stat syscall is skipped. Exact reason
+    /// reporting stays in getRotationReason().
+    pub fn checkAndRotate(self: *Rotation, filePtr: *std.Io.File) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        const now = Utils.currentSeconds();
-
-        if (self.computeRotationReason(file_ptr, now) != null) {
+        if (self.rotationDue(filePtr, Utils.currentSeconds(), null)) {
             // Perform rotation
-            self.performRotation(file_ptr) catch |err| {
-                _ = self.stats.rotation_errors.fetchAdd(1, .monotonic);
-                if (self.on_rotation_error) |cb| cb(self.base_path, err);
+            self.performRotation(filePtr) catch |err| {
+                _ = self.stats.rotationErrors.fetchAdd(1, .monotonic);
+                if (self.onRotationError) |cb| cb(self.basePath, err);
                 // Don't propagate error to avoid crashing application logging, just log error
             };
         }
@@ -580,57 +529,9 @@ pub const Rotation = struct {
 
     /// Alias for withCompression
     // pub const compression = withCompression; // conflicts with field
-    pub const setCompression = withCompression;
 
     /// Alias for withNaming
     // pub const naming = withNaming; // conflicts with field
-    pub const setNaming = withNaming;
-
-    /// Alias for withNamingFormat
-    pub const namingFormat = withNamingFormat;
-    pub const setNamingFormat = withNamingFormat;
-
-    /// Alias for withMaxAge
-    pub const maxAge = withMaxAge;
-    pub const setMaxAge = withMaxAge;
-
-    /// Alias for setInterval
-    pub const updateInterval = setInterval;
-
-    /// Alias for setIntervalFromString
-    pub const configureInterval = setIntervalFromString;
-
-    /// Alias for setSizeLimit
-    pub const updateSizeLimit = setSizeLimit;
-
-    /// Alias for setRetentionCount
-    pub const updateRetentionCount = setRetentionCount;
-
-    /// Alias for setRetentionPolicy
-    pub const configureRetention = setRetentionPolicy;
-
-    /// Alias for withArchiveDir
-    pub const archiveDir = withArchiveDir;
-    pub const setArchiveDir = withArchiveDir;
-
-    /// Alias for setCleanEmptyDirs
-    pub const cleanEmptyDirs = setCleanEmptyDirs;
-
-    /// Alias for withKeepOriginal
-    pub const keepOriginal = withKeepOriginal;
-    pub const setKeepOriginal = withKeepOriginal;
-
-    /// Alias for withCompressOnRetention
-    pub const compressOnRetention = withCompressOnRetention;
-    pub const setCompressOnRetention = withCompressOnRetention;
-
-    /// Alias for withDeleteAfterRetentionCompress
-    pub const deleteAfterRetentionCompress = withDeleteAfterRetentionCompress;
-    pub const setDeleteAfterRetentionCompress = withDeleteAfterRetentionCompress;
-
-    /// Alias for applyConfig
-    pub const configure = applyConfig;
-    pub const applyConfiguration = applyConfig;
 
     /// Alias for deinit
     // pub const destroy = deinit; // already exists
@@ -639,59 +540,25 @@ pub const Rotation = struct {
     // pub const statistics = getStats; // already exists
     // pub const stats = getStats; // conflicts with field
 
-    /// Alias for isEnabled
-    pub const enabled = isEnabled;
-
-    /// Alias for intervalName
-    pub const getIntervalName = intervalName;
-
-    /// Alias for getRotationReason
-    pub const rotationReason = getRotationReason;
-    pub const getReason = getRotationReason;
-
-    /// Alias for shouldRotate
-    pub const shouldRotateNow = shouldRotate;
-
-    /// Alias for nextRotationInSeconds
-    pub const secondsUntilNextRotation = nextRotationInSeconds;
-
-    /// Alias for nextRotationAt
-    pub const nextRotationAtSeconds = nextRotationAt;
-
-    /// Alias for rotationAgeSeconds
-    pub const lastRotationAgeSeconds = rotationAgeSeconds;
-
-    /// Alias for forceRotate
-    pub const rotateNow = forceRotate;
-    pub const force = forceRotate;
-
-    /// Alias for previewNextPath
-    pub const previewPath = previewNextPath;
-    pub const nextPath = previewNextPath;
-
-    /// Alias for checkAndRotate
-    pub const rotateIfNeeded = checkAndRotate;
-    pub const maybeRotate = checkAndRotate;
-
-    fn performRotation(self: *Rotation, file_ptr: *std.Io.File) !void {
-        const start_time = Utils.currentMillis();
+    fn performRotation(self: *Rotation, filePtr: *std.Io.File) !void {
+        const startTime = Utils.currentMillis();
 
         // 1. Generate new filename
-        const rotated_path = try self.generateRotatedPath();
-        defer self.allocator.free(rotated_path);
+        const rotatedPath = try self.generateRotatedPath();
+        defer self.allocator.free(rotatedPath);
 
         // Ensure archive dir exists if used
-        if (self.archive_dir) |_| {
-            const dir = std.fs.path.dirname(rotated_path);
+        if (self.archiveDir) |_| {
+            const dir = std.fs.path.dirname(rotatedPath);
             if (dir) |d| {
                 std.Io.Dir.cwd().createDirPath(Utils.io(), d) catch {};
             }
         }
 
-        if (self.on_rotation_start) |cb| cb(self.base_path, rotated_path);
+        if (self.onRotationStart) |cb| cb(self.basePath, rotatedPath);
 
         // 2. Close current file
-        file_ptr.close(Utils.io());
+        filePtr.close(Utils.io());
 
         // 3. Rename current file to rotated path
         // For index strategy, we might need to shift existing files first
@@ -699,98 +566,101 @@ pub const Rotation = struct {
             try self.shiftIndexFiles();
         }
 
-        std.Io.Dir.cwd().rename(self.base_path, std.Io.Dir.cwd(), rotated_path, Utils.io()) catch |err| {
+        std.Io.Dir.cwd().rename(self.basePath, std.Io.Dir.cwd(), rotatedPath, Utils.io()) catch |err| {
             // Try to reopen functionality if rename fails
-            file_ptr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.base_path, .{ .read = true, .truncate = false }); // Append mode effectively
+            filePtr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.basePath, .{ .read = true, .truncate = false }); // Append mode effectively
             return err;
         };
 
         // 4. Re-open log file (fresh)
-        file_ptr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.base_path, .{
+        filePtr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.basePath, .{
             .read = true,
             .truncate = true,
         });
 
-        self.last_rotation = Utils.currentSeconds();
-        _ = self.stats.total_rotations.fetchAdd(1, .monotonic);
+        self.lastRotation = Utils.currentSeconds();
+        _ = self.stats.totalRotations.fetchAdd(1, .monotonic);
 
-        const elapsed = @as(Constants.AtomicUnsigned, @intCast(Utils.currentMillis() - start_time));
-        self.stats.last_rotation_time_ms.store(elapsed, .monotonic);
-        if (self.on_rotation_complete) |cb| cb(self.base_path, rotated_path, @as(u64, @intCast(elapsed)));
-        if (self.on_rotate) |cb| cb(self.base_path, rotated_path);
+        const elapsed = @as(Constants.AtomicUnsigned, @intCast(Utils.currentMillis() - startTime));
+        self.stats.lastRotationTimeMs.store(elapsed, .monotonic);
+        if (self.onRotationComplete) |cb| cb(self.basePath, rotatedPath, @as(u64, @intCast(elapsed)));
+        if (self.onRotate) |cb| cb(self.basePath, rotatedPath);
 
         // 5. Compress if enabled
-        var final_path = try self.allocator.dupe(u8, rotated_path);
-        errdefer self.allocator.free(final_path);
+        var finalPath = try self.allocator.dupe(u8, rotatedPath);
+        errdefer self.allocator.free(finalPath);
 
-        if (self.compression) |comp_config| {
+        if (self.compression) |compConfig| {
             if (self.compressor) |*comp| {
-                // This is blocking operation in current thread (usually sink internal thread or main thread)
-                // For production systems with large logs, this should ideally be offloaded.
-                // However, for consistency we'll do it here or let specific scheduler handle it.
-                // Since we are in Rotation module, we do it here.
-                const compressed_path = try uniqueCompressedPath(self.allocator, rotated_path, comp_config.algorithm);
-                errdefer self.allocator.free(compressed_path);
+                const compressedPath = try uniqueCompressedPath(self.allocator, rotatedPath, compConfig.algorithm);
+                errdefer self.allocator.free(compressedPath);
 
-                // Compress
-                _ = comp.compressFile(rotated_path, compressed_path) catch {
-                    _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
+                // Compress; archive accounting happens only on success so a
+                // failed compression never masquerades as an archived file.
+                _ = comp.compressFile(rotatedPath, compressedPath) catch {
+                    _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
                     // On failure, we keep the uncompressed file
+                    self.allocator.free(compressedPath);
+                    self.allocator.free(finalPath);
+                    if (self.retention != null or self.maxAgeSeconds != null) {
+                        self.cleanupOldFiles() catch {};
+                    }
+                    return;
                 };
 
                 // If successful and keep_original is false, remove uncompressed rotated file
-                if (!self.keep_original) {
-                    std.Io.Dir.cwd().deleteFile(Utils.io(), rotated_path) catch {};
+                if (!self.keepOriginal) {
+                    std.Io.Dir.cwd().deleteFile(Utils.io(), rotatedPath) catch {};
                 }
 
-                self.allocator.free(final_path);
-                final_path = try self.allocator.dupe(u8, compressed_path);
+                self.allocator.free(finalPath);
+                finalPath = try self.allocator.dupe(u8, compressedPath);
 
-                _ = self.stats.files_archived.fetchAdd(1, .monotonic);
-                if (self.on_file_archived) |cb| cb(rotated_path, final_path);
+                _ = self.stats.filesArchived.fetchAdd(1, .monotonic);
+                if (self.onFileArchived) |cb| cb(rotatedPath, finalPath);
             }
         }
 
-        self.allocator.free(final_path);
+        self.allocator.free(finalPath);
 
         // 6. Cleanup old files
-        if (self.retention != null or self.max_age_seconds != null) {
+        if (self.retention != null or self.maxAgeSeconds != null) {
             self.cleanupOldFiles() catch {};
         }
     }
 
     fn generateRotatedPath(self: *Rotation) ![]u8 {
-        const now_ms = Utils.currentMillis();
-        const now = @divFloor(now_ms, Constants.TimeConstants.ms_per_second);
-        const millis = @as(u64, @intCast(@mod(now_ms, Constants.TimeConstants.ms_per_second)));
-        var name_buf: []u8 = undefined;
+        const nowMs = Utils.currentMillis();
+        const now = @divFloor(nowMs, Constants.TimeConstants.msPerSecond);
+        const millis = @as(u64, @intCast(@mod(nowMs, Constants.TimeConstants.msPerSecond)));
+        var nameBuf: []u8 = undefined;
 
-        const base_name = std.fs.path.basename(self.base_path);
+        const baseName = std.fs.path.basename(self.basePath);
 
         switch (self.naming) {
             .timestamp => {
-                name_buf = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ base_name, now });
+                nameBuf = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ baseName, now });
             },
             .date => {
                 // Format YYYY-MM-DD
                 const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(now) };
                 const yd = epoch.getEpochDay().calculateYearDay();
                 const md = yd.calculateMonthDay();
-                name_buf = try std.fmt.allocPrint(self.allocator, "{s}.{d:0>4}-{d:0>2}-{d:0>2}", .{ base_name, yd.year, md.month.numeric(), md.day_index + 1 });
+                nameBuf = try std.fmt.allocPrint(self.allocator, "{s}.{d:0>4}-{d:0>2}-{d:0>2}", .{ baseName, yd.year, md.month.numeric(), md.day_index + 1 });
             },
-            .iso_datetime => {
+            .isoDatetime => {
                 const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(now) };
                 const yd = epoch.getEpochDay().calculateYearDay();
                 const md = yd.calculateMonthDay();
                 const ds = epoch.getDaySeconds();
-                const h = ds.secs / @as(u64, Constants.TimeConstants.seconds_per_hour);
-                const m = (ds.secs % @as(u64, Constants.TimeConstants.seconds_per_hour)) / @as(u64, Constants.TimeConstants.seconds_per_minute);
-                const s = ds.secs % @as(u64, Constants.TimeConstants.seconds_per_minute);
+                const h = ds.secs / @as(u64, Constants.TimeConstants.secondsPerHour);
+                const m = (ds.secs % @as(u64, Constants.TimeConstants.secondsPerHour)) / @as(u64, Constants.TimeConstants.secondsPerMinute);
+                const s = ds.secs % @as(u64, Constants.TimeConstants.secondsPerMinute);
 
                 var res = std.Io.Writer.Allocating.init(self.allocator);
                 errdefer res.deinit();
                 const w = &res.writer;
-                try w.writeAll(base_name);
+                try w.writeAll(baseName);
                 try w.writeByte('.');
                 try Utils.writeFilenameSafe(w, Utils.TimeComponents{
                     .year = yd.year,
@@ -800,26 +670,26 @@ pub const Rotation = struct {
                     .minute = m,
                     .second = s,
                 });
-                name_buf = try res.toOwnedSlice();
+                nameBuf = try res.toOwnedSlice();
             },
             .index => {
                 // For index strategy, the immediate rotated file is always .1
-                name_buf = try std.fmt.allocPrint(self.allocator, "{s}.1", .{base_name});
+                nameBuf = try std.fmt.allocPrint(self.allocator, "{s}.1", .{baseName});
             },
             .custom => {
-                if (self.naming_format) |fmt| {
+                if (self.namingFormat) |fmt| {
                     // Parse format: {base}, {ext}, {timestamp}, {date}, {time}, {iso}
-                    const ext = std.fs.path.extension(base_name);
-                    const stem = if (ext.len > 0) base_name[0..(base_name.len - ext.len)] else base_name;
+                    const ext = std.fs.path.extension(baseName);
+                    const stem = if (ext.len > 0) baseName[0..(baseName.len - ext.len)] else baseName;
 
                     // Helper formatting
                     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(now) };
                     const yd = epoch.getEpochDay().calculateYearDay();
                     const md = yd.calculateMonthDay();
                     const ds = epoch.getDaySeconds();
-                    const h = ds.secs / @as(u64, Constants.TimeConstants.seconds_per_hour);
-                    const m = (ds.secs % @as(u64, Constants.TimeConstants.seconds_per_hour)) / @as(u64, Constants.TimeConstants.seconds_per_minute);
-                    const s = ds.secs % @as(u64, Constants.TimeConstants.seconds_per_minute);
+                    const h = ds.secs / @as(u64, Constants.TimeConstants.secondsPerHour);
+                    const m = (ds.secs % @as(u64, Constants.TimeConstants.secondsPerHour)) / @as(u64, Constants.TimeConstants.secondsPerMinute);
+                    const s = ds.secs % @as(u64, Constants.TimeConstants.secondsPerMinute);
 
                     // Optimization: Pre-allocate buffer to minimize reallocations
                     // Estimate size: format length + extra space for replacements (timestamp, etc.)
@@ -879,20 +749,20 @@ pub const Rotation = struct {
                             i += 1;
                         }
                     }
-                    name_buf = try res.toOwnedSlice();
+                    nameBuf = try res.toOwnedSlice();
                 } else {
                     // Fallback if custom selected but no format
-                    name_buf = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ base_name, now });
+                    nameBuf = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ baseName, now });
                 }
             },
         }
-        defer self.allocator.free(name_buf);
+        defer self.allocator.free(nameBuf);
 
-        if (self.archive_dir) |dir| {
-            return std.fs.path.join(self.allocator, &.{ dir, name_buf });
+        if (self.archiveDir) |dir| {
+            return std.fs.path.join(self.allocator, &.{ dir, nameBuf });
         } else {
-            const dir = std.fs.path.dirname(self.base_path) orelse ".";
-            return std.fs.path.join(self.allocator, &.{ dir, name_buf });
+            const dir = std.fs.path.dirname(self.basePath) orelse ".";
+            return std.fs.path.join(self.allocator, &.{ dir, nameBuf });
         }
     }
 
@@ -904,44 +774,44 @@ pub const Rotation = struct {
     fn shiftIndexFiles(self: *Rotation) !void {
         // This assumes we have a reasonable max retention to avoid infinite loop
         // We shift .N -> .N+1
-        const max = self.retention orelse Constants.RotationDefaults.retention_count; // Default limit for shifting
-        const target_dir = self.archive_dir orelse (std.fs.path.dirname(self.base_path) orelse ".");
-        const base_name = std.fs.path.basename(self.base_path);
+        const max = self.retention orelse Constants.RotationDefaults.retentionCount; // Default limit for shifting
+        const targetDir = self.archiveDir orelse (std.fs.path.dirname(self.basePath) orelse ".");
+        const baseName = std.fs.path.basename(self.basePath);
 
         // Work backwards
         var i: usize = max;
         while (i >= 1) : (i -= 1) {
-            const current_name = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ base_name, i });
-            defer self.allocator.free(current_name);
-            const current_path = try std.fs.path.join(self.allocator, &.{ target_dir, current_name });
-            defer self.allocator.free(current_path);
+            const currentName = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ baseName, i });
+            defer self.allocator.free(currentName);
+            const currentPath = try std.fs.path.join(self.allocator, &.{ targetDir, currentName });
+            defer self.allocator.free(currentPath);
 
             // If file exists
-            if (std.Io.Dir.cwd().access(Utils.io(), current_path, .{})) |_| {
+            if (std.Io.Dir.cwd().access(Utils.io(), currentPath, .{})) |_| {
                 if (i == max) {
                     // Delete overflow
-                    std.Io.Dir.cwd().deleteFile(Utils.io(), current_path) catch {};
+                    std.Io.Dir.cwd().deleteFile(Utils.io(), currentPath) catch {};
                 } else {
                     // Rename to next
-                    const next_name = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ base_name, i + 1 });
-                    defer self.allocator.free(next_name);
-                    const next_path = try std.fs.path.join(self.allocator, &.{ target_dir, next_name });
-                    defer self.allocator.free(next_path);
+                    const nextName = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ baseName, i + 1 });
+                    defer self.allocator.free(nextName);
+                    const nextPath = try std.fs.path.join(self.allocator, &.{ targetDir, nextName });
+                    defer self.allocator.free(nextPath);
 
-                    std.Io.Dir.cwd().rename(current_path, std.Io.Dir.cwd(), next_path, Utils.io()) catch {};
+                    std.Io.Dir.cwd().rename(currentPath, std.Io.Dir.cwd(), nextPath, Utils.io()) catch {};
                 }
             } else |_| {}
         }
     }
 
     fn cleanupOldFiles(self: *Rotation) !void {
-        const dir_path = self.archive_dir orelse (std.fs.path.dirname(self.base_path) orelse ".");
-        const base_name = std.fs.path.basename(self.base_path);
+        const dirPath = self.archiveDir orelse (std.fs.path.dirname(self.basePath) orelse ".");
+        const baseName = std.fs.path.basename(self.basePath);
 
-        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dir_path, .{ .iterate = true }) catch return;
+        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dirPath, .{ .iterate = true }) catch return;
         defer dir.close(Utils.io());
 
-        const FileInfo = struct { name: []u8, mtime: i128, is_compressed: bool, size: u64 };
+        const FileInfo = struct { name: []u8, mtime: i128, isCompressed: bool, size: u64 };
         var files: std.ArrayList(FileInfo) = .empty;
         defer {
             for (files.items) |f| self.allocator.free(f.name);
@@ -952,20 +822,22 @@ pub const Rotation = struct {
         while (try iter.next(Utils.io())) |entry| {
             if (entry.kind != .file) continue;
             // Matches base_name and starts with it
-            if (std.mem.startsWith(u8, entry.name, base_name) and !std.mem.eql(u8, entry.name, base_name)) {
-                const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, entry.name });
-                defer self.allocator.free(full_path);
+            if (std.mem.startsWith(u8, entry.name, baseName) and !std.mem.eql(u8, entry.name, baseName)) {
+                const fullPath = try std.fs.path.join(self.allocator, &.{ dirPath, entry.name });
+                defer self.allocator.free(fullPath);
 
-                const stat = std.Io.Dir.cwd().statFile(Utils.io(), full_path, .{}) catch continue;
+                const stat = std.Io.Dir.cwd().statFile(Utils.io(), fullPath, .{}) catch continue;
 
                 // Check if already compressed
-                const is_compressed = Constants.CompressionExtensions.isCompressed(entry.name);
+                const isCompressed = Constants.CompressionExtensions.isCompressed(entry.name);
 
-                // Age check
-                if (self.max_age_seconds) |max_age| {
-                    const age = Utils.currentNanos() - stat.mtime.toNanoseconds();
-                    if (age > max_age * Constants.TimeConstants.ns_per_second) {
-                        try self.handleRetentionFile(full_path, is_compressed);
+                // Age check (both sides wall-clock: file mtime is wall time,
+                // so compare against wall now, never the monotonic clock).
+                if (self.maxAgeSeconds) |maxAge| {
+                    const nowWallNs: i128 = @as(i128, Utils.currentMillis()) * Constants.TimeConstants.nsPerMs;
+                    const age = nowWallNs - stat.mtime.toNanoseconds();
+                    if (age > @as(i128, maxAge) * Constants.TimeConstants.nsPerSecond) {
+                        self.handleRetentionFile(fullPath, isCompressed) catch {};
                         continue; // handled, don't add to list
                     }
                 }
@@ -973,7 +845,7 @@ pub const Rotation = struct {
                 try files.append(self.allocator, .{
                     .name = try self.allocator.dupe(u8, entry.name),
                     .mtime = stat.mtime.toNanoseconds(),
-                    .is_compressed = is_compressed,
+                    .isCompressed = isCompressed,
                     .size = stat.size,
                 });
             }
@@ -986,73 +858,74 @@ pub const Rotation = struct {
             }
         }.lessThan);
 
-        var remaining_start: usize = 0;
+        var remainingStart: usize = 0;
 
-        // Retention check with count sorted by mtime
-        if (self.retention) |max_files| {
-            if (files.items.len > max_files) {
-                const to_delete = files.items.len - max_files;
-                for (files.items[0..to_delete]) |item| {
-                    const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, item.name });
-                    defer self.allocator.free(full_path);
-                    try self.handleRetentionFile(full_path, item.is_compressed);
+        // Retention check with count sorted by mtime. One bad file must not
+        // abort the remaining retention pass.
+        if (self.retention) |maxFiles| {
+            if (files.items.len > maxFiles) {
+                const toDelete = files.items.len - maxFiles;
+                for (files.items[0..toDelete]) |item| {
+                    const fullPath = try std.fs.path.join(self.allocator, &.{ dirPath, item.name });
+                    defer self.allocator.free(fullPath);
+                    self.handleRetentionFile(fullPath, item.isCompressed) catch {};
                 }
-                remaining_start = to_delete;
+                remainingStart = toDelete;
             }
         }
 
         // Max total size check
-        if (self.max_total_size) |max_bytes| {
-            const remaining_files = files.items[remaining_start..];
-            var total_size: u64 = 0;
-            for (remaining_files) |item| {
-                total_size += item.size;
+        if (self.maxTotalSize) |maxBytes| {
+            const remainingFiles = files.items[remainingStart..];
+            var totalSize: u64 = 0;
+            for (remainingFiles) |item| {
+                totalSize += item.size;
             }
 
             var idx: usize = 0;
-            while (idx < remaining_files.len and total_size > max_bytes) {
-                const item = remaining_files[idx];
-                const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, item.name });
-                defer self.allocator.free(full_path);
-                try self.handleRetentionFile(full_path, item.is_compressed);
-                total_size -= item.size;
+            while (idx < remainingFiles.len and totalSize > maxBytes) {
+                const item = remainingFiles[idx];
+                const fullPath = try std.fs.path.join(self.allocator, &.{ dirPath, item.name });
+                defer self.allocator.free(fullPath);
+                self.handleRetentionFile(fullPath, item.isCompressed) catch {};
+                totalSize -= item.size;
                 idx += 1;
             }
         }
 
-        if (self.clean_empty_dirs) {
+        if (self.cleanEmptyDirs) {
             // Only attempt to clean if archive_dir is explicitly set to avoid accidents
-            if (self.archive_dir) |archive_path| {
+            if (self.archiveDir) |archivePath| {
                 // Attempt to remove directory. Will fail safely if not empty.
-                std.Io.Dir.cwd().deleteDir(Utils.io(), archive_path) catch {};
+                std.Io.Dir.cwd().deleteDir(Utils.io(), archivePath) catch {};
             }
         }
     }
 
     /// Handle a file during retention cleanup - either compress or delete based on settings.
-    fn handleRetentionFile(self: *Rotation, path: []const u8, is_compressed: bool) !void {
+    fn handleRetentionFile(self: *Rotation, path: []const u8, isCompressed: bool) !void {
         // If compress_on_retention is enabled and file is not already compressed
-        if (self.compress_on_retention and !is_compressed) {
+        if (self.compressOnRetention and !isCompressed) {
             if (self.compressor) |*comp| {
                 const algo = if (self.compression) |c| c.algorithm else .deflate;
-                const compressed_path = try uniqueCompressedPath(self.allocator, path, algo);
-                defer self.allocator.free(compressed_path);
+                const compressedPath = try uniqueCompressedPath(self.allocator, path, algo);
+                defer self.allocator.free(compressedPath);
 
                 // Compress the file
-                _ = comp.compressFile(path, compressed_path) catch |err| {
-                    _ = self.stats.compression_errors.fetchAdd(1, .monotonic);
+                _ = comp.compressFile(path, compressedPath) catch |err| {
+                    _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
                     // On failure, fall back to deletion if delete_after_retention_compress is true
-                    if (self.delete_after_retention_compress) {
+                    if (self.deleteAfterRetentionCompress) {
                         try self.deleteFile(path);
                     }
                     return err;
                 };
 
-                _ = self.stats.files_archived.fetchAdd(1, .monotonic);
-                if (self.on_file_archived) |cb| cb(path, compressed_path);
+                _ = self.stats.filesArchived.fetchAdd(1, .monotonic);
+                if (self.onFileArchived) |cb| cb(path, compressedPath);
 
                 // Delete original after successful compression if configured
-                if (self.delete_after_retention_compress) {
+                if (self.deleteAfterRetentionCompress) {
                     std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
                 }
                 return;
@@ -1064,15 +937,18 @@ pub const Rotation = struct {
     }
 
     fn deleteFile(self: *Rotation, path: []const u8) !void {
-        std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch return;
-        _ = self.stats.files_deleted.fetchAdd(1, .monotonic);
-        if (self.on_retention_cleanup) |cb| cb(path);
+        std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {
+            _ = self.stats.rotationErrors.fetchAdd(1, .monotonic);
+            return;
+        };
+        _ = self.stats.filesDeleted.fetchAdd(1, .monotonic);
+        if (self.onRetentionCleanup) |cb| cb(path);
     }
 
     /// Creates a rotating sink with specified naming strategy
-    pub fn createRotatingSink(file_path: []const u8, interval: []const u8, retention: usize) SinkConfig {
+    pub fn createRotatingSink(filePath: []const u8, interval: []const u8, retention: usize) SinkConfig {
         return SinkConfig{
-            .path = file_path,
+            .path = filePath,
             .rotation = interval,
             .retention = retention,
             .color = false,
@@ -1080,22 +956,19 @@ pub const Rotation = struct {
     }
 
     /// Creates a size-based rotating sink configuration.
-    pub fn createSizeRotatingSink(file_path: []const u8, size_limit: u64, retention: usize) SinkConfig {
+    pub fn createSizeRotatingSink(filePath: []const u8, sizeLimit: u64, retention: usize) SinkConfig {
         return SinkConfig{
-            .path = file_path,
-            .size_limit = size_limit,
+            .path = filePath,
+            .sizeLimit = sizeLimit,
             .retention = retention,
             .color = false,
         };
     }
-
-    /// Aliases for sink creation
-    pub const rotatingSink = createRotatingSink;
-    pub const sizeSink = createSizeRotatingSink;
 };
 
 /// Preset rotation configurations for common use cases.
 pub const RotationPresets = struct {
+
     // Time-Based Presets
 
     /// Daily rotation with 7 day retention (standard weekly cleanup).
@@ -1157,64 +1030,64 @@ pub const RotationPresets = struct {
 
     /// 1MB size-based rotation with 5 file retention (small logs).
     pub fn size1MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 1 * Constants.SizeConstants.bytes_per_mb, 5);
+        return Rotation.init(allocator, path, null, 1 * Constants.SizeConstants.bytesPerMb, 5);
     }
 
     /// 5MB size-based rotation with 5 file retention.
     pub fn size5MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 5 * Constants.SizeConstants.bytes_per_mb, 5);
+        return Rotation.init(allocator, path, null, 5 * Constants.SizeConstants.bytesPerMb, 5);
     }
 
     /// 10MB size-based rotation with 5 file retention.
     pub fn size10MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 10 * Constants.SizeConstants.bytes_per_mb, 5);
+        return Rotation.init(allocator, path, null, 10 * Constants.SizeConstants.bytesPerMb, 5);
     }
 
     /// 25MB size-based rotation with 10 file retention.
     pub fn size25MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 25 * Constants.SizeConstants.bytes_per_mb, 10);
+        return Rotation.init(allocator, path, null, 25 * Constants.SizeConstants.bytesPerMb, 10);
     }
 
     /// 50MB size-based rotation with 10 file retention.
     pub fn size50MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 50 * Constants.SizeConstants.bytes_per_mb, 10);
+        return Rotation.init(allocator, path, null, 50 * Constants.SizeConstants.bytesPerMb, 10);
     }
 
     /// 100MB size-based rotation with 10 file retention.
     pub fn size100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 100 * Constants.SizeConstants.bytes_per_mb, 10);
+        return Rotation.init(allocator, path, null, 100 * Constants.SizeConstants.bytesPerMb, 10);
     }
 
     /// 250MB size-based rotation with 5 file retention (large logs).
     pub fn size250MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 250 * Constants.SizeConstants.bytes_per_mb, 5);
+        return Rotation.init(allocator, path, null, 250 * Constants.SizeConstants.bytesPerMb, 5);
     }
 
     /// 500MB size-based rotation with 3 file retention.
     pub fn size500MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, 500 * Constants.SizeConstants.bytes_per_mb, 3);
+        return Rotation.init(allocator, path, null, 500 * Constants.SizeConstants.bytesPerMb, 3);
     }
 
     /// 1GB size-based rotation with 2 file retention.
     pub fn size1GB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, null, Constants.SizeConstants.bytes_per_gb, 2);
+        return Rotation.init(allocator, path, null, Constants.SizeConstants.bytesPerGb, 2);
     }
 
     // Hybrid Presets (Time + Size)
 
     /// Daily rotation OR 100MB, 30 day retention.
     pub fn dailyOr100MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, "daily", 100 * Constants.SizeConstants.bytes_per_mb, 30);
+        return Rotation.init(allocator, path, "daily", 100 * Constants.SizeConstants.bytesPerMb, 30);
     }
 
     /// Hourly rotation OR 50MB, 48 hour retention.
     pub fn hourlyOr50MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, "hourly", 50 * Constants.SizeConstants.bytes_per_mb, 48);
+        return Rotation.init(allocator, path, "hourly", 50 * Constants.SizeConstants.bytesPerMb, 48);
     }
 
     /// Daily rotation OR 500MB, 7 day retention (high volume).
     pub fn dailyOr500MB(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        return Rotation.init(allocator, path, "daily", 500 * Constants.SizeConstants.bytes_per_mb, 7);
+        return Rotation.init(allocator, path, "daily", 500 * Constants.SizeConstants.bytesPerMb, 7);
     }
 
     // Production Presets
@@ -1230,7 +1103,7 @@ pub const RotationPresets = struct {
     /// Enterprise preset: daily rotation, 90 days, compressed archive.
     pub fn enterprise(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         var rot = try Rotation.init(allocator, path, "daily", null, 90);
-        rot.withNaming(.iso_datetime);
+        rot.withNaming(.isoDatetime);
         try rot.withCompression(.{ .algorithm = .deflate, .level = .best });
         rot.withCompressOnRetention(true);
         return rot;
@@ -1245,8 +1118,8 @@ pub const RotationPresets = struct {
 
     /// High-volume preset: hourly OR 500MB, 7 days, compressed.
     pub fn highVolume(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        var rot = try Rotation.init(allocator, path, "hourly", 500 * Constants.SizeConstants.bytes_per_mb, 168);
-        rot.withNaming(.iso_datetime);
+        var rot = try Rotation.init(allocator, path, "hourly", 500 * Constants.SizeConstants.bytesPerMb, 168);
+        rot.withNaming(.isoDatetime);
         try rot.withCompression(.{ .algorithm = .deflate });
         return rot;
     }
@@ -1254,7 +1127,7 @@ pub const RotationPresets = struct {
     /// Audit preset: daily rotation, 365 days, compressed archive, ISO naming.
     pub fn audit(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         var rot = try Rotation.init(allocator, path, "daily", null, 365);
-        rot.withNaming(.iso_datetime);
+        rot.withNaming(.isoDatetime);
         try rot.withCompression(.{ .algorithm = .deflate, .level = .best });
         rot.withCompressOnRetention(true);
         rot.withDeleteAfterRetentionCompress(false);
@@ -1263,7 +1136,7 @@ pub const RotationPresets = struct {
 
     /// Minimal preset: size-only 10MB, 3 files (embedded/resource constrained).
     pub fn minimal(allocator: std.mem.Allocator, path: []const u8) !Rotation {
-        var rot = try Rotation.init(allocator, path, null, 10 * Constants.SizeConstants.bytes_per_mb, 3);
+        var rot = try Rotation.init(allocator, path, null, 10 * Constants.SizeConstants.bytesPerMb, 3);
         rot.withNaming(.index);
         return rot;
     }
@@ -1271,35 +1144,31 @@ pub const RotationPresets = struct {
     // Sink Configuration Helpers
 
     /// Creates a daily rotation sink config.
-    pub fn dailySink(file_path: []const u8, retention_days: usize) SinkConfig {
-        return Rotation.createRotatingSink(file_path, "daily", retention_days);
+    pub fn dailySink(filePath: []const u8, retentionDays: usize) SinkConfig {
+        return Rotation.createRotatingSink(filePath, "daily", retentionDays);
     }
 
     /// Creates an hourly rotation sink config.
-    pub fn hourlySink(file_path: []const u8, retention_hours: usize) SinkConfig {
-        return Rotation.createRotatingSink(file_path, "hourly", retention_hours);
+    pub fn hourlySink(filePath: []const u8, retentionHours: usize) SinkConfig {
+        return Rotation.createRotatingSink(filePath, "hourly", retentionHours);
     }
 
     /// Creates a weekly rotation sink config.
-    pub fn weeklySink(file_path: []const u8, retention_weeks: usize) SinkConfig {
-        return Rotation.createRotatingSink(file_path, "weekly", retention_weeks);
+    pub fn weeklySink(filePath: []const u8, retentionWeeks: usize) SinkConfig {
+        return Rotation.createRotatingSink(filePath, "weekly", retentionWeeks);
     }
 
     /// Creates a monthly rotation sink config.
-    pub fn monthlySink(file_path: []const u8, retention_months: usize) SinkConfig {
-        return Rotation.createRotatingSink(file_path, "monthly", retention_months);
+    pub fn monthlySink(filePath: []const u8, retentionMonths: usize) SinkConfig {
+        return Rotation.createRotatingSink(filePath, "monthly", retentionMonths);
     }
 
     /// Creates a size-based rotation sink config.
-    pub fn sizeSink(file_path: []const u8, size_bytes: u64, retention: usize) SinkConfig {
-        return Rotation.createSizeRotatingSink(file_path, size_bytes, retention);
+    pub fn sizeSink(filePath: []const u8, sizeBytes: u64, retention: usize) SinkConfig {
+        return Rotation.createSizeRotatingSink(filePath, sizeBytes, retention);
     }
 
     // Aliases for common presets
-    pub const weekly = weekly4Weeks;
-    pub const monthly = monthly12Months;
-    pub const hourly = hourly24Hours;
-    pub const daily = daily7Days;
 };
 
 test "rotation functionality" {
@@ -1319,12 +1188,12 @@ test "rotation functionality" {
 }
 
 test "rotation interval seconds" {
-    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_minute), Rotation.RotationInterval.minutely.seconds());
-    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_hour), Rotation.RotationInterval.hourly.seconds());
-    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_day), Rotation.RotationInterval.daily.seconds());
-    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_week), Rotation.RotationInterval.weekly.seconds());
-    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_month), Rotation.RotationInterval.monthly.seconds());
-    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.seconds_per_year), Rotation.RotationInterval.yearly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.secondsPerMinute), Rotation.RotationInterval.minutely.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.secondsPerHour), Rotation.RotationInterval.hourly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.secondsPerDay), Rotation.RotationInterval.daily.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.secondsPerWeek), Rotation.RotationInterval.weekly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.secondsPerMonth), Rotation.RotationInterval.monthly.seconds());
+    try std.testing.expectEqual(@as(i64, Constants.TimeConstants.secondsPerYear), Rotation.RotationInterval.yearly.seconds());
 }
 
 test "rotation interval from string" {
@@ -1347,8 +1216,8 @@ test "rotation stats" {
     try std.testing.expect(!stats.hasErrors());
 
     // Increment counters
-    _ = stats.total_rotations.fetchAdd(10, .monotonic);
-    _ = stats.rotation_errors.fetchAdd(2, .monotonic);
+    _ = stats.totalRotations.fetchAdd(10, .monotonic);
+    _ = stats.rotationErrors.fetchAdd(2, .monotonic);
 
     try std.testing.expectEqual(@as(u64, 10), stats.rotationCount());
     try std.testing.expectEqual(@as(u64, 2), stats.errorCount());
@@ -1396,19 +1265,19 @@ test "rotation presets size-based" {
 
     var size1 = try RotationPresets.size1MB(allocator, "test.log");
     defer size1.deinit();
-    try std.testing.expectEqual(@as(?u64, 1 * Constants.SizeConstants.bytes_per_mb), size1.size_limit);
+    try std.testing.expectEqual(@as(?u64, 1 * Constants.SizeConstants.bytesPerMb), size1.sizeLimit);
 
     var size10 = try RotationPresets.size10MB(allocator, "test.log");
     defer size10.deinit();
-    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_mb), size10.size_limit);
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytesPerMb), size10.sizeLimit);
 
     var size100 = try RotationPresets.size100MB(allocator, "test.log");
     defer size100.deinit();
-    try std.testing.expectEqual(@as(?u64, 100 * Constants.SizeConstants.bytes_per_mb), size100.size_limit);
+    try std.testing.expectEqual(@as(?u64, 100 * Constants.SizeConstants.bytesPerMb), size100.sizeLimit);
 
     var size1gb = try RotationPresets.size1GB(allocator, "test.log");
     defer size1gb.deinit();
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), size1gb.size_limit);
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerGb), size1gb.sizeLimit);
 }
 
 test "rotation presets hybrid" {
@@ -1417,7 +1286,7 @@ test "rotation presets hybrid" {
     var hybrid = try RotationPresets.dailyOr100MB(allocator, "test.log");
     defer hybrid.deinit();
     try std.testing.expectEqual(Rotation.RotationInterval.daily, hybrid.interval.?);
-    try std.testing.expectEqual(@as(?u64, 100 * Constants.SizeConstants.bytes_per_mb), hybrid.size_limit);
+    try std.testing.expectEqual(@as(?u64, 100 * Constants.SizeConstants.bytesPerMb), hybrid.sizeLimit);
     try std.testing.expectEqual(@as(?usize, 30), hybrid.retention);
 }
 
@@ -1435,15 +1304,15 @@ test "rotation presets production configs" {
     var ent = try RotationPresets.enterprise(allocator, "test.log");
     defer ent.deinit();
     try std.testing.expectEqual(@as(?usize, 90), ent.retention);
-    try std.testing.expectEqual(Rotation.NamingStrategy.iso_datetime, ent.naming);
-    try std.testing.expect(ent.compress_on_retention);
+    try std.testing.expectEqual(Rotation.NamingStrategy.isoDatetime, ent.naming);
+    try std.testing.expect(ent.compressOnRetention);
 
     // Audit preset
     var audit = try RotationPresets.audit(allocator, "test.log");
     defer audit.deinit();
     try std.testing.expectEqual(@as(?usize, 365), audit.retention);
-    try std.testing.expect(audit.compress_on_retention);
-    try std.testing.expect(!audit.delete_after_retention_compress);
+    try std.testing.expect(audit.compressOnRetention);
+    try std.testing.expect(!audit.deleteAfterRetentionCompress);
 
     // Minimal preset
     var min = try RotationPresets.minimal(allocator, "test.log");
@@ -1460,25 +1329,25 @@ test "rotation configuration methods" {
 
     // Test configuration methods
     rot.withKeepOriginal(true);
-    try std.testing.expect(rot.keep_original);
+    try std.testing.expect(rot.keepOriginal);
 
     rot.withCompressOnRetention(true);
-    try std.testing.expect(rot.compress_on_retention);
+    try std.testing.expect(rot.compressOnRetention);
 
     rot.withDeleteAfterRetentionCompress(false);
-    try std.testing.expect(!rot.delete_after_retention_compress);
+    try std.testing.expect(!rot.deleteAfterRetentionCompress);
 
-    rot.withMaxAge(@as(i64, Constants.TimeConstants.seconds_per_day) * 7);
-    try std.testing.expectEqual(@as(?i64, @as(i64, Constants.TimeConstants.seconds_per_week)), rot.max_age_seconds);
+    rot.withMaxAge(@as(i64, Constants.TimeConstants.secondsPerDay) * 7);
+    try std.testing.expectEqual(@as(?i64, @as(i64, Constants.TimeConstants.secondsPerWeek)), rot.maxAgeSeconds);
 
     rot.setCleanEmptyDirs(true);
-    try std.testing.expect(rot.clean_empty_dirs);
+    try std.testing.expect(rot.cleanEmptyDirs);
 }
 
 test "rotation explicit control helpers" {
     const allocator = std.testing.allocator;
 
-    var rot = try Rotation.init(allocator, "rotation_controls.log", "daily", Constants.SizeConstants.bytes_per_kb, 7);
+    var rot = try Rotation.init(allocator, "rotation_controls.log", "daily", Constants.SizeConstants.bytesPerKb, 7);
     defer rot.deinit();
 
     rot.setInterval(.hourly);
@@ -1491,54 +1360,54 @@ test "rotation explicit control helpers" {
     try std.testing.expect(rot.interval == null);
     try std.testing.expect(!rot.setIntervalFromString("invalid-interval"));
 
-    rot.setSizeLimit(Constants.SizeConstants.bytes_per_kb * 2);
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb * 2), rot.size_limit);
+    rot.setSizeLimit(Constants.SizeConstants.bytesPerKb * 2);
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerKb * 2), rot.sizeLimit);
 
     rot.setRetentionCount(12);
     try std.testing.expectEqual(@as(?usize, 12), rot.retention);
 
-    rot.setRetentionPolicy(5, @as(i64, Constants.TimeConstants.seconds_per_day));
+    rot.setRetentionPolicy(5, @as(i64, Constants.TimeConstants.secondsPerDay));
     try std.testing.expectEqual(@as(?usize, 5), rot.retention);
-    try std.testing.expectEqual(@as(?i64, Constants.TimeConstants.seconds_per_day), rot.max_age_seconds);
+    try std.testing.expectEqual(@as(?i64, Constants.TimeConstants.secondsPerDay), rot.maxAgeSeconds);
 }
 
 test "rotation force rotate helper" {
     const allocator = std.testing.allocator;
 
-    const file_name = try std.fmt.allocPrint(allocator, "rotation_force_{d}.log", .{Utils.currentMillis()});
-    defer allocator.free(file_name);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), file_name) catch {};
+    const fileName = try std.fmt.allocPrint(allocator, "rotation_force_{d}.log", .{Utils.currentMillis()});
+    defer allocator.free(fileName);
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), fileName) catch {};
 
-    const rotated_name = try std.fmt.allocPrint(allocator, "{s}.1", .{file_name});
-    defer allocator.free(rotated_name);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), rotated_name) catch {};
+    const rotatedName = try std.fmt.allocPrint(allocator, "{s}.1", .{fileName});
+    defer allocator.free(rotatedName);
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), rotatedName) catch {};
 
-    var file = try std.Io.Dir.cwd().createFile(Utils.io(), file_name, .{ .read = true, .truncate = true });
+    var file = try std.Io.Dir.cwd().createFile(Utils.io(), fileName, .{ .read = true, .truncate = true });
     defer file.close(Utils.io());
     try file.writeStreamingAll(Utils.io(), "force rotation content");
 
-    var rot = try Rotation.init(allocator, file_name, null, null, 3);
+    var rot = try Rotation.init(allocator, fileName, null, null, 3);
     defer rot.deinit();
     rot.withNaming(.index);
 
     try rot.forceRotate(&file);
 
-    try std.Io.Dir.cwd().access(Utils.io(), file_name, .{});
-    try std.Io.Dir.cwd().access(Utils.io(), rotated_name, .{});
+    try std.Io.Dir.cwd().access(Utils.io(), fileName, .{});
+    try std.Io.Dir.cwd().access(Utils.io(), rotatedName, .{});
     try std.testing.expect(rot.getStats().rotationCount() >= 1);
 }
 
 test "rotation sink creation" {
     // Daily sink
-    const daily_sink = RotationPresets.dailySink("logs/app.log", 7);
-    try std.testing.expectEqualStrings("logs/app.log", daily_sink.path.?);
-    try std.testing.expectEqualStrings("daily", daily_sink.rotation.?);
-    try std.testing.expectEqual(@as(?usize, 7), daily_sink.retention);
+    const dailySink = RotationPresets.dailySink("logs/app.log", 7);
+    try std.testing.expectEqualStrings("logs/app.log", dailySink.path.?);
+    try std.testing.expectEqualStrings("daily", dailySink.rotation.?);
+    try std.testing.expectEqual(@as(?usize, 7), dailySink.retention);
 
     // Size sink
-    const size_sink = RotationPresets.sizeSink("logs/app.log", 50 * Constants.SizeConstants.bytes_per_mb, 5);
-    try std.testing.expectEqual(@as(?u64, 50 * Constants.SizeConstants.bytes_per_mb), size_sink.size_limit);
-    try std.testing.expectEqual(@as(?usize, 5), size_sink.retention);
+    const sizeSink = RotationPresets.sizeSink("logs/app.log", 50 * Constants.SizeConstants.bytesPerMb, 5);
+    try std.testing.expectEqual(@as(?u64, 50 * Constants.SizeConstants.bytesPerMb), sizeSink.sizeLimit);
+    try std.testing.expectEqual(@as(?usize, 5), sizeSink.retention);
 }
 
 test "rotation is enabled check" {
@@ -1550,7 +1419,7 @@ test "rotation is enabled check" {
     try std.testing.expect(rot1.isEnabled());
 
     // Size-based enabled
-    var rot2 = try Rotation.init(allocator, "test.log", null, Constants.SizeConstants.bytes_per_kb, null);
+    var rot2 = try Rotation.init(allocator, "test.log", null, Constants.SizeConstants.bytesPerKb, null);
     defer rot2.deinit();
     try std.testing.expect(rot2.isEnabled());
 
@@ -1563,15 +1432,15 @@ test "rotation is enabled check" {
 test "rotation reason helpers and preview path" {
     const allocator = std.testing.allocator;
 
-    const file_name = try std.fmt.allocPrint(allocator, "rotation_reason_{d}.log", .{Utils.currentMillis()});
-    defer allocator.free(file_name);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), file_name) catch {};
+    const fileName = try std.fmt.allocPrint(allocator, "rotation_reason_{d}.log", .{Utils.currentMillis()});
+    defer allocator.free(fileName);
+    defer std.Io.Dir.cwd().deleteFile(Utils.io(), fileName) catch {};
 
-    var file = try std.Io.Dir.cwd().createFile(Utils.io(), file_name, .{ .read = true, .truncate = true });
+    var file = try std.Io.Dir.cwd().createFile(Utils.io(), fileName, .{ .read = true, .truncate = true });
     defer file.close(Utils.io());
     try file.writeStreamingAll(Utils.io(), "0123456789");
 
-    var rot = try Rotation.init(allocator, file_name, null, 1, 3);
+    var rot = try Rotation.init(allocator, fileName, null, 1, 3);
     defer rot.deinit();
 
     const reason = rot.getRotationReason(&file);
@@ -1581,7 +1450,7 @@ test "rotation reason helpers and preview path" {
 
     const preview = try rot.previewNextPath();
     defer allocator.free(preview);
-    try std.testing.expect(std.mem.indexOf(u8, preview, std.fs.path.basename(file_name)) != null);
+    try std.testing.expect(std.mem.indexOf(u8, preview, std.fs.path.basename(fileName)) != null);
 }
 
 test "rotation next rotation in seconds" {
@@ -1590,12 +1459,12 @@ test "rotation next rotation in seconds" {
     var rot = try Rotation.init(allocator, "test-next.log", "hourly", null, 7);
     defer rot.deinit();
 
-    rot.last_rotation = Utils.currentSeconds() - 10;
+    rot.lastRotation = Utils.currentSeconds() - 10;
     const remaining = rot.nextRotationInSeconds();
 
     try std.testing.expect(remaining != null);
     try std.testing.expect(remaining.? >= 0);
-    try std.testing.expect(remaining.? <= @as(i64, Constants.TimeConstants.seconds_per_hour));
+    try std.testing.expect(remaining.? <= @as(i64, Constants.TimeConstants.secondsPerHour));
 }
 
 test "rotation next rotation at and age helpers" {
@@ -1604,10 +1473,10 @@ test "rotation next rotation at and age helpers" {
     var rot = try Rotation.init(allocator, "test-next-at.log", "hourly", null, 7);
     defer rot.deinit();
 
-    rot.last_rotation = Utils.currentSeconds() - 10;
-    const next_at = rot.nextRotationAt();
-    try std.testing.expect(next_at != null);
-    try std.testing.expect(next_at.? >= Utils.currentSeconds());
+    rot.lastRotation = Utils.currentSeconds() - 10;
+    const nextAt = rot.nextRotationAt();
+    try std.testing.expect(nextAt != null);
+    try std.testing.expect(nextAt.? >= Utils.currentSeconds());
 
     const age = rot.rotationAgeSeconds();
     try std.testing.expect(age >= 0);

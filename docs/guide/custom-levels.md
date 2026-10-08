@@ -26,7 +26,7 @@ Logly supports ANSI colors on all major platforms:
 
 ```zig
 // Enable ANSI colors on Windows (no-op on Linux/macOS)
-_ = logly.Terminal.enableAnsiColors();
+ _ = logly.Terminal.enableAnsiColors();
 ```
 
 ## Whole-Line Coloring
@@ -104,7 +104,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -149,8 +149,8 @@ Custom levels work seamlessly with JSON output - the level name appears in the J
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
-config.pretty_json = true;
+config.format = .json;
+config.prettyJson = true;
 logger.configure(config);
 
 try logger.addCustomLevel("AUDIT", 25, "35");
@@ -173,23 +173,23 @@ Custom levels work with all sink types - console, file (text), and file (JSON):
 ```zig
 // Disable auto console sink
 var config = logly.Config.default();
-config.auto_sink = false;
+config.autoSink = false;
 logger.configure(config);
 
 // Add file sink for text output
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
 });
 
 // Add JSON file sink
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.json",
-    .json = true,
-    .pretty_json = true,
+    .format = .json,
+    .prettyJson = true,
 });
 
 // Add console sink
-_ = try logger.addSink(.{});
+ _ = try logger.addSink(.{});
 
 // Register and use custom level
 try logger.addCustomLevel("AUDIT", 25, "35");
@@ -202,8 +202,8 @@ Custom levels support all context features like standard levels:
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
-config.pretty_json = true;
+config.format = .json;
+config.prettyJson = true;
 logger.configure(config);
 
 // Bind context

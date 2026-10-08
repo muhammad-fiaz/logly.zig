@@ -63,11 +63,11 @@ Thread pool can be enabled through the central `Config` struct:
 
 ```zig
 var config = logly.Config.default();
-config.thread_pool = .{
+config.threadPool = .{
     .enabled = true,
-    .thread_count = 4,  // 0 = auto-detect
-    .queue_size = 10000,
-    .work_stealing = true,
+    .threadCount = 4,  // 0 = auto-detect
+    .queueSize = 10000,
+    .workStealing = true,
 };
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
@@ -75,7 +75,7 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 Or use the fluent API:
 
 ```zig
-const config = logly.Config.default().withThreadPool(.{ .thread_count = 4 });
+const config = logly.Config.default().withThreadPool(.{ .threadCount = 4 });
 ```
 
 ## Types
@@ -88,7 +88,7 @@ The core thread pool implementation that manages worker threads and task distrib
 - `allocator`: The memory allocator used for internal structures.
 - `config`: The active configuration for the thread pool.
 - `workers`: Slice of worker threads.
-- `work_queue`: The global task queue for incoming tasks.
+- `workQueue`: The global task queue for incoming tasks.
 - `stats`: Performance statistics (submitted, completed, stolen tasks).
 - `running`: Atomic flag indicating the pool's operational state.
 
@@ -97,7 +97,7 @@ pub const ThreadPool = struct {
     allocator: std.mem.Allocator,
     config: ThreadPoolConfig,
     workers: []Worker,
-    work_queue: WorkQueue,
+    workQueue: WorkQueue,
     stats: ThreadPoolStats,
     running: std.atomic.Value(bool),
 };
@@ -109,32 +109,32 @@ Configuration available through `Config.ThreadPoolConfig`. This struct controls 
 
 **Fields:**
 - `enabled`: Master switch to enable/disable the thread pool.
-- `thread_count`: Number of worker threads to spawn. Set to 0 to automatically detect and use the number of available CPU cores.
-- `queue_size`: Capacity of the global task queue. If the queue is full, submission may block or fail depending on policy.
-- `stack_size`: Stack size allocated for each worker thread (in bytes). Default is 1MB.
-- `work_stealing`: Enables the work-stealing algorithm, allowing idle workers to take tasks from busy workers' local queues.
-- `thread_name_prefix`: Prefix for worker thread names (default: "logly-worker").
-- `keep_alive_ms`: Keep-alive time for idle threads in milliseconds.
-- `thread_affinity`: Enable thread affinity (pin threads to CPUs).
+- `threadCount`: Number of worker threads to spawn. Set to 0 to automatically detect and use the number of available CPU cores.
+- `queueSize`: Capacity of the global task queue. If the queue is full, submission may block or fail depending on policy.
+- `stackSize`: Stack size allocated for each worker thread (in bytes). Default is 1MB.
+- `workStealing`: Enables the work-stealing algorithm, allowing idle workers to take tasks from busy workers' local queues.
+- `threadNamePrefix`: Prefix for worker thread names (default: "logly-worker").
+- `keepAliveMs`: Keep-alive time for idle threads in milliseconds.
+- `threadAffinity`: Enable thread affinity (pin threads to CPUs).
 
 ```zig
 pub const ThreadPoolConfig = struct {
     /// Enable thread pool for parallel processing.
     enabled: bool = false,
     /// Number of worker threads (0 = auto-detect based on CPU cores).
-    thread_count: usize = 0,
+    threadCount: usize = 0,
     /// Maximum queue size for pending tasks.
-    queue_size: usize = 10000,
+    queueSize: usize = 10000,
     /// Stack size per thread in bytes.
-    stack_size: usize = 1024 * 1024,
+    stackSize: usize = 1024 * 1024,
     /// Enable work stealing between threads.
-    work_stealing: bool = true,
+    workStealing: bool = true,
     /// Thread naming prefix.
-    thread_name_prefix: []const u8 = "logly-worker",
+    threadNamePrefix: []const u8 = "logly-worker",
     /// Keep alive time for idle threads (milliseconds).
-    keep_alive_ms: u64 = 60000,
+    keepAliveMs: u64 = 60000,
     /// Enable thread affinity (pin threads to CPUs).
-    thread_affinity: bool = false,
+    threadAffinity: bool = false,
 };
 ```
 
@@ -185,13 +185,13 @@ Statistics for the thread pool.
 
 ```zig
 pub const ThreadPoolStats = struct {
-    tasks_submitted: std.atomic.Value(u64),
-    tasks_completed: std.atomic.Value(u64),
-    tasks_dropped: std.atomic.Value(u64),
-    tasks_stolen: std.atomic.Value(u64),
-    total_wait_time_ns: std.atomic.Value(u64),
-    total_exec_time_ns: std.atomic.Value(u64),
-    active_threads: std.atomic.Value(u32),
+    tasksSubmitted: std.atomic.Value(u64),
+    tasksCompleted: std.atomic.Value(u64),
+    tasksDropped: std.atomic.Value(u64),
+    tasksStolen: std.atomic.Value(u64),
+    totalWaitTimeNs: std.atomic.Value(u64),
+    totalExecTimeNs: std.atomic.Value(u64),
+    activeThreads: std.atomic.Value(u32),
 
     pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64;
     pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64;
@@ -214,18 +214,18 @@ pub const ParallelSinkWriter = struct {
     stats: ParallelStats,
 
     pub const SinkHandle = struct {
-        write_fn: *const fn (data: []const u8) void,
-        flush_fn: ?*const fn () void,
+        writeFn: *const fn (data: []const u8) void,
+        flushFn: ?*const fn () void,
         name: []const u8,
         enabled: bool,
     };
 
     pub const ParallelStats = struct {
-        writes_submitted: std.atomic.Value(u64),
-        writes_completed: std.atomic.Value(u64),
-        writes_failed: std.atomic.Value(u64),
+        writesSubmitted: std.atomic.Value(u64),
+        writesCompleted: std.atomic.Value(u64),
+        writesFailed: std.atomic.Value(u64),
         retries: std.atomic.Value(u64),
-        bytes_written: std.atomic.Value(u64),
+        bytesWritten: std.atomic.Value(u64),
 
         pub fn successRate(self: *const ParallelStats) f64;
     };
@@ -239,19 +239,19 @@ Configuration for parallel sink writing operations. Available through `Config.Pa
 ```zig
 pub const ParallelConfig = struct {
     /// Maximum concurrent writes allowed at once.
-    max_concurrent: usize = 8,
+    maxConcurrent: usize = 8,
     /// Timeout for each write operation (ms).
-    write_timeout_ms: u64 = 1000,
+    writeTimeoutMs: u64 = 1000,
     /// Retry failed writes automatically.
-    retry_on_failure: bool = true,
+    retryOnFailure: bool = true,
     /// Maximum number of retry attempts.
-    max_retries: u3 = 3,
+    maxRetries: u3 = 3,
     /// Fail-fast mode: abort on any sink error.
-    fail_fast: bool = false,
+    failFast: bool = false,
     /// Buffer writes before parallel dispatch.
     buffered: bool = true,
     /// Buffer size for buffered writes.
-    buffer_size: usize = 64,
+    bufferSize: usize = 64,
 
     // Presets
     pub fn default() ParallelConfig;
@@ -366,7 +366,7 @@ pub fn submitBatch(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Pr
 Submits tasks with bounded retries for transient queue pressure.
 
 ```zig
-pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, max_attempts: u8, retry_delay_us: u32) usize
+pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, maxAttempts: u8, retryDelayUs: u32) usize
 ```
 
 ### trySubmit
@@ -382,7 +382,7 @@ pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) boo
 Submits to a specific worker's local queue.
 
 ```zig
-pub fn submitToWorker(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) bool
+pub fn submitToWorker(self: *ThreadPool, workerId: usize, task: Task, priority: WorkItem.Priority) bool
 ```
 
 ### waitAll
@@ -398,7 +398,7 @@ pub fn waitAll(self: *ThreadPool) void
 Wait for all submitted tasks until timeout.
 
 ```zig
-pub fn waitAllTimeout(self: *ThreadPool, timeout_ms: u64) bool
+pub fn waitAllTimeout(self: *ThreadPool, timeoutMs: u64) bool
 ```
 
 ### waitUntilQueueBelow
@@ -406,7 +406,7 @@ pub fn waitAllTimeout(self: *ThreadPool, timeout_ms: u64) bool
 Wait until pending queue depth is below or equal to a threshold.
 
 ```zig
-pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeout_ms: u64) bool
+pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeoutMs: u64) bool
 ```
 
 Returns `true` when queue depth reaches threshold before timeout.
@@ -442,10 +442,10 @@ pub fn availableQueueCapacity(self: *ThreadPool) usize
 
 ### canAcceptTasks
 
-Checks whether the pool has enough free queue slots for `required_slots`.
+Checks whether the pool has enough free queue slots for `requiredSlots`.
 
 ```zig
-pub fn canAcceptTasks(self: *ThreadPool, required_slots: usize) bool
+pub fn canAcceptTasks(self: *ThreadPool, requiredSlots: usize) bool
 ```
 
 ### queueUtilization
@@ -642,9 +642,9 @@ Single-threaded pool for testing or simple use cases.
 ```zig
 pub fn singleThread() ThreadPoolConfig {
     return .{
-        .thread_count = 1,
-        .work_stealing = false,
-        .queue_size = 256,
+        .threadCount = 1,
+        .workStealing = false,
+        .queueSize = 256,
     };
 }
 ```
@@ -656,10 +656,10 @@ Optimized for CPU-intensive tasks. Uses `Constants.ThreadDefaults.cpuBoundThread
 ```zig
 pub fn cpuBound() ThreadPoolConfig {
     return .{
-        .thread_count = Constants.ThreadDefaults.cpuBoundThreadCount(),
-        .queue_size = Constants.ThreadDefaults.queue_size,
-        .work_stealing = false,
-        .stack_size = Constants.ThreadDefaults.stack_size,
+        .threadCount = Constants.ThreadDefaults.cpuBoundThreadCount(),
+        .queueSize = Constants.ThreadDefaults.queueSize,
+        .workStealing = false,
+        .stackSize = Constants.ThreadDefaults.stackSize,
     };
 }
 ```
@@ -671,25 +671,25 @@ Optimized for I/O-intensive tasks. Uses `Constants.ThreadDefaults.ioBoundThreadC
 ```zig
 pub fn ioBound() ThreadPoolConfig {
     return .{
-        .thread_count = Constants.ThreadDefaults.ioBoundThreadCount(),
-        .queue_size = Constants.ThreadDefaults.queue_size * 2,
-        .work_stealing = true,
-        .stack_size = Constants.ThreadDefaults.stack_size,
+        .threadCount = Constants.ThreadDefaults.ioBoundThreadCount(),
+        .queueSize = Constants.ThreadDefaults.queueSize * 2,
+        .workStealing = true,
+        .stackSize = Constants.ThreadDefaults.stackSize,
     };
 }
 ```
 
 ### highThroughput
 
-Maximum throughput configuration. Uses `Constants.ThreadDefaults.max_tasks` for larger queue.
+Maximum throughput configuration. Uses `Constants.ThreadDefaults.maxTasks` for larger queue.
 
 ```zig
 pub fn highThroughput() ThreadPoolConfig {
     return .{
-        .thread_count = 0, // Auto-detect
-        .queue_size = Constants.ThreadDefaults.max_tasks,
-        .work_stealing = true,
-        .stack_size = 2 * Constants.ThreadDefaults.stack_size,
+        .threadCount = 0, // Auto-detect
+        .queueSize = Constants.ThreadDefaults.maxTasks,
+        .workStealing = true,
+        .stackSize = 2 * Constants.ThreadDefaults.stackSize,
     };
 }
 ```
@@ -720,7 +720,7 @@ pub fn main() !void {
     var counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
     
     for (0..100) |i| {
-        _ = pool.submitCallback(incrementTask, &counter);
+         _ = pool.submitCallback(incrementTask, &counter);
     }
 
     // Wait for completion
@@ -736,7 +736,7 @@ pub fn main() !void {
 
 fn incrementTask(ctx: *anyopaque, _: ?std.mem.Allocator) void {
     const counter: *std.atomic.Value(u32) = @alignCast(@ptrCast(ctx));
-    _ = counter.fetchAdd(1, .monotonic);
+     _ = counter.fetchAdd(1, .monotonic);
 }
 ```
 

@@ -7,11 +7,13 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     var config = logly.TelemetryConfig.file("telemetry_test.jsonl");
-    config.service_name = "test-app";
+    config.serviceName = "test-app";
     config.enabled = true;
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
+
+    std.debug.print("Telemetry Mini Example\n\n", .{});
 
     {
         var span = try telemetry.startSpan("process_data", .{});

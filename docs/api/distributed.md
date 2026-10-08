@@ -23,12 +23,12 @@ Enable distributed context features. When true, distributed fields (like service
 
 ### Service Identity
 
-#### `service_name: ?[]const u8`
+#### `serviceName: ?[]const u8`
 
 Name of the service or application (e.g., "auth-service", "payment-api").
 **Default**: `null`
 
-#### `service_version: ?[]const u8`
+#### `serviceVersion: ?[]const u8`
 
 Semantic version of the running artifact (e.g., "1.0.2", "v2.0.0-rc1").
 **Default**: `null`
@@ -48,46 +48,46 @@ Datacenter or Availability Zone identifier (e.g., "us-east-1a", "eu-west-2").
 Cloud region identifier (e.g., "us-east-1").
 **Default**: `null`
 
-#### `instance_id: ?[]const u8`
+#### `instanceId: ?[]const u8`
 
 Unique identifier for the specific instance (e.g., Kubernetes Pod ID, EC2 Instance ID, container ID).
 **Default**: `null`
 
 ### Trace Propagation
 
-#### `trace_header: []const u8`
+#### `traceHeader: []const u8`
 
 HTTP header name used for propagating Trace IDs.
 **Default**: `"X-Trace-ID"`
 
-#### `span_header: []const u8`
+#### `spanHeader: []const u8`
 
 HTTP header name used for propagating Span IDs.
 **Default**: `"X-Span-ID"`
 
-#### `parent_header: []const u8`
+#### `parentHeader: []const u8`
 
 HTTP header name used for propagating Parent Span IDs.
 **Default**: `"X-Parent-ID"`
 
-#### `baggage_header: []const u8`
+#### `baggageHeader: []const u8`
 
 HTTP header name for Baggage/Correlation Context.
 **Default**: `"Correlation-Context"`
 
-#### `trace_sampling_rate: f64`
+#### `traceSamplingRate: f64`
 
 Sampling probablity for distributed traces (0.0 to 1.0).
 **Default**: `1.0` (100% sampling)
 
 ### Callbacks
 
-#### `on_trace_created: ?*const fn (trace_id: []const u8) void`
+#### `onTraceCreated: ?*const fn (traceId: []const u8) void`
 
 Optional callback invoked whenever `logger.setTraceContext` is called.
 **Default**: `null`
 
-#### `on_span_created: ?*const fn (span_id: []const u8, name: []const u8) void`
+#### `onSpanCreated: ?*const fn (spanId: []const u8, name: []const u8) void`
 
 Optional callback invoked whenever `logger.startSpan` is called.
 **Default**: `null`
@@ -98,11 +98,11 @@ Optional callback invoked whenever `logger.startSpan` is called.
 var config = logly.Config.default();
 config.distributed = .{
     .enabled = true,
-    .service_name = "payment-service",
+    .serviceName = "payment-service",
     .environment = "production",
     .region = "us-east-1",
-    .trace_header = "b3-traceid", // Support B3 propagation headers
-    .span_header = "b3-spanid",
+    .traceHeader = "b3-traceid", // Support B3 propagation headers
+    .spanHeader = "b3-spanid",
 };
 ```
 
@@ -112,10 +112,10 @@ config.distributed = .{
 
 ```zig
 const incoming = request.getHeader("traceparent") orelse "";
-const req_logger = try logger.withTraceparent(incoming);
+const reqLogger = try logger.withTraceparent(incoming);
 
 // Nested operation
-const child = req_logger.child("7a085853722dc6d2").inModule("database.query");
+const child = reqLogger.child("7a085853722dc6d2").inModule("database.query");
 try child.info("Executing query", @src());
 
 // Forward to downstream call

@@ -10,11 +10,11 @@ const builtin = @import("builtin");
 const BenchmarkResult = struct {
     name: []const u8,
     iterations: u64,
-    total_time_ns: u64,
-    ops_per_sec: f64,
-    avg_latency_ns: f64,
-    min_latency_ns: u64,
-    max_latency_ns: u64,
+    totalTimeNs: u64,
+    opsPerSec: f64,
+    avgLatencyNs: f64,
+    minLatencyNs: u64,
+    maxLatencyNs: u64,
     notes: []const u8,
     category: []const u8,
 
@@ -53,35 +53,35 @@ const NULL_PATH = if (builtin.os.tag == .windows) "NUL" else "/dev/null";
 /// Print benchmark results in a formatted table by category (Console only)
 fn printResults(results: []const BenchmarkResult) void {
     std.debug.print("\n", .{});
-    std.debug.print("-" ** 100, .{});
+    std.debug.print("----------------------------------------------------------------------------------------------------", .{});
     std.debug.print("\n", .{});
     std.debug.print("                                 LOGLY.ZIG BENCHMARK RESULTS\n", .{});
-    std.debug.print("-" ** 100, .{});
+    std.debug.print("----------------------------------------------------------------------------------------------------", .{});
     std.debug.print("\n", .{});
 
     for (BenchmarkResult.categories) |cat| {
-        var has_category = false;
+        var hasCategory = false;
         for (results) |r| {
             if (std.mem.eql(u8, r.category, cat)) {
-                has_category = true;
+                hasCategory = true;
                 break;
             }
         }
-        if (!has_category) continue;
+        if (!hasCategory) continue;
 
         std.debug.print("\n[{s}]\n", .{cat});
-        std.debug.print("-" ** 100, .{});
+        std.debug.print("----------------------------------------------------------------------------------------------------", .{});
         std.debug.print("\n", .{});
         std.debug.print("{s:<40} {s:>25} {s:>25} {s:>10}\n", .{ "Benchmark", "Ops/sec", "Avg Latency (ns)", "Notes" });
-        std.debug.print("-" ** 100, .{});
+        std.debug.print("----------------------------------------------------------------------------------------------------", .{});
         std.debug.print("\n", .{});
 
         for (results) |r| {
             if (std.mem.eql(u8, r.category, cat)) {
                 std.debug.print("{s:<50} {d:>25.0} {d:>30.0} {s:>20}\n", .{
                     r.name,
-                    r.ops_per_sec,
-                    r.avg_latency_ns,
+                    r.opsPerSec,
+                    r.avgLatencyNs,
                     r.notes,
                 });
             }
@@ -89,7 +89,7 @@ fn printResults(results: []const BenchmarkResult) void {
     }
 
     std.debug.print("\n", .{});
-    std.debug.print("=" ** 130, .{});
+    std.debug.print("==================================================================================================================================", .{});
     std.debug.print("\n", .{});
 }
 
@@ -102,37 +102,37 @@ fn runBenchmark(
     category: []const u8,
 ) BenchmarkResult {
     const io = logly.Utils.io();
-    var min_latency: u64 = std.math.maxInt(u64);
-    var max_latency: u64 = 0;
+    var minLatency: u64 = std.math.maxInt(u64);
+    var maxLatency: u64 = 0;
 
     // Warmup
     for (0..WARMUP_ITERATIONS) |_| {
         benchFn(context) catch {};
     }
 
-    const timer_start = std.Io.Clock.awake.now(io);
+    const timerStart = std.Io.Clock.awake.now(io);
     for (0..BENCHMARK_ITERATIONS) |_| {
-        const iter_start = std.Io.Clock.awake.now(io);
+        const iterStart = std.Io.Clock.awake.now(io);
         benchFn(context) catch {};
-        const iter_end = std.Io.Clock.awake.now(io);
+        const iterEnd = std.Io.Clock.awake.now(io);
 
-        const latency = @as(u64, @intCast(iter_end.nanoseconds - iter_start.nanoseconds));
-        if (latency < min_latency) min_latency = latency;
-        if (latency > max_latency) max_latency = latency;
+        const latency = @as(u64, @intCast(iterEnd.nanoseconds - iterStart.nanoseconds));
+        if (latency < minLatency) minLatency = latency;
+        if (latency > maxLatency) maxLatency = latency;
     }
 
-    const total_time_ns = @as(u64, @intCast(std.Io.Clock.awake.now(io).nanoseconds - timer_start.nanoseconds));
-    const ops_per_sec = @as(f64, @floatFromInt(BENCHMARK_ITERATIONS)) / (@as(f64, @floatFromInt(total_time_ns)) / 1_000_000_000.0);
-    const avg_latency_ns = @as(f64, @floatFromInt(total_time_ns)) / @as(f64, @floatFromInt(BENCHMARK_ITERATIONS));
+    const totalTimeNs = @as(u64, @intCast(std.Io.Clock.awake.now(io).nanoseconds - timerStart.nanoseconds));
+    const opsPerSec = @as(f64, @floatFromInt(BENCHMARK_ITERATIONS)) / (@as(f64, @floatFromInt(totalTimeNs)) / 1_000_000_000.0);
+    const avgLatencyNs = @as(f64, @floatFromInt(totalTimeNs)) / @as(f64, @floatFromInt(BENCHMARK_ITERATIONS));
 
     return .{
         .name = name,
         .iterations = BENCHMARK_ITERATIONS,
-        .total_time_ns = total_time_ns,
-        .ops_per_sec = ops_per_sec,
-        .avg_latency_ns = avg_latency_ns,
-        .min_latency_ns = min_latency,
-        .max_latency_ns = max_latency,
+        .totalTimeNs = totalTimeNs,
+        .opsPerSec = opsPerSec,
+        .avgLatencyNs = avgLatencyNs,
+        .minLatencyNs = minLatency,
+        .maxLatencyNs = maxLatency,
         .notes = notes,
         .category = category,
     };
@@ -145,19 +145,28 @@ const BenchContext = struct {
 };
 
 /// Returns a silent config for benchmarking (no console output).
+/// File storage stays enabled so NUL file sinks still format and write,
+/// measuring real formatting work without console pollution.
 /// Use with Logger.initWithConfig() to prevent log pollution.
 fn benchmarkConfig() Config {
     var config = Config.default();
-    config.auto_sink = false;
-    config.auto_flush = false;
-    config.global_console_display = false;
-    config.global_file_storage = false;
+    config.autoSink = false;
+    config.autoFlush = false;
+    config.globalConsoleDisplay = false;
+    config.globalFileStorage = true;
     return config;
 }
 
 // Basic Benchmark Functions
 fn benchSimpleLog(ctx: *const BenchContext) !void {
     try ctx.logger.info("Simple log message", null);
+}
+
+// A record below the configured minimum level. The cost of *rejecting* a log
+// call is what most applications actually feel, so it is measured separately
+// from accepted calls.
+fn benchDisabledLog(ctx: *const BenchContext) !void {
+    try ctx.logger.trace("Trace below the configured minimum level", null);
 }
 
 fn benchFormattedLog(ctx: *const BenchContext) !void {
@@ -236,7 +245,7 @@ fn multiThreadWorkerFormatted(ctx: *const BenchContext) void {
 fn runMultiThreadBenchmark(
     name: []const u8,
     logger: *Logger,
-    thread_count: usize,
+    threadCount: usize,
     notes: []const u8,
     category: []const u8,
     allocator: std.mem.Allocator,
@@ -250,36 +259,36 @@ fn runMultiThreadBenchmark(
         logger.info("Warmup message", null) catch {};
     }
 
-    const timer_start = std.Io.Clock.awake.now(io);
+    const timerStart = std.Io.Clock.awake.now(io);
 
     // Spawn threads
-    var threads: [16]?std.Thread = [_]?std.Thread{null} ** 16;
-    const actual_threads = @min(thread_count, 16);
+    var threads: [16]?std.Thread = @splat(null);
+    const actualThreads = @min(threadCount, 16);
 
-    for (0..actual_threads) |i| {
+    for (0..actualThreads) |i| {
         threads[i] = std.Thread.spawn(.{}, workerFn, .{&ctx}) catch null;
     }
 
     // Wait for all threads
-    for (0..actual_threads) |i| {
+    for (0..actualThreads) |i| {
         if (threads[i]) |t| {
             t.join();
         }
     }
 
-    const total_time_ns = @as(u64, @intCast(std.Io.Clock.awake.now(io).nanoseconds - timer_start.nanoseconds));
-    const total_ops = MT_BENCHMARK_ITERATIONS * actual_threads;
-    const ops_per_sec = @as(f64, @floatFromInt(total_ops)) / (@as(f64, @floatFromInt(total_time_ns)) / 1_000_000_000.0);
-    const avg_latency_ns = @as(f64, @floatFromInt(total_time_ns)) / @as(f64, @floatFromInt(total_ops));
+    const totalTimeNs = @as(u64, @intCast(std.Io.Clock.awake.now(io).nanoseconds - timerStart.nanoseconds));
+    const totalOps = MT_BENCHMARK_ITERATIONS * actualThreads;
+    const opsPerSec = @as(f64, @floatFromInt(totalOps)) / (@as(f64, @floatFromInt(totalTimeNs)) / 1_000_000_000.0);
+    const avgLatencyNs = @as(f64, @floatFromInt(totalTimeNs)) / @as(f64, @floatFromInt(totalOps));
 
     return .{
         .name = name,
-        .iterations = total_ops,
-        .total_time_ns = total_time_ns,
-        .ops_per_sec = ops_per_sec,
-        .avg_latency_ns = avg_latency_ns,
-        .min_latency_ns = 0,
-        .max_latency_ns = 0,
+        .iterations = totalOps,
+        .totalTimeNs = totalTimeNs,
+        .opsPerSec = opsPerSec,
+        .avgLatencyNs = avgLatencyNs,
+        .minLatencyNs = 0,
+        .maxLatencyNs = 0,
         .notes = notes,
         .category = category,
     };
@@ -310,6 +319,18 @@ pub fn main() !void {
         try results.append(allocator, runBenchmark("Formatted log (no color)", benchFormattedLog, &ctx, "Printf-style formatting", "Basic Logging"));
     }
 
+    // Rejection cost: level gate runs before any clock read, lock, or format.
+    {
+        var config = benchmarkConfig();
+        config.level = .info;
+        const logger = try logly.Logger.initWithConfig(allocator, config);
+        defer logger.deinit();
+        _ = try logger.addSink(.{ .path = NULL_PATH });
+
+        const ctx = BenchContext{ .logger = logger, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Disabled log call (TRACE vs INFO min)", benchDisabledLog, &ctx, "Rejected before formatting", "Basic Logging"));
+    }
+
     {
         var config = benchmarkConfig();
         config.color = true;
@@ -323,22 +344,49 @@ pub fn main() !void {
         try results.append(allocator, runBenchmark("Formatted log (with color)", benchFormattedLog, &ctx, "Colored + formatting", "Basic Logging"));
     }
 
+    {
+        // Color modes: horizontal vs vertical vs none.
+        var hConfig = benchmarkConfig();
+        hConfig.color = true;
+        hConfig.colorMode = .horizontal;
+        const hLogger = try Logger.initWithConfig(allocator, hConfig);
+        defer hLogger.deinit();
+        _ = try hLogger.addSink(.{ .path = NULL_PATH, .color = true });
+        const hCtx = BenchContext{ .logger = hLogger, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Horizontal color", benchSimpleLog, &hCtx, "Whole-line level color", "Basic Logging"));
+
+        var vConfig = benchmarkConfig();
+        vConfig.color = true;
+        vConfig.colorMode = .vertical;
+        vConfig.columnColors.timestamp = logly.Color.Tint.color.ansi4.blue;
+        vConfig.columnColors.message = logly.Color.Tint.color.ansi4.yellow;
+        const vLogger = try Logger.initWithConfig(allocator, vConfig);
+        defer vLogger.deinit();
+        _ = try vLogger.addSink(.{ .path = NULL_PATH, .color = true });
+        const vCtx = BenchContext{ .logger = vLogger, .allocator = allocator };
+        try results.append(allocator, runBenchmark("Vertical color", benchSimpleLog, &vCtx, "Per-column colors", "Basic Logging"));
+
+        var nConfig = benchmarkConfig();
+        nConfig.colorMode = .none;
+        const nLogger = try Logger.initWithConfig(allocator, nConfig);
+        defer nLogger.deinit();
+        _ = try nLogger.addSink(.{ .path = NULL_PATH });
+        const nCtx = BenchContext{ .logger = nLogger, .allocator = allocator };
+        try results.append(allocator, runBenchmark("No color mode", benchSimpleLog, &nCtx, "colorMode.none", "Basic Logging"));
+    }
+
     //
     // JSON Logging
     //
     {
         std.debug.print("Running: JSON logging benchmarks...\n", .{});
-        const logger = try Logger.init(allocator);
+        var config = benchmarkConfig();
+        config.format = .json;
+        config.color = false;
+        const logger = try Logger.initWithConfig(allocator, config);
         defer logger.deinit();
 
-        var config = Config.default();
-        config.json = true;
-        config.color = false;
-        config.auto_sink = false;
-        config.auto_flush = false;
-        logger.configure(config);
-
-        _ = try logger.addSink(.{ .path = NULL_PATH, .json = true, .color = false });
+        _ = try logger.addSink(.{ .path = NULL_PATH, .format = .json, .color = false });
 
         const ctx = BenchContext{ .logger = logger, .allocator = allocator };
         try results.append(allocator, runBenchmark("JSON compact", benchSimpleLog, &ctx, "Compact JSON output", "JSON Logging"));
@@ -350,13 +398,13 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.json = true;
-        config.pretty_json = true;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.format = .json;
+        config.prettyJson = true;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
-        _ = try logger.addSink(.{ .path = NULL_PATH, .json = true, .pretty_json = true });
+        _ = try logger.addSink(.{ .path = NULL_PATH, .format = .json, .prettyJson = true });
 
         const ctx = BenchContext{ .logger = logger, .allocator = allocator };
         try results.append(allocator, runBenchmark("JSON pretty", benchSimpleLog, &ctx, "Indented JSON output", "JSON Logging"));
@@ -367,13 +415,13 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.json = true;
+        config.format = .json;
         config.color = true;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
-        _ = try logger.addSink(.{ .path = NULL_PATH, .json = true, .color = true });
+        _ = try logger.addSink(.{ .path = NULL_PATH, .format = .json, .color = true });
 
         const ctx = BenchContext{ .logger = logger, .allocator = allocator };
         try results.append(allocator, runBenchmark("JSON with color", benchSimpleLog, &ctx, "JSON with ANSI colors", "JSON Logging"));
@@ -390,8 +438,8 @@ pub fn main() !void {
         var config = Config.default();
         config.level = .trace;
         config.color = false;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -418,11 +466,11 @@ pub fn main() !void {
         var config = Config.default();
         config.level = .trace;
         config.color = false;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
-        try logger.addCustomLevel("AUDIT", 35, "96");
+        try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("96").?);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
 
@@ -435,9 +483,9 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.log_format = "{time} | {level} | {message}";
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.logFormat = "{time} | {level} | {message}";
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -451,9 +499,9 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.time_format = "DD/MM/YYYY HH:mm:ss";
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.timeFormat = "DD/MM/YYYY HH:mm:ss";
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -467,9 +515,9 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.time_format = "ISO8601";
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.timeFormat = "ISO8601";
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -483,9 +531,9 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.time_format = "unix_ms";
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.timeFormat = "unix_ms";
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -505,14 +553,14 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.show_time = true;
-        config.show_module = true;
-        config.show_function = true;
-        config.show_filename = true;
-        config.show_lineno = true;
+        config.showTime = true;
+        config.showModule = true;
+        config.showFunction = true;
+        config.showFilename = true;
+        config.showLineno = true;
         config.color = false;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -526,11 +574,11 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.show_time = false;
-        config.show_module = false;
+        config.showTime = false;
+        config.showModule = false;
         config.color = false;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -544,11 +592,11 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.production();
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
-        _ = try logger.addSink(.{ .path = NULL_PATH, .json = true });
+        _ = try logger.addSink(.{ .path = NULL_PATH, .format = .json });
 
         const ctx = BenchContext{ .logger = logger, .allocator = allocator };
         try results.append(allocator, runBenchmark("Production preset", benchSimpleLog, &ctx, "JSON + sampling + metrics", "Configuration Presets"));
@@ -559,8 +607,8 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.development();
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -574,8 +622,8 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.highThroughput();
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -589,8 +637,8 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.secure();
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -605,13 +653,13 @@ pub fn main() !void {
 
         var config = Config.default();
         config.color = false;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
-        _ = try logger.addSink(.{ .path = NULL_PATH, .json = true });
-        _ = try logger.addSink(.{ .path = NULL_PATH, .json = true, .pretty_json = true });
+        _ = try logger.addSink(.{ .path = NULL_PATH, .format = .json });
+        _ = try logger.addSink(.{ .path = NULL_PATH, .format = .json, .prettyJson = true });
 
         const ctx = BenchContext{ .logger = logger, .allocator = allocator };
         try results.append(allocator, runBenchmark("Multiple sinks (3)", benchSimpleLog, &ctx, "Text + JSON + Pretty", "Configuration Presets"));
@@ -628,9 +676,10 @@ pub fn main() !void {
         defer loggerStd.deinit();
 
         var configStd = Config.default();
-        configStd.auto_sink = false;
-        configStd.auto_flush = false;
+        configStd.autoSink = false;
+        configStd.autoFlush = false;
         loggerStd.configure(configStd);
+        _ = loggerStd.removeAllSinks();
 
         _ = try loggerStd.addSink(.{ .path = NULL_PATH });
 
@@ -641,18 +690,19 @@ pub fn main() !void {
 
     {
         // Page allocator comparison
-        const page_alloc = std.heap.page_allocator;
-        const loggerPage = try Logger.init(page_alloc);
+        const pageAlloc = std.heap.page_allocator;
+        const loggerPage = try Logger.init(pageAlloc);
         defer loggerPage.deinit();
 
         var configPage = Config.default();
-        configPage.auto_sink = false;
-        configPage.auto_flush = false;
+        configPage.autoSink = false;
+        configPage.autoFlush = false;
         loggerPage.configure(configPage);
+        _ = loggerPage.removeAllSinks();
 
         _ = try loggerPage.addSink(.{ .path = NULL_PATH });
 
-        const ctxPage = BenchContext{ .logger = loggerPage, .allocator = page_alloc };
+        const ctxPage = BenchContext{ .logger = loggerPage, .allocator = pageAlloc };
         try results.append(allocator, runBenchmark("Page allocator", benchSimpleLog, &ctxPage, "System page allocator", "Allocator Comparison"));
     }
 
@@ -667,8 +717,8 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -687,9 +737,9 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.enable_tracing = true;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.enableTracing = true;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -707,9 +757,9 @@ pub fn main() !void {
         defer logger.deinit();
 
         var config = Config.default();
-        config.enable_metrics = true;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.enableMetrics = true;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
         _ = try logger.addSink(.{ .path = NULL_PATH });
@@ -725,12 +775,12 @@ pub fn main() !void {
 
         var config = Config.default();
         config.structured = true;
-        config.json = true;
-        config.auto_sink = false;
-        config.auto_flush = false;
+        config.format = .json;
+        config.autoSink = false;
+        config.autoFlush = false;
         logger.configure(config);
 
-        _ = try logger.addSink(.{ .path = NULL_PATH, .json = true });
+        _ = try logger.addSink(.{ .path = NULL_PATH, .format = .json });
 
         const ctx = BenchContext{ .logger = logger, .allocator = allocator };
         try results.append(allocator, runBenchmark("Structured logging", benchSimpleLog, &ctx, "JSON structured output", "Enterprise Features"));
@@ -748,9 +798,10 @@ pub fn main() !void {
 
         var configProb = Config.default();
         configProb.sampling = .{ .enabled = true, .strategy = .{ .probability = 0.5 } };
-        configProb.auto_sink = false;
-        configProb.auto_flush = false;
+        configProb.autoSink = false;
+        configProb.autoFlush = false;
         loggerProb.configure(configProb);
+        _ = loggerProb.removeAllSinks();
 
         _ = try loggerProb.addSink(.{ .path = NULL_PATH });
 
@@ -764,10 +815,11 @@ pub fn main() !void {
         defer loggerRate.deinit();
 
         var configRate = Config.default();
-        configRate.sampling = .{ .enabled = true, .strategy = .{ .rate_limit = .{ .max_records = 100, .window_ms = 1000 } } };
-        configRate.auto_sink = false;
-        configRate.auto_flush = false;
+        configRate.sampling = .{ .enabled = true, .strategy = .{ .rateLimit = .{ .maxRecords = 100, .windowMs = 1000 } } };
+        configRate.autoSink = false;
+        configRate.autoFlush = false;
         loggerRate.configure(configRate);
+        _ = loggerRate.removeAllSinks();
 
         _ = try loggerRate.addSink(.{ .path = NULL_PATH });
 
@@ -781,10 +833,11 @@ pub fn main() !void {
         defer loggerAdapt.deinit();
 
         var configAdapt = Config.default();
-        configAdapt.sampling = .{ .enabled = true, .strategy = .{ .adaptive = .{ .target_rate = 1000 } } };
-        configAdapt.auto_sink = false;
-        configAdapt.auto_flush = false;
+        configAdapt.sampling = .{ .enabled = true, .strategy = .{ .adaptive = .{ .targetRate = 1000 } } };
+        configAdapt.autoSink = false;
+        configAdapt.autoFlush = false;
         loggerAdapt.configure(configAdapt);
+        _ = loggerAdapt.removeAllSinks();
 
         _ = try loggerAdapt.addSink(.{ .path = NULL_PATH });
 
@@ -798,10 +851,11 @@ pub fn main() !void {
         defer loggerN.deinit();
 
         var configN = Config.default();
-        configN.sampling = .{ .enabled = true, .strategy = .{ .every_n = 100 } };
-        configN.auto_sink = false;
-        configN.auto_flush = false;
+        configN.sampling = .{ .enabled = true, .strategy = .{ .everyN = 100 } };
+        configN.autoSink = false;
+        configN.autoFlush = false;
         loggerN.configure(configN);
+        _ = loggerN.removeAllSinks();
 
         _ = try loggerN.addSink(.{ .path = NULL_PATH });
 
@@ -815,10 +869,11 @@ pub fn main() !void {
         defer loggerRL.deinit();
 
         var configRL = Config.default();
-        configRL.rate_limit = .{ .enabled = true, .max_per_second = 10000, .burst_size = 100 };
-        configRL.auto_sink = false;
-        configRL.auto_flush = false;
+        configRL.rateLimit = .{ .enabled = true, .maxPerSecond = 10000, .burstSize = 100 };
+        configRL.autoSink = false;
+        configRL.autoFlush = false;
         loggerRL.configure(configRL);
+        _ = loggerRL.removeAllSinks();
 
         _ = try loggerRL.addSink(.{ .path = NULL_PATH });
 
@@ -833,9 +888,10 @@ pub fn main() !void {
 
         var configRedact = Config.default();
         configRedact.redaction = .{ .enabled = true, .replacement = "[REDACTED]" };
-        configRedact.auto_sink = false;
-        configRedact.auto_flush = false;
+        configRedact.autoSink = false;
+        configRedact.autoFlush = false;
         loggerRedact.configure(configRedact);
+        _ = loggerRedact.removeAllSinks();
 
         _ = try loggerRedact.addSink(.{ .path = NULL_PATH });
 
@@ -853,9 +909,10 @@ pub fn main() !void {
         defer loggerFilter.deinit();
 
         var configFilter = Config.default();
-        configFilter.auto_sink = false;
-        configFilter.auto_flush = false;
+        configFilter.autoSink = false;
+        configFilter.autoFlush = false;
         loggerFilter.configure(configFilter);
+        _ = loggerFilter.removeAllSinks();
 
         // Setup filter
         var filter = logly.Filter.init(allocator);
@@ -888,12 +945,13 @@ pub fn main() !void {
         defer loggerRules.deinit();
 
         var configRules = Config.default();
-        configRules.auto_sink = false;
-        configRules.auto_flush = false;
+        configRules.autoSink = false;
+        configRules.autoFlush = false;
         configRules.rules = .{
             .enabled = true,
         };
         loggerRules.configure(configRules);
+        _ = loggerRules.removeAllSinks();
 
         _ = try loggerRules.addSink(.{ .path = NULL_PATH });
 
@@ -911,10 +969,11 @@ pub fn main() !void {
         defer loggerNoRules.deinit();
 
         var configNoRules = Config.default();
-        configNoRules.auto_sink = false;
-        configNoRules.auto_flush = false;
+        configNoRules.autoSink = false;
+        configNoRules.autoFlush = false;
         configNoRules.rules = .{ .enabled = false };
         loggerNoRules.configure(configNoRules);
+        _ = loggerNoRules.removeAllSinks();
 
         _ = try loggerNoRules.addSink(.{ .path = NULL_PATH });
 
@@ -986,8 +1045,8 @@ pub fn main() !void {
         defer fieldRedactor.deinit();
 
         try fieldRedactor.addField("password", .full);
-        try fieldRedactor.addField("email", .partial_end);
-        try fieldRedactor.addField("credit_card", .mask_middle);
+        try fieldRedactor.addField("email", .partialEnd);
+        try fieldRedactor.addField("credit_card", .maskMiddle);
 
         const fieldCtx = FieldRedactContext{ .redactor = &fieldRedactor, .allocator = allocator };
         try results.append(allocator, runBenchmark("Field redaction (full)", struct {
@@ -1050,9 +1109,9 @@ pub fn main() !void {
 
         var metricsWithConfig = Metrics.initWithConfig(allocator, .{
             .enabled = true,
-            .track_levels = true,
-            .track_latency = true,
-            .enable_histogram = true,
+            .trackLevels = true,
+            .trackLatency = true,
+            .enableHistogram = true,
         });
         defer metricsWithConfig.deinit();
 
@@ -1082,15 +1141,16 @@ pub fn main() !void {
         defer loggerRotation.deinit();
 
         var configRot = Config.default();
-        configRot.auto_sink = false;
-        configRot.auto_flush = false;
+        configRot.autoSink = false;
+        configRot.autoFlush = false;
         loggerRotation.configure(configRot);
+        _ = loggerRotation.removeAllSinks();
 
         // Add a sink with rotation
         _ = try loggerRotation.addSink(.{
             .path = NULL_PATH,
             .rotation = "daily",
-            .size_limit = 1024 * 1024, // 1MB
+            .sizeLimit = 1024 * 1024, // 1MB
             .retention = 5,
         });
 
@@ -1109,9 +1169,10 @@ pub fn main() !void {
         defer logger1.deinit();
 
         var config1 = Config.default();
-        config1.auto_sink = false;
-        config1.auto_flush = false;
+        config1.autoSink = false;
+        config1.autoFlush = false;
         logger1.configure(config1);
+        _ = logger1.removeAllSinks();
 
         _ = try logger1.addSink(.{ .path = NULL_PATH });
 
@@ -1132,9 +1193,10 @@ pub fn main() !void {
         defer logger2.deinit();
 
         var config2 = Config.default();
-        config2.auto_sink = false;
-        config2.auto_flush = false;
+        config2.autoSink = false;
+        config2.autoFlush = false;
         logger2.configure(config2);
+        _ = logger2.removeAllSinks();
 
         _ = try logger2.addSink(.{ .path = NULL_PATH });
 
@@ -1155,9 +1217,10 @@ pub fn main() !void {
         defer logger4.deinit();
 
         var config4 = Config.default();
-        config4.auto_sink = false;
-        config4.auto_flush = false;
+        config4.autoSink = false;
+        config4.autoFlush = false;
         logger4.configure(config4);
+        _ = logger4.removeAllSinks();
 
         _ = try logger4.addSink(.{ .path = NULL_PATH });
 
@@ -1178,9 +1241,10 @@ pub fn main() !void {
         defer logger8.deinit();
 
         var config8 = Config.default();
-        config8.auto_sink = false;
-        config8.auto_flush = false;
+        config8.autoSink = false;
+        config8.autoFlush = false;
         logger8.configure(config8);
+        _ = logger8.removeAllSinks();
 
         _ = try logger8.addSink(.{ .path = NULL_PATH });
 
@@ -1201,9 +1265,10 @@ pub fn main() !void {
         defer logger16.deinit();
 
         var config16 = Config.default();
-        config16.auto_sink = false;
-        config16.auto_flush = false;
+        config16.autoSink = false;
+        config16.autoFlush = false;
         logger16.configure(config16);
+        _ = logger16.removeAllSinks();
 
         _ = try logger16.addSink(.{ .path = NULL_PATH });
 
@@ -1224,12 +1289,13 @@ pub fn main() !void {
         defer loggerJson.deinit();
 
         var configJson = Config.default();
-        configJson.json = true;
-        configJson.auto_sink = false;
-        configJson.auto_flush = false;
+        configJson.format = .json;
+        configJson.autoSink = false;
+        configJson.autoFlush = false;
         loggerJson.configure(configJson);
+        _ = loggerJson.removeAllSinks();
 
-        _ = try loggerJson.addSink(.{ .path = NULL_PATH, .json = true });
+        _ = try loggerJson.addSink(.{ .path = NULL_PATH, .format = .json });
 
         try results.append(allocator, runMultiThreadBenchmark(
             "4 threads JSON",
@@ -1249,9 +1315,10 @@ pub fn main() !void {
 
         var configColor = Config.default();
         configColor.color = true;
-        configColor.auto_sink = false;
-        configColor.auto_flush = false;
+        configColor.autoSink = false;
+        configColor.autoFlush = false;
         loggerColor.configure(configColor);
+        _ = loggerColor.removeAllSinks();
 
         _ = try loggerColor.addSink(.{ .path = NULL_PATH, .color = true });
 
@@ -1272,9 +1339,10 @@ pub fn main() !void {
         defer loggerFmt.deinit();
 
         var configFmt = Config.default();
-        configFmt.auto_sink = false;
-        configFmt.auto_flush = false;
+        configFmt.autoSink = false;
+        configFmt.autoFlush = false;
         loggerFmt.configure(configFmt);
+        _ = loggerFmt.removeAllSinks();
 
         _ = try loggerFmt.addSink(.{ .path = NULL_PATH });
 
@@ -1301,9 +1369,10 @@ pub fn main() !void {
 
         var configFile = Config.default();
         configFile.color = false;
-        configFile.auto_sink = false;
-        configFile.auto_flush = false;
+        configFile.autoSink = false;
+        configFile.autoFlush = false;
         loggerFile.configure(configFile);
+        _ = loggerFile.removeAllSinks();
 
         _ = try loggerFile.addSink(.{ .path = NULL_PATH });
 
@@ -1319,9 +1388,10 @@ pub fn main() !void {
 
         var configNoSample = Config.default();
         configNoSample.sampling = .{ .enabled = false };
-        configNoSample.auto_sink = false;
-        configNoSample.auto_flush = false;
+        configNoSample.autoSink = false;
+        configNoSample.autoFlush = false;
         loggerNoSample.configure(configNoSample);
+        _ = loggerNoSample.removeAllSinks();
 
         _ = try loggerNoSample.addSink(.{ .path = NULL_PATH });
 
@@ -1336,9 +1406,10 @@ pub fn main() !void {
 
         var configComp = Config.default();
         configComp.compression = .{ .enabled = true, .algorithm = .deflate, .level = .fast };
-        configComp.auto_sink = false;
-        configComp.auto_flush = false;
+        configComp.autoSink = false;
+        configComp.autoFlush = false;
         loggerComp.configure(configComp);
+        _ = loggerComp.removeAllSinks();
 
         _ = try loggerComp.addSink(.{ .path = NULL_PATH });
 
@@ -1351,54 +1422,54 @@ pub fn main() !void {
 
     // Summary Statistics
     std.debug.print("\n[BENCHMARK SUMMARY]\n", .{});
-    std.debug.print("=" ** 60, .{});
+    std.debug.print("============================================================", .{});
     std.debug.print("\n", .{});
 
-    var total_ops: f64 = 0;
-    var max_ops: f64 = 0;
-    var min_ops: f64 = std.math.floatMax(f64);
+    var totalOps: f64 = 0;
+    var maxOps: f64 = 0;
+    var minOps: f64 = std.math.floatMax(f64);
     var count: usize = 0;
-    var max_name: []const u8 = "";
-    var min_name: []const u8 = "";
+    var maxName: []const u8 = "";
+    var minName: []const u8 = "";
 
     for (results.items) |r| {
-        total_ops += r.ops_per_sec;
+        totalOps += r.opsPerSec;
         count += 1;
-        if (r.ops_per_sec > max_ops) {
-            max_ops = r.ops_per_sec;
-            max_name = r.name;
+        if (r.opsPerSec > maxOps) {
+            maxOps = r.opsPerSec;
+            maxName = r.name;
         }
-        if (r.ops_per_sec < min_ops) {
-            min_ops = r.ops_per_sec;
-            min_name = r.name;
+        if (r.opsPerSec < minOps) {
+            minOps = r.opsPerSec;
+            minName = r.name;
         }
     }
 
-    const avg_ops = if (count > 0) total_ops / @as(f64, @floatFromInt(count)) else 0;
-    const avg_latency = if (avg_ops > 0) 1_000_000_000.0 / avg_ops else 0;
+    const avgOps = if (count > 0) totalOps / @as(f64, @floatFromInt(count)) else 0;
+    const avgLatency = if (avgOps > 0) 1_000_000_000.0 / avgOps else 0;
 
     if (count > 0) {
         std.debug.print("\nTotal benchmarks run:     {d}\n", .{count});
-        std.debug.print("Average throughput:       {d:.0} ops/sec\n", .{avg_ops});
-        std.debug.print("Maximum throughput:       {d:.0} ops/sec ({s})\n", .{ max_ops, max_name });
-        std.debug.print("Minimum throughput:       {d:.0} ops/sec ({s})\n", .{ min_ops, min_name });
-        std.debug.print("Average latency:          {d:.0} ns\n", .{avg_latency});
+        std.debug.print("Average throughput:       {d:.0} ops/sec\n", .{avgOps});
+        std.debug.print("Maximum throughput:       {d:.0} ops/sec ({s})\n", .{ maxOps, maxName });
+        std.debug.print("Minimum throughput:       {d:.0} ops/sec ({s})\n", .{ minOps, minName });
+        std.debug.print("Average latency:          {d:.0} ns\n", .{avgLatency});
     }
 
     std.debug.print("\n", .{});
-    std.debug.print("=" ** 60, .{});
+    std.debug.print("============================================================", .{});
     std.debug.print("\n", .{});
     std.debug.print("[OK] Benchmarks completed successfully!\n\n", .{});
 
     // Write final Markdown report
     const io = logly.Utils.io();
-    const md_file = std.Io.Dir.cwd().createFile(io, "benchmark-results.md", .{}) catch |err| {
+    const mdFile = std.Io.Dir.cwd().createFile(io, "benchmark-results.md", .{}) catch |err| {
         std.debug.print("Warning: Could not create benchmark-results.md: {}\n", .{err});
         return;
     };
-    defer md_file.close(io);
+    defer mdFile.close(io);
 
-    const md_header =
+    const mdHeader =
         \\#### 📊 LOGLY.ZIG BENCHMARK RESULTS
         \\
         \\**Environment Details:**
@@ -1411,28 +1482,28 @@ pub fn main() !void {
         \\
     ;
 
-    var header_buf: [1024]u8 = undefined;
-    const header = std.fmt.bufPrint(&header_buf, md_header, .{
+    var headerBuf: [1024]u8 = undefined;
+    const header = std.fmt.bufPrint(&headerBuf, mdHeader, .{
         @tagName(builtin.os.tag),
         @tagName(builtin.cpu.arch),
         WARMUP_ITERATIONS,
         BENCHMARK_ITERATIONS,
         MT_BENCHMARK_ITERATIONS,
     }) catch "";
-    try md_file.writeStreamingAll(io, header);
+    try mdFile.writeStreamingAll(io, header);
 
     // Write categorized tables
     for (BenchmarkResult.categories) |cat| {
-        var has_category = false;
+        var hasCategory = false;
         for (results.items) |r| {
             if (std.mem.eql(u8, r.category, cat)) {
-                has_category = true;
+                hasCategory = true;
                 break;
             }
         }
-        if (!has_category) continue;
+        if (!hasCategory) continue;
 
-        const cat_md = std.fmt.allocPrint(allocator,
+        const catMd = std.fmt.allocPrint(allocator,
             \\
             \\<details>
             \\<summary><strong>{s}</strong></summary>
@@ -1441,38 +1512,38 @@ pub fn main() !void {
             \\| :--- | :--- | :--- | :--- |
             \\
         , .{cat}) catch continue;
-        defer allocator.free(cat_md);
-        try md_file.writeStreamingAll(io, cat_md);
+        defer allocator.free(catMd);
+        try mdFile.writeStreamingAll(io, catMd);
 
         for (results.items) |r| {
             if (std.mem.eql(u8, r.category, cat)) {
-                var line_buf: [1024]u8 = undefined;
-                const line = std.fmt.bufPrint(&line_buf, "| {s} | {d:.0} | {d:.0} | {s} |\n", .{
+                var lineBuf: [1024]u8 = undefined;
+                const line = std.fmt.bufPrint(&lineBuf, "| {s} | {d:.0} | {d:.0} | {s} |\n", .{
                     r.name,
-                    r.ops_per_sec,
-                    r.avg_latency_ns,
+                    r.opsPerSec,
+                    r.avgLatencyNs,
                     r.notes,
                 }) catch continue;
-                try md_file.writeStreamingAll(io, line);
+                try mdFile.writeStreamingAll(io, line);
             }
         }
-        try md_file.writeStreamingAll(io, "</details>\n");
+        try mdFile.writeStreamingAll(io, "</details>\n");
     }
 
     // Write summary to Markdown
     if (count > 0) {
-        try md_file.writeStreamingAll(io, "\n### 📈 Benchmark Summary\n\n");
-        var summary_buf: [1024]u8 = undefined;
-        const summary = std.fmt.bufPrint(&summary_buf,
+        try mdFile.writeStreamingAll(io, "\n### 📈 Benchmark Summary\n\n");
+        var summaryBuf: [1024]u8 = undefined;
+        const summary = std.fmt.bufPrint(&summaryBuf,
             \\- **Total benchmarks run:** {d}
             \\- **Average throughput:** {d:.0} ops/sec
             \\- **Maximum throughput:** {d:.0} ops/sec ({s})
             \\- **Minimum throughput:** {d:.0} ops/sec ({s})
             \\- **Average latency:** {d:.0} ns
             \\
-        , .{ count, avg_ops, max_ops, max_name, min_ops, min_name, avg_latency }) catch "";
-        try md_file.writeStreamingAll(io, summary);
+        , .{ count, avgOps, maxOps, maxName, minOps, minName, avgLatency }) catch "";
+        try mdFile.writeStreamingAll(io, summary);
     }
 
-    try md_file.writeStreamingAll(io, "\n---\n");
+    try mdFile.writeStreamingAll(io, "\n---\n");
 }

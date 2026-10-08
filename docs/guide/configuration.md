@@ -19,30 +19,29 @@ The `Config` struct is the primary interface for global settings. You can start 
 var config = logly.Config.default();
 
 // Global controls
-config.global_color_display = true;
-config.global_console_display = true;
-config.global_file_storage = true;
+config.globalColorDisplay = true;
+config.globalConsoleDisplay = true;
+config.globalFileStorage = true;
 
 // Log level
 config.level = .debug;
 
 // Display options
-config.show_time = true;
-config.show_module = true;
-config.show_function = false;
-config.show_filename = true; // Useful for debugging
-config.show_lineno = true;   // Pinpoint the exact line
-config.include_hostname = true; // Add hostname to logs
-config.include_pid = true;      // Add process ID
+config.showTime = true;
+config.showModule = true;
+config.showFunction = false;
+config.showFilename = true; // Useful for debugging
+config.showLineno = true;   // Pinpoint the exact line
+config.includeHostname = true; // Add hostname to logs
+config.includePid = true;      // Add process ID
 
 // Output format
-config.json = false;
-config.pretty_json = false;
+config.prettyJson = false;
 config.color = true;
 
 // Features
-config.enable_callbacks = false;  // Enable only when using callbacks
-config.enable_exception_handling = true;
+config.enableCallbacks = false;  // Enable only when using callbacks
+config.enableExceptionHandling = true;
 
 logger.configure(config);
 ```
@@ -52,30 +51,30 @@ logger.configure(config);
 | Option                   | Type          | Default                 | Description                                          |
 | :----------------------- | :------------ | :---------------------- | :--------------------------------------------------- |
 | `level`                  | `Level`       | `.info`                 | Minimum log level to output.                         |
-| `global_color_display`   | `bool`        | `true`                  | Globally enable/disable colored output.              |
-| `global_console_display` | `bool`        | `true`                  | Globally enable/disable console output.              |
-| `global_file_storage`    | `bool`        | `true`                  | Globally enable/disable file output.                 |
+| `globalColorDisplay`   | `bool`        | `true`                  | Globally enable/disable colored output.              |
+| `globalConsoleDisplay` | `bool`        | `true`                  | Globally enable/disable console output.              |
+| `globalFileStorage`    | `bool`        | `true`                  | Globally enable/disable file output.                 |
 | `json`                   | `bool`        | `false`                 | Format logs as JSON objects.                         |
-| `pretty_json`            | `bool`        | `false`                 | Pretty-print JSON output (indented).                 |
+| `prettyJson`            | `bool`        | `false`                 | Pretty-print JSON output (indented).                 |
 | `color`                  | `bool`        | `true`                  | Enable ANSI color codes.                             |
-| `show_time`              | `bool`        | `true`                  | Include timestamp in log output.                     |
-| `show_module`            | `bool`        | `true`                  | Include the module name.                             |
-| `show_function`          | `bool`        | `false`                 | Include the function name.                           |
-| `show_filename`          | `bool`        | `false`                 | Include the source filename.                         |
-| `show_lineno`            | `bool`        | `false`                 | Include the source line number.                      |
-| `include_hostname`       | `bool`        | `false`                 | Include the system hostname.                         |
-| `include_pid`            | `bool`        | `false`                 | Include the process ID.                              |
-| `capture_stack_trace`    | `bool`        | `false`                 | Capture stack traces for Error/Critical logs.        |
-| `symbolize_stack_trace`  | `bool`        | `false`                 | Resolve stack trace addresses to symbols.            |
-| `auto_sink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
-| `enable_callbacks`       | `bool`        | `false`                 | Enable log callbacks (only when using callbacks)     |
-| `log_format`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
-| `time_format`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss.SSS"` | Timestamp format                                 |
+| `showTime`              | `bool`        | `true`                  | Include timestamp in log output.                     |
+| `showModule`            | `bool`        | `true`                  | Include the module name.                             |
+| `showFunction`          | `bool`        | `false`                 | Include the function name.                           |
+| `showFilename`          | `bool`        | `false`                 | Include the source filename.                         |
+| `showLineno`            | `bool`        | `false`                 | Include the source line number.                      |
+| `includeHostname`       | `bool`        | `false`                 | Include the system hostname.                         |
+| `includePid`            | `bool`        | `false`                 | Include the process ID.                              |
+| `captureStackTrace`    | `bool`        | `false`                 | Capture stack traces for Error/Critical logs.        |
+| `symbolizeStackTrace`  | `bool`        | `false`                 | Resolve stack trace addresses to symbols.            |
+| `autoSink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
+| `enableCallbacks`       | `bool`        | `false`                 | Enable log callbacks (only when using callbacks)     |
+| `logFormat`             | `?[]const u8` | `null`                  | Custom log format string (e.g. `"{time} {message}"`) |
+| `timeFormat`            | `[]const u8`  | `"YYYY-MM-DD HH:mm:ss.SSS"` | Timestamp format                                 |
 | `timezone`               | `enum`        | `.local`                | Timezone for timestamps (`.local` or `.utc`)         |
-| `auto_flush`             | `bool`        | `false`                 | Auto-flush sinks (set true only when immediate output is critical) |
-| `logs_root_path`         | `?[]const u8` | `null`                  | Root directory for log files                        |
-| `debug_mode`             | `bool`        | `false`                 | Enable debug output for troubleshooting             |
-| `error_handling`         | `enum`        | `.log_and_continue`     | Error handling strategy (`.silent`, `.log_and_continue`, `.fail_fast`, `.callback`) |
+| `autoFlush`             | `bool`        | `false`                 | Auto-flush sinks (set true only when immediate output is critical) |
+| `logsRootPath`         | `?[]const u8` | `null`                  | Root directory for log files                        |
+| `debugMode`             | `bool`        | `false`                 | Enable debug output for troubleshooting             |
+| `errorHandling`         | `enum`        | `.logAndContinue`     | Error handling strategy (`.silent`, `.logAndContinue`, `.failFast`, `.callback`) |
 
 ## Module Configuration
 
@@ -87,11 +86,11 @@ The `Config` struct provides settings for various logging modules. Each module c
 var config = logly.Config.default();
 config.distributed = .{
     .enabled = true,
-    .service_name = "payment-service",  // Your service name
+    .serviceName = "payment-service",  // Your service name
     .region = "us-east-1",              // Deployment region
     .environment = "production",        // Service environment (dev/prod/staging)
-    .trace_header = "X-Trace-ID",       // Header key for Trace ID
-    .span_header = "X-Span-ID",         // Header key for Span ID
+    .traceHeader = "X-Trace-ID",       // Header key for Trace ID
+    .spanHeader = "X-Span-ID",         // Header key for Span ID
 };
 ```
 
@@ -104,19 +103,19 @@ var config = logly.Config.default();
 
 // Use a preset for Jaeger and tweak batching
 config.telemetry = logly.TelemetryConfig.jaeger();
-config.telemetry.span_processor_type = .batch; // Auto-export when thresholds hit
-config.telemetry.batch_size = 1024;
-config.telemetry.batch_timeout_ms = 2000;
+config.telemetry.spanProcessorType = .batch; // Auto-export when thresholds hit
+config.telemetry.batchSize = 1024;
+config.telemetry.batchTimeoutMs = 2000;
 
 // Or use file-based development preset
 config.telemetry = logly.TelemetryConfig.development();
 ```
 
 Notes:
-- `span_processor_type` semantics:
+- `spanProcessorType` semantics:
   - `.simple`: Completed spans are kept pending until you explicitly call `telemetry.exportSpans()` or `telemetry.flush()`. Use this when you want to control export timing (e.g., at request boundaries).
-  - `.batch` : Spans are buffered and automatically exported when `batch_size` or `batch_timeout_ms` thresholds are reached.
-- `metrics_file_path` overrides `exporter_file_path` for JSON/Prometheus metric exports.
+  - `.batch` : Spans are buffered and automatically exported when `batchSize` or `batchTimeoutMs` thresholds are reached.
+- `metricsFilePath` overrides `exporterFilePath` for JSON/Prometheus metric exports.
 - Default telemetry values (batch size, timeouts, headers) are centralized in `Constants.TelemetryDefaults`.
 - v0.1.8: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) so telemetry builds cleanly across targets.
 
@@ -124,12 +123,12 @@ Notes:
 
 ```zig
 var config = logly.Config.default();
-config.thread_pool = .{
+config.threadPool = .{
     .enabled = true,              // Enable thread pool
-    .thread_count = 4,            // Number of worker threads (0 = auto)
-    .queue_size = 10000,          // Max queued tasks
-    .stack_size = 1024 * 1024,    // Stack size per thread
-    .work_stealing = true,        // Enable work stealing
+    .threadCount = 4,            // Number of worker threads (0 = auto)
+    .queueSize = 10000,          // Max queued tasks
+    .stackSize = 1024 * 1024,    // Stack size per thread
+    .workStealing = true,        // Enable work stealing
 };
 ```
 
@@ -139,10 +138,10 @@ config.thread_pool = .{
 var config = logly.Config.default();
 config.scheduler = .{
     .enabled = true,              // Enable scheduler
-    .cleanup_max_age_days = 7,    // Delete logs older than 7 days
-    .max_files = 10,              // Keep max 10 rotated files
-    .compress_before_cleanup = true, // Compress before deleting
-    .file_pattern = "*.log",      // Pattern for log files
+    .cleanupMaxAgeDays = 7,    // Delete logs older than 7 days
+    .maxFiles = 10,              // Keep max 10 rotated files
+    .compressBeforeCleanup = true, // Compress before deleting
+    .filePattern = "*.log",      // Pattern for log files
 };
 ```
 
@@ -154,8 +153,8 @@ config.compression = .{
     .enabled = true,              // Enable compression
     .algorithm = .deflate,        // Compression algorithm
     .level = .default,            // Compression level
-    .on_rotation = true,          // Compress on rotation
-    .keep_original = false,       // Delete original after compression
+    .onRotation = true,          // Compress on rotation
+    .keepOriginal = false,       // Delete original after compression
     .extension = ".gz",           // Compressed file extension
 };
 ```
@@ -164,15 +163,15 @@ config.compression = .{
 
 ```zig
 var config = logly.Config.default();
-config.async_config = .{
+config.asyncConfig = .{
     .enabled = true,              // Enable async logging
-    .buffer_size = 8192,          // Ring buffer size
-    .batch_size = 100,            // Messages per batch
-    .flush_interval_ms = 100,     // Auto-flush interval
-    .min_flush_interval_ms = 10,  // Min interval between flushes
-    .max_latency_ms = 5000,       // Max latency before forced flush
-    .overflow_policy = .drop_oldest, // On buffer overflow
-    .background_worker = true,    // Auto-start worker thread
+    .bufferSize = 8192,          // Ring buffer size
+    .batchSize = 100,            // Messages per batch
+    .flushIntervalMs = 100,     // Auto-flush interval
+    .minFlushIntervalMs = 10,  // Min interval between flushes
+    .maxLatencyMs = 5000,       // Max latency before forced flush
+    .overflowPolicy = .dropOldest, // On buffer overflow
+    .backgroundWorker = true,    // Auto-start worker thread
 };
 ```
 
@@ -184,7 +183,7 @@ Use helper methods for cleaner configuration:
 // Enable async logging
 var config = logly.Config.default().withAsync(.{
     .enabled = true,
-    .buffer_size = 8192,
+    .bufferSize = 8192,
 });
 
 // Enable compression
@@ -192,9 +191,9 @@ var config2 = logly.Config.default().withCompression(logly.CompressionConfig.pro
 
 // Chain multiple features
 var config6 = logly.Config.default()
-    .withAsync(.{ .enabled = true, .buffer_size = 8192 })
+    .withAsync(.{ .enabled = true, .bufferSize = 8192 })
     .withCompression(logly.CompressionConfig.production())
-    .withThreadPool(.{ .enabled = true, .thread_count = 0 }); // Auto-detect CPU cores
+    .withThreadPool(.{ .enabled = true, .threadCount = 0 }); // Auto-detect CPU cores
 ```
 
 ### Allocator Configuration
@@ -207,26 +206,91 @@ Logly provides pre-configured presets for common scenarios:
 
 ```zig
 // Production: JSON output, sampling, compression, scheduler enabled
-const prod_config = logly.ConfigPresets.production();
+const prodConfig = logly.ConfigPresets.production();
 
 // Development: DEBUG level, colors, source location shown
-const dev_config = logly.ConfigPresets.development();
+const devConfig = logly.ConfigPresets.development();
 
 // High Throughput: Async, thread pool, rate limiting enabled
 const perf_config = logly.ConfigPresets.highThroughput();
 
 // Secure: Redaction enabled, no hostname/PID in output
-const secure_config = logly.ConfigPresets.secure();
+const secureConfig = logly.ConfigPresets.secure();
 
 // Log-only mode (no console output)
-const log_only = logly.Config.logOnly();
+const logOnly = logly.Config.logOnly();
 
 // Display-only mode (console only, no files)
-const display_only = logly.Config.displayOnly();
+const displayOnly = logly.Config.displayOnly();
 
 // Custom display/storage settings
 const custom = logly.Config.withDisplayStorage(true, true, true);
 ```
+
+### How `autoSink`, `globalConsoleDisplay` and `globalFileStorage` interact
+
+`autoSink` adds a console sink at logger creation, but only when
+`globalConsoleDisplay` is also on. The two flags are independent, so a
+contradictory pairing is simply inert rather than an error:
+
+| `globalConsoleDisplay` | `globalFileStorage` | `autoSink` | Result |
+|:--|:--|:--|:--|
+| true | true | true | Console sink added; file sinks allowed |
+| true | false | true | Console sink added; file sinks rejected |
+| false | true | true | **No** console sink (display is off); file sinks allowed |
+| false | false | true | No console sink; file sinks rejected |
+
+Adding a sink that contradicts the active flags returns an error instead of
+silently creating an empty file or a dead console target:
+
+```zig
+const logger = try logly.Logger.initWithConfig(allocator, logly.Config.displayOnly());
+try std.testing.expectError(
+    error.FileStorageDisabled,
+    logger.addSink(.{ .path = "app.log" }),
+);
+
+const file_logger = try logly.Logger.initWithConfig(allocator, logly.Config.logOnly());
+try std.testing.expectError(
+    error.ConsoleDisplayDisabled,
+    file_logger.addSink(logly.SinkConfig.console()),
+);
+```
+
+The null device is always permitted, even with file storage disabled, because
+it discards output without creating a file. Matching is case-insensitive on
+Windows, so `NUL`, `nul`, and `/dev/null` are all accepted.
+
+### JSON file sinks are array documents
+
+A JSON file sink writes one array rather than one object per line, so a file
+holds a single valid document:
+
+```json
+[
+  { "timestamp": ..., "level": "INFO", "message": "first" },
+  { "timestamp": ..., "level": "INFO", "message": "second" }
+]
+```
+
+The closing `]` is written when the sink closes, so the document is only
+complete after `logger.deinit()`. Reading the file while the logger is still
+open yields an unterminated array. Append mode rewinds over the existing tail
+and continues the array; a file containing unrelated content is rejected with
+`error.JsonArrayAppendUnsupported` rather than being silently corrupted.
+
+### `autoFlush`
+
+`autoFlush` flushes after every record. It is off by default because flushing
+costs a syscall per log line:
+
+```zig
+var config = logly.Config.default();
+config.autoFlush = true;   // immediate output, lower throughput
+```
+
+Prefer an explicit `logger.flush()`, a sink `bufferSize` threshold, or relying
+on `deinit` for the common case.
 
 ### Using Presets
 
@@ -238,20 +302,20 @@ var logger = try logly.Logger.initWithConfig(allocator, logly.ConfigPresets.prod
 
 ### Custom Log Format
 
-You can customize the log output format using the `log_format` option. The following placeholders are supported:
+You can customize the log output format using the `logFormat` option. The following placeholders are supported:
 
-- `{time}`: Timestamp (formatted according to `time_format`)
+- `{time}`: Timestamp (formatted according to `timeFormat`)
 - `{level}`: Log level
 - `{message}`: Log message
 - `{module}`: Module name
 - `{function}`: Function name
 - `{file}`: Filename (clickable in supported terminals)
 - `{line}`: Line number
-- `{trace_id}`: Distributed trace ID
-- `{span_id}`: Span ID
+- `{traceId}`: Distributed trace ID
+- `{spanId}`: Span ID
 
 ```zig
-config.log_format = "{time} | {level} | {message}";
+config.logFormat = "{time} | {level} | {message}";
 ```
 
 ### Clickable Links
@@ -259,8 +323,8 @@ config.log_format = "{time} | {level} | {message}";
 To enable clickable file links in your terminal (like VS Code), enable filename and line number display:
 
 ```zig
-config.show_filename = true;
-config.show_lineno = true;
+config.showFilename = true;
+config.showLineno = true;
 ```
 
 This will output the location in `path/to/file:line` format.
@@ -278,17 +342,17 @@ Logly supports multiple timestamp formats:
 | `HH:mm:ss` | `06:39:53` | Time only |
 | `HH:mm:ss.SSS` | `06:39:53.091` | Time with milliseconds |
 | `unix` | `1764830393` | Unix timestamp (seconds) |
-| `unix_ms` | `1764830393091` | Unix timestamp (milliseconds) |
+| `unixMs` | `1764830393091` | Unix timestamp (milliseconds) |
 
 ```zig
 // Use ISO8601 format
-config.time_format = logly.Config.TimeFormat.iso8601;
+config.timeFormat = logly.Config.TimeFormat.iso8601;
 
 // Use Unix timestamp
-config.time_format = logly.Config.TimeFormat.unix;
+config.timeFormat = logly.Config.TimeFormat.unix;
 
 // Use canonical default pattern
-config.time_format = logly.Config.TimeFormat.default_pattern;
+config.timeFormat = logly.Config.TimeFormat.defaultPattern;
 
 // Configure timezone
 config.timezone = .utc;   // Use UTC
@@ -333,9 +397,9 @@ defer sampler.deinit();
 logger.setSampler(&sampler);
 
 // Or custom: rate limit to 100 per second
-var rate_sampler = Sampler.init(allocator, .{ .rate_limit = .{
-    .max_records = 100,
-    .window_ms = 1000,
+var rateSampler = Sampler.init(allocator, .{ .rateLimit = .{
+    .maxRecords = 100,
+    .windowMs = 1000,
 }});
 ```
 
@@ -368,8 +432,8 @@ logger.enableMetrics();
 // ... later ...
 if (logger.getMetrics()) |metrics| {
     std.debug.print("Total: {}, Errors: {}\n", .{
-        metrics.total_records,
-        metrics.error_count,
+        metrics.totalRecords,
+        metrics.errorCount,
     });
 }
 ```
@@ -402,7 +466,7 @@ Control colors globally across all sinks:
 var config = logly.Config.default();
 
 // Disable all colors globally
-config.global_color_display = false;
+config.globalColorDisplay = false;
 
 // Or enable colors per output type
 config.color = true;  // Enable ANSI color codes
@@ -416,20 +480,20 @@ Each sink can have independent color settings:
 
 ```zig
 // Console with colors enabled
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .color = true,  // Explicit colors on
 });
 
 // File sink with colors disabled (recommended for files)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .color = false,  // No ANSI codes in files
 });
 
 // JSON file (colors don't apply to JSON structure)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.json",
-    .json = true,
+    .format = .json,
     .color = false,
 });
 ```
@@ -442,7 +506,7 @@ Enable ANSI colors on Windows at application startup:
 pub fn main() !void {
     // Enable Virtual Terminal Processing on Windows
     // This is a no-op on Linux/macOS
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
     
     // ... rest of initialization
 }
@@ -463,18 +527,18 @@ pub fn main() !void {
 
 ### Level Colors Configuration
  
-You can customize the colors for standard levels using the `level_colors` configuration:
+You can customize the colors for standard levels using the `levelColors` configuration:
  
 ```zig
 var config = logly.Config.default();
  
 // Use a built-in theme
-config.level_colors.theme_preset = .neon; // .bright, .dim, .neon, .pastel, .dark, etc.
+config.levelColors.themePreset = .neon; // .bright, .dim, .neon, .pastel, .dark, etc.
  
 // Override specific level colors (ANSI codes)
-config.level_colors.info_color = "36";    // Cyan
-config.level_colors.warning_color = "33;1"; // Bold Yellow
-config.level_colors.error_color = "31;4";   // Underline Red
+config.levelColors.infoColor = logly.Color.parse("36").?;    // Cyan
+config.levelColors.warningColor = logly.Color.parse("33").?; // Yellow
+config.levelColors.errorColor = logly.Color.parse("31").?;   // Red
  
 logger.configure(config);
 ```
@@ -526,7 +590,7 @@ To completely disable colors (useful for CI/CD or log files):
 
 ```zig
 var config = logly.Config.default();
-config.global_color_display = false;  // Master switch
+config.globalColorDisplay = false;  // Master switch
 config.color = false;                  // Disable ANSI codes
 logger.configure(config);
 ```
@@ -539,7 +603,7 @@ Logly automatically handles ANSI color support across platforms:
 
 ```zig
 // Enable colors (call at startup)
-_ = logly.Terminal.enableAnsiColors();
+ _ = logly.Terminal.enableAnsiColors();
 
 // Check if colors are supported
 if (logly.Terminal.supportsAnsiColors()) {
@@ -566,7 +630,7 @@ if (logly.Terminal.isColorEnabled()) {
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 logger.configure(config);
 
 try logger.info("Application started");
@@ -579,8 +643,8 @@ Enable indented, human-readable JSON:
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
-config.pretty_json = true;
+config.format = .json;
+config.prettyJson = true;
 logger.configure(config);
 ```
 

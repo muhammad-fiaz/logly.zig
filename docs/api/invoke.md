@@ -30,7 +30,7 @@ The Invoke module attaches extra messages to log records when conditions match. 
 | `clear()` | Remove all triggers |
 | `count()` | Get trigger count |
 | `evaluate(record)` | Evaluate triggers against a record |
-| `formatMessages(messages, writer, use_color)` | Format messages for output |
+| `formatMessages(messages, writer, useColor)` | Format messages for output |
 | `formatMessagesJson(messages, writer, pretty)` | Format messages as JSON |
 | `getStats()` | Get evaluation statistics |
 | `resetStats()` | Reset statistics |
@@ -52,10 +52,10 @@ How to match log levels.
 ```zig
 pub const LevelMatch = union(enum) {
     exact: Level,           // Exact level match
-    min_priority: u8,       // Minimum priority threshold
-    max_priority: u8,       // Maximum priority threshold
-    priority_range: struct { min: u8, max: u8 }, // Priority range
-    custom_name: []const u8, // Custom level name
+    minPriority: u8,       // Minimum priority threshold
+    maxPriority: u8,       // Maximum priority threshold
+    priorityRange: struct { min: u8, max: u8 }, // Priority range
+    customName: []const u8, // Custom level name
     any: void,              // Matches any level
 };
 ```
@@ -70,15 +70,15 @@ pub const Trigger = struct {
     name: ?[]const u8 = null,             // Optional name
     enabled: bool = true,                 // Enable/disable
     once: bool = false,                   // Fire only once
-    level_match: ?LevelMatch = null,      // Level condition
+    levelMatch: ?LevelMatch = null,      // Level condition
     module: ?[]const u8 = null,           // Module filter
     function: ?[]const u8 = null,         // Function filter
-    message_contains: ?[]const u8 = null, // Substring match
-    message_regex: ?[]const u8 = null,    // Regex match
-    min_duration_ns: ?u64 = null,         // Duration threshold
+    messageContains: ?[]const u8 = null, // Substring match
+    messageRegex: ?[]const u8 = null,    // Regex match
+    minDurationNs: ?u64 = null,         // Duration threshold
     messages: []const Message,            // Messages to append
     priority: u8 = 100,                   // Evaluation priority
-    cooldown_ms: u64 = 0,                // Min interval between fires
+    cooldownMs: u64 = 0,                // Min interval between fires
 };
 ```
 
@@ -115,15 +115,15 @@ pub fn main() !void {
     invoke.enable();
 
     // Error trigger
-    const err_msgs = [_]logly.Invoke.Message{
+    const err_msgs = []logly.Invoke.Message{
         ">> [ERROR] Database connection pool exhausted",
         ">> [FIX] Increase max_connections in database.yml",
     };
 
     try invoke.add(.{
         .id = 1,
-        .level_match = .{ .exact = .err },
-        .message_contains = "database",
+        .levelMatch = .{ .exact = .err },
+        .messageContains = "database",
         .messages = &err_msgs,
     });
 
@@ -141,32 +141,32 @@ pub fn main() !void {
 
 ```zig
 // Exact level
-.level_match = .{ .exact = .err }
+.levelMatch = .{ .exact = .err }
 
 // Minimum priority (matches err, critical, etc.)
-.level_match = .{ .min_priority = 40 }
+.levelMatch = .{ .minPriority = 40 }
 
 // Priority range (matches warning and err)
-.level_match = .{ .priority_range = .{ .min = 30, .max = 40 } }
+.levelMatch = .{ .priorityRange = .{ .min = 30, .max = 40 } }
 
 // Custom level by name
-.level_match = .{ .custom_name = "audit" }
+.levelMatch = .{ .customName = "audit" }
 
 // Any level
-.level_match = .{ .any = {} }
+.levelMatch = .{ .any = {} }
 ```
 
 ## Message Filtering
 
 ```zig
 // Substring match
-.message_contains = "database"
+.messageContains = "database"
 
 // Regex match
-.message_regex = "out of memory \\d+"
+.messageRegex = "out of memory \\d+"
 
 // Duration-based (500ms+)
-.min_duration_ns = 500_000_000
+.minDurationNs = 500_000_000
 ```
 
 ## Once-Fire Triggers
@@ -175,7 +175,7 @@ pub fn main() !void {
 try invoke.add(.{
     .id = 1,
     .once = true,
-    .level_match = .{ .exact = .info },
+    .levelMatch = .{ .exact = .info },
     .messages = &messages,
 });
 // Fires once, then automatically disabled
@@ -186,7 +186,7 @@ try invoke.add(.{
 ```zig
 try invoke.add(.{
     .id = 1,
-    .cooldown_ms = 10000, // Minimum 10 seconds between fires
+    .cooldownMs = 10000, // Minimum 10 seconds between fires
     .messages = &messages,
 });
 ```

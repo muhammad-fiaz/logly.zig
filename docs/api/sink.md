@@ -45,19 +45,19 @@ Configuration for a sink.
 | `path` | `?[]const u8` | `null` | Path to log file (null for console). Supports dynamic placeholders like `{date}`, `{time}`. Also supports network schemes `tcp://host:port` and `udp://host:port`. |
 | `name` | `?[]const u8` | `null` | Sink identifier for metrics and debugging |
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
-| `event_log` | `bool` | `false` | Enable system event log output (Windows Event Log on Windows, Syslog on POSIX). See the Windows Event Log mapping below; constants are provided by `Constants.EventLogConstants`. |
-| `tamper_evident` | `bool` | `false` | Enable cryptographic SHA-256 chaining to produce tamper-evident log records. |
+| `eventLog` | `bool` | `false` | Enable system event log output (Windows Event Log on Windows, Syslog on POSIX). See the Windows Event Log mapping below; constants are provided by `Constants.EventLogConstants`. |
+| `tamperEvident` | `bool` | `false` | Enable cryptographic SHA-256 chaining to produce tamper-evident log records. |
 | `mmap` | `bool` | `false` | Enable virtual memory-mapped zero-copy file logging for microsecond-latency writes. |
 
 ### Windows Event Log (Windows only)
 
-When `event_log` is enabled on Windows, log entries are sent to the Windows Event Viewer using the `ReportEventA` API. Logly maps internal log `Level` values to Windows event types as follows:
+When `eventLog` is enabled on Windows, log entries are sent to the Windows Event Viewer using the `ReportEventA` API. Logly maps internal log `Level` values to Windows event types as follows:
 
-- Error / Critical / Fail / Fatal -> `EVENTLOG_ERROR_TYPE` (`Constants.EventLogConstants.error_type`)
-- Warning -> `EVENTLOG_WARNING_TYPE` (`Constants.EventLogConstants.warning_type`)
-- Notice / Info / Success -> `EVENTLOG_INFORMATION_TYPE` (`Constants.EventLogConstants.information_type`)
+- Error / Critical / Fail / Fatal -> `eventlogErrorType` (`Constants.EventLogConstants.errorType`)
+- Warning -> `eventlogWarningType` (`Constants.EventLogConstants.warningType`)
+- Notice / Info / Success -> `eventlogInformationType` (`Constants.EventLogConstants.informationType`)
 
-`EVENTLOG_SUCCESS` (`Constants.EventLogConstants.success`) may be used for success/audit events.
+`eventlogSuccess` (`Constants.EventLogConstants.success`) may be used for success/audit events.
 
 These values are centralized in `src/constants.zig` under `EventLogConstants` and are reused by the sink implementation to ensure consistency across platforms.
 
@@ -73,35 +73,51 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `level` | `?Level` | `null` | Minimum log level for this sink |
-| `max_level` | `?Level` | `null` | Maximum log level (creates level range) |
+| `maxLevel` | `?Level` | `null` | Maximum log level (creates level range) |
 
 ### Output Formatting
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `json` | `bool` | `false` | Force JSON output for this sink |
-| `pretty_json` | `bool` | `false` | Pretty print JSON with indentation |
+| `format` | `?Config.Format` | `null` | Output format for this sink (`null` inherits the logger-wide `Config.format`). One sink renders exactly one format: `.text`, `.json`, `.ndjson`, `.logfmt`, `.syslog`, `.syslog3164`, `.msgpack`. |
+| `prettyJson` | `bool` | `false` | Pretty print JSON with indentation |
 | `color` | `?bool` | `null` | Enable/disable colors (null = auto-detect) |
-| `log_format` | `?[]const u8` | `null` | Custom log format string |
-| `time_format` | `?[]const u8` | `null` | Custom time format for this sink |
+| `logFormat` | `?[]const u8` | `null` | Custom log format string |
+| `timeFormat` | `?[]const u8` | `null` | Custom time format for this sink |
 | `theme` | `?Formatter.Theme` | `null` | Custom color theme for this sink |
+
+Event-log sinks (`eventLog = true`) only carry text-compatible formats.
+Selecting `.msgpack`, `.syslog`, or `.syslog3164` on an event-log sink
+fails at creation with `error.UnsupportedFormatForSink` (binary cannot
+survive NUL-terminated transports; syslog framing would be doubled by the
+daemon), as does inheriting one of those logger-wide formats via
+`Logger.addSink`.
+
+JSON-array (`.json`) file sinks keep every file a valid standalone
+document: the opening bracket is written at creation, an existing file
+continues its array when it ends with the array tail (anything else is
+rejected with `error.JsonArrayAppendUnsupported` instead of being
+corrupted), rotation closes the archived document and opens a fresh one
+(memory-mapped files are remapped onto the fresh handle), and shutdown
+closes the active document. Use `.ndjson` for append workflows that must
+never look back.
 
 ### Field Inclusion
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `include_timestamp` | `bool` | `true` | Include timestamp in output |
-| `include_level` | `bool` | `true` | Include log level in output |
-| `include_source` | `bool` | `false` | Include source location |
-| `include_trace_id` | `bool` | `false` | Include trace IDs (distributed tracing) |
+| `includeTimestamp` | `bool` | `true` | Include timestamp in output |
+| `includeLevel` | `bool` | `true` | Include log level in output |
+| `includeSource` | `bool` | `false` | Include source location |
+| `includeTraceId` | `bool` | `false` | Include trace IDs (distributed tracing) |
 
 ### File Write Mode
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `overwrite_mode` | `bool` | `false` | Legacy field: `false` = append (default), `true` = truncate file on startup. Prefer `write_mode`. |
-| `write_mode` | `WriteMode` | `.append` | File write mode. See `WriteMode` enum below. |
-| `file_mode` | `?u32` | `null` | File permissions for created log files (Unix only). |
+| `overwriteMode` | `bool` | `false` | Legacy field: `false` = append (default), `true` = truncate file on startup. Prefer `writeMode`. |
+| `writeMode` | `WriteMode` | `.append` | File write mode. See `WriteMode` enum below. |
+| `fileMode` | `?u32` | `null` | File permissions for created log files (Unix only). |
 
 #### WriteMode Enum
 
@@ -109,69 +125,69 @@ The `path` field supports dynamic placeholders that are resolved when the sink i
 |---------|----------|
 | `.append` | Append to existing file (default). File grows over time. |
 | `.overwrite` | Truncate file on startup. Only current session logs are kept. |
-| `.append_rotate` | Append to file with explicit rotation trigger. Use with rotation config. |
+| `.appendRotate` | Append to file with explicit rotation trigger. Use with rotation config. |
 
 ```zig
 // Append mode (default)
 var sink = logly.SinkConfig.file("app.log");
-sink.write_mode = .append;
+sink.writeMode = .append;
 
 // Overwrite mode (fresh start each run)
 var sink = logly.SinkConfig.file("session.log");
-sink.write_mode = .overwrite;
+sink.writeMode = .overwrite;
 
 // Append with rotation
 var sink = logly.SinkConfig.file("app.log");
-sink.write_mode = .append_rotate;
+sink.writeMode = .appendRotate;
 sink.rotation = "daily";
 sink.retention = 7;
 ```
 
-When using `overwrite_mode = true`, it is equivalent to `write_mode = .overwrite`.
+When using `overwriteMode = true`, it is equivalent to `writeMode = .overwrite`.
 
 ### File Rotation
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `rotation` | `?[]const u8` | `null` | Rotation interval: "minutely", "hourly", "daily", "weekly", "monthly", "yearly" |
-| `size_limit` | `?u64` | `null` | Max file size in bytes |
-| `size_limit_str` | `?[]const u8` | `null` | Max file size as string (e.g., "10MB", "1GB") |
+| `sizeLimit` | `?u64` | `null` | Max file size in bytes |
+| `sizeLimitStr` | `?[]const u8` | `null` | Max file size as string (e.g., "10MB", "1GB") |
 | `retention` | `?usize` | `null` | Number of rotated files to keep |
 
 ### Async Writing & Buffering
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `async_write` | `bool` | `true` | Enable async writing with buffering |
-| `buffer_size` | `usize` | `8192` | Buffer size for async writing in bytes |
-| `max_buffer_records` | `usize` | `1000` | Maximum records to buffer before forcing a flush |
-| `flush_interval_ms` | `u64` | `1000` | Flush interval in milliseconds |
+| `asyncWrite` | `bool` | `true` | Enable async writing with buffering |
+| `bufferSize` | `usize` | `8192` | Buffer size for async writing in bytes |
+| `maxBufferRecords` | `usize` | `1000` | Maximum records to buffer before forcing a flush |
+| `flushIntervalMs` | `u64` | `1000` | Flush interval in milliseconds |
 | `buffered_write_mode` | `bool` | `false` | Accumulate records in buffer until `flush()` is explicitly called by the user |
 
 ### Rate Limiting
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `rate_limit_per_second` | `?u32` | `null` | Maximum messages allowed per second. Extra messages are dropped. |
+| `rateLimitPerSecond` | `?u32` | `null` | Maximum messages allowed per second. Extra messages are dropped. |
 
 ### Error Handling
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `on_error` | `ErrorBehavior` | `.log_stderr` | Error handling behavior: `.silent`, `.log_stderr`, `.disable_sink`, `.propagate` |
+| `onError` | `ErrorBehavior` | `.logStderr` | Error handling behavior: `.silent`, `.logStderr`, `.disableSink`, `.propagate` |
 
 #### ErrorBehavior semantics
 
 - Applied across direct writes and buffered flush paths (`writeRaw`, `flush`, `flushNow`).
 - `.silent`: increments write error stats and suppresses output.
-- `.log_stderr`: increments write error stats and emits a compact sink error line to stderr.
-- `.disable_sink`: disables the sink after an error and triggers `onStateChange(false)` callback when configured.
+- `.logStderr`: increments write error stats and emits a compact sink error line to stderr.
+- `.disableSink`: disables the sink after an error and triggers `onStateChange(false)` callback when configured.
 - `.propagate`: returns the original write/flush error to the caller.
 
 For TCP sinks, reconnect attempts use centralized retry defaults:
 
-- `Constants.TimeDefaults.max_retries`
-- `Constants.TimeDefaults.retry_delay_ms`
+- `Constants.TimeDefaults.maxRetries`
+- `Constants.TimeDefaults.retryDelayMs`
 
 ### Advanced Options
 
@@ -193,15 +209,15 @@ To enforce strict, tamper-evident log integrity, Logly offers built-in SHA-256 c
 ### Usage Example
 ```zig
 var config = logly.Config.default();
-config.auto_sink = false;
+config.autoSink = false;
 
-var sink_cfg = logly.SinkConfig.file("secure_audit.log");
-sink_cfg.tamper_evident = true; // Enable tamper-evident chaining
+var sinkCfg = logly.SinkConfig.file("secure_audit.log");
+sinkCfg.tamperEvident = true; // Enable tamper-evident chaining
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
 
-_ = try logger.addSink(sink_cfg);
+ _ = try logger.addSink(sinkCfg);
 
 try logger.info("Critical user balance update", @src());
 try logger.flush();
@@ -221,16 +237,16 @@ For ultra-high-performance logging workloads, Logly provides portable memory-map
 ### Usage Example
 ```zig
 var config = logly.Config.default();
-config.auto_sink = false;
+config.autoSink = false;
 
 var mmap_sink = logly.SinkConfig.file("high_throughput.log");
 mmap_sink.mmap = true;         // Enable memory-mapped file sink
-mmap_sink.async_write = false; // direct zero-copy write
+mmap_sink.asyncWrite = false; // direct zero-copy write
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
 
-_ = try logger.addSink(mmap_sink);
+ _ = try logger.addSink(mmap_sink);
 
 try logger.info("Microsecond-latency zero-copy write", @src());
 try logger.flush();
@@ -243,9 +259,9 @@ try logger.flush();
 Keep a permanent log file that grows over time:
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
-    .overwrite_mode = false,  // Default: append to existing file
+    .overwriteMode = false,  // Default: append to existing file
 });
 ```
 
@@ -256,9 +272,9 @@ Every time you run the application, new logs are appended to the file.
 Start fresh each run with only current session logs:
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/session.log",
-    .overwrite_mode = true,  // Overwrite file on initialization
+    .overwriteMode = true,  // Overwrite file on initialization
 });
 ```
 
@@ -270,22 +286,22 @@ Use different modes for different sinks:
 
 ```zig
 // Persistent history - append mode
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/history.log",
-    .overwrite_mode = false,  // Keep all logs forever
+    .overwriteMode = false,  // Keep all logs forever
 });
 
 // Current session - overwrite mode
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/session.log",
-    .overwrite_mode = true,   // Fresh start each time
+    .overwriteMode = true,   // Fresh start each time
 });
 
 // Error tracking - append mode for permanent record
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/errors.log",
     .level = .err,
-    .overwrite_mode = false,  // Keep error history
+    .overwriteMode = false,  // Keep error history
 });
 ```
 
@@ -303,11 +319,11 @@ Deinitializes the sink and frees resources.
 
 **Alias:** `destroy`
 
-### `write(record: *const Record, global_config: Config) !void`
+### `write(record: *const Record, globalConfig: Config) !void`
 
 Writes a log record to the sink. Uses the internal allocator for formatting.
 
-### `writeWithAllocator(record: *const Record, global_config: Config, scratch_allocator: ?std.mem.Allocator) !void`
+### `writeWithAllocator(record: *const Record, globalConfig: Config, scratchAllocator: ?std.mem.Allocator) !void`
 
 Writes a log record using an optional scratch allocator for formatting.
 
@@ -321,8 +337,8 @@ try sink.writeWithAllocator(record, config, logger.scratchAllocator());
 Writes preformatted data directly to the sink, bypassing record formatting.
 
 - Appends a newline for file/console/network raw writes.
-- Updates `SinkStats` and `on_write` callback on success.
-- Applies `on_error` behavior consistently on failures.
+- Updates `SinkStats` and `onWrite` callback on success.
+- Applies `onError` behavior consistently on failures.
 
 ### `flush() !void`
 
@@ -330,9 +346,9 @@ Flushes buffered sink data to its destination.
 
 - Returns immediately when buffer is empty.
 - Uses internal buffered record accounting so stats reflect batch flushes accurately.
-- On success updates `SinkStats` (`total_written`, `bytes_written`, `flush_count`).
-- Invokes `on_write(record_count, bytes)` and `on_flush(bytes, duration_ns)` callbacks.
-- On failure increments `write_errors` and applies configured `on_error` behavior.
+- On success updates `SinkStats` (`totalWritten`, `bytesWritten`, `flushCount`).
+- Invokes `onWrite(recordCount, bytes)` and `onFlush(bytes, durationNs)` callbacks.
+- On failure increments `writeErrors` and applies configured `onError` behavior.
 
 ### `isAsyncEnabled() bool`
 
@@ -362,38 +378,38 @@ Use this in batch checkpoints when async buffering is enabled but immediate dura
 
 ```zig
 // Using add() alias (same as addSink())
-_ = try logger.add(SinkConfig.default());
+ _ = try logger.add(SinkConfig.default());
 ```
 
 ### File Sink with Rotation
 
 ```zig
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.log",
     .rotation = "daily",
     .retention = 7,
-    .size_limit_str = "100MB",
+    .sizeLimitStr = "100MB",
 });
 ```
 
 ### JSON Sink for Structured Logging
 
 ```zig
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.json",
-    .json = true,
-    .pretty_json = true,
-    .include_trace_id = true,
+    .format = .json,
+    .prettyJson = true,
+    .includeTraceId = true,
 });
 ```
 
 ### Error-Only File Sink
 
 ```zig
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/errors.log",
     .level = .err,           // Minimum: error
-    .max_level = .critical,  // Maximum: critical
+    .maxLevel = .critical,  // Maximum: critical
     .color = false,
 });
 ```
@@ -402,23 +418,23 @@ _ = try logger.add(.{
 
 ```zig
 // Disable colors for console output
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .color = false,  // Override auto-detection
 });
 
 // Or use global setting
 var config = Config.default();
-config.global_color_display = false;
+config.globalColorDisplay = false;
 logger.configure(config);
 ```
 
 ### High-Throughput Async Sink
 
 ```zig
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/high-volume.log",
-    .async_write = true,
-    .buffer_size = 65536, // 64KB buffer
+    .asyncWrite = true,
+    .bufferSize = 65536, // 64KB buffer
 });
 ```
 
@@ -427,8 +443,8 @@ _ = try logger.add(.{
 ```zig
 var sink = try logly.Sink.init(allocator, .{
     .path = "logs/batch.log",
-    .async_write = true,
-    .on_error = .propagate,
+    .asyncWrite = true,
+    .onError = .propagate,
 });
 defer sink.deinit();
 
@@ -446,18 +462,18 @@ std.debug.print("flushed records: {}\n", .{stats.getTotalWritten()});
 
 ```zig
 // Console: info and above
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .level = .info,
 });
 
 // File: all levels
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/debug.log",
     .level = .trace,
 });
 
 // Errors file: errors only
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/errors.log",
     .level = .err,
 });
@@ -473,10 +489,10 @@ Override with explicit `true` or `false`:
 
 ```zig
 // Force colors off for console
-_ = try logger.addSink(.{ .color = false });
+ _ = try logger.addSink(.{ .color = false });
 
 // Force colors on for file (e.g., for viewing with `less -R`)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/colored.log",
     .color = true,
 });
@@ -509,8 +525,8 @@ Statistics for monitoring sink performance.
 
 | Method | Return | Description |
 |--------|--------|-------------|
-| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate bytes per second throughput |
-| `throughputRecordsPerSecond(elapsed_seconds)` | `f64` | Calculate records per second throughput |
+| `throughputBytesPerSecond(elapsedSeconds)` | `f64` | Calculate bytes per second throughput |
+| `throughputRecordsPerSecond(elapsedSeconds)` | `f64` | Calculate records per second throughput |
 | `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
 | `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
 | `avgBytesPerWrite()` | `f64` | Calculate average bytes per write |
@@ -537,7 +553,7 @@ std.debug.print("Avg bytes/write: {d:.1}\n", .{stats.avgBytesPerWrite()});
 ## Compression Configuration
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .compression = .{
         .enabled = true,
@@ -550,13 +566,13 @@ _ = try logger.addSink(.{
 ## Per-Sink Filtering
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/filtered.log",
     .filter = .{
-        .include_modules = &.{"database", "http"},
-        .exclude_modules = &.{"health_check"},
-        .include_messages = &.{"important"},
-        .exclude_messages = &.{"debug"},
+        .includeModules = &.{"database", "http"},
+        .excludeModules = &.{"health_check"},
+        .includeMessages = &.{"important"},
+        .excludeMessages = &.{"debug"},
     },
 });
 ```
@@ -616,7 +632,7 @@ pub const SinkConfig = struct {
     pub fn jsonFile(path: []const u8) SinkConfig;
     
     /// Returns a rotating file sink configuration.
-    pub fn rotating(path: []const u8, rotation_interval: []const u8, retention_count: usize) SinkConfig;
+    pub fn rotating(path: []const u8, rotationInterval: []const u8, retentionCount: usize) SinkConfig;
     
     /// Returns an error-only sink configuration.
     pub fn errorOnly(path: []const u8) SinkConfig;

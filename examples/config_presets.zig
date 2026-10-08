@@ -9,7 +9,7 @@ pub fn main() !void {
     // Enable ANSI colors
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Testing Configuration Modes ===\n\n", .{});
+    std.debug.print("Testing Configuration Modes\n\n", .{});
 
     // Test 1: Log-Only Mode (no console display, only file storage)
     std.debug.print("1. Log-Only Mode (files only, no console)\n", .{});
@@ -23,10 +23,10 @@ pub fn main() !void {
 
         // These should only go to the file, not console
         try logger.info("This message goes to file only", @src());
-        try logger.warn("Warning message in file only", @src());
+        try logger.warning("Warning message in file only", @src());
         try logger.flush();
     }
-    std.debug.print("   ✓ Log-only mode completed (check test_log_only.log)\n\n", .{});
+    std.debug.print("   [OK] Log-only mode completed (check test_log_only.log)\n\n", .{});
 
     // Test 2: Display-Only Mode (console display, no file storage)
     std.debug.print("2. Display-Only Mode (console only, no files)\n", .{});
@@ -35,15 +35,20 @@ pub fn main() !void {
         const logger = try logly.Logger.initWithConfig(allocator, config);
         defer logger.deinit();
 
-        // Try to add a file sink - it should be ignored due to global_file_storage = false
-        _ = try logger.addSink(logly.SinkConfig.file("test_display_only.log"));
+        // Try to add a file sink - rejected because globalFileStorage is false.
+        // No file is created.
+        if (logger.addSink(logly.SinkConfig.file("test_display_only.log"))) |_| {
+            std.debug.print("   ERROR: file sink was accepted in display-only mode!\n", .{});
+        } else |err| {
+            std.debug.print("   File sink correctly rejected: {t} (no file created)\n", .{err});
+        }
 
         // These should only appear in console
         try logger.info("This message appears in console only", @src());
         try logger.success("Success message in console only", @src());
         try logger.flush();
     }
-    std.debug.print("   ✓ Display-only mode completed\n\n", .{});
+    std.debug.print("   [OK] Display-only mode completed\n\n", .{});
 
     // Test 3: Custom Display/Storage Settings
     std.debug.print("3. Custom Display/Storage Settings\n", .{});
@@ -61,7 +66,7 @@ pub fn main() !void {
         try logger.err("Error message in both outputs", @src());
         try logger.flush();
     }
-    std.debug.print("   ✓ Custom mode completed (check test_both.log)\n\n", .{});
+    std.debug.print("   [OK] Custom mode completed (check test_both.log)\n\n", .{});
 
     // Test 4: Silent Mode (no output anywhere)
     std.debug.print("4. Silent Mode (no output anywhere)\n", .{});
@@ -70,15 +75,20 @@ pub fn main() !void {
         const logger = try logly.Logger.initWithConfig(allocator, config);
         defer logger.deinit();
 
-        // Try to add sinks - they should be ignored
-        _ = try logger.addSink(logly.SinkConfig.file("test_silent.log"));
+        // Try to add sinks - rejected because storage and display are disabled.
+        // No file is created.
+        if (logger.addSink(logly.SinkConfig.file("test_silent.log"))) |_| {
+            std.debug.print("   ERROR: file sink was accepted in silent mode!\n", .{});
+        } else |err| {
+            std.debug.print("   File sink correctly rejected: {t} (no file created)\n", .{err});
+        }
 
         // These should not appear anywhere
         try logger.info("This message should not appear anywhere", @src());
-        try logger.crit("Critical message that should be silent", @src());
+        try logger.critical("Critical message that should be silent", @src());
         try logger.flush();
     }
-    std.debug.print("   ✓ Silent mode completed (no output expected)\n\n", .{});
+    std.debug.print("   [OK] Silent mode completed (no output expected)\n\n", .{});
 
     // Test 5: Runtime Configuration Changes
     std.debug.print("5. Runtime Configuration Changes\n", .{});
@@ -103,7 +113,7 @@ pub fn main() !void {
         try logger.info("This should only appear in console after second config change", @src());
         try logger.flush();
     }
-    std.debug.print("   ✓ Runtime configuration changes completed\n\n", .{});
+    std.debug.print("   [OK] Runtime configuration changes completed\n\n", .{});
 
-    std.debug.print("=== All Configuration Mode Tests Completed ===\n", .{});
+    std.debug.print("All Configuration Mode Tests Completed\n", .{});
 }

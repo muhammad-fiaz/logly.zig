@@ -37,7 +37,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -101,7 +101,7 @@ Use built-in theme presets:
 const Formatter = logly.Formatter;
 
 // Available themes
-const default_theme = Formatter.Theme{};         // Standard colors
+const defaultTheme = Formatter.Theme{};         // Standard colors
 const bright = Formatter.Theme.bright();         // Bold/bright colors
 const dim = Formatter.Theme.dim();               // Dim colors
 const minimal = Formatter.Theme.minimal();       // Subtle grays
@@ -114,28 +114,26 @@ const light = Formatter.Theme.light();           // Light terminal optimized
 ## Extended 256-Color Example
 
 ```zig
-const Colors = logly.Constants.Colors;
+const tint = logly.Color.Tint;
 
 // Use 256-color palette
-const orange = Colors.fg256(208);      // "38;5;208"
-const pink = Colors.fg256(213);        // "38;5;213"
-const teal = Colors.fg256(43);         // "38;5;43"
-const purple_bg = Colors.bg256(141);   // "48;5;141"
+const orange = tint.color.ansi256.index(208);
+const pink = tint.color.ansi256.index(213);
+const teal = tint.color.ansi256.index(43);
 
 // Create custom level with 256 colors
-try logger.addCustomLevel("NOTICE", 22, Colors.fg256(81));
-try logger.addCustomLevel("AUDIT", 35, Colors.fg256(214));
+try logger.addCustomLevel("NOTICE", 22, tint.color.ansi256.index(81));
+try logger.addCustomLevel("AUDIT", 35, tint.color.ansi256.index(214));
 ```
 
 ## RGB Color Example
 
 ```zig
-const Colors = logly.Constants.Colors;
+const tint = logly.Color.Tint;
 
 // Define colors with RGB values
-const coral = Colors.fgRgb(255, 127, 80);    // "38;2;255;127;80"
-const navy_bg = Colors.bgRgb(0, 0, 128);     // "48;2;0;0;128"
-const lime = Colors.fgRgb(50, 205, 50);      // "38;2;50;205;50"
+const coral = tint.color.rgb(255, 127, 80);
+const lime = tint.color.rgb(50, 205, 50);
 ```
 
 ## Advanced CustomLevel

@@ -27,11 +27,11 @@ Every log should carry metadata about where it came from. Instead of manually ad
 var config = logly.Config.production();
 config.distributed = .{
     .enabled = true,
-    .service_name = "auth-service",
-    .service_version = "2.1.0",
+    .serviceName = "auth-service",
+    .serviceVersion = "2.1.0",
     .environment = getEnv("APP_ENV") orelse "local",
     .region = "us-east-1",
-    .instance_id = getEnv("HOSTNAME"), // e.g., pod name
+    .instanceId = getEnv("HOSTNAME"), // e.g., pod name
 };
 ```
 
@@ -60,11 +60,11 @@ In a concurrent web server (like zap or http.zig), avoid setting global state. I
 ```zig
 fn handleRequest(req: Request, global_logger: *logly.Logger) !void {
     // 1. Extract headers from upstream
-    const trace_id = req.headers.get("X-Trace-ID") orelse newUuid();
-    const span_id = req.headers.get("X-Span-ID");
+    const traceId = req.headers.get("X-Trace-ID") orelse newUuid();
+    const spanId = req.headers.get("X-Span-ID");
 
     // 2. Create scoped logger
-    const logger = global_logger.withTrace(trace_id, span_id);
+    const logger = global_logger.withTrace(traceId, spanId);
 
     // 3. Log normally - context is auto-injected
     try logger.info("Handling login request"); 
@@ -82,9 +82,9 @@ Send logs directly to Logstash, Fluentd, or Vector.
 
 ```zig
 // Send JSON logs to Vector agent sidecar
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "tcp://localhost:9000",
-    .json = true,
+    .format = .json,
 });
 ```
 
@@ -98,13 +98,13 @@ You can hook into distributed events for metrics, auditing, or custom behavior. 
 const std = @import("std");
 const logly = @import("logly");
 
-fn onTraceStarted(trace_id: []const u8) void {
+fn onTraceStarted(traceId: []const u8) void {
     // Example: Increment a metrics counter or log to stdout
-    std.debug.print("[Metrics] New trace initiated: {s}\n", .{trace_id});
+    std.debug.print("[Metrics] New trace initiated: {s}\n", .{traceId});
 }
 
-fn onSpanStarted(span_id: []const u8, name: []const u8) void {
-    std.debug.print("[Metrics] Span '{s}' started: {s}\n", .{name, span_id});
+fn onSpanStarted(spanId: []const u8, name: []const u8) void {
+    std.debug.print("[Metrics] Span '{s}' started: {s}\n", .{name, spanId});
 }
 
 pub fn main() !void {
@@ -116,8 +116,8 @@ pub fn main() !void {
     config.distributed.enabled = true;
     
     // Register the callbacks
-    config.distributed.on_trace_created = onTraceStarted;
-    config.distributed.on_span_created = onSpanStarted;
+    config.distributed.onTraceCreated = onTraceStarted;
+    config.distributed.onSpanCreated = onSpanStarted;
     
     logger.configure(config);
 
@@ -136,8 +136,8 @@ pub fn main() !void {
 
 *   **Always enable JSON** for distributed environments. Text logs are hard to parse at scale.
 *   **Use `withTrace()`** for request logic. It's thread-safe and zero-allocation (uses pointers to the main logger).
-*   **Standardize Headers**: Ensure all your services use the same trace headers. You can customize these in `config.distributed` (e.g., `trace_header`, `span_header`, `baggage_header`).
+*   **Standardize Headers**: Ensure all your services use the same trace headers. You can customize these in `config.distributed` (e.g., `traceHeader`, `spanHeader`, `baggageHeader`).
 
 ## Configuration Reference
 
-See the [Distributed Config API](../api/distributed.md) for full configuration options including `service_name`, `environment`, `region`, and custom header mapping.
+See the [Distributed Config API](../api/distributed.md) for full configuration options including `serviceName`, `environment`, `region`, and custom header mapping.

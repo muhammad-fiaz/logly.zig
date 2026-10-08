@@ -79,7 +79,7 @@ Initializes a new Formatter and pre-fetches system metadata (hostname, PID).
 
 Formats a log record into a string. The `config` can be `Config` or `SinkConfig`. Uses the internal allocator for string building.
 
-#### `formatWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+#### `formatWithAllocator(record: *const Record, config: anytype, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Formats a log record using an optional scratch allocator. If provided, temporary allocations use this allocator. If null, falls back to the internal allocator.
 
@@ -92,7 +92,7 @@ const formatted = try formatter.formatWithAllocator(record, config, logger.scrat
 
 Formats a log record into a JSON string. Automatically includes cached hostname and PID if enabled in config. Uses the internal allocator.
 
-#### `formatJsonWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+#### `formatJsonWithAllocator(record: *const Record, config: anytype, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Formats a log record as JSON using an optional scratch allocator.
 
@@ -109,11 +109,15 @@ Formats a log record as Newline Delimited JSON (NDJSON). This guarantees one JSO
 
 Formats a log record in `logfmt` style (`key=value` pairs). Ideal for ingestion into Grafana Loki and Splunk.
 
-#### `formatCef(record: *const Record, config: anytype) ![]u8`
+#### `formatSyslog(record: *const Record, config: anytype) ![]u8`
 
-Formats a log record into ArcSight Common Event Format (CEF) for robust SIEM tool ingestion.
+Formats a log record as RFC5424 syslog with UTC RFC3339 timestamps. No ANSI colors are emitted.
 
-#### `formatMsgpackWithAllocator(record: *const Record, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+#### `formatSyslog3164(record: *const Record, config: anytype) ![]u8`
+
+Formats a log record as RFC3164 (BSD) syslog. No ANSI colors are emitted.
+
+#### `formatMsgpackWithAllocator(record: *const Record, config: anytype, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Formats a log record into MessagePack (`msgpack`) binary format. It packs all standard attributes (timestamp, level, message, module, context, etc.) into a highly compact binary array, suitable for high-volume network and storage sinks.
 
@@ -126,18 +130,18 @@ Example template: `"{time} [{level}] {message} {fields}"`
 
 Writes a log record as JSON directly to a writer without intermediate allocation.
 
-#### `formatTimestamp(timestamp_ms: i64, config: anytype) ![]u8`
+#### `formatTimestamp(timestampMs: i64, config: anytype) ![]u8`
 
 Formats a standalone timestamp string using the same logic as record formatting.
 
-- Honors `Config.time_format` and timezone behavior.
+- Honors `Config.timeFormat` and timezone behavior.
 - Useful when callers need consistent timestamp serialization outside full record formatting.
 
-#### `formatTimestampWithAllocator(timestamp_ms: i64, config: anytype, scratch_allocator: ?std.mem.Allocator) ![]u8`
+#### `formatTimestampWithAllocator(timestampMs: i64, config: anytype, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Allocator-aware variant of `formatTimestamp(...)`.
 
-- Uses `scratch_allocator` when provided.
+- Uses `scratchAllocator` when provided.
 - Falls back to formatter allocator when null.
 
 ### Timestamp Timezone Behavior
@@ -147,13 +151,13 @@ Timestamp formatting behavior depends on `Config.timezone`:
 - `.utc`: `ISO8601` emits `Z`, and `RFC3339` emits `+00:00`.
 - `.local`: uses process/system local timezone when available and emits `+/-HH:MM` for `ISO8601` and `RFC3339`.
 
-For custom `time_format` patterns, timezone tokens are also available:
+For custom `timeFormat` patterns, timezone tokens are also available:
 - `ZZZ` => `+HH:MM`
 - `ZZ` => `+HHMM`
 
-`time_format = "default"` resolves to the canonical default pattern (`YYYY-MM-DD HH:mm:ss.SSS`).
+`timeFormat = "default"` resolves to the canonical default pattern (`YYYY-MM-DD HH:mm:ss.SSS`).
 
-`unix` and `unix_ms` formats remain numeric and timezone-agnostic, including JSON output.
+`unix` and `unixMs` formats remain numeric and timezone-agnostic, including JSON output.
 
 Why `ZZZ` and `ZZ` are needed:
 - Custom date/time layouts are often required by legacy parsers and SIEM pipelines.
@@ -204,10 +208,10 @@ Statistics for formatter performance.
 | `avgFormatSize()` | `f64` | Calculate average format size |
 | `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
 | `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
-| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate throughput (bytes per second) |
+| `throughputBytesPerSecond(elapsedSeconds)` | `f64` | Calculate throughput (bytes per second) |
 
 > [!TIP]
-> As of v0.1.8, `total_bytes_formatted` captures the exact length of each formatted message, replacing previous estimations.
+> As of v0.1.8, `totalBytesFormatted` captures the exact length of each formatted message, replacing previous estimations.
 
 #### Reset
 
@@ -222,29 +226,29 @@ The Formatter caches system metadata during initialization to improve performanc
 - **Hostname**: Retrieved via `GetComputerNameW` (Windows) or `gethostname` (POSIX).
 - **PID**: Retrieved via `GetCurrentProcessId` (Windows) or `getpid` (POSIX).
 
-These values are automatically included in JSON output when `include_hostname` or `include_pid` are enabled in the configuration.
+These values are automatically included in JSON output when `includeHostname` or `includePid` are enabled in the configuration.
 
 ### Callbacks
 
 #### `setFormatCompleteCallback(callback: *const fn (u32, u64) void) void`
 
 Sets the callback for format completion.
-- Parameters: `format_type` (u32), `output_size` (u64)
+- Parameters: `format_type` (u32), `outputSize` (u64)
 
 #### `setJsonFormatCallback(callback: *const fn (*const Record, u64) void) void`
 
 Sets the callback for JSON formatting.
-- Parameters: `record` (*const Record), `output_size` (u64)
+- Parameters: `record` (*const Record), `outputSize` (u64)
 
 #### `setCustomFormatCallback(callback: *const fn ([]const u8, u64) void) void`
 
 Sets the callback for custom formatting.
-- Parameters: `format_string` ([]const u8), `output_size` (u64)
+- Parameters: `format_string` ([]const u8), `outputSize` (u64)
 
 #### `setErrorCallback(callback: *const fn ([]const u8) void) void`
 
 Sets the callback for format errors.
-- Parameters: `error_msg` ([]const u8)
+- Parameters: `errorMsg` ([]const u8)
 
 ## Theme
 
@@ -350,11 +354,11 @@ Statistics for the formatter.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `total_records_formatted` | `atomic.Value(u64)` | Total records formatted |
-| `json_formats` | `atomic.Value(u64)` | Number of JSON formats |
-| `custom_formats` | `atomic.Value(u64)` | Number of custom formats |
-| `format_errors` | `atomic.Value(u64)` | Number of format errors |
-| `total_bytes_formatted` | `atomic.Value(u64)` | Total bytes formatted |
+| `totalRecordsFormatted` | `atomic.Value(u64)` | Total records formatted |
+| `jsonFormats` | `atomic.Value(u64)` | Number of JSON formats |
+| `customFormats` | `atomic.Value(u64)` | Number of custom formats |
+| `formatErrors` | `atomic.Value(u64)` | Number of format errors |
+| `totalBytesFormatted` | `atomic.Value(u64)` | Total bytes formatted |
 
 ### Getter Methods
 
@@ -385,7 +389,7 @@ Statistics for the formatter.
 | `avgFormatSize()` | `f64` | Calculate average format size in bytes |
 | `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
 | `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
-| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate bytes per second throughput |
+| `throughputBytesPerSecond(elapsedSeconds)` | `f64` | Calculate bytes per second throughput |
 
 ### Reset
 

@@ -55,12 +55,12 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Create a memory-mapped file sink config
-    var sink_config = logly.SinkConfig.file("logs/performance.log");
-    sink_config.name = "mmap_perf_sink";
-    sink_config.mmap = true; // [!code hl] // Enable memory mapping!
+    var sinkConfig = logly.SinkConfig.file("logs/performance.log");
+    sinkConfig.name = "mmap_perf_sink";
+    sinkConfig.mmap = true; // [!code hl] // Enable memory mapping!
 
     // Add the sink to the logger
-    _ = try logger.addSink(sink_config);
+     _ = try logger.addSink(sinkConfig);
 
     try logger.info("High performance log using virtual memory-mapping!", @src());
     try logger.flush();

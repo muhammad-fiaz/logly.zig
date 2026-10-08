@@ -54,30 +54,31 @@ fn myLogCallback(record: *const logly.Record) !void {
 logger.setLogCallback(&myLogCallback);
 ```
 
-### Color Callback
+  ### Color Callback
 
-Invoked when determining the color for a specific log level.
+  Invoked when determining the color for a specific log level.
+  Receives the level and its default tint color; returns the color to use.
 
-```zig
-pub const ColorCallback = *const fn (level: Level, default_color: []const u8) []const u8;
-```
+  ```zig
+  pub const ColorCallback = *const fn (level: Level, defaultColor: logly.Color.Color) logly.Color.Color;
+  ```
 
-**Usage:**
+  **Usage:**
 
-```zig
-fn myColorCallback(level: logly.Level, default: []const u8) []const u8 {
-    if (level == .info) return "\x1b[35m"; // Magento for Info
-    return default;
-}
+  ```zig
+  fn myColorCallback(level: logly.Level, default: logly.Color.Color) logly.Color.Color {
+      if (level == .info) return logly.Color.parse("magenta").?;
+      return default;
+  }
 
-logger.setColorCallback(&myColorCallback);
-```
+  logger.setColorCallback(&myColorCallback);
+  ```
 
 ## Lifecycle Callbacks
 
 These callbacks are configured via `Config` or specialized setter methods.
 
-### on_record_filtered
+### onRecordFiltered
 
 Invoked when a record is dropped due to level filtering or other rules.
 
@@ -85,7 +86,7 @@ Invoked when a record is dropped due to level filtering or other rules.
 callback: *const fn(context: ?*anyopaque, level: Level) void
 ```
 
-### on_sink_error
+### onSinkError
 
 Invoked when a sink fails to write a message.
 
@@ -93,7 +94,7 @@ Invoked when a sink fails to write a message.
 callback: *const fn(context: ?*anyopaque, err: anyerror) void
 ```
 
-### on_logger_initialized
+### onLoggerInitialized
 
 Invoked after the logger is fully initialized.
 
@@ -101,7 +102,7 @@ Invoked after the logger is fully initialized.
 callback: *const fn(context: ?*anyopaque) void
 ```
 
-### on_logger_destroyed
+### onLoggerDestroyed
 
 Invoked just before the logger is deinitialized.
 
@@ -109,7 +110,7 @@ Invoked just before the logger is deinitialized.
 callback: *const fn(context: ?*anyopaque) void
 ```
 
-### `on_crash_callback`
+### `onCrashCallback`
 
 Invoked immediately when a panic, Windows VEH exception, or POSIX signal occurs.
 
@@ -121,10 +122,10 @@ callback: *const fn(message: []const u8) void
 
 Invoked by the thread pool for worker lifecycle and queue events:
 
-- `setThreadStartCallback(thread_id)`
-- `setThreadStopCallback(thread_id, tasks_processed, uptime_ms)`
-- `setTaskSubmittedCallback(priority, queue_depth)`
+- `setThreadStartCallback(threadId)`
+- `setThreadStopCallback(threadId, tasksProcessed, uptimeMs)`
+- `setTaskSubmittedCallback(priority, queueDepth)`
 - `setTaskDequeuedCallback(priority, wait_time_us)`
 - `setTaskExecutedCallback(execution_time_us, success)`
-- `setWorkStolenCallback(victim_thread, thief_thread)`
-- `setQueueOverflowCallback(queue_size, capacity)`
+- `setWorkStolenCallback(victimThread, thiefThread)`
+- `setQueueOverflowCallback(queueSize, capacity)`

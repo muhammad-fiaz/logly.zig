@@ -1,29 +1,11 @@
-//! Asynchronous Logging Module
+//! Async logging.
 //!
-//! Provides non-blocking I/O for high-performance logging scenarios.
-//! Decouples log submission from persistence using concurrent data structures.
-//!
-//! Components:
-//! - AsyncLogger: Main async logging interface with ring buffer
-//! - AsyncFileWriter: Buffered file writer with async flush
-//! - RingBuffer: Lock-free circular buffer for log entries
-//!
-//! Features:
-//! - Lock-free ring buffer for minimal contention
-//! - Configurable overflow strategies (block, drop, grow)
-//! - Batch processing for I/O efficiency
-//! - Background worker threads for persistence
-//! - Comprehensive statistics and monitoring
-//!
-//! Performance:
-//! - Sub-microsecond log submission in typical cases
-//! - Minimal memory copies through buffer pooling
-//! - Automatic batch size tuning
-
+//! Non-blocking log submission via ring buffer and background workers.
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Record = @import("record.zig").Record;
 const Sink = @import("sink.zig").Sink;
+const Color = @import("color.zig");
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
@@ -45,7 +27,7 @@ pub const AsyncLogger = struct {
     /// Condition variable for worker thread signaling.
     condition: std.Io.Condition = .init,
     /// Background worker thread.
-    worker_thread: ?std.Thread = null,
+    workerThread: ?std.Thread = null,
     /// Whether the async logger is running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// List of sinks to write to.
@@ -53,39 +35,39 @@ pub const AsyncLogger = struct {
 
     /// Callback triggered when the internal buffer exceeds its capacity.
     /// Provides the number of dropped records for monitoring.
-    overflow_callback: ?*const fn (dropped_count: u64) void = null,
+    overflowCallback: ?*const fn (droppedCount: u64) void = null,
 
     /// Callback triggered upon completion of a flush operation.
     /// Provides metrics: records flushed, total bytes, and elapsed time in ms.
-    flush_callback: ?*const fn (u64, u64, u64) void = null,
+    flushCallback: ?*const fn (u64, u64, u64) void = null,
 
     /// Callback triggered when the background worker thread initializes.
-    on_worker_start: ?*const fn () void = null,
+    onWorkerStart: ?*const fn () void = null,
 
     /// Callback triggered when the background worker thread terminates.
     /// Provides total records processed and worker uptime in ms.
-    on_worker_stop: ?*const fn (u64, u64) void = null,
+    onWorkerStop: ?*const fn (u64, u64) void = null,
 
     /// Callback triggered after a batch of logs is successfully written.
     /// Provides batch size and processing time in microseconds.
-    on_batch_processed: ?*const fn (usize, u64) void = null,
+    onBatchProcessed: ?*const fn (usize, u64) void = null,
 
     /// Callback triggered after a batch of logs is successfully flushed.
     /// Provides batch size and processing latency in nanoseconds.
-    on_batch_flushed: ?*const fn (count: usize, latency_ns: u64) void = null,
+    onBatchFlushed: ?*const fn (count: usize, latencyNs: u64) void = null,
 
     /// Callback triggered when log processing latency exceeds the configured threshold.
     /// Useful for detecting I/O bottlenecks.
-    on_latency_threshold_exceeded: ?*const fn (u64, u64) void = null,
+    onLatencyThresholdExceeded: ?*const fn (u64, u64) void = null,
 
     /// Callback triggered when the buffer reaches full capacity.
-    on_full: ?*const fn () void = null,
+    onFull: ?*const fn () void = null,
 
     /// Callback triggered when the buffer becomes completely empty.
-    on_empty: ?*const fn () void = null,
+    onEmpty: ?*const fn () void = null,
 
     /// Callback triggered when an internal error occurs during logging.
-    on_error: ?*const fn (err: anyerror) void = null,
+    onError: ?*const fn (err: anyerror) void = null,
 
     /// Configuration parameters for async behavior.
     pub const AsyncConfig = Config.AsyncConfig;
@@ -108,53 +90,51 @@ pub const AsyncLogger = struct {
     /// Runtime statistics for monitoring logger performance and health.
     pub const AsyncStats = struct {
         /// Total records queued for async processing.
-        records_queued: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        recordsQueued: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total records successfully written.
-        records_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        recordsWritten: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total records dropped due to overflow.
-        records_dropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        recordsDropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of buffer overflow events.
-        buffer_overflows: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bufferOverflows: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of times the queue entered a high-utilization backpressure range.
-        backpressure_events: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        backpressureEvents: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of flush operations performed.
-        flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        flushCount: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total latency in nanoseconds.
-        total_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        totalLatencyNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Maximum queue depth observed.
-        max_queue_depth: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        maxQueueDepth: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Timestamp of last flush operation.
-        last_flush_timestamp: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+        lastFlushTimestamp: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
         /// Computes the average latency per record processing.
-        /// Complexity: O(1)
         pub fn averageLatencyNs(self: *const AsyncStats) u64 {
-            const written = Utils.atomicLoadU64(&self.records_written);
-            const total = Utils.atomicLoadU64(&self.total_latency_ns);
+            const written = Utils.atomicLoadU64(&self.recordsWritten);
+            const total = Utils.atomicLoadU64(&self.totalLatencyNs);
             return if (written == 0) 0 else total / written;
         }
 
         /// Computes the reliable drop rate as a ratio of dropped vs queued records.
-        /// Complexity: O(1)
         pub fn dropRate(self: *const AsyncStats) f64 {
-            const total = Utils.atomicLoadU64(&self.records_queued);
-            const dropped = Utils.atomicLoadU64(&self.records_dropped);
+            const total = Utils.atomicLoadU64(&self.recordsQueued);
+            const dropped = Utils.atomicLoadU64(&self.recordsDropped);
             return Utils.calculateErrorRate(dropped, total);
         }
 
         /// Returns total records queued as u64.
         pub fn getQueued(self: *const AsyncStats) u64 {
-            return Utils.atomicLoadU64(&self.records_queued);
+            return Utils.atomicLoadU64(&self.recordsQueued);
         }
 
         /// Returns total records written as u64.
         pub fn getWritten(self: *const AsyncStats) u64 {
-            return Utils.atomicLoadU64(&self.records_written);
+            return Utils.atomicLoadU64(&self.recordsWritten);
         }
 
         /// Returns total records dropped as u64.
         pub fn getDropped(self: *const AsyncStats) u64 {
-            return Utils.atomicLoadU64(&self.records_dropped);
+            return Utils.atomicLoadU64(&self.recordsDropped);
         }
 
         /// Returns records that are queued but not yet written.
@@ -166,64 +146,77 @@ pub const AsyncLogger = struct {
 
         /// Returns total flush count as u64.
         pub fn getFlushCount(self: *const AsyncStats) u64 {
-            return Utils.atomicLoadU64(&self.flush_count);
+            return Utils.atomicLoadU64(&self.flushCount);
         }
 
         /// Returns max queue depth observed as u64.
         pub fn getMaxQueueDepth(self: *const AsyncStats) u64 {
-            return Utils.atomicLoadU64(&self.max_queue_depth);
+            return Utils.atomicLoadU64(&self.maxQueueDepth);
         }
 
         /// Returns buffer overflow count as u64.
         pub fn getBufferOverflows(self: *const AsyncStats) u64 {
-            return Utils.atomicLoadU64(&self.buffer_overflows);
+            return Utils.atomicLoadU64(&self.bufferOverflows);
         }
 
         /// Returns backpressure event count as u64.
         pub fn getBackpressureEvents(self: *const AsyncStats) u64 {
-            return Utils.atomicLoadU64(&self.backpressure_events);
+            return Utils.atomicLoadU64(&self.backpressureEvents);
         }
 
         /// Checks if any records have been dropped.
         pub fn hasDropped(self: *const AsyncStats) bool {
-            return self.records_dropped.load(.monotonic) > 0;
+            return self.recordsDropped.load(.monotonic) > 0;
         }
 
         /// Checks if any buffer overflows occurred.
         pub fn hasOverflows(self: *const AsyncStats) bool {
-            return self.buffer_overflows.load(.monotonic) > 0;
+            return self.bufferOverflows.load(.monotonic) > 0;
         }
 
         /// Checks if any backpressure events occurred.
         pub fn hasBackpressureEvents(self: *const AsyncStats) bool {
-            return self.backpressure_events.load(.monotonic) > 0;
+            return self.backpressureEvents.load(.monotonic) > 0;
         }
 
         /// Calculate write success rate (0.0 - 1.0).
         pub fn successRate(self: *const AsyncStats) f64 {
-            const queued = Utils.atomicLoadU64(&self.records_queued);
-            const written = Utils.atomicLoadU64(&self.records_written);
+            const queued = Utils.atomicLoadU64(&self.recordsQueued);
+            const written = Utils.atomicLoadU64(&self.recordsWritten);
             return Utils.calculateErrorRate(written, queued);
         }
 
         /// Calculate average latency in milliseconds.
         pub fn averageLatencyMs(self: *const AsyncStats) f64 {
-            return @as(f64, @floatFromInt(self.averageLatencyNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
+            return @as(f64, @floatFromInt(self.averageLatencyNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.nsPerMs));
         }
-
-        /// Alias for inFlight
-        pub const pendingRecords = inFlight;
-        /// Alias for getBackpressureEvents.
-        pub const backpressureCount = getBackpressureEvents;
     };
 
     /// Represents a single log entry within the ring buffer.
     pub const BufferEntry = struct {
         timestamp: i64,
-        formatted_message: []const u8,
-        level_priority: u8,
-        queued_at: i128,
+        formattedMessage: []const u8,
+        levelPriority: u8,
+        queuedAt: i128,
         owned: bool = false,
+        /// Binary payloads (e.g. MessagePack) route to writeRawBinary so
+        /// no line terminator corrupts the byte stream.
+        binary: bool = false,
+        /// Resolved presentation color for this record, or null for none.
+        ///
+        /// Carried alongside the *uncolored* serialized bytes so each sink can
+        /// apply (or ignore) presentation independently at write time. Storing
+        /// pre-wrapped bytes here would leak console coloring into files and
+        /// network sinks that never asked for it.
+        color: ?Color.Color = null,
+        /// Whether the logger-wide color mode selects vertical (per-field)
+        /// presentation over horizontal (whole-record) wrapping.
+        colorVertical: bool = false,
+        /// True when the serialized form is one where color is presentation
+        /// applied around the payload (json/ndjson/syslog/syslog3164). False
+        /// for text/logfmt (colored inline by the formatter) and msgpack
+        /// (binary must stay byte-exact).
+        colorPresentable: bool = false,
     };
 
     /// High-performance circular buffer logic for thread-safe enqueuing and batch dequeuing.
@@ -254,15 +247,13 @@ pub const AsyncLogger = struct {
                 const idx = (self.tail + i) % self.capacity;
                 const entry = self.entries[idx];
                 if (entry.owned) {
-                    self.allocator.free(entry.formatted_message);
+                    self.allocator.free(entry.formattedMessage);
                 }
             }
             self.allocator.free(self.entries);
         }
 
         /// Add entry to buffer
-        /// Returns: true if successful, false if buffer is full
-        /// Performance: O(1) - simple index and count update
         pub fn push(self: *RingBuffer, entry: BufferEntry) bool {
             if (self.count >= self.capacity) {
                 return false;
@@ -274,8 +265,6 @@ pub const AsyncLogger = struct {
         }
 
         /// Remove and return next entry from buffer
-        /// Returns: entry or null if buffer is empty
-        /// Performance: O(1) - simple index and count update
         pub fn pop(self: *RingBuffer) ?BufferEntry {
             if (self.count == 0) return null;
             const entry = self.entries[self.tail];
@@ -285,19 +274,18 @@ pub const AsyncLogger = struct {
         }
 
         /// Remove up to 'batch.len' entries and fill batch array
-        /// Performance: O(1) - memcpy approaches peak bandwidth
         pub fn popBatch(self: *RingBuffer, batch: []BufferEntry) usize {
             if (self.count == 0) return 0;
             const n = @min(self.count, batch.len);
 
             // First chunk: from tail to end of buffer or split point
-            const chunk1_size = @min(n, self.capacity - self.tail);
-            @memcpy(batch[0..chunk1_size], self.entries[self.tail .. self.tail + chunk1_size]);
+            const chunk1Size = @min(n, self.capacity - self.tail);
+            @memcpy(batch[0..chunk1Size], self.entries[self.tail .. self.tail + chunk1Size]);
 
             // Second chunk: wrap around if needed
-            if (n > chunk1_size) {
-                const chunk2_size = n - chunk1_size;
-                @memcpy(batch[chunk1_size..n], self.entries[0..chunk2_size]);
+            if (n > chunk1Size) {
+                const chunk2Size = n - chunk1Size;
+                @memcpy(batch[chunk1Size..n], self.entries[0..chunk2Size]);
             }
 
             self.tail = (self.tail + n) % self.capacity;
@@ -324,7 +312,7 @@ pub const AsyncLogger = struct {
         pub fn clear(self: *RingBuffer) void {
             while (self.pop()) |entry| {
                 if (entry.owned) {
-                    self.allocator.free(entry.formatted_message);
+                    self.allocator.free(entry.formattedMessage);
                 }
             }
         }
@@ -337,9 +325,6 @@ pub const AsyncLogger = struct {
     pub fn init(allocator: std.mem.Allocator) !*AsyncLogger {
         return initWithConfig(allocator, .{});
     }
-
-    /// Alias for init().
-    pub const create = init;
 
     /// Initializes an AsyncLogger with specific configuration parameters.
     ///
@@ -355,12 +340,12 @@ pub const AsyncLogger = struct {
         self.* = .{
             .allocator = allocator,
             .config = config,
-            .buffer = try RingBuffer.init(allocator, config.buffer_size),
+            .buffer = try RingBuffer.init(allocator, config.bufferSize),
             .stats = .{},
             .sinks = .empty,
         };
 
-        if (config.background_worker) {
+        if (config.backgroundWorker) {
             try self.startWorker();
         }
 
@@ -370,19 +355,21 @@ pub const AsyncLogger = struct {
     /// Terminates the logger and releases all resources.
     /// Blocks until the worker thread has completely stopped and flushed pending operations.
     pub fn deinit(self: *AsyncLogger) void {
-        _ = self.drainAndFlush(self.config.shutdown_timeout_ms);
+        _ = self.drainAndFlush(self.config.shutdownTimeoutMs);
         self.stop();
 
         // Flush remaining entries
         self.flushSync();
 
+        // Release every owned sink (files, rotation state, ring buffers).
+        // The list alone does not own the sinks' resources.
+        for (self.sinks.items) |sink| {
+            sink.deinit();
+        }
         self.buffer.deinit();
         self.sinks.deinit(self.allocator);
         self.allocator.destroy(self);
     }
-
-    /// Alias for deinit().
-    pub const destroy = deinit;
 
     /// Returns the allocator for temporary allocations.
     pub fn scratchAllocator(self: *AsyncLogger) std.mem.Allocator {
@@ -391,8 +378,8 @@ pub const AsyncLogger = struct {
 
     /// Returns the effective batch size after clamping configuration to the static buffer.
     pub fn effectiveBatchSize(self: *const AsyncLogger) usize {
-        if (self.config.batch_size == 0) return 1;
-        return @min(self.config.batch_size, Constants.AsyncConstants.batch_size);
+        if (self.config.batchSize == 0) return 1;
+        return @min(self.config.batchSize, Constants.AsyncConstants.batchSize);
     }
 
     /// Registers a new sink for log output.
@@ -428,29 +415,52 @@ pub const AsyncLogger = struct {
     /// - Returns: true if enqueued, false if dropped/failure.
     ///
     /// Complexity: O(1) amortized.
-    pub fn queue(self: *AsyncLogger, message: []const u8, level_priority: u8) bool {
+    pub fn queue(self: *AsyncLogger, message: []const u8, levelPriority: u8) bool {
+        return self.queueInternal(message, levelPriority, false, null, false, false);
+    }
+
+    /// Queues an already-serialized record together with its resolved
+    /// presentation color.
+    ///
+    /// The bytes stay uncolored; sinks apply presentation according to their
+    /// own configuration when the entry is drained.
+    pub fn queuePresented(self: *AsyncLogger, message: []const u8, levelPriority: u8, color: ?Color.Color, vertical: bool, presentable: bool) bool {
+        return self.queueInternal(message, levelPriority, false, color, vertical, presentable);
+    }
+
+    /// Queues a binary payload (e.g. MessagePack) that must not gain a
+    /// line terminator at the sink. Routes to writeRawBinary downstream.
+    pub fn queueBinary(self: *AsyncLogger, message: []const u8, levelPriority: u8) bool {
+        return self.queueInternal(message, levelPriority, true, null, false, false);
+    }
+
+    fn queueInternal(self: *AsyncLogger, message: []const u8, levelPriority: u8, binary: bool, color: ?Color.Color, vertical: bool, presentable: bool) bool {
         // High-priority records (Critical/Fatal) skip the queue
-        if (level_priority >= Constants.LevelConstants.Priorities.critical) {
+        if (levelPriority >= Constants.LevelConstants.Priorities.critical) {
             self.mutex.lockUncancelable(Utils.io());
             defer self.mutex.unlock(Utils.io());
             const entry = BufferEntry{
                 .timestamp = Utils.currentMillis(),
-                .formatted_message = message,
-                .level_priority = level_priority,
-                .queued_at = Utils.currentNanos(),
+                .formattedMessage = message,
+                .levelPriority = levelPriority,
+                .queuedAt = Utils.currentNanos(),
                 .owned = false,
+                .binary = binary,
+                .color = color,
+                .colorVertical = vertical,
+                    .colorPresentable = presentable,
             };
             self.writeToSinks(entry);
             return true;
         }
 
         // Optimization: Allocate outside the lock to reduce contention
-        const owned_message = self.allocator.dupe(u8, message) catch {
-            _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
+        const ownedMessage = self.allocator.dupe(u8, message) catch {
+            _ = self.stats.recordsDropped.fetchAdd(1, .monotonic);
             return false;
         };
 
-        var message_to_free: ?[]const u8 = null;
+        var messageToFree: ?[]const u8 = null;
         var dropped = false;
 
         {
@@ -461,36 +471,36 @@ pub const AsyncLogger = struct {
 
             // Handle overflow
             if (self.buffer.isFull()) {
-                if (self.on_full) |cb| cb();
+                if (self.onFull) |cb| cb();
 
-                switch (self.config.overflow_policy) {
-                    .drop_oldest => {
+                switch (self.config.overflowPolicy) {
+                    .dropOldest => {
                         // Attempt to make space by removing oldest entry
-                        if (self.buffer.pop()) |old_entry| {
-                            if (old_entry.owned) {
-                                message_to_free = old_entry.formatted_message;
+                        if (self.buffer.pop()) |oldEntry| {
+                            if (oldEntry.owned) {
+                                messageToFree = oldEntry.formattedMessage;
                             }
-                            _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
+                            _ = self.stats.recordsDropped.fetchAdd(1, .monotonic);
                         }
                     },
-                    .drop_newest => {
+                    .dropNewest => {
                         // Drop the current incoming message
-                        _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
-                        _ = self.stats.buffer_overflows.fetchAdd(1, .monotonic);
-                        if (self.overflow_callback) |cb| {
-                            cb(self.stats.records_dropped.load(.monotonic));
+                        _ = self.stats.recordsDropped.fetchAdd(1, .monotonic);
+                        _ = self.stats.bufferOverflows.fetchAdd(1, .monotonic);
+                        if (self.overflowCallback) |cb| {
+                            cb(self.stats.recordsDropped.load(.monotonic));
                         }
-                        message_to_free = owned_message;
+                        messageToFree = ownedMessage;
                         dropped = true;
                     },
                     .block => {
                         // Wait for space (with timeout to prevent deadlock)
                         self.mutex.unlock(Utils.io());
-                        Utils.sleepNs(Constants.AsyncConstants.block_sleep_ns);
+                        Utils.sleepNs(Constants.AsyncConstants.blockSleepNs);
                         self.mutex.lockUncancelable(Utils.io());
                         if (self.buffer.isFull()) {
-                            _ = self.stats.records_dropped.fetchAdd(1, .monotonic);
-                            message_to_free = owned_message;
+                            _ = self.stats.recordsDropped.fetchAdd(1, .monotonic);
+                            messageToFree = ownedMessage;
                             dropped = true;
                         }
                     },
@@ -500,34 +510,38 @@ pub const AsyncLogger = struct {
             if (!dropped) {
                 const entry = BufferEntry{
                     .timestamp = Utils.currentMillis(),
-                    .formatted_message = owned_message,
-                    .level_priority = level_priority,
-                    .queued_at = now,
+                    .formattedMessage = ownedMessage,
+                    .levelPriority = levelPriority,
+                    .queuedAt = now,
                     .owned = true,
+                    .binary = binary,
+                    .color = color,
+                    .colorVertical = vertical,
+                    .colorPresentable = presentable,
                 };
 
                 if (self.buffer.push(entry)) {
-                    _ = self.stats.records_queued.fetchAdd(1, .monotonic);
+                    _ = self.stats.recordsQueued.fetchAdd(1, .monotonic);
 
-                    const threshold = if (self.config.backpressure_threshold < 0.0)
+                    const threshold = if (self.config.backpressureThreshold < 0.0)
                         0.0
-                    else if (self.config.backpressure_threshold > 1.0)
+                    else if (self.config.backpressureThreshold > 1.0)
                         1.0
                     else
-                        self.config.backpressure_threshold;
-                    const queue_load = if (self.buffer.capacity == 0)
+                        self.config.backpressureThreshold;
+                    const queueLoad = if (self.buffer.capacity == 0)
                         0.0
                     else
                         @as(f64, @floatFromInt(self.buffer.count)) / @as(f64, @floatFromInt(self.buffer.capacity));
-                    if (queue_load >= threshold) {
-                        _ = self.stats.backpressure_events.fetchAdd(1, .monotonic);
+                    if (queueLoad >= threshold) {
+                        _ = self.stats.backpressureEvents.fetchAdd(1, .monotonic);
                     }
 
                     // Update max queue depth
                     const current = self.buffer.size();
-                    var max = self.stats.max_queue_depth.load(.monotonic);
+                    var max = self.stats.maxQueueDepth.load(.monotonic);
                     while (current > max) {
-                        const result = self.stats.max_queue_depth.cmpxchgWeak(max, current, .monotonic, .monotonic);
+                        const result = self.stats.maxQueueDepth.cmpxchgWeak(max, current, .monotonic, .monotonic);
                         if (result) |v| {
                             max = v;
                         } else {
@@ -539,13 +553,13 @@ pub const AsyncLogger = struct {
                     self.condition.signal(Utils.io());
                 } else {
                     // This creates a failsafe if unexpected full state occurs
-                    message_to_free = owned_message;
+                    messageToFree = ownedMessage;
                     dropped = true;
                 }
             }
         }
 
-        if (message_to_free) |msg| {
+        if (messageToFree) |msg| {
             self.allocator.free(msg);
         }
 
@@ -557,7 +571,7 @@ pub const AsyncLogger = struct {
         if (self.running.load(.acquire)) return;
 
         self.running.store(true, .release);
-        self.worker_thread = try std.Thread.spawn(.{}, workerLoop, .{self});
+        self.workerThread = try std.Thread.spawn(.{}, workerLoop, .{self});
     }
 
     /// Signals the background worker to stop and waits for it to join.
@@ -567,9 +581,9 @@ pub const AsyncLogger = struct {
         self.running.store(false, .release);
         self.condition.broadcast(Utils.io());
 
-        if (self.worker_thread) |thread| {
+        if (self.workerThread) |thread| {
             thread.join();
-            self.worker_thread = null;
+            self.workerThread = null;
         }
     }
 
@@ -579,31 +593,31 @@ pub const AsyncLogger = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        var batch: [Constants.AsyncConstants.batch_size]BufferEntry = undefined;
-        const batch_limit = self.effectiveBatchSize();
-        const start_time = Utils.currentMillis();
-        var total_flushed: u64 = 0;
-        var total_bytes: u64 = 0;
+        var batch: [Constants.AsyncConstants.batchSize]BufferEntry = undefined;
+        const batchLimit = self.effectiveBatchSize();
+        const startTime = Utils.currentMillis();
+        var totalFlushed: u64 = 0;
+        var totalBytes: u64 = 0;
 
         while (true) {
-            const count = self.buffer.popBatch(batch[0..batch_limit]);
+            const count = self.buffer.popBatch(batch[0..batchLimit]);
             if (count == 0) break;
 
             for (batch[0..count]) |entry| {
-                total_bytes += entry.formatted_message.len;
+                totalBytes += entry.formattedMessage.len;
                 self.writeToSinks(entry);
                 if (entry.owned) {
-                    self.allocator.free(entry.formatted_message);
+                    self.allocator.free(entry.formattedMessage);
                 }
             }
-            total_flushed += count;
+            totalFlushed += count;
         }
 
-        if (total_flushed > 0) {
-            _ = self.stats.flush_count.fetchAdd(1, .monotonic);
-            const elapsed = Utils.currentMillis() - start_time;
-            if (self.flush_callback) |cb| {
-                cb(total_flushed, total_bytes, @intCast(elapsed));
+        if (totalFlushed > 0) {
+            _ = self.stats.flushCount.fetchAdd(1, .monotonic);
+            const elapsed = Utils.currentMillis() - startTime;
+            if (self.flushCallback) |cb| {
+                cb(totalFlushed, totalBytes, @intCast(elapsed));
             }
         }
     }
@@ -616,85 +630,85 @@ pub const AsyncLogger = struct {
     /// Main loop for the background worker thread.
     /// Handles batch retrieval from buffer and writing to sinks.
     fn workerLoop(self: *AsyncLogger) void {
-        if (self.on_worker_start) |cb| cb();
+        if (self.onWorkerStart) |cb| cb();
 
-        const start_time = Utils.currentMillis();
+        const startTime = Utils.currentMillis();
         defer {
-            if (self.on_worker_stop) |cb| {
-                const uptime = @as(u64, @intCast(Utils.currentMillis() - start_time));
-                cb(self.stats.records_written.load(.monotonic), uptime);
+            if (self.onWorkerStop) |cb| {
+                const uptime = @as(u64, @intCast(Utils.currentMillis() - startTime));
+                cb(self.stats.recordsWritten.load(.monotonic), uptime);
             }
         }
 
-        var batch: [Constants.AsyncConstants.batch_size]BufferEntry = undefined;
-        const batch_limit = self.effectiveBatchSize();
-        var last_flush = Utils.currentMillis();
+        var batch: [Constants.AsyncConstants.batchSize]BufferEntry = undefined;
+        const batchLimit = self.effectiveBatchSize();
+        var lastFlush = Utils.currentMillis();
 
         while (self.running.load(.acquire) or !self.buffer.isEmpty()) {
             self.mutex.lockUncancelable(Utils.io());
 
             // Wait for entries or timeout
             const now = Utils.currentMillis();
-            const elapsed = now - last_flush;
+            const elapsed = now - lastFlush;
 
             if (self.buffer.isEmpty()) {
-                if (self.on_empty) |cb| cb();
+                if (self.onEmpty) |cb| cb();
                 self.mutex.unlock(Utils.io());
-                Utils.sleepMs(self.config.flush_interval_ms);
+                Utils.sleepMs(self.config.flushIntervalMs);
                 self.mutex.lockUncancelable(Utils.io());
-            } else if (self.config.min_flush_interval_ms > 0 and elapsed < @as(i64, @intCast(self.config.min_flush_interval_ms))) {
+            } else if (self.config.minFlushIntervalMs > 0 and elapsed < @as(i64, @intCast(self.config.minFlushIntervalMs))) {
                 // Enforce minimum flush interval
-                const wait_time = self.config.min_flush_interval_ms - @as(u64, @intCast(elapsed));
+                const waitTime = self.config.minFlushIntervalMs - @as(u64, @intCast(elapsed));
                 self.mutex.unlock(Utils.io());
-                Utils.sleepMs(wait_time);
+                Utils.sleepMs(waitTime);
                 self.mutex.lockUncancelable(Utils.io());
             }
 
             // Process batch
-            const count = self.buffer.popBatch(batch[0..batch_limit]);
+            const count = self.buffer.popBatch(batch[0..batchLimit]);
             self.mutex.unlock(Utils.io());
 
             if (count > 0) {
-                const write_start = Utils.currentNanos();
-                var bytes_written: u64 = 0;
+                const writeStart = Utils.currentNanos();
+                var bytesWritten: u64 = 0;
 
                 for (batch[0..count]) |entry| {
-                    const now_ns = Utils.currentNanos();
-                    const latency = now_ns - entry.queued_at;
-                    if (self.config.max_latency_ms > 0) {
-                        const threshold_ns = @as(i128, @intCast(self.config.max_latency_ms)) * Constants.TimeConstants.ns_per_ms;
-                        if (latency > threshold_ns) {
-                            if (self.on_latency_threshold_exceeded) |cb| {
-                                cb(@truncate(@as(u64, @intCast(@max(0, @divTrunc(latency, Constants.TimeConstants.ns_per_us))))), @truncate(@as(u64, @intCast(self.config.max_latency_ms * Constants.TimeConstants.us_per_ms))));
+                    const nowNs = Utils.currentNanos();
+                    const latency = nowNs - entry.queuedAt;
+                    if (self.config.maxLatencyMs > 0) {
+                        const thresholdNs = @as(i128, @intCast(self.config.maxLatencyMs)) * Constants.TimeConstants.nsPerMs;
+                        if (latency > thresholdNs) {
+                            if (self.onLatencyThresholdExceeded) |cb| {
+                                cb(@truncate(@as(u64, @intCast(@max(0, @divTrunc(latency, Constants.TimeConstants.nsPerUs))))), @truncate(@as(u64, @intCast(self.config.maxLatencyMs * Constants.TimeConstants.usPerMs))));
                             }
                         }
                     }
 
-                    bytes_written += entry.formatted_message.len;
+                    bytesWritten += entry.formattedMessage.len;
                     self.writeToSinks(entry);
                     if (entry.owned) {
-                        self.allocator.free(entry.formatted_message);
+                        self.allocator.free(entry.formattedMessage);
                     }
                 }
 
-                const write_end = Utils.currentNanos();
-                const write_time = write_end - write_start;
-                _ = self.stats.total_latency_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, write_time)))), .monotonic);
+                const writeEnd = Utils.currentNanos();
+                const writeTime = writeEnd - writeStart;
+                _ = self.stats.totalLatencyNs.fetchAdd(@truncate(@as(u64, @intCast(@max(0, writeTime)))), .monotonic);
 
-                const now_ms = Utils.currentMillis();
-                self.stats.last_flush_timestamp.store(@truncate(now_ms), .monotonic);
-                last_flush = now_ms;
+                const nowMs = Utils.currentMillis();
+                self.stats.lastFlushTimestamp.store(@truncate(nowMs), .monotonic);
+                lastFlush = nowMs;
 
-                if (self.flush_callback) |cb| {
-                    cb(count, bytes_written, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, Constants.TimeConstants.ns_per_ms))))));
+                if (self.flushCallback) |cb| {
+                    cb(count, bytesWritten, @truncate(@as(u64, @intCast(@max(0, @divTrunc(writeTime, Constants.TimeConstants.nsPerMs))))));
                 }
 
-                if (self.on_batch_processed) |cb| {
-                    cb(count, @truncate(@as(u64, @intCast(@max(0, @divTrunc(write_time, Constants.TimeConstants.ns_per_us))))));
+                if (self.onBatchProcessed) |cb| {
+                    cb(count, @truncate(@as(u64, @intCast(@max(0, @divTrunc(writeTime, Constants.TimeConstants.nsPerUs))))));
                 }
 
-                if (self.on_batch_flushed) |cb| {
-                    cb(count, @truncate(@as(u64, @intCast(@max(0, write_time)))));
+                if (self.onBatchFlushed) |cb| {
+                    cb(count, @truncate(@as(u64, @intCast(@max(0, writeTime)))));
                 }
             }
         }
@@ -704,11 +718,29 @@ pub const AsyncLogger = struct {
     /// Internal errors in sinks are caught and reported via on_error callback.
     fn writeToSinks(self: *AsyncLogger, entry: BufferEntry) void {
         for (self.sinks.items) |sink| {
-            sink.writeRaw(entry.formatted_message) catch |err| {
-                if (self.on_error) |cb| cb(err);
-            };
+            if (entry.binary) {
+                sink.writeRawBinary(entry.formattedMessage) catch |err| {
+                    if (self.onError) |cb| cb(err);
+                };
+            } else {
+                // Presentation is applied per sink here, not at queue time, so
+                // a console-only color setting can never push ANSI into a file
+                // or network sink. Serialized bytes stay valid underneath.
+                if (entry.color) |c| {
+                    if (sink.applyQueuedPresentation(self.allocator, entry.formattedMessage, c, entry.colorVertical, entry.colorPresentable)) |presented| {
+                        defer self.allocator.free(presented);
+                        sink.writeRaw(presented) catch |err| {
+                            if (self.onError) |cb| cb(err);
+                        };
+                        continue;
+                    }
+                }
+                sink.writeRaw(entry.formattedMessage) catch |err| {
+                    if (self.onError) |cb| cb(err);
+                };
+            }
         }
-        _ = self.stats.records_written.fetchAdd(1, .monotonic);
+        _ = self.stats.recordsWritten.fetchAdd(1, .monotonic);
     }
 
     /// Gets current statistics.
@@ -740,8 +772,8 @@ pub const AsyncLogger = struct {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        const current_depth = self.buffer.size();
-        return if (self.buffer.capacity > current_depth) self.buffer.capacity - current_depth else 0;
+        const currentDepth = self.buffer.size();
+        return if (self.buffer.capacity > currentDepth) self.buffer.capacity - currentDepth else 0;
     }
 
     /// Returns queue utilization as a ratio in [0.0, 1.0].
@@ -749,8 +781,8 @@ pub const AsyncLogger = struct {
         const capacity = self.bufferCapacity();
         if (capacity == 0) return 0.0;
 
-        const current_depth = self.queueDepth();
-        return @as(f64, @floatFromInt(current_depth)) / @as(f64, @floatFromInt(capacity));
+        const currentDepth = self.queueDepth();
+        return @as(f64, @floatFromInt(currentDepth)) / @as(f64, @floatFromInt(capacity));
     }
 
     /// Returns true when queue utilization is above the provided threshold.
@@ -767,8 +799,8 @@ pub const AsyncLogger = struct {
     /// Wait until queue is drained or timeout is reached.
     ///
     /// Returns true when drained before timeout.
-    pub fn waitUntilDrained(self: *AsyncLogger, timeout_ms: u64) bool {
-        if (timeout_ms == 0) {
+    pub fn waitUntilDrained(self: *AsyncLogger, timeoutMs: u64) bool {
+        if (timeoutMs == 0) {
             return self.isQueueEmpty();
         }
 
@@ -777,7 +809,7 @@ pub const AsyncLogger = struct {
             if (self.isQueueEmpty()) return true;
 
             const elapsed = Utils.currentMillis() - start;
-            if (elapsed >= @as(i64, @intCast(timeout_ms))) {
+            if (elapsed >= @as(i64, @intCast(timeoutMs))) {
                 return false;
             }
 
@@ -788,63 +820,63 @@ pub const AsyncLogger = struct {
 
     /// Waits for the queue to drain using the configured drain timeout.
     pub fn waitUntilDrainedDefault(self: *AsyncLogger) bool {
-        return self.waitUntilDrained(self.config.drain_timeout_ms);
+        return self.waitUntilDrained(self.config.drainTimeoutMs);
     }
 
     /// Blocks until the queue is completely empty or the timeout expires.
     /// Returns true if successfully drained, false on timeout.
-    pub fn drainAndFlush(self: *AsyncLogger, timeout_ms: u64) bool {
-        return self.waitUntilDrained(timeout_ms);
+    pub fn drainAndFlush(self: *AsyncLogger, timeoutMs: u64) bool {
+        return self.waitUntilDrained(timeoutMs);
     }
 
     /// Sets overflow callback.
     pub fn setOverflowCallback(self: *AsyncLogger, callback: *const fn (u64) void) void {
-        self.overflow_callback = callback;
+        self.overflowCallback = callback;
     }
 
     /// Sets flush callback.
     pub fn setFlushCallback(self: *AsyncLogger, callback: *const fn (u64, u64, u64) void) void {
-        self.flush_callback = callback;
+        self.flushCallback = callback;
     }
 
     /// Sets worker start callback.
     pub fn setWorkerStartCallback(self: *AsyncLogger, callback: *const fn () void) void {
-        self.on_worker_start = callback;
+        self.onWorkerStart = callback;
     }
 
     /// Sets worker stop callback.
     pub fn setWorkerStopCallback(self: *AsyncLogger, callback: *const fn (u64, u64) void) void {
-        self.on_worker_stop = callback;
+        self.onWorkerStop = callback;
     }
 
     /// Sets batch processed callback.
     pub fn setBatchProcessedCallback(self: *AsyncLogger, callback: *const fn (usize, u64) void) void {
-        self.on_batch_processed = callback;
+        self.onBatchProcessed = callback;
     }
 
     /// Sets latency threshold exceeded callback.
     pub fn setLatencyThresholdExceededCallback(self: *AsyncLogger, callback: *const fn (u64, u64) void) void {
-        self.on_latency_threshold_exceeded = callback;
+        self.onLatencyThresholdExceeded = callback;
     }
 
     /// Sets buffer full callback.
     pub fn setFullCallback(self: *AsyncLogger, callback: *const fn () void) void {
-        self.on_full = callback;
+        self.onFull = callback;
     }
 
     /// Sets buffer empty callback.
     pub fn setEmptyCallback(self: *AsyncLogger, callback: *const fn () void) void {
-        self.on_empty = callback;
+        self.onEmpty = callback;
     }
 
     /// Sets error callback.
     pub fn setErrorCallback(self: *AsyncLogger, callback: *const fn (anyerror) void) void {
-        self.on_error = callback;
+        self.onError = callback;
     }
 
     /// Returns true if the async logger is running.
     pub fn isRunning(self: *const AsyncLogger) bool {
-        return self.worker_thread != null;
+        return self.workerThread != null;
     }
 
     /// Returns the buffer capacity.
@@ -859,80 +891,10 @@ pub const AsyncLogger = struct {
         return self.buffer.isFull();
     }
 
-    /// Alias for queue
-    pub const enqueue = queue;
-    pub const push = queue;
-    pub const logMsg = queue;
-
-    /// Alias for getStats
-    pub const statistics = getStats;
-
-    /// Alias for resetStats
-    pub const clearStats = resetStats;
-
-    /// Alias for queueDepth
-    pub const depth = queueDepth;
-    pub const pending = queueDepth;
-
-    /// Alias for availableCapacity
-    pub const capacityLeft = availableCapacity;
-    pub const freeSlots = availableCapacity;
-
-    /// Alias for queueUtilization
-    pub const utilization = queueUtilization;
-
-    /// Alias for isNearCapacity
-    pub const nearCapacity = isNearCapacity;
-
     /// Returns true when queue utilization is >= 90%.
     pub fn isBackpressured(self: *AsyncLogger) bool {
         return self.isNearCapacity(0.9);
     }
-
-    /// Alias for waitUntilDrained
-    pub const waitForDrain = waitUntilDrained;
-    pub const drain = waitUntilDrained;
-    pub const drainDefault = waitUntilDrainedDefault;
-
-    /// Alias for isQueueEmpty
-    pub const empty = isQueueEmpty;
-
-    /// Alias for setOverflowCallback
-    pub const onOverflow = setOverflowCallback;
-
-    /// Alias for setFlushCallback
-    pub const onFlush = setFlushCallback;
-
-    /// Alias for setWorkerStartCallback
-    pub const onWorkerStart = setWorkerStartCallback;
-
-    /// Alias for setWorkerStopCallback
-    pub const onWorkerStop = setWorkerStopCallback;
-
-    /// Alias for setBatchProcessedCallback
-    pub const onBatchProcessed = setBatchProcessedCallback;
-
-    /// Alias for setLatencyThresholdExceededCallback
-    pub const onLatencyThresholdExceeded = setLatencyThresholdExceededCallback;
-
-    /// Alias for setFullCallback
-    pub const onFull = setFullCallback;
-
-    /// Alias for setEmptyCallback
-    pub const onEmpty = setEmptyCallback;
-
-    /// Alias for setErrorCallback
-    pub const onError = setErrorCallback;
-
-    /// Alias for isFull
-    pub const full = isFull;
-
-    /// Alias for startWorker
-    pub const begin = startWorker;
-
-    /// Alias for stop
-    pub const halt = stop;
-    pub const end = stop;
 };
 
 /// Async file writer for high-performance file logging.
@@ -942,24 +904,26 @@ pub const AsyncFileWriter = struct {
     buffer: std.ArrayList(u8),
     config: FileConfig,
     mutex: std.Io.Mutex = .init,
-    flush_thread: ?std.Thread = null,
+    flushThread: ?std.Thread = null,
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-    last_flush: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+    totalBytesWritten: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    lastFlush: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
+    /// Buffering options for `AsyncFileWriter`.
     pub const FileConfig = struct {
-        buffer_size: usize = Constants.AsyncPresetDefaults.high_throughput_buffer_size,
-        flush_interval_ms: u64 = Constants.SinkDefaults.flush_interval_ms,
-        sync_on_flush: bool = false,
-        append_mode: bool = true,
+        bufferSize: usize = Constants.AsyncPresetDefaults.highThroughputBufferSize,
+        flushIntervalMs: u64 = Constants.SinkDefaults.flushIntervalMs,
+        syncOnFlush: bool = false,
+        appendMode: bool = true,
     };
 
+    /// Opens `path` for buffered background writes.
     pub fn init(allocator: std.mem.Allocator, path: []const u8, config: FileConfig) !*AsyncFileWriter {
         const self = try allocator.create(AsyncFileWriter);
         errdefer allocator.destroy(self);
 
         const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{
-            .truncate = !config.append_mode,
+            .truncate = !config.appendMode,
         });
         errdefer file.close(Utils.io());
 
@@ -970,13 +934,12 @@ pub const AsyncFileWriter = struct {
             .config = config,
         };
 
-        try self.buffer.ensureTotalCapacity(self.allocator, config.buffer_size);
+        try self.buffer.ensureTotalCapacity(self.allocator, config.bufferSize);
 
         return self;
     }
 
-    pub const create = init;
-
+    /// Flushes, closes the file, and releases the writer.
     pub fn deinit(self: *AsyncFileWriter) void {
         self.stop();
         self.flushSync();
@@ -985,21 +948,19 @@ pub const AsyncFileWriter = struct {
         self.allocator.destroy(self);
     }
 
-    pub const destroy = deinit;
-
+    /// Queues `data` verbatim, with no line terminator.
     pub fn write(self: *AsyncFileWriter, data: []const u8) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
         try self.buffer.appendSlice(self.allocator, data);
 
-        if (self.buffer.items.len >= self.config.buffer_size) {
+        if (self.buffer.items.len >= self.config.bufferSize) {
             try self.flushInternal();
         }
     }
 
-    pub const writeData = write;
-
+    /// Queues `data` followed by a newline.
     pub fn writeLine(self: *AsyncFileWriter, data: []const u8) !void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
@@ -1007,73 +968,61 @@ pub const AsyncFileWriter = struct {
         try self.buffer.appendSlice(self.allocator, data);
         try self.buffer.append(self.allocator, '\n');
 
-        if (self.buffer.items.len >= self.config.buffer_size) {
+        if (self.buffer.items.len >= self.config.bufferSize) {
             try self.flushInternal();
         }
     }
 
-    pub const writeLn = writeLine;
-
     fn flushInternal(self: *AsyncFileWriter) !void {
         if (self.buffer.items.len == 0) return;
 
-        const offset = if (self.config.append_mode) try self.file.length(Utils.io()) else 0;
+        const offset = if (self.config.appendMode) try self.file.length(Utils.io()) else 0;
         try self.file.writePositionalAll(Utils.io(), self.buffer.items, offset);
-        _ = self.bytes_written.fetchAdd(self.buffer.items.len, .monotonic);
+        _ = self.totalBytesWritten.fetchAdd(self.buffer.items.len, .monotonic);
 
-        if (self.config.sync_on_flush) {
+        if (self.config.syncOnFlush) {
             try self.file.sync(Utils.io());
         }
 
         self.buffer.clearRetainingCapacity();
-        self.last_flush.store(@truncate(Utils.currentMillis()), .monotonic);
+        self.lastFlush.store(@truncate(Utils.currentMillis()), .monotonic);
     }
 
+    /// Drains the queue on the calling thread.
     pub fn flushSync(self: *AsyncFileWriter) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
         self.flushInternal() catch {};
     }
 
-    pub const flush = flushSync;
-
     /// Starts periodic background flushing.
     pub fn startAutoFlush(self: *AsyncFileWriter) !void {
         if (self.running.load(.acquire)) return;
         self.running.store(true, .release);
-        self.flush_thread = try std.Thread.spawn(.{}, autoFlushLoop, .{self});
+        self.flushThread = try std.Thread.spawn(.{}, autoFlushLoop, .{self});
     }
-
-    /// Alias for `startAutoFlush`.
-    pub const startFlush = startAutoFlush;
 
     /// Stops periodic background flushing and joins flush thread.
     pub fn stop(self: *AsyncFileWriter) void {
         if (!self.running.load(.acquire)) return;
         self.running.store(false, .release);
-        if (self.flush_thread) |thread| {
+        if (self.flushThread) |thread| {
             thread.join();
-            self.flush_thread = null;
+            self.flushThread = null;
         }
     }
 
-    /// Alias for `stop`.
-    pub const halt = stop;
-
     fn autoFlushLoop(self: *AsyncFileWriter) void {
         while (self.running.load(.acquire)) {
-            Utils.sleepMs(self.config.flush_interval_ms);
+            Utils.sleepMs(self.config.flushIntervalMs);
             self.flushSync();
         }
     }
 
     /// Returns total flushed bytes written by the async writer.
     pub fn bytesWritten(self: *const AsyncFileWriter) u64 {
-        return @as(u64, self.bytes_written.load(.monotonic));
+        return @as(u64, self.totalBytesWritten.load(.monotonic));
     }
-
-    /// Alias for `bytesWritten`.
-    pub const written = bytesWritten;
 };
 
 /// Preset configurations for async logging.
@@ -1081,52 +1030,52 @@ pub const AsyncPresets = struct {
     /// High-throughput configuration for maximum performance.
     pub fn highThroughput() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = Constants.AsyncPresetDefaults.high_throughput_buffer_size,
-            .flush_interval_ms = Constants.AsyncPresetDefaults.high_throughput_flush_interval_ms,
-            .min_flush_interval_ms = Constants.AsyncPresetDefaults.high_throughput_min_flush_interval_ms,
-            .max_latency_ms = Constants.AsyncPresetDefaults.high_throughput_max_latency_ms,
-            .batch_size = Constants.AsyncPresetDefaults.high_throughput_batch_size,
-            .overflow_policy = .drop_oldest,
-            .background_worker = true,
+            .bufferSize = Constants.AsyncPresetDefaults.highThroughputBufferSize,
+            .flushIntervalMs = Constants.AsyncPresetDefaults.highThroughputFlushIntervalMs,
+            .minFlushIntervalMs = Constants.AsyncPresetDefaults.highThroughputMinFlushIntervalMs,
+            .maxLatencyMs = Constants.AsyncPresetDefaults.highThroughputMaxLatencyMs,
+            .batchSize = Constants.AsyncPresetDefaults.highThroughputBatchSize,
+            .overflowPolicy = .dropOldest,
+            .backgroundWorker = true,
         };
     }
 
     /// Low-latency configuration for responsive logging.
     pub fn lowLatency() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = Constants.AsyncPresetDefaults.low_latency_buffer_size,
-            .flush_interval_ms = Constants.AsyncPresetDefaults.low_latency_flush_interval_ms,
-            .min_flush_interval_ms = Constants.AsyncPresetDefaults.low_latency_min_flush_interval_ms,
-            .max_latency_ms = Constants.AsyncPresetDefaults.low_latency_max_latency_ms,
-            .batch_size = Constants.AsyncPresetDefaults.low_latency_batch_size,
-            .overflow_policy = .block,
-            .background_worker = true,
+            .bufferSize = Constants.AsyncPresetDefaults.lowLatencyBufferSize,
+            .flushIntervalMs = Constants.AsyncPresetDefaults.lowLatencyFlushIntervalMs,
+            .minFlushIntervalMs = Constants.AsyncPresetDefaults.lowLatencyMinFlushIntervalMs,
+            .maxLatencyMs = Constants.AsyncPresetDefaults.lowLatencyMaxLatencyMs,
+            .batchSize = Constants.AsyncPresetDefaults.lowLatencyBatchSize,
+            .overflowPolicy = .block,
+            .backgroundWorker = true,
         };
     }
 
     /// Balanced configuration for general use.
     pub fn balanced() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = Constants.BufferSizes.async_queue,
-            .flush_interval_ms = Constants.AsyncPresetDefaults.balanced_flush_interval_ms,
-            .min_flush_interval_ms = Constants.AsyncPresetDefaults.balanced_min_flush_interval_ms,
-            .max_latency_ms = Constants.AsyncPresetDefaults.balanced_max_latency_ms,
-            .batch_size = Constants.AsyncConstants.batch_size,
-            .overflow_policy = .drop_oldest,
-            .background_worker = true,
+            .bufferSize = Constants.BufferSizes.asyncQueue,
+            .flushIntervalMs = Constants.AsyncPresetDefaults.balancedFlushIntervalMs,
+            .minFlushIntervalMs = Constants.AsyncPresetDefaults.balancedMinFlushIntervalMs,
+            .maxLatencyMs = Constants.AsyncPresetDefaults.balancedMaxLatencyMs,
+            .batchSize = Constants.AsyncConstants.batchSize,
+            .overflowPolicy = .dropOldest,
+            .backgroundWorker = true,
         };
     }
 
     /// No-drop configuration (blocks when full).
     pub fn noDrop() AsyncLogger.AsyncConfig {
         return .{
-            .buffer_size = Constants.AsyncPresetDefaults.no_drop_buffer_size,
-            .flush_interval_ms = Constants.AsyncPresetDefaults.balanced_flush_interval_ms,
-            .min_flush_interval_ms = Constants.AsyncPresetDefaults.balanced_min_flush_interval_ms,
-            .max_latency_ms = Constants.AsyncPresetDefaults.balanced_max_latency_ms,
-            .batch_size = Constants.AsyncConstants.batch_size,
-            .overflow_policy = .block,
-            .background_worker = true,
+            .bufferSize = Constants.AsyncPresetDefaults.noDropBufferSize,
+            .flushIntervalMs = Constants.AsyncPresetDefaults.balancedFlushIntervalMs,
+            .minFlushIntervalMs = Constants.AsyncPresetDefaults.balancedMinFlushIntervalMs,
+            .maxLatencyMs = Constants.AsyncPresetDefaults.balancedMaxLatencyMs,
+            .batchSize = Constants.AsyncConstants.batchSize,
+            .overflowPolicy = .block,
+            .backgroundWorker = true,
         };
     }
 };
@@ -1140,8 +1089,8 @@ test "ring buffer basic" {
     try std.testing.expect(rb.isEmpty());
     try std.testing.expect(!rb.isFull());
 
-    _ = rb.push(.{ .timestamp = 1, .formatted_message = "test1", .level_priority = 20, .queued_at = 0 });
-    _ = rb.push(.{ .timestamp = 2, .formatted_message = "test2", .level_priority = 20, .queued_at = 0 });
+    _ = rb.push(.{ .timestamp = 1, .formattedMessage = "test1", .levelPriority = 20, .queuedAt = 0 });
+    _ = rb.push(.{ .timestamp = 2, .formattedMessage = "test2", .levelPriority = 20, .queuedAt = 0 });
 
     try std.testing.expectEqual(@as(usize, 2), rb.size());
 
@@ -1153,8 +1102,8 @@ test "ring buffer basic" {
 test "async stats" {
     var stats = AsyncLogger.AsyncStats{};
 
-    _ = stats.records_queued.fetchAdd(100, .monotonic);
-    _ = stats.records_dropped.fetchAdd(10, .monotonic);
+    _ = stats.recordsQueued.fetchAdd(100, .monotonic);
+    _ = stats.recordsDropped.fetchAdd(10, .monotonic);
 
     try std.testing.expect(stats.dropRate() > 0.09 and stats.dropRate() < 0.11);
 }
@@ -1162,32 +1111,32 @@ test "async stats" {
 test "async stats in flight" {
     var stats = AsyncLogger.AsyncStats{};
 
-    _ = stats.records_queued.fetchAdd(20, .monotonic);
-    _ = stats.records_written.fetchAdd(7, .monotonic);
+    _ = stats.recordsQueued.fetchAdd(20, .monotonic);
+    _ = stats.recordsWritten.fetchAdd(7, .monotonic);
 
     try std.testing.expectEqual(@as(u64, 13), stats.inFlight());
-    try std.testing.expectEqual(@as(u64, 13), stats.pendingRecords());
+    try std.testing.expectEqual(@as(u64, 13), stats.inFlight());
 }
 
 const TestCallbacks = struct {
-    pub var overflow_called: bool = false;
-    pub var flush_called: bool = false;
-    pub var full_called: bool = false;
+    pub var overflowCalled: bool = false;
+    pub var flushCalled: bool = false;
+    pub var fullCalled: bool = false;
 
     pub fn onOverflow(dropped: u64) void {
         _ = dropped;
-        overflow_called = true;
+        overflowCalled = true;
     }
 
     pub fn onFlush(count: u64, bytes: u64, elapsed: u64) void {
         _ = count;
         _ = bytes;
         _ = elapsed;
-        flush_called = true;
+        flushCalled = true;
     }
 
     pub fn onFull() void {
-        full_called = true;
+        fullCalled = true;
     }
 };
 
@@ -1195,15 +1144,15 @@ test "async callbacks" {
     const allocator = std.testing.allocator;
 
     // Reset flags
-    TestCallbacks.overflow_called = false;
-    TestCallbacks.flush_called = false;
-    TestCallbacks.full_called = false;
+    TestCallbacks.overflowCalled = false;
+    TestCallbacks.flushCalled = false;
+    TestCallbacks.fullCalled = false;
 
     const config = AsyncLogger.AsyncConfig{
-        .buffer_size = 2,
-        .overflow_policy = .drop_newest,
-        .flush_interval_ms = 10,
-        .background_worker = false,
+        .bufferSize = 2,
+        .overflowPolicy = .dropNewest,
+        .flushIntervalMs = 10,
+        .backgroundWorker = false,
     };
 
     var logger = try AsyncLogger.initWithConfig(allocator, config);
@@ -1223,21 +1172,21 @@ test "async callbacks" {
     // Try to add one more -> overflow + full callback
     _ = logger.queue("msg3", 1);
 
-    try std.testing.expect(TestCallbacks.full_called);
-    try std.testing.expect(TestCallbacks.overflow_called);
+    try std.testing.expect(TestCallbacks.fullCalled);
+    try std.testing.expect(TestCallbacks.overflowCalled);
 
     // Flush
     logger.flushSync();
-    try std.testing.expect(TestCallbacks.flush_called);
+    try std.testing.expect(TestCallbacks.flushCalled);
 }
 
 test "async queue utilization and drain helpers" {
     const allocator = std.testing.allocator;
 
     const config = AsyncLogger.AsyncConfig{
-        .buffer_size = 4,
-        .background_worker = false,
-        .overflow_policy = .drop_newest,
+        .bufferSize = 4,
+        .backgroundWorker = false,
+        .overflowPolicy = .dropNewest,
     };
 
     var logger = try AsyncLogger.initWithConfig(allocator, config);
@@ -1254,17 +1203,17 @@ test "async queue utilization and drain helpers" {
 
     logger.flushSync();
     try std.testing.expect(logger.waitUntilDrained(25));
-    try std.testing.expect(logger.drainDefault());
+    try std.testing.expect(logger.waitUntilDrainedDefault());
 }
 
 test "async backpressure events" {
     const allocator = std.testing.allocator;
 
     const config = AsyncLogger.AsyncConfig{
-        .buffer_size = 2,
-        .background_worker = false,
-        .overflow_policy = .drop_newest,
-        .backpressure_threshold = 0.5,
+        .bufferSize = 2,
+        .backgroundWorker = false,
+        .overflowPolicy = .dropNewest,
+        .backpressureThreshold = 0.5,
     };
 
     var logger = try AsyncLogger.initWithConfig(allocator, config);
@@ -1275,24 +1224,24 @@ test "async backpressure events" {
 
     try std.testing.expect(logger.stats.hasBackpressureEvents());
     try std.testing.expect(logger.stats.getBackpressureEvents() > 0);
-    try std.testing.expect(logger.stats.backpressureCount() > 0);
+    try std.testing.expect(logger.stats.getBackpressureEvents() > 0);
 }
 
 test "async effective batch size respects config" {
     const allocator = std.testing.allocator;
 
     var logger = try AsyncLogger.initWithConfig(allocator, .{
-        .buffer_size = 8,
-        .batch_size = 3,
-        .background_worker = false,
+        .bufferSize = 8,
+        .batchSize = 3,
+        .backgroundWorker = false,
     });
     defer logger.deinit();
 
     try std.testing.expectEqual(@as(usize, 3), logger.effectiveBatchSize());
 
-    logger.config.batch_size = 0;
+    logger.config.batchSize = 0;
     try std.testing.expectEqual(@as(usize, 1), logger.effectiveBatchSize());
 
-    logger.config.batch_size = Constants.AsyncConstants.batch_size * 4;
-    try std.testing.expectEqual(Constants.AsyncConstants.batch_size, logger.effectiveBatchSize());
+    logger.config.batchSize = Constants.AsyncConstants.batchSize * 4;
+    try std.testing.expectEqual(Constants.AsyncConstants.batchSize, logger.effectiveBatchSize());
 }

@@ -15,20 +15,20 @@ pub fn main() !void {
 
     // 1. Custom Log Format
     // Available placeholders: {time}, {level}, {message}, {module}, {function}, {file}, {line}
-    config.log_format = "{time} | {level} | {message}";
+    config.logFormat = "{time} | {level} | {message}";
 
     // 2. Time Format Options:
     //    - Config.TimeFormat.default_pattern (default) - Human readable format with milliseconds
     //    - Config.TimeFormat.unix - Unix timestamp in seconds
     //    - Config.TimeFormat.unix_ms - Unix timestamp in milliseconds
-    config.time_format = logly.Config.TimeFormat.unix;
+    config.timeFormat = logly.Config.TimeFormat.unix;
 
     // 3. Timezone (Local or UTC)
     config.timezone = .utc;
 
     // 4. Stack Trace Configuration
-    config.capture_stack_trace = true;
-    config.symbolize_stack_trace = true;
+    config.captureStackTrace = true;
+    config.symbolizeStackTrace = true;
 
     // 5. Allocator: pass your own allocator to Logger.initWithConfig(allocator, config)
 
@@ -39,8 +39,8 @@ pub fn main() !void {
     try logger.warning("Notice the timestamp is now a unix timestamp", @src());
 
     // Change format dynamically
-    config.log_format = "[{level}] {message} (at {time})";
-    config.time_format = logly.Config.TimeFormat.default_pattern; // Switch back to human readable
+    config.logFormat = "[{level}] {message} (at {time})";
+    config.timeFormat = logly.Config.TimeFormat.defaultPattern; // Switch back to human readable
     logger.configure(config);
 
     try logger.success("Now the format has changed!", @src());
@@ -49,9 +49,13 @@ pub fn main() !void {
     // Example with module/function context (simulated)
     // Note: In real usage, these are automatically captured if show_module/show_function are true
     // and the format string includes {module}/{function}
-    config.log_format = "{level}: {message} [Module: {module}]";
-    config.show_module = true;
+    config.logFormat = "{level}: {message} [Module: {module}]";
+    config.showModule = true;
     logger.configure(config);
 
-    try logger.info("Message with module info", @src());
+    // Use a scoped logger so {module} resolves to a real module name
+    // instead of rendering an empty "[Module: ]".
+    const scoped = logger.scoped("myModule");
+    try scoped.info("Message with module info", @src());
+    try logger.flush();
 }

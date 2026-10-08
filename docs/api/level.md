@@ -41,33 +41,27 @@ pub const Level = enum(u8) {
 | `asString()` | `toString()`, `str()` | Convert to string |
 | `fromString()` | `parse()` | Parse from string |
 | `fromPriority()` | `fromValue()`, `fromSeverity()` | Create from priority |
-| `defaultColor()` | `color()` | Get default color |
-| `brightColor()` | `bright()`, `vivid()` | Get bright color |
-| `dimColor()` | `dim()`, `subtle()` | Get dim color |
-| `underlineColor()` | `underline()`, `underlined()` | Get underline color |
-| `color256()` | `color256bit()`, `ansi256()` | Get 256-color code |
+| `defaultColor()` | `color()` | Get default tint color |
+| `defaultStyle()` | — | Get default tint style (fatal includes background) |
 | `isAtLeast()` | `atLeast()`, `gte()` | Check if at least level |
 | `isMoreSevereThan()` | `moreSevereThan()`, `gt()` | Check if more severe than |
 | `isError()` | `isErr()`, `isFailure()` | Check if error level |
 | `isWarning()` | `isWarn()` | Check if warning level |
 | `isDebug()` | `isTraceOrDebug()`, `isVerbose()` | Check if debug/trace level |
 | `init()` | `create()`, `new()` | Initialize custom level (CustomLevel) |
-| `initFull()` | `createFull()`, `newFull()` | Initialize full custom level (CustomLevel) |
 | `initRgb()` | `createRgb()`, `newRgb()` | Initialize RGB custom level (CustomLevel) |
 | `init256()` | `create256()`, `new256()` | Initialize 256-color custom level (CustomLevel) |
 | `initStyled()` | `createStyled()`, `newStyled()` | Initialize styled custom level (CustomLevel) |
 | `initWithBackground()` | `createWithBackground()`, `newWithBackground()` | Initialize with background (CustomLevel) |
-| `effectiveColor()` | `effective()`, `getColor()` | Get effective color (CustomLevel) |
-| `getBrightColor()` | `brightColor()`, `getBright()` | Get bright color (CustomLevel) |
-| `getDimColor()` | `dimColor()`, `getDim()` | Get dim color (CustomLevel) |
-| `get256Color()` | `color256()`, `get256()` | Get 256-color (CustomLevel) |
+| `effectiveColor()` | `effective()`, `getColor()` | Get effective tint color (CustomLevel) |
+| `effectiveStyle()` | — | Get effective tint style (CustomLevel) |
 | `isAtLeast()` | `atLeast()`, `gte()` | Check if at least level (CustomLevel) |
 | `isError()` | `isErr()`, `isFailure()` | Check if error level (CustomLevel) |
 | `asString()` | `toString()`, `str()` | Convert to string (CustomLevel) |
-| `hasRgbColor()` | `hasRgb()` | Check if has RGB color (CustomLevel) |
-| `has256Color()` | `has256()` | Check if has 256-color (CustomLevel) |
 | `hasBackground()` | `hasBg()`, `hasBackgroundColor()` | Check if has background (CustomLevel) |
 | `hasStyle()` | `hasTextStyle()` | Check if has text style (CustomLevel) |
+
+> Colors are tint `Color` values. Render with `logly.Color.sequence(color, .trueColor)` and write `Sequence.slice()`.
 
 ## Level Table
 
@@ -122,130 +116,91 @@ const level = Level.fromString("NOTICE"); // Returns .notice
 const invalid = Level.fromString("INVALID"); // Returns null
 ```
 
-### defaultColor
+  ### defaultColor
 
-Returns the ANSI color code for the level.
+  Returns the default tint color for the level.
 
-```zig
-const level = Level.fatal;
-const color = level.defaultColor(); // Returns "97;41" (white on red)
-```
+  ```zig
+  const level = Level.fatal;
+  const color = level.defaultColor(); // tint Color (bright white)
+  const seq = logly.Color.sequence(color, .trueColor);
+  ```
 
-### brightColor (v0.1.8)
+  ### defaultStyle
 
-Returns the bright/bold color variant. Uses `Constants.Colors.Themes.bright`.
+  Returns the default tint style (fatal includes a red background).
 
-```zig
-const level = Level.trace;
-const bright = level.brightColor(); // Returns "96;1" (bright cyan bold)
-```
-
-### dimColor (v0.1.8)
-
-Returns the dim color variant. Uses `Constants.Colors.Themes.dim`.
-
-```zig
-const level = Level.info;
-const dim = level.dimColor(); // Returns "37;2" (white dim)
-```
-
-### underlineColor (v0.1.8)
-
-Returns the underline color variant. Uses `Constants.Colors.Themes.underlined`.
-
-```zig
-const level = Level.warning;
-const underline = level.underlineColor(); // Returns "33;4" (yellow underline)
-```
-
-### color256 (v0.1.8)
-
-Returns the 256-color palette code. Uses `Constants.Colors.Themes.neon`.
-
-```zig
-const level = Level.success;
-const code = level.color256(); // Returns "38;5;46"
-```
+  ```zig
+  const style = Level.fatal.defaultStyle();
+  const seq = logly.Color.styleSequence(style);
+  ```
 
 ## CustomLevel
 
 For dynamic custom levels, use the CustomLevel struct:
 
-```zig
-pub const CustomLevel = struct {
-    name: []const u8,           // Display name (e.g., "AUDIT")
-    priority: u8,               // Numeric priority
-    color: []const u8,          // ANSI color code
-    bright_color: ?[]const u8,  // Bright color variant (v0.1.8)
-    dim_color: ?[]const u8,     // Dim color variant (v0.1.8)
-    color_256: ?[]const u8,     // 256-color code (v0.1.8)
-    rgb_color: ?struct { r: u8, g: u8, b: u8 },  // RGB color (v0.1.8)
-    bg_color: ?[]const u8,      // Background color (v0.1.8)
-    style: ?[]const u8,         // Text style (v0.1.8)
-};
-```
+  ```zig
+  pub const CustomLevel = struct {
+      name: []const u8,          // Display name (e.g., "AUDIT")
+      priority: u8,              // Numeric priority
+      color: logly.Color.Color, // Foreground tint color
+      bgColor: ?logly.Color.Color = null,   // Background tint color
+      style: ?logly.Color.Style = null,     // Full style override
+  };
+  ```
 
-### Basic Usage
+  ### Basic Usage
 
-```zig
-// Register a custom level
-try logger.addCustomLevel("AUDIT", 35, "35");  // Priority 35, Magenta
+  ```zig
+  // Register a custom level (tint colors)
+  try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("magenta").?);
 
-// Use the custom level
-try logger.custom("AUDIT", "User login detected", @src());
-try logger.customf("AUDIT", "User {s} logged in", .{"admin"}, @src());
+  // Use the custom level
+  try logger.custom("AUDIT", "User login detected", @src());
+  try logger.customf("AUDIT", "User {s} logged in", .{"admin"}, @src());
 
-// Remove a custom level
-logger.removeCustomLevel("AUDIT");
-```
+  // Remove a custom level
+  logger.removeCustomLevel("AUDIT");
+  ```
 
-### Advanced CustomLevel Constructors (v0.1.8)
+  ### Advanced CustomLevel Constructors
 
-```zig
-const CustomLevel = logly.CustomLevel;
+  ```zig
+  const CustomLevel = logly.CustomLevel;
 
-// Basic initialization
-const audit = CustomLevel.init("AUDIT", 35, "35");
+  // Basic initialization with a tint color
+  const audit = CustomLevel.init("AUDIT", 35, logly.Color.parse("cyan").?);
 
-// Full color options
-const custom = CustomLevel.initFull(
-    "CUSTOM",           // name
-    42,                 // priority
-    "32",               // base color
-    "92;1",             // bright color
-    "32;2",             // dim color
-    "38;5;46",          // 256-color
-);
+  // RGB color
+  const rgbLevel = CustomLevel.initRgb("METRIC", 25, 50, 205, 50);
 
-// RGB color
-const rgb_level = CustomLevel.initRgb("METRIC", 25, 50, 205, 50);
+  // With explicit style (bold underline red)
+  const styled = CustomLevel.initStyled("STYLED", 45, .{
+      .foreground = logly.Color.Tint.color.red,
+      .underline = true,
+  });
 
-// With style (bold, underline, etc.)
-const styled = CustomLevel.initStyled("STYLED", 45, "31", "1;4");
+  // With background
+  const alert = CustomLevel.initWithBackground(
+      "ALERT", 50,
+      logly.Color.Tint.color.ansi4.brightWhite,
+      logly.Color.Tint.color.ansi4.red,
+  );
+  ```
 
-// With background
-const alert = CustomLevel.initWithBackground("ALERT", 50, "97", "41");
-```
+  ### CustomLevel Methods
 
-### CustomLevel Methods (v0.1.8)
+  ```zig
+  const custom = CustomLevel.init("TEST", 42, logly.Color.parse("green").?);
 
-```zig
-const custom = CustomLevel.initFull("TEST", 42, "32", "92;1", "32;2", "38;5;46");
+  // Effective tint color and style
+  const color = custom.effectiveColor();
+  const style = custom.effectiveStyle();
 
-// Get effective color for current context
-const color = custom.effectiveColor();      // Returns "32"
-
-// Get color variants
-const bright = custom.getBrightColor();     // Returns "92;1"
-const dim = custom.getDimColor();           // Returns "32;2"
-const c256 = custom.get256Color();          // Returns "38;5;46"
-
-// Check capabilities
-const has_rgb = custom.hasRgbColor();       // Returns false
-const has_256 = custom.has256Color();       // Returns true
-const has_bg = custom.hasBackground();      // Returns false
-const has_style = custom.hasStyle();        // Returns false
-```
+  // Capability checks
+  const has_bg = custom.hasBackground();
+  const has_style = custom.hasStyle();
+  ```
 
 ## LevelMask
 

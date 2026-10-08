@@ -23,7 +23,7 @@ This example demonstrates how different write modes interact with file rotation 
 |------|----------|----------|
 | `.append` | Append to existing file | Persistent logs, audit trails |
 | `.overwrite` | Truncate on startup | Session logs, debug output |
-| `.append_rotate` | Append with rotation trigger | Explicit rotation control |
+| `.appendRotate` | Append with rotation trigger | Explicit rotation control |
 
 ## Code Example
 
@@ -41,17 +41,17 @@ pub fn main() !void {
 
     // Append mode with daily rotation
     var sink_append = logly.SinkConfig.file("app.log");
-    sink_append.write_mode = .append;
+    sink_append.writeMode = .append;
     sink_append.rotation = "daily";
     sink_append.retention = 7;
-    _ = try logger.addSink(sink_append);
+     _ = try logger.addSink(sink_append);
 
     // Overwrite mode with size rotation
     var sink_overwrite = logly.SinkConfig.file("session.log");
-    sink_overwrite.write_mode = .overwrite;
-    sink_overwrite.size_limit = 1024 * 1024; // 1MB
+    sink_overwrite.writeMode = .overwrite;
+    sink_overwrite.sizeLimit = 1024 * 1024; // 1MB
     sink_overwrite.retention = 3;
-    _ = try logger.addSink(sink_overwrite);
+     _ = try logger.addSink(sink_overwrite);
 
     try logger.info("Logged to both sinks", @src());
 }
@@ -65,7 +65,7 @@ After rotation, the old file is renamed (e.g., `app.log.2026-08-05`) and a new f
 |------------|------------------|----------------|
 | `.append` | Append to existing file | New file starts fresh |
 | `.overwrite` | Truncate file on startup | New file starts fresh |
-| `.append_rotate` | Append with rotation trigger | New file starts fresh |
+| `.appendRotate` | Append with rotation trigger | New file starts fresh |
 
 ## Expected Output
 

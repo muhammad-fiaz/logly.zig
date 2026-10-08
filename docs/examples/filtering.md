@@ -26,7 +26,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -61,8 +61,8 @@ try filter.addModulePrefix("database");  // Only from "database" module
 logger.setFilter(&filter);
 
 // Create scoped logger
-const db_logger = logger.scoped("database");
-try db_logger.info("This will appear", @src());     // Module matches
+const dbLogger = logger.scoped("database");
+try dbLogger.info("This will appear", @src());     // Module matches
 
 try logger.info("This won't appear", @src());       // No module, filtered
 ```
@@ -89,8 +89,8 @@ try logger.info("User password changed", @src());    // Filtered (contains "pass
 const FilterPresets = logly.FilterPresets;
 
 // Production: info and above (excludes trace/debug)
-var prod_filter = try FilterPresets.production(allocator);
-defer prod_filter.deinit();
+var prodFilter = try FilterPresets.production(allocator);
+defer prodFilter.deinit();
 
 // Errors only: err and above
 var error_filter = try FilterPresets.errorsOnly(allocator);

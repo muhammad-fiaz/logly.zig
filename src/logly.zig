@@ -1,68 +1,6 @@
-//! # Logly Documentations
+//! Logly: structured logging for Zig.
 //!
-//! A fast, high-performance structured logging library for Zig.
-//!
-//! Logly provides a clean, intuitive API for logging with support for:
-//! - Colored console output with customizable themes
-//! - JSON and structured log formatting
-//! - File rotation with size and time-based policies
-//! - Asynchronous I/O with configurable buffering
-//! - Context binding for structured logging
-//! - Custom log levels with configurable priorities
-//! - Distributed tracing with trace/span propagation
-//! - Sampling and rate limiting for high-throughput systems
-//! - Sensitive data redaction for compliance
-//! - Metrics collection and observability
-//!
-//! ## Quick Start
-//!
-//! ```zig
-//! const std = @import("std");
-//! const logly = @import("logly");
-//!
-//! pub fn main() !void {
-//!     var gpa = std.heap.DebugAllocator(.{}){};
-//!     defer _ = gpa.deinit();
-//!     const allocator = gpa.allocator();
-//!
-//!     const logger = try logly.Logger.init(allocator);
-//!     defer logger.deinit();
-//!
-//!     try logger.info("Application started");
-//!     try logger.infof("Processing {d} items", .{42});
-//! }
-//! ```
-//!
-//! ## Production Configuration
-//!
-//! ```zig
-//! var config = logly.Config.production();
-//! const logger = try logly.Logger.initWithConfig(allocator, config);
-//! ```
-//!
-//! ## Log-Only and Display-Only Modes
-//!
-//! ```zig
-//! // Log-only mode (files only, no console)
-//! const log_config = logly.Config.logOnly();
-//! const log_logger = try logly.Logger.initWithConfig(allocator, log_config);
-//!
-//! // Display-only mode (console only, no files)
-//! const display_config = logly.Config.displayOnly();
-//! const display_logger = try logly.Logger.initWithConfig(allocator, display_config);
-//! ```
-//!
-//! ## Distributed Tracing
-//!
-//! ```zig
-//! try logger.setTraceContext("trace-123", "span-456");
-//! try logger.info("Request processed");
-//! ```
-//!
-//! For detailed documentation, visit: https://muhammad-fiaz.github.io/logly.zig/
-//!
-//! For source code and examples, visit: https://github.com/muhammad-fiaz/logly.zig
-
+//! Start with Logger.init and logger.info. See Config for options.
 pub const version = @import("version.zig").version;
 
 const std = @import("std");
@@ -83,8 +21,12 @@ pub const Rotation = @import("rotation.zig").Rotation;
 pub const Constants = @import("constants.zig");
 pub const Utils = @import("utils.zig");
 pub const utils = Utils;
+pub const Color = @import("color.zig");
+/// Direct access to the tint.zig color engine backing `Color`.
+pub const tint = @import("tint");
 
 // Nested config types (convenience re-exports from Config)
+pub const Format = Config.Format;
 pub const ThreadPoolConfig = Config.ThreadPoolConfig;
 pub const SchedulerConfig = Config.SchedulerConfig;
 pub const CompressionConfig = Config.CompressionConfig;
@@ -157,55 +99,32 @@ pub const ConfigPresets = struct {
         return Config.production();
     }
 
-    /// Alias for production
-    pub const prod = production;
-
     pub fn development() Config {
         return Config.development();
     }
-
-    /// Alias for development
-    pub const dev = development;
 
     pub fn highThroughput() Config {
         return Config.highThroughput();
     }
 
-    /// Alias for highThroughput
-    pub const fast = highThroughput;
-    pub const throughput = highThroughput;
-
     pub fn secure() Config {
         return Config.secure();
     }
-
-    /// Alias for secure
-    pub const security = secure;
 
     /// Log-only mode (no console display, only file storage)
     pub fn logOnly() Config {
         return Config.logOnly();
     }
 
-    /// Alias for logOnly
-    pub const filesOnly = logOnly;
-
     /// Display-only mode (console display, no file storage)
     pub fn displayOnly() Config {
         return Config.displayOnly();
     }
 
-    /// Alias for displayOnly
-    pub const consoleOnly = displayOnly;
-
     /// Custom display and storage settings
-    pub fn withDisplayStorage(console: bool, file: bool, auto_sink: bool) Config {
-        return Config.withDisplayStorage(console, file, auto_sink);
+    pub fn withDisplayStorage(console: bool, file: bool, autoSink: bool) Config {
+        return Config.withDisplayStorage(console, file, autoSink);
     }
-
-    /// Alias for withDisplayStorage
-    pub const custom = withDisplayStorage;
-    pub const withStorage = withDisplayStorage;
 };
 
 // Sink configuration helpers
@@ -214,48 +133,25 @@ pub const SinkPresets = struct {
         return SinkConfig.console();
     }
 
-    /// Alias for console
-    pub const stdout = console;
-    pub const terminal = console;
-
     pub fn file(path: []const u8) SinkConfig {
         return SinkConfig.file(path);
     }
-
-    /// Alias for file
-    pub const toFile = file;
 
     pub fn jsonFile(path: []const u8) SinkConfig {
         return SinkConfig.jsonFile(path);
     }
 
-    /// Alias for jsonFile
-    pub const json = jsonFile;
-    pub const toJsonFile = jsonFile;
-
     pub fn rotating(path: []const u8, interval: []const u8, retention: usize) SinkConfig {
         return SinkConfig.rotating(path, interval, retention);
     }
-
-    /// Alias for rotating
-    pub const rotate = rotating;
-    pub const rotatingFile = rotating;
 
     pub fn errorOnly(path: []const u8) SinkConfig {
         return SinkConfig.errorOnly(path);
     }
 
-    /// Alias for errorOnly
-    pub const errors = errorOnly;
-    pub const errorFile = errorOnly;
-
     pub fn network(uri: []const u8) SinkConfig {
         return SinkConfig.network(uri);
     }
-
-    /// Alias for network
-    pub const remote = network;
-    pub const net = network;
 };
 
 /// Platform utilities for terminal and console support.
@@ -273,7 +169,7 @@ pub const Terminal = struct {
 
         // Bare metal / freestanding - no terminal, but allow if explicitly enabled
         if (builtin.os.tag == .freestanding) {
-            return color_enabled;
+            return colorEnabled;
         }
 
         // Windows requires explicit enablement
@@ -285,36 +181,77 @@ pub const Terminal = struct {
         return true;
     }
 
-    /// Alias for enableAnsiColors
-    pub const enableColors = enableAnsiColors;
-    pub const ansi = enableAnsiColors;
-
     /// Check if the terminal likely supports ANSI color codes.
     pub fn supportsAnsiColors() bool {
         const builtin = @import("builtin");
 
         if (builtin.os.tag == .freestanding) {
-            return color_enabled;
+            return colorEnabled;
         }
 
         if (builtin.os.tag == .windows) {
             return detectWindowsAnsiSupport();
         }
 
-        // Check TERM environment variable on Unix-like systems
+        // Check TERM environment variable on Unix-like systems.
         if (std.posix.getenv("TERM")) |term| {
-            const color_terms = [_][]const u8{
-                "xterm",         "xterm-256color",  "xterm-color",
-                "screen",        "screen-256color", "tmux",
-                "tmux-256color", "linux",           "vt100",
-                "vt220",         "rxvt",            "ansi",
-                "cygwin",        "putty",           "konsole",
-                "gnome",         "alacritty",       "kitty",
+            // Known color-capable terminals (prefix match).
+            const colorTerms = [_][]const u8{
+                // xterm family.
+                "xterm",
+                "xterm-256color",
+                "xterm-color",
+                "xterm-direct",
+                "xterm-kitty",
+                // GNU screen / tmux.
+                "screen",
+                "screen-256color",
+                "screen-256color-bce",
+                "tmux",
+                "tmux-256color",
+                "tmux-direct",
+                // Modern GPU terminals.
+                "alacritty",
+                "kitty",
+                "wezterm",
+                "foot",
+                "contour",
+                "rio",
+                "ghostty",
+                "warp",
+                // Linux console and classic terminals.
+                "linux",
+                "vt100",
+                "vt220",
+                "rxvt",
+                "rxvt-unicode",
+                "ansi",
+                // Desktop environments and emulators.
+                "cygwin",
+                "putty",
+                "konsole",
+                "gnome",
+                "gnome-256color",
+                "xfce",
+                "terminator",
+                "st",
+                "st-256color",
+                "mlterm",
+                "Terminology",
+                "iterm",
+                "Apple_Terminal",
+                "vscode",
             };
-            for (color_terms) |ct| {
+            for (colorTerms) |ct| {
                 if (std.mem.startsWith(u8, term, ct)) return true;
             }
+            // Generic fallback: names mentioning color depth.
             if (std.mem.indexOf(u8, term, "color") != null) return true;
+            if (std.mem.indexOf(u8, term, "256") != null) return true;
+            if (std.mem.indexOf(u8, term, "truecolor") != null) return true;
+            if (std.mem.indexOf(u8, term, "direct") != null) return true;
+            // Explicitly monochrome terminals.
+            if (std.mem.eql(u8, term, "dumb")) return false;
         }
 
         // Check for known color-supporting environment variables
@@ -324,28 +261,16 @@ pub const Terminal = struct {
         return true; // Default to enabled on Unix-like systems
     }
 
-    /// Alias for supportsAnsiColors
-    pub const supportsColors = supportsAnsiColors;
-    pub const hasAnsi = supportsAnsiColors;
-
     /// Explicitly enable or disable colors (useful for bare metal or testing).
-    var color_enabled: bool = true;
+    var colorEnabled: bool = true;
 
     pub fn setColorEnabled(enabled: bool) void {
-        color_enabled = enabled;
+        colorEnabled = enabled;
     }
-
-    /// Alias for setColorEnabled
-    pub const setColors = setColorEnabled;
-    pub const enable = setColorEnabled;
 
     pub fn isColorEnabled() bool {
-        return color_enabled and supportsAnsiColors();
+        return colorEnabled and supportsAnsiColors();
     }
-
-    /// Alias for isColorEnabled
-    pub const colorsEnabled = isColorEnabled;
-    pub const isEnabled = isColorEnabled;
 
     fn enableWindowsAnsi() bool {
         const builtin = @import("builtin");

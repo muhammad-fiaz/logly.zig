@@ -6,17 +6,17 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly Customizations Example ===\n\n", .{});
+    std.debug.print("Logly Customizations Example\n\n", .{});
 
     // Example 1: Global root path for logs
     std.debug.print("1. Global Root Path Configuration\n", .{});
     std.debug.print("   Setting logs to be stored in './logs' directory\n\n", .{});
 
     var config1 = logly.Config.default();
-    config1.logs_root_path = "./logs";
+    config1.logsRootPath = "./logs";
     config1.color = true;
-    config1.show_filename = true;
-    config1.show_lineno = true;
+    config1.showFilename = true;
+    config1.showLineno = true;
 
     const logger1 = try logly.Logger.initWithConfig(allocator, config1);
     defer logger1.deinit();
@@ -33,12 +33,12 @@ pub fn main() !void {
     std.debug.print("   Customizing log message format with prefix, suffix, and separators\n\n", .{});
 
     var config2 = logly.Config.default();
-    config2.format_structure = .{
-        .message_prefix = ">>> ",
-        .message_suffix = " <<<",
-        .field_separator = " :: ",
-        .enable_nesting = true,
-        .nesting_indent = "    ",
+    config2.formatStructure = .{
+        .messagePrefix = ">>> ",
+        .messageSuffix = " <<<",
+        .fieldSeparator = " :: ",
+        .enableNesting = true,
+        .nestingIndent = "    ",
     };
 
     const logger2 = try logly.Logger.initWithConfig(allocator, config2);
@@ -51,14 +51,12 @@ pub fn main() !void {
     std.debug.print("   Setting custom colors for each log level\n\n", .{});
 
     var config3 = logly.Config.default();
-    config3.level_colors = .{
-        .info_color = "\x1b[36m", // cyan
-        .warning_color = "\x1b[35m", // magenta
-        .error_color = "\x1b[31m", // red
-        .success_color = "\x1b[32m", // green
-        .critical_color = "\x1b[1;31m", // bold red
-        .use_rgb = false,
-        .support_background = false,
+    config3.levelColors = .{
+        .infoColor = logly.Color.parse("36").?, // cyan
+        .warningColor = logly.Color.parse("35").?, // magenta
+        .errorColor = logly.Color.parse("31").?, // red
+        .successColor = logly.Color.parse("32").?, // green
+        .criticalColor = logly.Color.parse("31").?, // bold red
     };
 
     const logger3 = try logly.Logger.initWithConfig(allocator, config3);
@@ -74,10 +72,10 @@ pub fn main() !void {
     var config4 = logly.Config.default();
     config4.highlighters = .{
         .enabled = true,
-        .alert_on_match = true,
-        .alert_min_severity = .warning,
-        .log_matches = true,
-        .max_matches_per_message = 5,
+        .alertOnMatch = true,
+        .alertMinSeverity = .warning,
+        .logMatches = true,
+        .maxMatchesPerMessage = 5,
     };
 
     const logger4 = try logly.Logger.initWithConfig(allocator, config4);
@@ -90,35 +88,35 @@ pub fn main() !void {
     std.debug.print("\n5. Combined: All Customizations\n", .{});
     std.debug.print("   Using all customization features together\n\n", .{});
 
-    var config_combined = logly.Config.default();
-    config_combined.logs_root_path = "./logs";
+    var configCombined = logly.Config.default();
+    configCombined.logsRootPath = "./logs";
 
-    config_combined.format_structure = .{
-        .message_prefix = "[APP] ",
-        .field_separator = " | ",
-        .enable_nesting = true,
+    configCombined.formatStructure = .{
+        .messagePrefix = "[APP] ",
+        .fieldSeparator = " | ",
+        .enableNesting = true,
     };
 
-    config_combined.level_colors = .{
-        .info_color = "\x1b[34m", // blue
-        .warning_color = "\x1b[33m", // yellow
-        .error_color = "\x1b[31m", // red
+    configCombined.levelColors = .{
+        .infoColor = logly.Color.parse("34").?, // blue
+        .warningColor = logly.Color.parse("33").?, // yellow
+        .errorColor = logly.Color.parse("31").?, // red
     };
 
-    config_combined.highlighters = .{
+    configCombined.highlighters = .{
         .enabled = true,
-        .alert_on_match = true,
-        .log_matches = true,
+        .alertOnMatch = true,
+        .logMatches = true,
     };
 
-    const logger_combined = try logly.Logger.initWithConfig(allocator, config_combined);
-    defer logger_combined.deinit();
+    const loggerCombined = try logly.Logger.initWithConfig(allocator, configCombined);
+    defer loggerCombined.deinit();
 
-    _ = try logger_combined.addSink(logly.SinkConfig.file("combined.log"));
+    _ = try loggerCombined.addSink(logly.SinkConfig.file("combined.log"));
 
-    try logger_combined.info("Application initialization complete", @src());
-    try logger_combined.warning("High memory usage detected", @src());
-    try logger_combined.err("Failed to connect to remote service", @src());
+    try loggerCombined.info("Application initialization complete", @src());
+    try loggerCombined.warning("High memory usage detected", @src());
+    try loggerCombined.err("Failed to connect to remote service", @src());
 
     std.debug.print("\nAll customization examples completed!\n", .{});
     std.debug.print("Check ./logs directory for generated log files.\n", .{});

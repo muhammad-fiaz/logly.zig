@@ -25,14 +25,14 @@ pub fn main() !void {
     var config = Config.default();
     config.distributed = .{
         .enabled = true,
-        .service_name = "user-service",
-        .service_version = "1.0.0",
+        .serviceName = "user-service",
+        .serviceVersion = "1.0.0",
         .environment = "production",
         .region = "us-east-1",
         .datacenter = "az-1"
     };
     // Enable JSON for structured output
-    config.json = true; 
+    config.format = .json; 
 
     // Initialize Global Logger
     const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -44,11 +44,11 @@ pub fn main() !void {
     std.debug.print("--- Simulating Request Processing ---\n", .{});
 
     // 3. Create scoped logger from W3C trace context
-    var req_logger = try logger.withTraceparent(incoming_traceparent);
-    req_logger = req_logger.inModule("http.request");
+    var reqLogger = try logger.withTraceparent(incoming_traceparent);
+    reqLogger = reqLogger.inModule("http.request");
 
     // 4. Log events
-    try req_logger.info("Received getUser(id=42)", @src());
+    try reqLogger.info("Received getUser(id=42)", @src());
     // Output: 
     // {
     //   "timestamp": ...,
@@ -62,8 +62,8 @@ pub fn main() !void {
 
     // 5. Simulate DB Call (Child Operation)
     {
-      const db_logger = req_logger.child("7a085853722dc6d2").inModule("database.query");
-      try db_logger.debug("Querying database: SELECT * FROM users WHERE id=42", @src());
+      const dbLogger = reqLogger.child("7a085853722dc6d2").inModule("database.query");
+      try dbLogger.debug("Querying database: SELECT * FROM users WHERE id=42", @src());
     }
 
     // 6. Propagate trace context to downstream service
@@ -72,6 +72,6 @@ pub fn main() !void {
       std.debug.print("Forward traceparent: {s}\n", .{traceparent});
     }
 
-    try req_logger.success("User found, returning 200 OK", @src());
+    try reqLogger.success("User found, returning 200 OK", @src());
 }
 ```

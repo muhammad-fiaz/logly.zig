@@ -1,30 +1,6 @@
-//! Metrics Collection Module
+//! Metrics collection.
 //!
-//! Provides observability and performance monitoring for the logging system.
-//! Tracks record counts, throughput, latency, and error rates.
-//!
-//! Tracked Metrics:
-//! - Record Counts: Total, per-level, dropped, errors
-//! - Throughput: Records/bytes per second
-//! - Latency: Min/max/average processing time
-//! - Per-Sink: Individual sink statistics
-//!
-//! Export Formats:
-//! - Text: Human-readable format
-//! - JSON: Structured JSON output
-//! - Prometheus: Prometheus exposition format
-//! - StatsD: StatsD metric format
-//!
-//! Features:
-//! - Lock-free atomic counters for hot paths
-//! - Configurable history retention
-//! - Threshold-based alerting callbacks
-//! - Histogram for latency distribution
-//!
-//! Performance:
-//! - Minimal overhead (1-2% CPU for enabled metrics)
-//! - Atomic operations for thread safety
-
+//! Atomic counters for records, throughput, latency, and errors, with text/JSON/Prometheus/StatsD export.
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Level = @import("level.zig").Level;
@@ -39,29 +15,29 @@ pub const Metrics = struct {
     /// Metric types for threshold notifications.
     pub const MetricType = enum {
         /// Total records logged.
-        total_records,
+        totalRecords,
         /// Total bytes written.
-        total_bytes,
+        totalBytes,
         /// Records dropped due to overflow.
-        dropped_records,
+        droppedRecords,
         /// Total error count.
-        error_count,
+        errorCount,
         /// Records per second throughput.
-        records_per_second,
+        recordsPerSecond,
         /// Bytes per second throughput.
-        bytes_per_second,
+        bytesPerSecond,
     };
 
     /// Error event types for callbacks.
     pub const ErrorEvent = enum {
         /// Records dropped due to capacity.
-        records_dropped,
+        recordsDropped,
         /// Sink write failure.
-        sink_write_error,
+        sinkWriteError,
         /// Buffer overflow occurred.
-        buffer_overflow,
+        bufferOverflow,
         /// Record dropped by sampling.
-        sampling_drop,
+        samplingDrop,
     };
 
     /// Per-sink metrics for fine-grained observability.
@@ -69,32 +45,32 @@ pub const Metrics = struct {
         /// Sink name identifier.
         name: []const u8,
         /// Total records written to this sink.
-        records_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        recordsWritten: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total bytes written to this sink.
-        bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytesWritten: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of write errors for this sink.
-        write_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        writeErrors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of flush operations for this sink.
-        flush_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        flushCount: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Get total records written.
         pub fn getRecordsWritten(self: *const SinkMetrics) u64 {
-            return Utils.atomicLoadU64(&self.records_written);
+            return Utils.atomicLoadU64(&self.recordsWritten);
         }
 
         /// Get total bytes written.
         pub fn getBytesWritten(self: *const SinkMetrics) u64 {
-            return Utils.atomicLoadU64(&self.bytes_written);
+            return Utils.atomicLoadU64(&self.bytesWritten);
         }
 
         /// Get write errors count.
         pub fn getWriteErrors(self: *const SinkMetrics) u64 {
-            return Utils.atomicLoadU64(&self.write_errors);
+            return Utils.atomicLoadU64(&self.writeErrors);
         }
 
         /// Get flush count.
         pub fn getFlushCount(self: *const SinkMetrics) u64 {
-            return Utils.atomicLoadU64(&self.flush_count);
+            return Utils.atomicLoadU64(&self.flushCount);
         }
 
         /// Check if any records have been written.
@@ -110,8 +86,8 @@ pub const Metrics = struct {
         /// Get write error rate for this sink.
         pub fn getErrorRate(self: *const SinkMetrics) f64 {
             return Utils.calculateErrorRate(
-                Utils.atomicLoadU64(&self.write_errors),
-                Utils.atomicLoadU64(&self.records_written),
+                Utils.atomicLoadU64(&self.writeErrors),
+                Utils.atomicLoadU64(&self.recordsWritten),
             );
         }
 
@@ -123,106 +99,59 @@ pub const Metrics = struct {
         /// Get average bytes per record.
         pub fn avgBytesPerRecord(self: *const SinkMetrics) f64 {
             return Utils.calculateAverage(
-                Utils.atomicLoadU64(&self.bytes_written),
-                Utils.atomicLoadU64(&self.records_written),
+                Utils.atomicLoadU64(&self.bytesWritten),
+                Utils.atomicLoadU64(&self.recordsWritten),
             );
         }
 
         /// Get average records per flush.
         pub fn avgRecordsPerFlush(self: *const SinkMetrics) f64 {
             return Utils.calculateAverage(
-                Utils.atomicLoadU64(&self.records_written),
-                Utils.atomicLoadU64(&self.flush_count),
+                Utils.atomicLoadU64(&self.recordsWritten),
+                Utils.atomicLoadU64(&self.flushCount),
             );
         }
 
         /// Calculate throughput (bytes per second).
-        pub fn throughputBytesPerSecond(self: *const SinkMetrics, elapsed_seconds: f64) f64 {
+        pub fn throughputBytesPerSecond(self: *const SinkMetrics, elapsedSeconds: f64) f64 {
             return Utils.safeFloatDiv(
-                @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.bytes_written))),
-                elapsed_seconds,
+                @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.bytesWritten))),
+                elapsedSeconds,
             );
         }
 
         /// Reset all statistics to initial state.
         pub fn reset(self: *SinkMetrics) void {
-            self.records_written.store(0, .monotonic);
-            self.bytes_written.store(0, .monotonic);
-            self.write_errors.store(0, .monotonic);
-            self.flush_count.store(0, .monotonic);
+            self.recordsWritten.store(0, .monotonic);
+            self.bytesWritten.store(0, .monotonic);
+            self.writeErrors.store(0, .monotonic);
+            self.flushCount.store(0, .monotonic);
         }
-
-        /// Alias for getRecordsWritten
-        pub const records = getRecordsWritten;
-        pub const written = getRecordsWritten;
-
-        /// Alias for getBytesWritten
-        pub const bytes = getBytesWritten;
-        pub const bytesWritten = getBytesWritten;
-
-        /// Alias for getWriteErrors
-        pub const writeErrors = getWriteErrors;
-        pub const errors = getWriteErrors;
-
-        /// Alias for getFlushCount
-        pub const flushes = getFlushCount;
-        pub const flushCount = getFlushCount;
-
-        /// Alias for hasWritten
-        pub const hasData = hasWritten;
-        pub const isActive = hasWritten;
-
-        /// Alias for hasErrors
-        // Removed to avoid ambiguity with Metrics.hasErrors
-
-        /// Alias for getErrorRate
-        pub const errorRate = getErrorRate;
-        pub const failureRate = getErrorRate;
-
-        /// Alias for getSuccessRate
-        pub const successRate = getSuccessRate;
-        pub const success = getSuccessRate;
-
-        /// Alias for avgBytesPerRecord
-        pub const avgBytes = avgBytesPerRecord;
-        pub const bytesPerRecord = avgBytesPerRecord;
-
-        /// Alias for avgRecordsPerFlush
-        pub const avgRecords = avgRecordsPerFlush;
-        pub const recordsPerFlush = avgRecordsPerFlush;
-
-        /// Alias for throughputBytesPerSecond
-        pub const throughput = throughputBytesPerSecond;
-        pub const bytesPerSecond = throughputBytesPerSecond;
     };
 
     /// Snapshot of current metrics for reporting.
     pub const Snapshot = struct {
         /// Total records logged.
-        total_records: u64,
+        totalRecords: u64,
         /// Total bytes written.
-        total_bytes: u64,
+        totalBytes: u64,
         /// Records dropped due to overflow.
-        dropped_records: u64,
+        droppedRecords: u64,
         /// Total error count.
-        error_count: u64,
+        errorCount: u64,
         /// Time since metrics start in milliseconds.
-        uptime_ms: i64,
+        uptimeMs: i64,
         /// Current records per second.
-        records_per_second: f64,
+        recordsPerSecond: f64,
         /// Current bytes per second.
-        bytes_per_second: f64,
+        bytesPerSecond: f64,
         /// Record counts per level (indexed by LevelIndex).
-        level_counts: [Constants.LevelConstants.count]u64,
+        levelCounts: [Constants.LevelConstants.count]u64,
 
         /// Get drop rate (0.0 - 1.0).
         pub fn getDropRate(self: *const Snapshot) f64 {
-            return Utils.calculateRate(self.dropped_records, self.total_records);
+            return Utils.calculateRate(self.droppedRecords, self.totalRecords);
         }
-
-        /// Alias for getDropRate
-        pub const dropRate = getDropRate;
-        pub const dropPercentage = getDropRate;
     };
 
     /// Aggregated latency view built from raw counters and histogram buckets.
@@ -230,25 +159,22 @@ pub const Metrics = struct {
         /// Total latency samples available in histogram buckets.
         samples: u64,
         /// Minimum observed latency in nanoseconds.
-        min_ns: u64,
+        minNs: u64,
         /// Maximum observed latency in nanoseconds.
-        max_ns: u64,
+        maxNs: u64,
         /// Average latency in nanoseconds.
-        avg_ns: u64,
+        avgNs: u64,
         /// 50th percentile latency in nanoseconds.
-        p50_ns: u64,
+        p50Ns: u64,
         /// 95th percentile latency in nanoseconds.
-        p95_ns: u64,
+        p95Ns: u64,
         /// 99th percentile latency in nanoseconds.
-        p99_ns: u64,
+        p99Ns: u64,
 
         /// Returns true when at least one latency sample is present.
         pub fn hasSamples(self: *const LatencySummary) bool {
             return self.samples > 0;
         }
-
-        /// Alias for hasSamples
-        pub const hasData = hasSamples;
     };
 
     /// Level index mapping for metrics array.
@@ -264,80 +190,75 @@ pub const Metrics = struct {
     config: MetricsConfig = .{},
 
     /// Total records logged.
-    total_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    totalRecords: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     /// Total bytes written.
-    total_bytes: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    totalBytes: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     /// Records dropped due to overflow.
-    dropped_records: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    droppedRecords: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     /// Total error count.
-    error_count: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    totalErrors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     /// Per-level record counts.
-    level_counts: [Constants.LevelConstants.count]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.LevelConstants.count,
+    levelCounts: [Constants.LevelConstants.count]std.atomic.Value(Constants.AtomicUnsigned) = @splat(std.atomic.Value(Constants.AtomicUnsigned).init(0)),
 
     /// Metrics collection start time.
-    start_time: i64,
+    startTime: i64,
     /// Timestamp of last record logged.
-    last_record_time: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
+    lastRecordTime: std.atomic.Value(Constants.AtomicSigned) = std.atomic.Value(Constants.AtomicSigned).init(0),
 
     /// Total latency in nanoseconds (for average calculation).
-    total_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    totalLatencyNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     /// Minimum latency observed in nanoseconds.
-    min_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(std.math.maxInt(Constants.AtomicUnsigned)),
+    latencyMinNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(std.math.maxInt(Constants.AtomicUnsigned)),
     /// Maximum latency observed in nanoseconds.
-    max_latency_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    latencyMaxNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     /// Histogram buckets for latency distribution.
-    histogram: [Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = [_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.MetricsConstants.histogram_boundaries.len,
+    histogram: [Constants.MetricsConstants.histogramBoundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = @splat(std.atomic.Value(Constants.AtomicUnsigned).init(0)),
 
     /// Histogram buckets for latency distribution per log level.
-    level_histograms: [Constants.LevelConstants.count][Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = [_][Constants.MetricsConstants.histogram_boundaries.len]std.atomic.Value(Constants.AtomicUnsigned){[_]std.atomic.Value(Constants.AtomicUnsigned){std.atomic.Value(Constants.AtomicUnsigned).init(0)} ** Constants.MetricsConstants.histogram_boundaries.len} ** Constants.LevelConstants.count,
+    levelHistograms: [Constants.LevelConstants.count][Constants.MetricsConstants.histogramBoundaries.len]std.atomic.Value(Constants.AtomicUnsigned) = @splat(@splat(std.atomic.Value(Constants.AtomicUnsigned).init(0))),
 
     /// Snapshot history for trend analysis.
     history: std.ArrayList(Snapshot),
 
     /// Per-sink metrics list.
-    sink_metrics: std.ArrayList(SinkMetrics),
+    sinkMetrics: std.ArrayList(SinkMetrics),
     /// Memory allocator.
     allocator: std.mem.Allocator,
 
     /// Callback invoked when a record is logged.
-    /// Parameters: (level: Level, bytes: u64)
-    on_record_logged: ?*const fn (Level, u64) void = null,
+    onRecordLogged: ?*const fn (Level, u64) void = null,
 
     /// Callback invoked when metrics snapshot is taken.
-    /// Parameters: (snapshot: *const Snapshot)
-    on_metrics_snapshot: ?*const fn (*const Snapshot) void = null,
+    onMetricsSnapshot: ?*const fn (*const Snapshot) void = null,
 
     /// Callback invoked when metrics exceed thresholds.
-    /// Parameters: (metric: MetricType, value: u64, threshold: u64)
-    on_threshold_exceeded: ?*const fn (MetricType, u64, u64) void = null,
+    onThresholdExceeded: ?*const fn (MetricType, u64, u64) void = null,
 
     /// Callback invoked when errors or dropped records detected.
-    /// Parameters: (event_type: ErrorEvent, count: u64)
-    on_error_detected: ?*const fn (ErrorEvent, u64) void = null,
+    onErrorDetected: ?*const fn (ErrorEvent, u64) void = null,
 
     /// Maps a Level enum value to a LevelIndex for the metrics array.
-    /// Performance: O(1) - direct switch without allocations
     fn levelToIndex(level: Level) u4 {
         const LI = LevelIndex;
         return switch (level) {
-            .trace => @intFromEnum(LI.trace),
-            .debug => @intFromEnum(LI.debug),
-            .info => @intFromEnum(LI.info),
-            .notice => @intFromEnum(LI.notice),
-            .success => @intFromEnum(LI.success),
-            .warning => @intFromEnum(LI.warning),
-            .err => @intFromEnum(LI.err),
-            .fail => @intFromEnum(LI.fail),
-            .critical => @intFromEnum(LI.critical),
-            .fatal => @intFromEnum(LI.fatal),
+            .trace => @backingInt(LI.trace),
+            .debug => @backingInt(LI.debug),
+            .info => @backingInt(LI.info),
+            .notice => @backingInt(LI.notice),
+            .success => @backingInt(LI.success),
+            .warning => @backingInt(LI.warning),
+            .err => @backingInt(LI.err),
+            .fail => @backingInt(LI.fail),
+            .critical => @backingInt(LI.critical),
+            .fatal => @backingInt(LI.fatal),
         };
     }
 
     /// Maps an index back to a histogram bucket boundary (in nanoseconds).
     fn histogramBucketBoundary(bucket: usize) u64 {
-        return if (bucket < Constants.MetricsConstants.histogram_boundaries.len) Constants.MetricsConstants.histogram_boundaries[bucket] else std.math.maxInt(u64);
+        return if (bucket < Constants.MetricsConstants.histogramBoundaries.len) Constants.MetricsConstants.histogramBoundaries[bucket] else std.math.maxInt(u64);
     }
 
     /// Returns the total number of histogram samples.
@@ -351,7 +272,7 @@ pub const Metrics = struct {
 
     /// Maps a LevelIndex back to a Level name string.
     pub fn indexToLevelName(index: usize) []const u8 {
-        return if (index < Constants.MetricsConstants.level_names.len) Constants.MetricsConstants.level_names[index] else "UNKNOWN";
+        return if (index < Constants.MetricsConstants.levelNames.len) Constants.MetricsConstants.levelNames[index] else "UNKNOWN";
     }
 
     /// Initializes a new Metrics instance with default configuration.
@@ -359,14 +280,11 @@ pub const Metrics = struct {
         return initWithConfig(allocator, .{});
     }
 
-    /// Alias for init().
-    pub const create = init;
-
     /// Initializes a new Metrics instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: MetricsConfig) Metrics {
         return .{
-            .start_time = Utils.currentMillis(),
-            .sink_metrics = .empty,
+            .startTime = Utils.monotonicMillis(),
+            .sinkMetrics = .empty,
             .history = .empty,
             .allocator = allocator,
             .config = config,
@@ -375,42 +293,39 @@ pub const Metrics = struct {
 
     /// Releases all resources associated with the metrics.
     pub fn deinit(self: *Metrics) void {
-        for (self.sink_metrics.items) |metric| {
+        for (self.sinkMetrics.items) |metric| {
             self.allocator.free(metric.name);
         }
-        self.sink_metrics.deinit(self.allocator);
+        self.sinkMetrics.deinit(self.allocator);
         self.history.deinit(self.allocator);
     }
-
-    /// Alias for deinit().
-    pub const destroy = deinit;
 
     /// Sets the callback for record logged events.
     pub fn setRecordLoggedCallback(self: *Metrics, callback: *const fn (Level, u64) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_record_logged = callback;
+        self.onRecordLogged = callback;
     }
 
     /// Sets the callback for metrics snapshot events.
     pub fn setSnapshotCallback(self: *Metrics, callback: *const fn (*const Snapshot) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_metrics_snapshot = callback;
+        self.onMetricsSnapshot = callback;
     }
 
     /// Sets the callback for threshold exceeded events.
     pub fn setThresholdCallback(self: *Metrics, callback: *const fn (MetricType, u64, u64) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_threshold_exceeded = callback;
+        self.onThresholdExceeded = callback;
     }
 
     /// Sets the callback for error detected events.
     pub fn setErrorCallback(self: *Metrics, callback: *const fn (ErrorEvent, u64) void) void {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
-        self.on_error_detected = callback;
+        self.onErrorDetected = callback;
     }
 
     /// Returns the current configuration.
@@ -426,15 +341,24 @@ pub const Metrics = struct {
     /// Records a new log record.
     /// Basic counting always works; advanced features (thresholds, callbacks) require config.enabled = true.
     pub fn recordLog(self: *Metrics, level: Level, bytes: u64) void {
-        _ = self.total_records.fetchAdd(1, .monotonic);
-        _ = self.total_bytes.fetchAdd(@truncate(bytes), .monotonic);
+        self.recordLogAt(level, bytes, Utils.currentMillis());
+    }
 
-        if (self.config.track_levels) {
-            const level_index = levelToIndex(level);
-            _ = self.level_counts[level_index].fetchAdd(1, .monotonic);
+    /// Records a log with an explicit wall-clock timestamp in milliseconds.
+    ///
+    /// Prefer this on the logging hot path when the caller already captured
+    /// the current time, so the timestamp is generated once per record
+    /// instead of once each in the logger, the record, and metrics.
+    pub fn recordLogAt(self: *Metrics, level: Level, bytes: u64, timestampMs: i64) void {
+        _ = self.totalRecords.fetchAdd(1, .monotonic);
+        _ = self.totalBytes.fetchAdd(@truncate(bytes), .monotonic);
+
+        if (self.config.trackLevels) {
+            const levelIndex = levelToIndex(level);
+            _ = self.levelCounts[levelIndex].fetchAdd(1, .monotonic);
         }
 
-        self.last_record_time.store(@truncate(Utils.currentMillis()), .monotonic);
+        self.lastRecordTime.store(@truncate(timestampMs), .monotonic);
 
         // Advanced features only when enabled
         if (self.config.enabled) {
@@ -442,174 +366,164 @@ pub const Metrics = struct {
             self.checkThresholds();
 
             // Invoke callback if set
-            if (self.on_record_logged) |callback| {
+            if (self.onRecordLogged) |callback| {
                 callback(level, bytes);
             }
         }
     }
 
     /// Records a log with latency measurement.
-    pub fn recordLogWithLatency(self: *Metrics, level: Level, bytes: u64, latency_ns: u64) void {
+    pub fn recordLogWithLatency(self: *Metrics, level: Level, bytes: u64, latencyNs: u64) void {
         self.recordLog(level, bytes);
 
-        if (!self.config.track_latency) return;
+        if (!self.config.trackLatency) return;
 
-        _ = self.total_latency_ns.fetchAdd(@truncate(latency_ns), .monotonic);
+        _ = self.totalLatencyNs.fetchAdd(@truncate(latencyNs), .monotonic);
 
         // Update min latency
-        var current_min = self.min_latency_ns.load(.monotonic);
-        while (latency_ns < current_min) {
-            const result = self.min_latency_ns.cmpxchgWeak(current_min, @truncate(latency_ns), .monotonic, .monotonic);
-            if (result) |new_current| {
-                current_min = new_current;
+        var currentMin = self.latencyMinNs.load(.monotonic);
+        while (latencyNs < currentMin) {
+            const result = self.latencyMinNs.cmpxchgWeak(currentMin, @truncate(latencyNs), .monotonic, .monotonic);
+            if (result) |newCurrent| {
+                currentMin = newCurrent;
             } else {
                 break;
             }
         }
 
         // Update max latency
-        var current_max = self.max_latency_ns.load(.monotonic);
-        while (latency_ns > current_max) {
-            const result = self.max_latency_ns.cmpxchgWeak(current_max, @truncate(latency_ns), .monotonic, .monotonic);
-            if (result) |new_current| {
-                current_max = new_current;
+        var currentMax = self.latencyMaxNs.load(.monotonic);
+        while (latencyNs > currentMax) {
+            const result = self.latencyMaxNs.cmpxchgWeak(currentMax, @truncate(latencyNs), .monotonic, .monotonic);
+            if (result) |newCurrent| {
+                currentMax = newCurrent;
             } else {
                 break;
             }
         }
 
         // Update histogram if enabled
-        if (self.config.enable_histogram) {
-            const bucket = self.getHistogramBucket(latency_ns);
+        if (self.config.enableHistogram) {
+            const bucket = self.getHistogramBucket(latencyNs);
             if (bucket < self.histogram.len) {
                 _ = self.histogram[bucket].fetchAdd(1, .monotonic);
-                const level_index = levelToIndex(level);
-                _ = self.level_histograms[level_index][bucket].fetchAdd(1, .monotonic);
+                const levelIndex = levelToIndex(level);
+                _ = self.levelHistograms[levelIndex][bucket].fetchAdd(1, .monotonic);
             }
         }
     }
 
-    /// Get histogram bucket for a latency value.
-    fn getHistogramBucket(self: *const Metrics, latency_ns: u64) usize {
+    /// Get histogram bucket for a latency value (binary search, boundaries ascending).
+    fn getHistogramBucket(self: *const Metrics, latencyNs: u64) usize {
         _ = self;
-        var bucket: usize = 0;
-        while (bucket < Constants.MetricsConstants.histogram_boundaries.len) : (bucket += 1) {
-            if (latency_ns <= Constants.MetricsConstants.histogram_boundaries[bucket]) {
-                return bucket;
+        const bounds = Constants.MetricsConstants.histogramBoundaries;
+        var lo: usize = 0;
+        var hi: usize = bounds.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (latencyNs <= bounds[mid]) {
+                hi = mid;
+            } else {
+                lo = mid + 1;
             }
         }
-        return Constants.MetricsConstants.histogram_boundaries.len - 1;
+        if (lo >= bounds.len) return bounds.len - 1;
+        return lo;
     }
 
     /// Check thresholds and invoke callback if exceeded.
     fn checkThresholds(self: *Metrics) void {
-        if (self.on_threshold_exceeded == null) return;
+        if (self.onThresholdExceeded == null) return;
 
-        const callback = self.on_threshold_exceeded.?;
+        const callback = self.onThresholdExceeded.?;
 
         // Check error rate threshold
-        if (self.config.error_rate_threshold > 0) {
-            const err_rate = self.errorRate();
-            if (err_rate > self.config.error_rate_threshold) {
-                callback(.error_count, self.errorCount(), @intFromFloat(self.config.error_rate_threshold * 100));
+        if (self.config.errorRateThreshold > 0) {
+            const errRate = self.errorRate();
+            if (errRate > self.config.errorRateThreshold) {
+                callback(.errorCount, self.errorCount(), @intFromFloat(self.config.errorRateThreshold * 100));
             }
         }
 
         // Check drop rate threshold
-        if (self.config.drop_rate_threshold > 0) {
-            const drop_rate_val = self.dropRate();
-            if (drop_rate_val > self.config.drop_rate_threshold) {
-                callback(.dropped_records, self.droppedCount(), @intFromFloat(self.config.drop_rate_threshold * 100));
+        if (self.config.dropRateThreshold > 0) {
+            const dropRateVal = self.dropRate();
+            if (dropRateVal > self.config.dropRateThreshold) {
+                callback(.droppedRecords, self.droppedCount(), @intFromFloat(self.config.dropRateThreshold * 100));
             }
         }
 
         // Check max records per second
-        if (self.config.max_records_per_second > 0) {
+        if (self.config.maxRecordsPerSecond > 0) {
             const rps = self.rate();
-            if (rps > @as(f64, @floatFromInt(self.config.max_records_per_second))) {
-                callback(.records_per_second, @intFromFloat(rps), self.config.max_records_per_second);
+            if (rps > @as(f64, @floatFromInt(self.config.maxRecordsPerSecond))) {
+                callback(.recordsPerSecond, @intFromFloat(rps), self.config.maxRecordsPerSecond);
             }
         }
     }
 
     /// Records a dropped log record.
     pub fn recordDrop(self: *Metrics) void {
-        _ = self.dropped_records.fetchAdd(1, .monotonic);
-        if (self.on_error_detected) |callback| {
-            callback(.records_dropped, self.droppedCount());
+        _ = self.droppedRecords.fetchAdd(1, .monotonic);
+        if (self.onErrorDetected) |callback| {
+            callback(.recordsDropped, self.droppedCount());
         }
     }
 
     /// Records an error.
     pub fn recordError(self: *Metrics) void {
-        _ = self.error_count.fetchAdd(1, .monotonic);
-        if (self.on_error_detected) |callback| {
-            callback(.sink_write_error, self.errorCount());
+        _ = self.totalErrors.fetchAdd(1, .monotonic);
+        if (self.onErrorDetected) |callback| {
+            callback(.sinkWriteError, self.errorCount());
         }
     }
 
     /// Adds a sink to track.
-    ///
-    /// Arguments:
-    ///     name: The name of the sink.
-    ///
-    /// Returns:
-    ///     The index of the sink in the metrics array.
     pub fn addSink(self: *Metrics, name: []const u8) !usize {
         self.mutex.lockUncancelable(Utils.io());
         defer self.mutex.unlock(Utils.io());
 
-        const owned_name = try self.allocator.dupe(u8, name);
-        try self.sink_metrics.append(self.allocator, .{ .name = owned_name });
-        return self.sink_metrics.items.len - 1;
+        const ownedName = try self.allocator.dupe(u8, name);
+        try self.sinkMetrics.append(self.allocator, .{ .name = ownedName });
+        return self.sinkMetrics.items.len - 1;
     }
 
     /// Records a successful write to a sink.
-    ///
-    /// Arguments:
-    ///     sink_index: The index of the sink.
-    ///     bytes: The number of bytes written.
-    pub fn recordSinkWrite(self: *Metrics, sink_index: usize, bytes: u64) void {
-        if (sink_index < self.sink_metrics.items.len) {
-            _ = self.sink_metrics.items[sink_index].records_written.fetchAdd(@as(Constants.AtomicUnsigned, 1), .monotonic);
-            _ = self.sink_metrics.items[sink_index].bytes_written.fetchAdd(@truncate(bytes), .monotonic);
+    pub fn recordSinkWrite(self: *Metrics, sinkIndex: usize, bytes: u64) void {
+        if (sinkIndex < self.sinkMetrics.items.len) {
+            _ = self.sinkMetrics.items[sinkIndex].recordsWritten.fetchAdd(@as(Constants.AtomicUnsigned, 1), .monotonic);
+            _ = self.sinkMetrics.items[sinkIndex].bytesWritten.fetchAdd(@truncate(bytes), .monotonic);
         }
     }
 
     /// Records a write error on a sink.
-    ///
-    /// Arguments:
-    ///     sink_index: The index of the sink.
-    pub fn recordSinkError(self: *Metrics, sink_index: usize) void {
-        if (sink_index < self.sink_metrics.items.len) {
-            _ = self.sink_metrics.items[sink_index].write_errors.fetchAdd(@as(Constants.AtomicUnsigned, 1), .monotonic);
+    pub fn recordSinkError(self: *Metrics, sinkIndex: usize) void {
+        if (sinkIndex < self.sinkMetrics.items.len) {
+            _ = self.sinkMetrics.items[sinkIndex].writeErrors.fetchAdd(@as(Constants.AtomicUnsigned, 1), .monotonic);
         }
     }
 
     /// Gets a snapshot of current metrics.
-    ///
-    /// Returns:
-    ///     A snapshot of the current metrics state.
     pub fn getSnapshot(self: *Metrics) Snapshot {
-        const uptime_ms = Utils.elapsedMs(self.start_time);
+        const uptimeMs = Utils.elapsedMs(self.startTime);
 
-        const total_records = Utils.atomicLoadU64(&self.total_records);
-        const total_bytes = Utils.atomicLoadU64(&self.total_bytes);
+        const totalRecords = Utils.atomicLoadU64(&self.totalRecords);
+        const totalBytes = Utils.atomicLoadU64(&self.totalBytes);
 
-        var level_counts: [10]u64 = undefined;
+        var levelCounts: [10]u64 = undefined;
         for (0..10) |i| {
-            level_counts[i] = Utils.atomicLoadU64(&self.level_counts[i]);
+            levelCounts[i] = Utils.atomicLoadU64(&self.levelCounts[i]);
         }
 
         return .{
-            .total_records = total_records,
-            .total_bytes = total_bytes,
-            .dropped_records = Utils.atomicLoadU64(&self.dropped_records),
-            .error_count = Utils.atomicLoadU64(&self.error_count),
-            .uptime_ms = @as(i64, @intCast(uptime_ms)),
-            .records_per_second = Utils.calculateThroughputMs(total_records, @as(i64, @intCast(uptime_ms))),
-            .bytes_per_second = Utils.calculateThroughputMs(total_bytes, @as(i64, @intCast(uptime_ms))),
-            .level_counts = level_counts,
+            .totalRecords = totalRecords,
+            .totalBytes = totalBytes,
+            .droppedRecords = Utils.atomicLoadU64(&self.droppedRecords),
+            .errorCount = Utils.atomicLoadU64(&self.totalErrors),
+            .uptimeMs = @as(i64, @intCast(uptimeMs)),
+            .recordsPerSecond = Utils.calculateThroughputMs(totalRecords, @as(i64, @intCast(uptimeMs))),
+            .bytesPerSecond = Utils.calculateThroughputMs(totalBytes, @as(i64, @intCast(uptimeMs))),
+            .levelCounts = levelCounts,
         };
     }
 
@@ -618,12 +532,12 @@ pub const Metrics = struct {
         const snapshot = self.getSnapshot();
 
         // Store in history if configured
-        if (self.config.history_size > 0) {
+        if (self.config.historySize > 0) {
             self.mutex.lockUncancelable(Utils.io());
             defer self.mutex.unlock(Utils.io());
 
             // Remove oldest if at capacity
-            if (self.history.items.len >= self.config.history_size) {
+            if (self.history.items.len >= self.config.historySize) {
                 _ = self.history.orderedRemove(0);
             }
 
@@ -631,7 +545,7 @@ pub const Metrics = struct {
         }
 
         // Invoke callback
-        if (self.on_metrics_snapshot) |callback| {
+        if (self.onMetricsSnapshot) |callback| {
             callback(&snapshot);
         }
 
@@ -645,38 +559,38 @@ pub const Metrics = struct {
 
     /// Resets all metrics to zero.
     pub fn reset(self: *Metrics) void {
-        self.total_records.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-        self.total_bytes.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-        self.dropped_records.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-        self.error_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-        self.start_time = Utils.currentMillis();
+        self.totalRecords.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.totalBytes.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.droppedRecords.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.totalErrors.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.startTime = Utils.monotonicMillis();
 
         // Reset latency
-        self.total_latency_ns.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-        self.min_latency_ns.store(std.math.maxInt(Constants.AtomicUnsigned), .monotonic);
-        self.max_latency_ns.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.totalLatencyNs.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.latencyMinNs.store(std.math.maxInt(Constants.AtomicUnsigned), .monotonic);
+        self.latencyMaxNs.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
 
         // Reset histogram
-        for (0..Constants.MetricsConstants.histogram_boundaries.len) |i| {
+        for (0..Constants.MetricsConstants.histogramBoundaries.len) |i| {
             self.histogram[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
 
         // Reset level histograms
         for (0..Constants.LevelConstants.count) |l| {
-            for (0..Constants.MetricsConstants.histogram_boundaries.len) |i| {
-                self.level_histograms[l][i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            for (0..Constants.MetricsConstants.histogramBoundaries.len) |i| {
+                self.levelHistograms[l][i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
             }
         }
 
         for (0..Constants.LevelConstants.count) |i| {
-            self.level_counts[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            self.levelCounts[i].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
 
-        for (self.sink_metrics.items) |*metric| {
-            metric.records_written.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-            metric.bytes_written.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-            metric.write_errors.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
-            metric.flush_count.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        for (self.sinkMetrics.items) |*metric| {
+            metric.recordsWritten.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            metric.bytesWritten.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            metric.writeErrors.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+            metric.flushCount.store(@as(Constants.AtomicUnsigned, 0), .monotonic);
         }
 
         // Clear history
@@ -685,7 +599,7 @@ pub const Metrics = struct {
 
     /// Export metrics in configured format.
     pub fn exportMetrics(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
-        return switch (self.config.export_format) {
+        return switch (self.config.exportFormat) {
             .text => self.format(allocator),
             .json => self.exportJson(allocator),
             .prometheus => self.exportPrometheus(allocator),
@@ -699,37 +613,37 @@ pub const Metrics = struct {
         return try std.fmt.allocPrint(allocator,
             \\{{"total_records":{d},"total_bytes":{d},"dropped":{d},"errors":{d},"uptime_ms":{d},"rps":{d:.2},"bps":{d:.2}}}
         , .{
-            snapshot.total_records,
-            snapshot.total_bytes,
-            snapshot.dropped_records,
-            snapshot.error_count,
-            snapshot.uptime_ms,
-            snapshot.records_per_second,
-            snapshot.bytes_per_second,
+            snapshot.totalRecords,
+            snapshot.totalBytes,
+            snapshot.droppedRecords,
+            snapshot.errorCount,
+            snapshot.uptimeMs,
+            snapshot.recordsPerSecond,
+            snapshot.bytesPerSecond,
         });
     }
 
     fn writePrometheusMetricName(self: *const Metrics, writer: anytype, name: []const u8) !void {
         try Utils.writeTelemetryMetricName(
             writer,
-            self.config.metric_prefix,
-            self.config.metric_separator,
+            self.config.metricPrefix,
+            self.config.metricSeparator,
             name,
-            self.config.sanitize_names,
+            self.config.sanitizeNames,
         );
     }
 
     fn writeStatsdMetricName(self: *const Metrics, writer: anytype, name: []const u8) !void {
         try Utils.writeTelemetryMetricName(
             writer,
-            self.config.metric_prefix,
-            self.config.statsd_separator,
+            self.config.metricPrefix,
+            self.config.statsdSeparator,
             name,
-            self.config.sanitize_names,
+            self.config.sanitizeNames,
         );
     }
 
-    fn writePrometheusHeader(self: *const Metrics, writer: anytype, name: []const u8, help: []const u8, metric_type: []const u8) !void {
+    fn writePrometheusHeader(self: *const Metrics, writer: anytype, name: []const u8, help: []const u8, metricType: []const u8) !void {
         try writer.writeAll("# HELP ");
         try self.writePrometheusMetricName(writer, name);
         try writer.writeByte(' ');
@@ -738,12 +652,12 @@ pub const Metrics = struct {
         try writer.writeAll("# TYPE ");
         try self.writePrometheusMetricName(writer, name);
         try writer.writeByte(' ');
-        try writer.writeAll(metric_type);
+        try writer.writeAll(metricType);
         try writer.writeByte('\n');
     }
 
-    fn writePrometheusUnsigned(self: *const Metrics, writer: anytype, name: []const u8, help: []const u8, metric_type: []const u8, value: u64) !void {
-        try self.writePrometheusHeader(writer, name, help, metric_type);
+    fn writePrometheusUnsigned(self: *const Metrics, writer: anytype, name: []const u8, help: []const u8, metricType: []const u8, value: u64) !void {
+        try self.writePrometheusHeader(writer, name, help, metricType);
         try self.writePrometheusMetricName(writer, name);
         try writer.writeByte(' ');
         try Utils.writeInt(writer, value);
@@ -755,23 +669,23 @@ pub const Metrics = struct {
         const snapshot = self.getSnapshot();
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(allocator);
-        var list_writer = Utils.ArrayListWriter.init(&buf, allocator);
-        const writer = &list_writer.writer;
+        var listWriter = Utils.ArrayListWriter.init(&buf, allocator);
+        const writer = &listWriter.writer;
 
-        try self.writePrometheusUnsigned(writer, "records_total", "Total log records", "counter", snapshot.total_records);
-        try self.writePrometheusUnsigned(writer, "bytes_total", "Total bytes logged", "counter", snapshot.total_bytes);
-        try self.writePrometheusUnsigned(writer, "dropped_total", "Dropped records", "counter", snapshot.dropped_records);
-        try self.writePrometheusUnsigned(writer, "errors_total", "Error count", "counter", snapshot.error_count);
+        try self.writePrometheusUnsigned(writer, "records_total", "Total log records", "counter", snapshot.totalRecords);
+        try self.writePrometheusUnsigned(writer, "bytes_total", "Total bytes logged", "counter", snapshot.totalBytes);
+        try self.writePrometheusUnsigned(writer, "dropped_total", "Dropped records", "counter", snapshot.droppedRecords);
+        try self.writePrometheusUnsigned(writer, "errors_total", "Error count", "counter", snapshot.errorCount);
 
         try self.writePrometheusHeader(writer, "records_per_second", "Records per second", "gauge");
         try self.writePrometheusMetricName(writer, "records_per_second");
         try writer.writeByte(' ');
-        try writer.print("{d:.2}", .{snapshot.records_per_second});
+        try writer.print("{d:.2}", .{snapshot.recordsPerSecond});
         try writer.writeByte('\n');
 
-        if (self.config.export_level_breakdown) {
+        if (self.config.exportLevelBreakdown) {
             try self.writePrometheusHeader(writer, "level_records_total", "Log records by level", "counter");
-            for (snapshot.level_counts, 0..) |count, i| {
+            for (snapshot.levelCounts, 0..) |count, i| {
                 if (count == 0) continue;
                 try self.writePrometheusMetricName(writer, "level_records_total");
                 try writer.writeAll("{level=");
@@ -782,10 +696,10 @@ pub const Metrics = struct {
             }
         }
 
-        if (self.config.export_sink_breakdown) {
+        if (self.config.exportSinkBreakdown) {
             try self.writePrometheusHeader(writer, "sink_records_total", "Log records by sink", "counter");
             try self.writePrometheusHeader(writer, "sink_errors_total", "Sink write errors", "counter");
-            for (self.sink_metrics.items) |metric| {
+            for (self.sinkMetrics.items) |metric| {
                 try self.writePrometheusMetricName(writer, "sink_records_total");
                 try writer.writeAll("{sink=");
                 try Utils.writePrometheusLabelValue(writer, metric.name);
@@ -810,40 +724,40 @@ pub const Metrics = struct {
         const snapshot = self.getSnapshot();
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(allocator);
-        var list_writer = Utils.ArrayListWriter.init(&buf, allocator);
-        const writer = &list_writer.writer;
+        var listWriter = Utils.ArrayListWriter.init(&buf, allocator);
+        const writer = &listWriter.writer;
 
         try self.writeStatsdMetricName(writer, "records.total");
-        try writer.print(":{d}|c\n", .{snapshot.total_records});
+        try writer.print(":{d}|c\n", .{snapshot.totalRecords});
         try self.writeStatsdMetricName(writer, "bytes.total");
-        try writer.print(":{d}|c\n", .{snapshot.total_bytes});
+        try writer.print(":{d}|c\n", .{snapshot.totalBytes});
         try self.writeStatsdMetricName(writer, "dropped.total");
-        try writer.print(":{d}|c\n", .{snapshot.dropped_records});
+        try writer.print(":{d}|c\n", .{snapshot.droppedRecords});
         try self.writeStatsdMetricName(writer, "errors.total");
-        try writer.print(":{d}|c\n", .{snapshot.error_count});
+        try writer.print(":{d}|c\n", .{snapshot.errorCount});
         try self.writeStatsdMetricName(writer, "rps");
-        try writer.print(":{d:.2}|g\n", .{snapshot.records_per_second});
+        try writer.print(":{d:.2}|g\n", .{snapshot.recordsPerSecond});
 
         return buf.toOwnedSlice(allocator);
     }
 
     /// Get average latency in nanoseconds.
     pub fn avgLatencyNs(self: *const Metrics) u64 {
-        const total = Utils.atomicLoadU64(&self.total_records);
-        const latency = Utils.atomicLoadU64(&self.total_latency_ns);
+        const total = Utils.atomicLoadU64(&self.totalRecords);
+        const latency = Utils.atomicLoadU64(&self.totalLatencyNs);
         return if (total == 0) 0 else latency / total;
     }
 
     /// Get min latency in nanoseconds.
     pub fn minLatencyNs(self: *const Metrics) u64 {
-        const min = self.min_latency_ns.load(.monotonic);
+        const min = self.latencyMinNs.load(.monotonic);
         if (min == std.math.maxInt(Constants.AtomicUnsigned)) return 0;
         return @as(u64, min);
     }
 
     /// Get max latency in nanoseconds.
     pub fn maxLatencyNs(self: *const Metrics) u64 {
-        return @as(u64, self.max_latency_ns.load(.monotonic));
+        return @as(u64, self.latencyMaxNs.load(.monotonic));
     }
 
     /// Get histogram data.
@@ -857,10 +771,10 @@ pub const Metrics = struct {
 
     /// Get histogram data for a specific level.
     pub fn getLevelHistogram(self: *const Metrics, level: Level) [20]u64 {
-        const level_index = levelToIndex(level);
+        const levelIndex = levelToIndex(level);
         var result: [20]u64 = undefined;
         for (0..20) |i| {
-            result[i] = @as(u64, self.level_histograms[level_index][i].load(.monotonic));
+            result[i] = @as(u64, self.levelHistograms[levelIndex][i].load(.monotonic));
         }
         return result;
     }
@@ -879,18 +793,18 @@ pub const Metrics = struct {
         if (clamped <= 0.0) return self.minLatencyNs();
         if (clamped >= 100.0) return self.maxLatencyNs();
 
-        const total_samples = self.histogramSampleCount();
-        if (total_samples == 0) return self.avgLatencyNs();
+        const totalSamples = self.histogramSampleCount();
+        if (totalSamples == 0) return self.avgLatencyNs();
 
-        const rank_f = (clamped / 100.0) * @as(f64, @floatFromInt(total_samples));
-        const rank = @max(@as(u64, 1), @as(u64, @intFromFloat(@ceil(rank_f))));
+        const rankF = (clamped / 100.0) * @as(f64, @floatFromInt(totalSamples));
+        const rank = @max(@as(u64, 1), @as(u64, @intFromFloat(@ceil(rankF))));
 
         var cumulative: u64 = 0;
         for (0..self.histogram.len) |i| {
-            const bucket_count = @as(u64, self.histogram[i].load(.monotonic));
-            if (bucket_count == 0) continue;
+            const bucketCount = @as(u64, self.histogram[i].load(.monotonic));
+            if (bucketCount == 0) continue;
 
-            cumulative += bucket_count;
+            cumulative += bucketCount;
             if (cumulative >= rank) {
                 const boundary = histogramBucketBoundary(i);
                 return if (boundary == std.math.maxInt(u64)) self.maxLatencyNs() else boundary;
@@ -902,26 +816,26 @@ pub const Metrics = struct {
 
     /// Estimate latency at a percentile in milliseconds.
     pub fn latencyPercentileMs(self: *const Metrics, percentile: f64) f64 {
-        return @as(f64, @floatFromInt(self.latencyPercentileNs(percentile))) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
+        return @as(f64, @floatFromInt(self.latencyPercentileNs(percentile))) / @as(f64, @floatFromInt(Constants.TimeConstants.nsPerMs));
     }
 
     /// Returns an aggregated latency summary.
     pub fn getLatencySummary(self: *const Metrics) LatencySummary {
         return .{
             .samples = self.histogramSampleCount(),
-            .min_ns = self.minLatencyNs(),
-            .max_ns = self.maxLatencyNs(),
-            .avg_ns = self.avgLatencyNs(),
-            .p50_ns = self.latencyPercentileNs(50.0),
-            .p95_ns = self.latencyPercentileNs(95.0),
-            .p99_ns = self.latencyPercentileNs(99.0),
+            .minNs = self.minLatencyNs(),
+            .maxNs = self.maxLatencyNs(),
+            .avgNs = self.avgLatencyNs(),
+            .p50Ns = self.latencyPercentileNs(50.0),
+            .p95Ns = self.latencyPercentileNs(95.0),
+            .p99Ns = self.latencyPercentileNs(99.0),
         };
     }
 
     /// Returns total sink write errors across all tracked sinks.
     pub fn totalSinkErrors(self: *const Metrics) u64 {
         var total: u64 = 0;
-        for (self.sink_metrics.items) |metric| {
+        for (self.sinkMetrics.items) |metric| {
             total += metric.getWriteErrors();
         }
         return total;
@@ -930,7 +844,7 @@ pub const Metrics = struct {
     /// Returns total sink flush count across all tracked sinks.
     pub fn totalSinkFlushes(self: *const Metrics) u64 {
         var total: u64 = 0;
-        for (self.sink_metrics.items) |metric| {
+        for (self.sinkMetrics.items) |metric| {
             total += metric.getFlushCount();
         }
         return total;
@@ -940,7 +854,7 @@ pub const Metrics = struct {
     ///
     /// Returns null when no record has been logged yet.
     pub fn lastRecordAgeMs(self: *const Metrics) ?i64 {
-        const last = @as(i64, self.last_record_time.load(.monotonic));
+        const last = @as(i64, self.lastRecordTime.load(.monotonic));
         if (last <= 0) return null;
 
         const age = Utils.currentMillis() - last;
@@ -948,12 +862,6 @@ pub const Metrics = struct {
     }
 
     /// Formats metrics as a human-readable string.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the result string.
-    ///
-    /// Returns:
-    ///     A formatted string describing the metrics (caller must free).
     pub fn format(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
         const snapshot = self.getSnapshot();
         return try std.fmt.allocPrint(allocator,
@@ -966,46 +874,40 @@ pub const Metrics = struct {
             \\  Rate: {d:.2} records/sec
             \\  Throughput: {d:.2} bytes/sec
         , .{
-            snapshot.total_records,
-            snapshot.total_bytes,
-            snapshot.dropped_records,
-            snapshot.error_count,
-            snapshot.uptime_ms,
-            snapshot.records_per_second,
-            snapshot.bytes_per_second,
+            snapshot.totalRecords,
+            snapshot.totalBytes,
+            snapshot.droppedRecords,
+            snapshot.errorCount,
+            snapshot.uptimeMs,
+            snapshot.recordsPerSecond,
+            snapshot.bytesPerSecond,
         });
     }
 
     /// Formats level breakdown as a human-readable string.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the result string.
-    ///
-    /// Returns:
-    ///     A formatted string describing levels with counts > 0 (caller must free).
     pub fn formatLevelBreakdown(self: *Metrics, allocator: std.mem.Allocator) ![]u8 {
         const snapshot = self.getSnapshot();
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(allocator);
-        var list_writer = Utils.ArrayListWriter.init(&buf, allocator);
-        const writer = &list_writer.writer;
+        var listWriter = Utils.ArrayListWriter.init(&buf, allocator);
+        const writer = &listWriter.writer;
 
         try writer.writeAll("Level Breakdown:");
-        var has_levels = false;
+        var hasLevels = false;
         for (0..Constants.LevelConstants.count) |i| {
-            const count = snapshot.level_counts[i];
+            const count = snapshot.levelCounts[i];
             if (count > 0) {
-                if (has_levels) {
+                if (hasLevels) {
                     try writer.writeAll(",");
                 }
                 try writer.writeByte(' ');
                 try writer.writeAll(indexToLevelName(i));
                 try writer.writeByte(':');
                 try Utils.writeInt(writer, count);
-                has_levels = true;
+                hasLevels = true;
             }
         }
-        if (!has_levels) {
+        if (!hasLevels) {
             try writer.writeAll(" (none)");
         }
 
@@ -1015,63 +917,45 @@ pub const Metrics = struct {
     /// Records a log for a custom level.
     /// Custom levels use the same total_records and total_bytes counters.
     pub fn recordCustomLog(self: *Metrics, bytes: u64) void {
-        _ = self.total_records.fetchAdd(1, .monotonic);
-        _ = self.total_bytes.fetchAdd(@truncate(bytes), .monotonic);
-        self.last_record_time.store(@truncate(Utils.currentMillis()), .monotonic);
+        _ = self.totalRecords.fetchAdd(1, .monotonic);
+        _ = self.totalBytes.fetchAdd(@truncate(bytes), .monotonic);
+        self.lastRecordTime.store(@truncate(Utils.currentMillis()), .monotonic);
     }
-
-    /// Alias for recordLog
-    pub const record = recordLog;
-    pub const log = recordLog;
-
-    /// Alias for recordDrop
-    pub const drop = recordDrop;
-    pub const dropped = recordDrop;
-
-    /// Alias for recordError
-    pub const recordErr = recordError;
-
-    /// Alias for getSnapshot
-    pub const metricsSnapshot = getSnapshot;
-
-    /// Alias for formatLevelBreakdown
-    pub const levels = formatLevelBreakdown;
-    pub const breakdown = formatLevelBreakdown;
 
     /// Returns true if any records have been logged.
     pub fn hasRecords(self: *const Metrics) bool {
-        return self.total_records.load(.monotonic) > 0;
+        return self.totalRecords.load(.monotonic) > 0;
     }
 
     /// Returns the total record count.
     pub fn totalRecordCount(self: *const Metrics) u64 {
-        return @as(u64, self.total_records.load(.monotonic));
+        return @as(u64, self.totalRecords.load(.monotonic));
     }
 
     /// Returns the total bytes logged.
     pub fn totalBytesLogged(self: *const Metrics) u64 {
-        return @as(u64, self.total_bytes.load(.monotonic));
+        return @as(u64, self.totalBytes.load(.monotonic));
     }
 
     /// Returns the uptime in milliseconds.
     pub fn uptime(self: *const Metrics) i64 {
-        return Utils.currentMillis() - self.start_time;
+        return Utils.currentMillis() - self.startTime;
     }
 
     /// Returns records per second rate.
     pub fn rate(self: *Metrics) f64 {
-        const snapshot_data = self.getSnapshot();
-        return snapshot_data.records_per_second;
+        const snapshotData = self.getSnapshot();
+        return snapshotData.recordsPerSecond;
     }
 
     /// Returns the error count.
     pub fn errorCount(self: *const Metrics) u64 {
-        return @as(u64, self.error_count.load(.monotonic));
+        return @as(u64, self.totalErrors.load(.monotonic));
     }
 
     /// Returns the dropped records count.
     pub fn droppedCount(self: *const Metrics) u64 {
-        return @as(u64, self.dropped_records.load(.monotonic));
+        return @as(u64, self.droppedRecords.load(.monotonic));
     }
 
     /// Returns the error rate (0.0 - 1.0).
@@ -1103,46 +987,43 @@ pub const Metrics = struct {
     /// Returns count for specific level.
     pub fn levelCount(self: *const Metrics, level: Level) u64 {
         const idx = levelToIndex(level);
-        return @as(u64, self.level_counts[idx].load(.monotonic));
+        return @as(u64, self.levelCounts[idx].load(.monotonic));
     }
 
     /// Resets the counter for a single log level without affecting other metrics.
     pub fn resetLevelMetrics(self: *Metrics, level: Level) void {
         const idx = levelToIndex(level);
-        self.level_counts[idx].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
+        self.levelCounts[idx].store(@as(Constants.AtomicUnsigned, 0), .monotonic);
     }
-
-    /// Alias for resetLevelMetrics.
-    pub const clearLevelMetrics = resetLevelMetrics;
 
     /// Returns the number of sinks being tracked.
     pub fn sinkCount(self: *const Metrics) usize {
-        return self.sink_metrics.items.len;
+        return self.sinkMetrics.items.len;
     }
 
     /// Returns uptime in seconds.
     pub fn uptimeSeconds(self: *const Metrics) f64 {
-        return @as(f64, @floatFromInt(self.uptime())) / @as(f64, Constants.TimeConstants.ms_per_second);
+        return @as(f64, @floatFromInt(self.uptime())) / @as(f64, Constants.TimeConstants.msPerSecond);
     }
 
     /// Records a flush operation on a sink.
-    pub fn recordSinkFlush(self: *Metrics, sink_index: usize) void {
-        if (sink_index < self.sink_metrics.items.len) {
-            _ = self.sink_metrics.items[sink_index].flush_count.fetchAdd(1, .monotonic);
+    pub fn recordSinkFlush(self: *Metrics, sinkIndex: usize) void {
+        if (sinkIndex < self.sinkMetrics.items.len) {
+            _ = self.sinkMetrics.items[sinkIndex].flushCount.fetchAdd(1, .monotonic);
         }
     }
 
     /// Get sink metrics by index.
-    pub fn getSinkMetrics(self: *const Metrics, sink_index: usize) ?SinkMetrics {
-        if (sink_index < self.sink_metrics.items.len) {
-            return self.sink_metrics.items[sink_index];
+    pub fn getSinkMetrics(self: *const Metrics, sinkIndex: usize) ?SinkMetrics {
+        if (sinkIndex < self.sinkMetrics.items.len) {
+            return self.sinkMetrics.items[sinkIndex];
         }
         return null;
     }
 
     /// Get sink metrics by name.
     pub fn getSinkMetricsByName(self: *const Metrics, name: []const u8) ?SinkMetrics {
-        for (self.sink_metrics.items) |metric| {
+        for (self.sinkMetrics.items) |metric| {
             if (std.mem.eql(u8, metric.name, name)) {
                 return metric;
             }
@@ -1162,189 +1043,9 @@ pub const Metrics = struct {
 
     /// Get bytes per second throughput.
     pub fn bytesPerSecond(self: *Metrics) f64 {
-        const snapshot_data = self.getSnapshot();
-        return snapshot_data.bytes_per_second;
+        const snapshotData = self.getSnapshot();
+        return snapshotData.bytesPerSecond;
     }
-
-    /// Alias for reset
-    pub const clear = reset;
-
-    /// Alias for uptimeSeconds
-    pub const uptimeSec = uptimeSeconds;
-
-    /// Alias for bytesPerSecond
-    pub const throughput = bytesPerSecond;
-
-    /// Alias for initWithConfig
-    pub const createWithConfig = initWithConfig;
-    pub const newWithConfig = initWithConfig;
-
-    /// Alias for setRecordLoggedCallback
-    pub const onRecordLogged = setRecordLoggedCallback;
-    pub const setOnRecordLogged = setRecordLoggedCallback;
-
-    /// Alias for setSnapshotCallback
-    pub const onSnapshot = setSnapshotCallback;
-    pub const setOnSnapshot = setSnapshotCallback;
-
-    /// Alias for setThresholdCallback
-    pub const onThreshold = setThresholdCallback;
-    pub const setOnThreshold = setThresholdCallback;
-
-    /// Alias for setErrorCallback
-    pub const onError = setErrorCallback;
-    pub const setOnError = setErrorCallback;
-
-    /// Alias for getConfig
-    pub const getConfiguration = getConfig;
-    pub const configuration = getConfig;
-
-    /// Alias for isEnabled
-    pub const enabled = isEnabled;
-    pub const isActive = isEnabled;
-
-    /// Alias for recordLogWithLatency
-    pub const recordWithLatency = recordLogWithLatency;
-    pub const logWithLatency = recordLogWithLatency;
-
-    /// Alias for recordSinkWrite
-    pub const sinkWrite = recordSinkWrite;
-    pub const recordSinkWriteOp = recordSinkWrite;
-
-    /// Alias for recordSinkError
-    pub const sinkError = recordSinkError;
-    pub const recordSinkErrorOp = recordSinkError;
-
-    /// Alias for takeSnapshot
-    pub const captureSnapshot = takeSnapshot;
-    pub const takeSnapshotNow = takeSnapshot;
-
-    /// Alias for getHistory
-    pub const getSnapshots = getHistory;
-    pub const snapshots = getHistory;
-
-    /// Alias for exportMetrics
-    pub const exportData = exportMetrics;
-    pub const toString = exportMetrics;
-
-    /// Alias for exportJson
-    pub const json = exportJson;
-    pub const toJson = exportJson;
-
-    /// Alias for exportPrometheus
-    pub const prometheus = exportPrometheus;
-    pub const toPrometheus = exportPrometheus;
-
-    /// Alias for exportStatsd
-    pub const statsd = exportStatsd;
-    pub const toStatsd = exportStatsd;
-
-    /// Alias for avgLatencyNs
-    pub const avgLatency = avgLatencyNs;
-    pub const averageLatency = avgLatencyNs;
-
-    /// Alias for minLatencyNs
-    pub const minLatency = minLatencyNs;
-
-    /// Alias for maxLatencyNs
-    pub const maxLatency = maxLatencyNs;
-
-    /// Alias for getHistogram
-    pub const latencyHistogram = getHistogram;
-    pub const getLatencyHistogram = getHistogram;
-
-    /// Alias for latencyPercentileNs
-    pub const latencyPercentile = latencyPercentileNs;
-    pub const percentileNs = latencyPercentileNs;
-
-    /// Alias for latencyPercentileMs
-    pub const percentileMs = latencyPercentileMs;
-
-    /// Alias for getLatencySummary
-    pub const latencySummary = getLatencySummary;
-    pub const summaryLatency = getLatencySummary;
-
-    /// Alias for totalSinkErrors
-    pub const sinkErrorsTotal = totalSinkErrors;
-
-    /// Alias for totalSinkFlushes
-    pub const sinkFlushesTotal = totalSinkFlushes;
-
-    /// Alias for lastRecordAgeMs
-    pub const recordAgeMs = lastRecordAgeMs;
-    pub const ageSinceLastRecordMs = lastRecordAgeMs;
-
-    /// Alias for format
-    pub const formatMetrics = format;
-    pub const stringify = format;
-
-    /// Alias for recordCustomLog
-    pub const recordCustom = recordCustomLog;
-    pub const customLog = recordCustomLog;
-
-    /// Alias for hasRecords
-    pub const hasData = hasRecords;
-    pub const isEmpty = hasRecords;
-
-    /// Alias for totalRecordCount
-    pub const recordCount = totalRecordCount;
-    pub const totalRecords = totalRecordCount;
-
-    /// Alias for totalBytesLogged
-    pub const bytesLogged = totalBytesLogged;
-    pub const totalBytes = totalBytesLogged;
-
-    /// Alias for rate
-    pub const recordsPerSecond = rate;
-    pub const recordsPerSec = rate;
-
-    /// Alias for errorCount
-    pub const errorTotal = errorCount;
-    pub const totalErrors = errorCount;
-
-    /// Alias for droppedCount
-    pub const dropTotal = droppedCount;
-    pub const totalDropped = droppedCount;
-
-    /// Alias for errorRate
-    pub const failureRate = errorRate;
-
-    /// Alias for dropRate
-    pub const dropPercentage = dropRate;
-
-    /// Alias for hasHighErrorRate
-    pub const highErrorRate = hasHighErrorRate;
-    pub const errorRateHigh = hasHighErrorRate;
-
-    /// Alias for hasHighDropRate
-    pub const highDropRate = hasHighDropRate;
-    pub const dropRateHigh = hasHighDropRate;
-
-    /// Alias for levelCount
-    pub const countForLevel = levelCount;
-    pub const levelRecords = levelCount;
-
-    /// Alias for sinkCount
-    pub const sinks = sinkCount;
-    pub const sinkTotal = sinkCount;
-
-    /// Alias for recordSinkFlush
-    pub const sinkFlush = recordSinkFlush;
-    pub const recordSinkFlushOp = recordSinkFlush;
-
-    /// Alias for getSinkMetrics
-    pub const sinkMetrics = getSinkMetrics;
-    pub const getSinkStats = getSinkMetrics;
-
-    /// Alias for getSinkMetricsByName
-    pub const sinkMetricsByName = getSinkMetricsByName;
-    pub const getSinkStatsByName = getSinkMetricsByName;
-
-    /// Alias for hasErrors
-    pub const hasFailures = hasErrors;
-
-    /// Alias for hasDropped
-    pub const hasDrops = hasDropped;
 };
 
 /// Pre-built metrics configurations.
@@ -1354,22 +1055,14 @@ pub const MetricsPresets = struct {
         return Metrics.init(allocator);
     }
 
-    /// Alias for basic
-    pub const simple = basic;
-    pub const minimal = basic;
-
     /// Creates a metrics sink configuration.
-    pub fn createMetricsSink(file_path: []const u8) @import("sink.zig").SinkConfig {
+    pub fn createMetricsSink(filePath: []const u8) @import("sink.zig").SinkConfig {
         return .{
-            .path = file_path,
-            .json = true,
+            .path = filePath,
+            .format = .json,
             .color = false,
         };
     }
-
-    /// Alias for createMetricsSink
-    pub const metricsSink = createMetricsSink;
-    pub const sink = createMetricsSink;
 };
 
 test "metrics basic" {
@@ -1380,10 +1073,10 @@ test "metrics basic" {
     metrics.recordLog(.info, 150);
     metrics.recordError();
 
-    const snapshot_data = metrics.getSnapshot();
-    try std.testing.expectEqual(@as(u64, 2), snapshot_data.total_records);
-    try std.testing.expectEqual(@as(u64, 250), snapshot_data.total_bytes);
-    try std.testing.expectEqual(@as(u64, 1), snapshot_data.error_count);
+    const snapshotData = metrics.getSnapshot();
+    try std.testing.expectEqual(@as(u64, 2), snapshotData.totalRecords);
+    try std.testing.expectEqual(@as(u64, 250), snapshotData.totalBytes);
+    try std.testing.expectEqual(@as(u64, 1), snapshotData.errorCount);
 }
 
 test "metrics rates" {
@@ -1447,9 +1140,9 @@ test "metrics sink tracking" {
 
     const sink = metrics.getSinkMetrics(idx);
     try std.testing.expect(sink != null);
-    try std.testing.expectEqual(@as(u64, 1), sink.?.records_written.load(.monotonic));
-    try std.testing.expectEqual(@as(u64, 100), sink.?.bytes_written.load(.monotonic));
-    try std.testing.expectEqual(@as(u64, 1), sink.?.flush_count.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 1), sink.?.recordsWritten.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 100), sink.?.bytesWritten.load(.monotonic));
+    try std.testing.expectEqual(@as(u64, 1), sink.?.flushCount.load(.monotonic));
 }
 
 test "metrics callback setters" {
@@ -1469,8 +1162,8 @@ test "metrics callback setters" {
     metrics.setThresholdCallback(S.thresholdCallback);
     metrics.setErrorCallback(S.errorCallback);
 
-    try std.testing.expect(metrics.on_record_logged != null);
-    try std.testing.expect(metrics.on_metrics_snapshot != null);
+    try std.testing.expect(metrics.onRecordLogged != null);
+    try std.testing.expect(metrics.onMetricsSnapshot != null);
 }
 
 test "metrics helper methods" {
@@ -1488,8 +1181,8 @@ test "metrics helper methods" {
 
 test "metrics latency summary and percentiles" {
     var metrics = Metrics.initWithConfig(std.testing.allocator, .{
-        .track_latency = true,
-        .enable_histogram = true,
+        .trackLatency = true,
+        .enableHistogram = true,
     });
     defer metrics.deinit();
 
@@ -1504,7 +1197,7 @@ test "metrics latency summary and percentiles" {
     try std.testing.expect(summary.hasSamples());
     try std.testing.expect(p50 > 0);
     try std.testing.expect(p95 >= p50);
-    try std.testing.expect(summary.p99_ns >= summary.p95_ns);
+    try std.testing.expect(summary.p99Ns >= summary.p95Ns);
 }
 
 test "metrics sink totals and last record age" {
@@ -1513,20 +1206,20 @@ test "metrics sink totals and last record age" {
 
     try std.testing.expectEqual(@as(?i64, null), metrics.lastRecordAgeMs());
 
-    const sink_a = try metrics.addSink("sink_a");
-    const sink_b = try metrics.addSink("sink_b");
+    const sinkA = try metrics.addSink("sink_a");
+    const sinkB = try metrics.addSink("sink_b");
 
-    metrics.recordSinkError(sink_a);
-    metrics.recordSinkError(sink_b);
-    metrics.recordSinkFlush(sink_a);
-    metrics.recordSinkFlush(sink_b);
-    metrics.recordSinkFlush(sink_b);
+    metrics.recordSinkError(sinkA);
+    metrics.recordSinkError(sinkB);
+    metrics.recordSinkFlush(sinkA);
+    metrics.recordSinkFlush(sinkB);
+    metrics.recordSinkFlush(sinkB);
 
     metrics.recordLog(.info, 42);
 
-    const age_ms = metrics.lastRecordAgeMs();
-    try std.testing.expect(age_ms != null);
-    try std.testing.expect(age_ms.? >= 0);
+    const ageMs = metrics.lastRecordAgeMs();
+    try std.testing.expect(ageMs != null);
+    try std.testing.expect(ageMs.? >= 0);
 
     try std.testing.expectEqual(@as(u64, 2), metrics.totalSinkErrors());
     try std.testing.expectEqual(@as(u64, 3), metrics.totalSinkFlushes());
@@ -1538,9 +1231,9 @@ test "metrics prometheus export uses configured names and breakdowns" {
 
     metrics.recordLog(.info, 100);
     metrics.recordLog(.err, 50);
-    const sink_idx = try metrics.addSink("file\"main");
-    metrics.recordSinkWrite(sink_idx, 150);
-    metrics.recordSinkError(sink_idx);
+    const sinkIdx = try metrics.addSink("file\"main");
+    metrics.recordSinkWrite(sinkIdx, 150);
+    metrics.recordSinkError(sinkIdx);
 
     const exported = try metrics.exportPrometheus(std.testing.allocator);
     defer std.testing.allocator.free(exported);

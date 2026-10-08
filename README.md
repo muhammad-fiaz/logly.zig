@@ -2,7 +2,7 @@
 <img src="https://github.com/user-attachments/assets/565fc3dc-dd2c-47a6-bab6-2f545c551f26" alt="logly logo" width="400" />
 
 <a href="https://muhammad-fiaz.github.io/logly.zig/"><img src="https://img.shields.io/badge/docs-muhammad--fiaz.github.io-blue" alt="Documentation"></a>
-<a href="https://ziglang.org/"><img src="https://img.shields.io/badge/Zig-0.16.0-orange.svg?logo=zig" alt="Zig Version"></a>
+<a href="https://ziglang.org/"><img src="https://img.shields.io/badge/Zig-0.17.0-orange.svg?logo=zig" alt="Zig Version"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig"><img src="https://img.shields.io/github/stars/muhammad-fiaz/logly.zig" alt="GitHub stars"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/issues"><img src="https://img.shields.io/github/issues/muhammad-fiaz/logly.zig" alt="GitHub issues"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/pulls"><img src="https://img.shields.io/github/issues-pr/muhammad-fiaz/logly.zig" alt="GitHub pull requests"></a>
@@ -42,8 +42,6 @@ A production-grade, high-performance structured logging library for Zig, designe
 - [Prerequisites](#prerequisites)
 - [Supported Platforms](#supported-platforms)
   - [Color Support](#color-support)
-- [Recent Changes](#recent-changes)
-    - [Version 0.2.0](#version-020)
 - [Installation](#installation)
   - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
   - [Method 2: Manual Configuration](#method-2-manual-configuration)
@@ -55,6 +53,7 @@ A production-grade, high-performance structured logging library for Zig, designe
   - [File Logging](#file-logging)
   - [File Rotation](#file-rotation)
   - [JSON Logging](#json-logging)
+  - [Color Modes](#color-modes)
   - [Context Binding](#context-binding)
   - [Callbacks](#callbacks)
   - [Custom Log Levels](#custom-log-levels)
@@ -129,7 +128,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Cross-Platform Colors** | Works on Linux, macOS, Windows 10+, and popular terminals | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/colors) |
 | **Filtering** | Rule-based log filtering by level, module, or content | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/filtering) |
 | **Per-Sink Filtering** | Configure filters on each sink in addition to global logger filters | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/sinks) |
-| **Source Location** | Optional clickable `file:line` output via `@src()` when `show_filename`/`show_lineno` are enabled | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/source-location) |
+| **Source Location** | Optional clickable `file:line` output via `@src()` when `showFilename`/`showLineno` are enabled | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/source-location) |
 | **Method Aliases** | Convenience aliases for common APIs e.g., `add()` / `remove()` for sink management, `warn()` / `crit()` for logging | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/introduction) |
 | **Sampling** | Control log throughput with probability and rate-limiting | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/sampling) |
 | **Redaction** | Automatic masking of sensitive data (PII, credentials) | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/redaction) |
@@ -168,14 +167,14 @@ Before installing Logly, ensure you have the following:
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| **Zig** | 0.15.0+ or 0.16.0+ | Download from [ziglang.org](https://ziglang.org/download/) |
+| **Zig** | 0.17.0+ | Download from [ziglang.org](https://ziglang.org/download/) |
 | **Operating System** | Windows 10+, Linux, macOS | Cross-platform support |
 | **Terminal** | Any modern terminal | For colored output support |
 
-> Verify your Zig installation by running `zig version` in your terminal.
-> - For Zig 0.15.0, use logly.zig version 0.1.7 or earlier
-> - For Zig 0.16.0+, use logly.zig version 0.1.8 or newer
-> - See Zig releases and downloads at [ziglang.org](https://ziglang.org/)
+  > Verify your Zig installation by running `zig version` in your terminal.
+  > - For Zig 0.17.0+, use logly.zig version 0.2.2 or newer
+  > - For Zig 0.16.x, use logly.zig version 0.2.1
+  > - See Zig releases and downloads at [ziglang.org](https://ziglang.org/)
 
 ---
 
@@ -206,28 +205,6 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 ---
 
-## Recent Changes
-
-### Version 0.2.1
-
-This version includes the Invoke system rename, Standard Library modernization, Brotli compression support, internal refactoring, CI workflow, and removal of Diagnostics, Update Checker, Arena Allocator, and TUI.
-
-**Key Changes:**
-* **Rules → Invoke Rename** - The Rules System is now the Invoke system. Attach extra messages to log records when conditions match — level-based, message-content, custom-level, duration, and once-fire triggers. Messages are plain strings, no built-in categories or prefixes.
-* **Brotli Compression** - Added Brotli compression support via the `brotli.zig` binding for excellent text/log compression ratios.
-* **CI Workflow** - Added GitHub Actions CI for automated build, test, and example validation on push to `main` and PRs.
-* **Standard Library Modernization** - Improved reuse of Zig 0.16.0 Standard Library (`std.SemanticVersion`, `std.compress`, etc.).
-* **Internal Refactoring** - Simplified implementations, reduced duplicate code, improved maintainability.
-* **Performance Improvements** - Reduced heap allocations, improved buffer reuse, optimized synchronization.
-* **Removed Diagnostics** - The `Diagnostics` module is removed. Use `std.process.getEnvMap()` or platform-specific APIs directly.
-* **Removed Update Checker** - The `UpdateChecker` module is removed. Use external CI/CD tooling for version monitoring.
-* **Removed Arena Allocator** - Callers now pass their own allocator to `Logger.initWithConfig(allocator, config)`.
-* **Removed TUI** - Built-in TUI dashboard formatter removed. TUI-style output can be achieved client-side.
-
-For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
-
----
-
 ## Installation
 
 
@@ -235,19 +212,25 @@ For a complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 The easiest way to add Logly to your project:
 
-**For Zig 0.16.0+ (use `0.2.1` or newer):**
+  **For Zig 0.17.0+ (use `0.2.2` or newer):**
 
-```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
-```
+  ```bash
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  ```
 
-**For Zig 0.15.0 (use `0.1.7` or earlier):**
+  **For Zig 0.16.x (use `0.2.1`):**
 
-```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
-```
+  ```bash
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
+  ```
 
-This automatically adds the dependency with the correct hash to your `build.zig.zon`.
+  **For Zig 0.15.0 (use `0.1.7` or earlier):**
+
+  ```bash
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
+  ```
+
+  This automatically adds the dependency with the correct hash to your `build.zig.zon`.
 
 **For Nightly builds:**
 
@@ -261,27 +244,16 @@ This automatically adds the dependency with the correct hash to your `build.zig.
 
 Add to your `build.zig.zon`:
 
-**For Zig 0.16.0+ (use `0.2.1` or newer):**
+**For Zig 0.17.0+ (use `0.2.2` or newer):**
 
-```zig
-.dependencies = .{
-    .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz",
-        .hash = "...", // you needed to add hash here :)
+    ```zig
+    .dependencies = .{
+        .logly = .{
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz",
+            .hash = "...", // you needed to add hash here :)
+        },
     },
-},
-```
-
-**For Zig 0.15.0 (use `0.1.7` or earlier):**
-
-```zig
-.dependencies = .{
-    .logly = .{
-        .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz",
-        .hash = "...", // you needed to add hash here :)
-    },
-},
-```
+    ```
 
 
 > [!NOTE]
@@ -358,7 +330,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors (Windows requires explicit enable, Unix-like natively supports)
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     // Create logger (console sink auto-enabled)
     const logger = try logly.Logger.init(allocator);
@@ -383,7 +355,7 @@ pub fn main() !void {
 ```
 
 > [!NOTE]
-> To enable auto-flush globally, set `config.auto_flush = true` or call `logger.enableAutoFlush()`. Auto-flush trades throughput for immediate output.
+> To enable auto-flush globally, set `config.autoFlush = true` or call `logger.enableAutoFlush()`. Auto-flush trades throughput for immediate output.
 
 ## Allocator Usage
 
@@ -401,31 +373,31 @@ The recommended default in applications is `std.heap.DebugAllocator`. For high-t
 
 ## Usage Examples
 
-> `auto_sink` creates the default console sink during logger initialization.
-> If you want custom sinks only (file, network, memory, etc.), set `auto_sink = false`
+> `autoSink` creates the default console sink during logger initialization.
+> If you want custom sinks only (file, network, memory, etc.), set `autoSink = false`
 > so Logly does not add the console sink automatically.
 
 Other common built-in modes:
 
 - `Config.displayOnly()` for console output only
 - `Config.logOnly()` for file storage only
-- `Config.withDisplayStorage(console, file, auto_sink)` for explicit control
+- `Config.withDisplayStorage(console, file, autoSink)` for explicit control
 - `SinkConfig.console()`, `SinkConfig.file("app.log")`, `SinkConfig.memory()`, and `SinkConfig.network("tcp://...")` for manual sink setup
 
 ### Console-Only Logging
 
 Use this when you want Logly to write only to the console and keep file storage disabled:
 
-`global_console_display = true`, `global_file_storage = false`, `auto_sink = true`.
+`globalConsoleDisplay = true`, `globalFileStorage = false`, `autoSink = true`.
 
 ```zig
 var config = logly.Config.withDisplayStorage(true, false, true);
-config.global_color_display = true;
-config.show_time = true;
-config.show_module = true;
-config.show_function = false;
-config.show_filename = false;
-config.show_lineno = false;
+config.globalColorDisplay = true;
+config.showTime = true;
+config.showModule = true;
+config.showFunction = false;
+config.showFilename = false;
+config.showLineno = false;
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
@@ -438,21 +410,21 @@ try logger.warn("Another console log", @src());
 
 Use this when you want Logly to store logs in files and not display console output:
 
-`global_console_display = false`, `global_file_storage = true`, `auto_sink = false`.
+`globalConsoleDisplay = false`, `globalFileStorage = true`, `autoSink = false`.
 
 ```zig
 var config = logly.Config.logOnly();
-config.global_color_display = false;
-config.show_time = true;
-config.show_module = true;
-config.show_function = true;
-config.show_filename = true;
-config.show_lineno = true;
+config.globalColorDisplay = false;
+config.showTime = true;
+config.showModule = true;
+config.showFunction = true;
+config.showFilename = true;
+config.showLineno = true;
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
 
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.log",
 });
 
@@ -469,11 +441,11 @@ defer logger.deinit();
 
 // Disable auto console sink
 var config = logly.Config.default();
-config.auto_sink = false;
+config.autoSink = false;
 logger.configure(config);
 
 // Add file sink using add() alias (same as addSink())
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.log",
 });
 
@@ -485,24 +457,24 @@ try logger.flush(); // Ensure data is written
 
 ```zig
 // Daily rotation with 7-day retention
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/daily.log",
     .rotation = "daily",
     .retention = 7,
 });
 
 // Size-based rotation (10MB limit, keep 5 files)
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.log",
-    .size_limit = 10 * 1024 * 1024,
+    .sizeLimit = 10 * 1024 * 1024,
     .retention = 5,
 });
 
 // Combined: rotate daily OR when 5MB reached
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/combined.log",
     .rotation = "daily",
-    .size_limit = 5 * 1024 * 1024,
+    .sizeLimit = 5 * 1024 * 1024,
     .retention = 10,
 });
 ```
@@ -511,13 +483,103 @@ _ = try logger.add(.{
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
-config.pretty_json = true;
+config.format = .json;
+config.prettyJson = true;
 logger.configure(config);
 
 try logger.info("JSON formatted log", @src());
 // Output: {"timestamp":1701234567890,"level":"INFO","message":"JSON formatted log"}
 ```
+
+### Color Modes
+
+All color rendering is delegated to [`tint.zig`](https://github.com/muhammad-fiaz/tint.zig); Logly does not maintain a second ANSI engine. Three modes are available:
+
+| Mode | Behavior |
+|------|----------|
+| `.none` | Zero ANSI sequences are emitted. |
+| `.horizontal` | One color wraps the whole rendered record. |
+| `.vertical` | Independent colors per semantic field (timestamp, level, module, message, ...). |
+
+```zig
+var config = logly.Config.default();
+config.color = true;
+config.colorMode = .vertical; // or .horizontal, .none
+```
+
+#### Color is a presentation layer, applied per sink
+
+Serialization happens first and stays valid on its own; color is applied
+afterwards, around the payload, and only for sinks that ask for it. One sink
+never colors another sink's output, and enabling console color never injects
+ANSI into a file or network sink.
+
+| Target | Default | Notes |
+|--------|---------|-------|
+| Console | Auto | Colored when stdout is a TTY; plain when piped, redirected, or in CI. |
+| File | Off | Must be enabled explicitly with `color = true`. |
+| Network | Off | ANSI is never sent to remote consumers by default. |
+| MessagePack | Never | Binary payloads stay byte-exact. |
+
+#### Format support matrix
+
+| Format | No color | Horizontal | Vertical | Custom / level colors |
+|--------|:--------:|:----------:|:--------:|:---------------------:|
+| `text` | ✓ | ✓ | ✓ | ✓ |
+| `logfmt` | ✓ | ✓ | ✓ | ✓ |
+| `json` | ✓ | ✓ | ✓ | ✓ |
+| `ndjson` | ✓ | ✓ | ✓ | ✓ |
+| `syslog` / `syslog3164` | ✓ | ✓ | whole-record | ✓ |
+| `msgpack` | ✓ | presentation only | presentation only | presentation only |
+
+For `json`, `ndjson`, and `syslog`, color is applied **around** the serialized
+bytes, so the underlying data stays valid: strip ANSI and you recover the exact
+JSON/syslog document, including `PRI`, timestamp, and hostname. Vertical mode
+re-renders JSON with per-field colors and preserves the same guarantee. A JSON
+file sink is a single array document (`[`, records, `]`), so the wrap appears
+inside the array.
+
+#### Per-sink configuration
+
+```zig
+// Console: text with vertical colors
+_ = try logger.addSink(.{
+    .name = "console",
+    .color = true,
+});
+
+// File: plain text, never ANSI
+_ = try logger.addSink(.{
+    .path = "logs/app.log",
+    .color = false,
+});
+
+// JSON file kept machine-readable
+_ = try logger.addSink(.{
+    .path = "logs/app.json",
+    .format = .json,
+    .color = false,
+});
+```
+
+#### Async logging
+
+Async mode queues the **uncolored** serialized record together with its resolved
+level color. Each sink applies presentation at write time according to its own
+configuration, so background workers cannot push console color into files or
+network sinks, and ANSI sequences cannot interleave between records.
+
+#### Custom colors and themes
+
+Custom levels and themes flow through the same `tint.zig` pipeline:
+
+```zig
+try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("96").?);
+try logger.custom("AUDIT", "Custom level message", @src());
+```
+
+Named colors, ANSI colors, 256-color, and RGB values are all resolved by
+`tint.zig`, which also handles terminal capability detection.
 
 ### Context Binding
 
@@ -553,8 +615,8 @@ try logger.err("Error occurred", @src()); // Callback triggers
 
 ```zig
 // Add custom level between WARNING (30) and ERROR (40)
-try logger.addCustomLevel("NOTICE", 35, "96"); // Cyan color
-try logger.addCustomLevel("AUDIT", 25, "35;1"); // Magenta Bold
+try logger.addCustomLevel("NOTICE", 35, logly.Color.parse("96").?); // Cyan color
+try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?); // Magenta Bold
 
 // Use custom levels - supports all features like standard levels
 try logger.custom("NOTICE", "Custom level message", @src());
@@ -565,12 +627,12 @@ try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "alice", "10.0.0.1
 
 // Custom levels work with JSON output
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 logger.configure(config);
 try logger.custom("AUDIT", "Appears as level: AUDIT in JSON", @src());
 
 // Custom levels work with file sinks
-_ = try logger.add(.{ .path = "logs/audit.log" });
+ _ = try logger.add(.{ .path = "logs/audit.log" });
 try logger.custom("AUDIT", "Written to file with custom level name", @src());
 ```
 
@@ -578,17 +640,17 @@ try logger.custom("AUDIT", "Written to file with custom level name", @src());
 
 ```zig
 // Console
-_ = try logger.addSink(.{});
+ _ = try logger.addSink(.{});
 
 // Application logs
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .rotation = "daily",
     .retention = 7,
 });
 
 // Error-only file
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/errors.log",
     .level = .err, // Only ERROR and above
 });
@@ -602,11 +664,11 @@ Configure global service metadata for distributed environments:
 var config = logly.Config.default();
 config.distributed = .{
     .enabled = true,
-    .service_name = "payment-service",
-    .service_version = "1.2.0",
+    .serviceName = "payment-service",
+    .serviceVersion = "1.2.0",
     .environment = "production",
     .region = "us-west-2",
-    .instance_id = "pod-123",
+    .instanceId = "pod-123",
 };
 logger.configure(config);
 // Logs will now include service identity fields automatically
@@ -622,13 +684,13 @@ try logger.info("Processing request", @src());
 
 // W3C traceparent -> request-scoped distributed logger
 const incoming_traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-var req_logger = try logger.withTraceparent(incoming_traceparent);
-req_logger = req_logger.inModule("http.request");
-try req_logger.info("Request accepted", @src());
+var reqLogger = try logger.withTraceparent(incoming_traceparent);
+reqLogger = reqLogger.inModule("http.request");
+try reqLogger.info("Request accepted", @src());
 
 // Create child span context for nested operations
-const db_logger = req_logger.child("7a085853722dc6d2").inModule("database.query");
-try db_logger.debug("Executing query", @src());
+const dbLogger = reqLogger.child("7a085853722dc6d2").inModule("database.query");
+try dbLogger.debug("Executing query", @src());
 
 // Optional: update global context directly from traceparent
 try logger.setTraceContextFromTraceparent(incoming_traceparent);
@@ -668,8 +730,8 @@ pub fn main() !void {
 
     // Configure Jaeger backend
     var config = logly.TelemetryConfig.jaeger();
-    config.service_name = "my-service";
-    config.service_version = "1.0.0";
+    config.serviceName = "my-service";
+    config.serviceVersion = "1.0.0";
     config.environment = "production";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -709,7 +771,7 @@ defer allocator.free(traceparent);
 // Parse incoming traceparent header
 const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 if (logly.Telemetry.parseTraceparentHeader(incoming)) |ctx| {
-    std.debug.print("Continuing trace: {s}\n", .{ctx.trace_id});
+    std.debug.print("Continuing trace: {s}\n", .{ctx.traceId});
 }
 ```
 
@@ -735,12 +797,12 @@ defer allocator.free(header);
 |----------|---------------|
 | **Jaeger** | `TelemetryConfig.jaeger()` |
 | **Zipkin** | `TelemetryConfig.zipkin()` |
-| **Datadog** | `TelemetryConfig.datadog(api_key)` |
-| **Google Cloud Trace** | `TelemetryConfig.googleCloud(project_id, api_key)` |
-| **Google Analytics 4** | `TelemetryConfig.googleAnalytics(measurement_id, api_secret)` |
-| **Google Tag Manager** | `TelemetryConfig.googleTagManager(container_url, api_key)` |
+| **Datadog** | `TelemetryConfig.datadog(apiKey)` |
+| **Google Cloud Trace** | `TelemetryConfig.googleCloud(projectId, apiKey)` |
+| **Google Analytics 4** | `TelemetryConfig.googleAnalytics(measurementId, apiSecret)` |
+| **Google Tag Manager** | `TelemetryConfig.googleTagManager(containerUrl, apiKey)` |
 | **AWS X-Ray** | `TelemetryConfig.awsXray(region)` |
-| **Azure App Insights** | `TelemetryConfig.azure(connection_string)` |
+| **Azure App Insights** | `TelemetryConfig.azure(connectionString)` |
 | **OTEL Collector** | `TelemetryConfig.otelCollector(endpoint)` |
 | **File Export** | `TelemetryConfig.file(path)` |
 
@@ -802,8 +864,8 @@ try logger.err("Database error", @src());
 
 // Get metrics snapshot
 if (logger.getMetrics()) |snapshot| {
-    std.debug.print("Total logs: {}\n", .{snapshot.total_records});
-    std.debug.print("Errors: {}\n", .{snapshot.error_count});
+    std.debug.print("Total logs: {}\n", .{snapshot.totalRecords});
+    std.debug.print("Errors: {}\n", .{snapshot.errorCount});
 }
 ```
 
@@ -816,7 +878,7 @@ const log_logger = try logly.Logger.initWithConfig(allocator, log_config);
 defer log_logger.deinit();
 
 // Add file sinks manually
-_ = try log_logger.addSink(logly.SinkConfig.file("app.log"));
+ _ = try log_logger.addSink(logly.SinkConfig.file("app.log"));
 try log_logger.info("This goes to file only", @src());
 
 // Display-only mode (console only, no files)
@@ -843,16 +905,16 @@ Ensure absolute audit trail integrity using SHA-256 cryptographic chaining. Each
 
 ```zig
 var config = logly.Config.default();
-config.auto_sink = false; // Disable default console output
+config.autoSink = false; // Disable default console output
 
 // Enable tamper-evident cryptographic chaining on a file sink
-var file_sink = logly.SinkConfig.file("secure_audit.log");
-file_sink.tamper_evident = true; 
+var fileSink = logly.SinkConfig.file("secure_audit.log");
+fileSink.tamperEvident = true; 
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
 
-_ = try logger.addSink(file_sink);
+ _ = try logger.addSink(fileSink);
 
 try logger.info("Critical action performed", @src());
 try logger.flush();
@@ -865,16 +927,16 @@ Map log files directly into RAM via native Win32 or POSIX `mmap` virtual memory 
 
 ```zig
 var config = logly.Config.default();
-config.auto_sink = false;
+config.autoSink = false;
 
-var sink_cfg = logly.SinkConfig.file("perf.log");
-sink_cfg.mmap = true;         // Use memory mapping
-sink_cfg.async_write = false; // direct zero-copy write
+var sinkCfg = logly.SinkConfig.file("perf.log");
+sinkCfg.mmap = true;         // Use memory mapping
+sinkCfg.asyncWrite = false; // direct zero-copy write
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
 
-_ = try logger.addSink(sink_cfg);
+ _ = try logger.addSink(sinkCfg);
 
 try logger.info("Extremely fast disk log write", @src());
 try logger.flush();
@@ -918,7 +980,7 @@ Utilize ultra-compact compliance MessagePack binary format to minimize network/d
 ```zig
 // MessagePack binary logging
 var msgpack_config = logly.Config.default();
-msgpack_config.msgpack = true;
+msgpack_config.format = .msgpack;
 
 const msgpack_logger = try logly.Logger.initWithConfig(allocator, msgpack_config);
 defer msgpack_logger.deinit();
@@ -934,7 +996,7 @@ logger.configure(config);
 // Or customize
 var config = logly.Config.production();
 config.level = .info;
-config.include_hostname = true;
+config.includeHostname = true;
 logger.configure(config);
 ```
 
@@ -944,9 +1006,9 @@ logger.configure(config);
 var config = logly.Config.default();
 
 // Global controls
-config.global_color_display = true;
-config.global_console_display = true;
-config.global_file_storage = true;
+config.globalColorDisplay = true;
+config.globalConsoleDisplay = true;
+config.globalFileStorage = true;
 
 // Or use convenience presets:
 // Log-only mode (no console, only files)
@@ -962,22 +1024,21 @@ const custom_config = logly.Config.withDisplayStorage(true, true, true);
 config.level = .debug;
 
 // Display options
-config.show_time = true;
-config.show_module = true;
-config.show_function = false;
-config.show_filename = false;
-config.show_lineno = false;
+config.showTime = true;
+config.showModule = true;
+config.showFunction = false;
+config.showFilename = false;
+config.showLineno = false;
 
 // Output format
-config.json = false;
 config.color = true;
 
 // Flush behavior
-config.auto_flush = false; // set true for immediate output (lower throughput)
+config.autoFlush = false; // set true for immediate output (lower throughput)
 
 // Features
-config.enable_callbacks = true;
-config.enable_exception_handling = true;
+config.enableCallbacks = true;
+config.enableExceptionHandling = true;
 
 logger.configure(config);
 ```
@@ -990,15 +1051,15 @@ Configure advanced features like async logging, compression, thread pools, and s
 var config = logly.Config.default();
 
 // Async logging for non-blocking writes
-config.async_config = .{
+config.asyncConfig = .{
     .enabled = true,
-    .buffer_size = 8192,
-    .batch_size = 100,
-    .flush_interval_ms = 100,
-    .min_flush_interval_ms = 10,
-    .max_latency_ms = 5000,
-    .overflow_policy = .drop_oldest,
-    .background_worker = true,
+    .bufferSize = 8192,
+    .batchSize = 100,
+    .flushIntervalMs = 100,
+    .minFlushIntervalMs = 10,
+    .maxLatencyMs = 5000,
+    .overflowPolicy = .dropOldest,
+    .backgroundWorker = true,
 };
 
 // Compression for log files
@@ -1006,27 +1067,27 @@ config.compression = .{
     .enabled = true,
     .algorithm = .deflate,
     .level = .default,
-    .on_rotation = true,
-    .keep_original = false,
+    .onRotation = true,
+    .keepOriginal = false,
     .extension = ".gz",
 };
 
 // Thread pool for parallel processing
-config.thread_pool = .{
+config.threadPool = .{
     .enabled = true,
-    .thread_count = 4,       // 0 = auto-detect CPU cores
-    .queue_size = 10000,
-    .stack_size = 1024 * 1024,
-    .work_stealing = true,
+    .threadCount = 4,       // 0 = auto-detect CPU cores
+    .queueSize = 10000,
+    .stackSize = 1024 * 1024,
+    .workStealing = true,
 };
 
 // Scheduler for automatic maintenance
 config.scheduler = .{
     .enabled = true,
-    .cleanup_max_age_days = 7,
-    .max_files = 10,
-    .compress_before_cleanup = true,
-    .file_pattern = "*.log",
+    .cleanupMaxAgeDays = 7,
+    .maxFiles = 10,
+    .compressBeforeCleanup = true,
+    .filePattern = "*.log",
 };
 
 logger.configure(config);
@@ -1085,11 +1146,15 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Basic Logging</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| Simple log (no color) | 117,334 | 8,523 | Plain text output |
-| Formatted log (no color) | 37,341 | 26,781 | Printf-style formatting |
-| Simple log (with color) | 116,864 | 8,557 | ANSI color codes |
-| Formatted log (with color) | 34,903 | 28,651 | Colored + formatting |
+| :--- | :--- | :--- | :--- |
+| Simple log (no color) | 2585650 | 387 | Plain text output |
+| Formatted log (no color) | 29116 | 34346 | Printf-style formatting |
+| Disabled log call (TRACE vs INFO min) | 15094340 | 66 | Rejected before formatting |
+| Simple log (with color) | 2248859 | 445 | ANSI color codes |
+| Formatted log (with color) | 32489 | 30780 | Colored + formatting |
+| Horizontal color | 2807648 | 356 | Whole-line level color |
+| Vertical color | 2766328 | 361 | Per-column colors |
+| No color mode | 2790101 | 358 | colorMode.none |
 
 </details>
 
@@ -1097,11 +1162,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>JSON Logging</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| JSON compact | 53,149 | 18,815 | Compact JSON output |
-| JSON formatted | 30,426 | 32,867 | JSON with formatting |
-| JSON pretty | 15,963 | 62,643 | Indented JSON output |
-| JSON with color | 29,633 | 33,746 | JSON with ANSI colors |
+| :--- | :--- | :--- | :--- |
+| JSON compact | 2737101 | 365 | Compact JSON output |
+| JSON formatted | 32273 | 30985 | JSON with formatting |
+| JSON pretty | 9856 | 101462 | Indented JSON output |
+| JSON with color | 53406 | 18724 | JSON with ANSI colors |
 
 </details>
 
@@ -1109,15 +1174,15 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Log Levels</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| TRACE level | 54,073 | 18,494 | Lowest priority level |
-| DEBUG level | 28,247 | 35,402 | Debug information |
-| INFO level | 62,796 | 15,925 | General information |
-| SUCCESS level | 45,301 | 22,074 | Success messages |
-| WARNING level | 49,987 | 20,005 | Warning messages |
-| ERROR level | 48,143 | 20,771 | Error messages |
-| FAIL level | 48,729 | 20,522 | Failure messages |
-| CRITICAL level | 49,209 | 20,322 | Critical messages |
+| :--- | :--- | :--- | :--- |
+| TRACE level | 52894 | 18906 | Lowest priority level |
+| DEBUG level | 52863 | 18917 | Debug information |
+| INFO level | 53065 | 18845 | General information |
+| SUCCESS level | 52967 | 18880 | Success messages |
+| WARNING level | 53195 | 18799 | Warning messages |
+| ERROR level | 53133 | 18821 | Error messages |
+| FAIL level | 53210 | 18793 | Failure messages |
+| CRITICAL level | 51781 | 19312 | Critical messages |
 
 </details>
 
@@ -1125,12 +1190,12 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Custom Features</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| Custom level (AUDIT) | 56,116 | 17,820 | User-defined log level |
-| Custom log format | 56,488 | 17,703 | `{time} \| {level} \| {message}` |
-| Custom time format | 52,964 | 18,881 | DD/MM/YYYY HH:mm:ss |
-| ISO8601 time format | 47,387 | 21,103 | ISO 8601 standard format |
-| Unix timestamp (ms) | 58,943 | 16,966 | Millisecond Unix timestamp |
+| :--- | :--- | :--- | :--- |
+| Custom level (AUDIT) | 53471 | 18702 | User-defined log level |
+| Custom log format | 53028 | 18858 | {time} | {level} | {message} |
+| Custom time format | 54327 | 18407 | DD/MM/YYYY HH:mm:ss |
+| ISO8601 time format | 53027 | 18858 | ISO 8601 standard format |
+| Unix timestamp (ms) | 54039 | 18505 | Millisecond Unix timestamp |
 
 </details>
 
@@ -1138,14 +1203,14 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Configuration Presets</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| Full metadata config | 57,684 | 17,336 | Time + module + file + line |
-| Minimal config | 114,176 | 8,758 | No timestamp or module |
-| Production preset | 35,363 | 28,278 | JSON + sampling + metrics |
-| Development preset | 52,771 | 18,950 | Debug + source location |
-| High throughput preset | 36,483,035 | 27 | Async + thread pool + sampling |
-| Secure preset | 54,322 | 18,409 | Redaction enabled |
-| Multiple sinks (3) | 62,815 | 15,920 | Text + JSON + Pretty |
+| :--- | :--- | :--- | :--- |
+| Full metadata config | 53428 | 18717 | Time + module + file + line |
+| Minimal config | 54591 | 18318 | No timestamp or module |
+| Production preset | 52139 | 19179 | JSON + sampling + metrics |
+| Development preset | 53818 | 18581 | Debug + source location |
+| High throughput preset | 14371946 | 70 | Async + thread pool + sampling |
+| Secure preset | 53371 | 18737 | Redaction enabled |
+| Multiple sinks (3) | 43175 | 23161 | Text + JSON + Pretty |
 
 </details>
 
@@ -1153,10 +1218,10 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Allocator Comparison</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| Standard allocator (GPA) | 55,929 | 17,880 | Default allocation |
-| Standard allocator (formatted) | 32,885 | 30,409 | GPA with formatting |
-| Page allocator | 69,599 | 14,368 | System page allocator |
+| :--- | :--- | :--- | :--- |
+| Standard allocator (GPA) | 190590 | 5247 | Default allocation |
+| Standard allocator (formatted) | 27454 | 36425 | GPA with formatting |
+| Page allocator | 197901 | 5053 | System page allocator |
 
 </details>
 
@@ -1164,11 +1229,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Enterprise Features</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| With context (3 fields) | 59,076 | 16,927 | Bound context data |
-| With trace context | 46,864 | 21,338 | Trace ID + Span ID |
-| With metrics enabled | 55,463 | 18,030 | Performance monitoring |
-| Structured logging | 38,205 | 26,174 | JSON structured output |
+| :--- | :--- | :--- | :--- |
+| With context (3 fields) | 32656 | 30622 | Bound context data |
+| With trace context | 55608 | 17983 | Trace ID + Span ID |
+| With metrics enabled | 53149 | 18815 | Performance monitoring |
+| Structured logging | 52891 | 18907 | JSON structured output |
 
 </details>
 
@@ -1176,13 +1241,13 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Sampling & Rate Limiting</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| Sampling (50% probability) | 54,118 | 18,478 | Probability sampling |
-| Sampling (rate limit) | 53,695 | 18,624 | Rate-based sampling |
-| Sampling (adaptive) | 44,584 | 22,429 | Adaptive sampling |
-| Sampling (every-N) | 54,704 | 18,280 | Every-N message sampling |
-| Rate limiting (10K/sec) | 44,143 | 22,654 | Max 10K logs per second |
-| With redaction enabled | 53,361 | 18,740 | Sensitive data masking |
+| :--- | :--- | :--- | :--- |
+| Sampling (50% probability) | 198951 | 5026 | Probability sampling |
+| Sampling (rate limit) | 198601 | 5035 | Rate-based sampling |
+| Sampling (adaptive) | 198982 | 5026 | Adaptive sampling |
+| Sampling (every-N) | 197967 | 5051 | Every-N message sampling |
+| Rate limiting (10K/sec) | 201351 | 4966 | Max 10K logs per second |
+| With redaction enabled | 199413 | 5015 | Sensitive data masking |
 
 </details>
 
@@ -1190,9 +1255,51 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Filtering</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| Filter (allowed) | 40,731 | 24,552 | Message passes filter |
-| Filter (rejected) | 23,304,591 | 43 | Message blocked by filter |
+| :--- | :--- | :--- | :--- |
+| Filter (allowed) | 195433 | 5117 | Message passes filter |
+| Filter (rejected) | 14768867 | 68 | Message blocked by filter |
+
+</details>
+
+<details>
+<summary><strong>Rules Engine</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+| :--- | :--- | :--- | :--- |
+| Rules engine (enabled) | 198291 | 5043 | Rule evaluation |
+| Rules engine (disabled) | 195810 | 5107 | No rule evaluation |
+
+</details>
+
+<details>
+<summary><strong>Redaction</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+| :--- | :--- | :--- | :--- |
+| Redaction (pattern match) | 30906 | 32356 | 2 patterns matched |
+| Redaction (no match) | 69443 | 14400 | No patterns matched |
+| Field redaction (full) | 102106 | 9794 | Full field masking |
+
+</details>
+
+<details>
+<summary><strong>Metrics</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+| :--- | :--- | :--- | :--- |
+| Metrics recordLog | 8186656 | 122 | Atomic counter update |
+| Metrics with latency | 8453800 | 118 | With latency tracking |
+| Metrics snapshot | 5876131 | 170 | Get current snapshot |
+| Metrics (full config) | 6697924 | 149 | All tracking enabled |
+
+</details>
+
+<details>
+<summary><strong>Rotation</strong></summary>
+
+| Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
+| :--- | :--- | :--- | :--- |
+| Rotation (size check) | 197237 | 5070 | Size-based check |
 
 </details>
 
@@ -1200,16 +1307,15 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Multi-Threading</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| Single thread baseline | 63,592 | 15,725 | 1 thread sequential |
-| 2 threads concurrent | 55,268 | 18,094 | 2 threads parallel |
-| 4 threads concurrent | 51,211 | 19,527 | 4 threads parallel |
-| 8 threads concurrent | 43,571 | 22,951 | 8 threads parallel |
-| 16 threads concurrent | 48,274 | 20,715 | 16 threads parallel |
-| 4 threads JSON | 37,412 | 26,730 | Parallel JSON logging |
-| 4 threads colored | 54,558 | 18,329 | Parallel colored logging |
-| 4 threads formatted | 51,787 | 19,310 | Parallel formatted logging |
-
+| :--- | :--- | :--- | :--- |
+| Single thread baseline | 199880 | 5003 | 1 thread sequential |
+| 2 threads concurrent | 145197 | 6887 | 2 threads parallel |
+| 4 threads concurrent | 143878 | 6950 | 4 threads parallel |
+| 8 threads concurrent | 143485 | 6969 | 8 threads parallel |
+| 16 threads concurrent | 142383 | 7023 | 16 threads parallel |
+| 4 threads JSON | 135098 | 7402 | Parallel JSON logging |
+| 4 threads colored | 143524 | 6967 | Parallel colored logging |
+| 4 threads formatted | 81858 | 12216 | Parallel formatted logging |
 
 </details>
 
@@ -1217,11 +1323,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 <summary><strong>Performance Comparison</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
-|-----------|----------------------------|------------------------------------|-------|
-| File output (plain) | 83,878 | 11,922 | Null device output |
-| File output (error) | 39,494 | 25,321 | Error to file |
-| No sampling (baseline) | 62,077 | 16,109 | Sampling disabled |
-| Compression enabled (fast) | 43,747 | 22,859 | Deflate compression |
+| :--- | :--- | :--- | :--- |
+| File output (plain) | 205671 | 4862 | Null device output |
+| File output (error) | 208273 | 4801 | Error to file |
+| No sampling (baseline) | 199498 | 5013 | Sampling disabled |
+| Compression enabled (fast) | 201071 | 4973 | Deflate compression Total benchmarks run: 69 Average throughput: 1380994 ops/sec Maximum throughput: 15094340 ops/sec (Disabled log call (TRACE vs INFO min)) Minimum throughput: 9856 ops/sec (JSON pretty) Average latency: 724 ns [OK] Benchmarks completed successfully! |
 
 </details>
 
@@ -1229,11 +1335,11 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 
 | Metric | Value |
 |--------|-------|
-| **Total Benchmarks** | 59 |
-| **Average Throughput** | ~1,064,399 ops/sec |
-| **Maximum Throughput** | 36,483,035 ops/sec (High throughput preset) |
-| **Minimum Throughput** | 15,963 ops/sec (JSON pretty) |
-| **Average Latency** | ~939 ns |
+| **Total Benchmarks** | 69 |
+| **Average Throughput** | ~1,380,994 ops/sec |
+| **Maximum Throughput** | 15,094,340 ops/sec (Disabled log call) |
+| **Minimum Throughput** | 9,856 ops/sec (JSON pretty) |
+| **Average Latency** | ~724 ns |
 
 > [!NOTE]
 > Benchmark results may vary based on operating system, environment, Zig version, hardware specifications, and software configurations.
@@ -1277,6 +1383,9 @@ zig build -p zig-out
 # Run tests
 zig build test
 
+# Run only tests whose name contains a substring
+zig build test -Dtest-filter="rotation"
+
 # Build examples
 zig build example-basic
 zig build example-file_logging
@@ -1304,7 +1413,7 @@ zig build example-redaction
 zig build example-metrics
 zig build example-tracing
 zig build example-color_options
-zig build example-production_config
+zig build example-color_modes
 zig build example-production_config
 
 # Advanced feature examples
@@ -1315,6 +1424,11 @@ zig build example-async_logging
 zig build example-async_advanced
 zig build example-compression_demo
 
+# Run every example sequentially
+zig build run-all-examples
+
+# Run one example (built to zig-out/bin)
+zig build run-basic
 
 # Run an example
 ./zig-out/bin/basic

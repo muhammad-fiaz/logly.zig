@@ -12,29 +12,31 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    std.debug.print("=== Color System Demo (v0.2.0) ===\n\n", .{});
+    std.debug.print("Color System Demo (tint.zig)\n\n", .{});
 
-    // Basic custom levels with ANSI codes
-    try logger.addCustomLevel("NOTICE", 22, "36;1");
-    try logger.addCustomLevel("ALERT", 42, "31;4");
-    try logger.addCustomLevel("HIGHLIGHT", 52, "33;1;7");
+    // Custom levels with tint colors (parsed from names or SGR params).
+    try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("cyan").?);
+    try logger.addCustomLevel("ALERT", 42, logly.Color.parse("red").?);
+    try logger.addCustomLevel("HIGHLIGHT", 52, logly.Color.parse("yellow").?);
 
     // Standard levels with default colors
     try logger.info("Standard Info - white", @src());
+    try logger.flush();
 
     // Demonstrate global color overrides
-    std.debug.print("\n=== Global Color Overrides ===\n\n", .{});
+    std.debug.print("\nGlobal Color Overrides\n\n", .{});
     var config = logly.Config.default();
-    config.level_colors.info_color = "36"; // Cyan
-    config.level_colors.warning_color = "33;1"; // Bold Yellow
+    config.levelColors.infoColor = logly.Color.parse("cyan").?;
+    config.levelColors.warningColor = logly.Color.parse("yellow").?;
     logger.configure(config);
 
     try logger.info("Info - now Cyan", @src());
-    try logger.warning("Warning - now Bold Yellow", @src());
+    try logger.warning("Warning - now Yellow", @src());
+    try logger.flush();
 
     // Demonstrate theme presets
-    std.debug.print("\n=== Theme Presets ===\n\n", .{});
-    config.level_colors.theme_preset = .neon;
+    std.debug.print("\nTheme Presets\n\n", .{});
+    config.levelColors.themePreset = .neon;
     logger.configure(config);
     try logger.info("Info - Neon Theme", @src());
     try logger.warning("Warning - Neon Theme", @src());
@@ -43,69 +45,36 @@ pub fn main() !void {
     try logger.warning("Warning message - yellow", @src());
     try logger.err("Error message - red", @src());
     try logger.critical("Critical message - bright red", @src());
+    try logger.flush();
 
-    std.debug.print("\n=== Custom Level Colors ===\n\n", .{});
+    std.debug.print("\nCustom Level Colors\n\n", .{});
 
-    try logger.custom("NOTICE", "Notice (Cyan Bold)", @src());
-    try logger.custom("ALERT", "Alert (Red Underline)", @src());
-    try logger.custom("HIGHLIGHT", "Highlight (Yellow Bold Reverse)", @src());
+    try logger.custom("NOTICE", "Notice (Cyan)", @src());
+    try logger.custom("ALERT", "Alert (Red)", @src());
+    try logger.custom("HIGHLIGHT", "Highlight (Yellow)", @src());
+    try logger.flush();
 
-    std.debug.print("\n=== Level Color Variants (v0.2.0) ===\n\n", .{});
+    std.debug.print("\nLevel Colors (tint sequences)\n\n", .{});
 
-    // Demonstrate color variants available on each level
+    // Demonstrate tint-backed level colors rendered as SGR sequences.
+    // Each sequence is shown applied to sample text (raw bytes would be
+    // invisible since the terminal interprets them as colors).
     const Level = logly.Level;
-    std.debug.print("TRACE colors:\n", .{});
-    std.debug.print("  default:   {s}\n", .{Level.trace.defaultColor()});
-    std.debug.print("  bright:    {s}\n", .{Level.trace.brightColor()});
-    std.debug.print("  dim:       {s}\n", .{Level.trace.dimColor()});
-    std.debug.print("  underline: {s}\n", .{Level.trace.underlineColor()});
-    std.debug.print("  256-color: {s}\n\n", .{Level.trace.color256()});
+    const reset = logly.Color.resetAll;
+    const seq = logly.Color.sequence(Level.trace.defaultColor(), .trueColor);
+    std.debug.print("TRACE sequence: {s}sample trace text{s}\n", .{ seq.slice(), reset });
+    const errSeq = logly.Color.sequence(Level.err.defaultColor(), .trueColor);
+    std.debug.print("ERROR sequence: {s}sample error text{s}\n", .{ errSeq.slice(), reset });
 
-    std.debug.print("\n=== Color Constants ===\n\n", .{});
+    std.debug.print("\ntint Colors\n\n", .{});
 
-    // Show color constants
-    const Colors = logly.Constants.Colors;
-    std.debug.print("Foreground colors (30-37):\n", .{});
-    std.debug.print("  red={s} green={s} blue={s} cyan={s}\n", .{
-        Colors.Fg.red,
-        Colors.Fg.green,
-        Colors.Fg.blue,
-        Colors.Fg.cyan,
-    });
+    // Show tint color primitives directly.
+    const tint = logly.Color.Tint;
+    std.debug.print("ANSI red: {s}red sample{s}\n", .{ tint.color.ansi4.red.fg().slice(), reset });
+    std.debug.print("256-color orange (208): {s}orange sample{s}\n", .{ tint.color.ansi256.index(208).fg().slice(), reset });
+    std.debug.print("RGB coral: {s}coral sample{s}\n", .{ tint.color.rgb(255, 127, 80).fg().slice(), reset });
 
-    std.debug.print("\nBright foreground (90-97):\n", .{});
-    std.debug.print("  red={s} green={s} blue={s} cyan={s}\n", .{
-        Colors.BrightFg.red,
-        Colors.BrightFg.green,
-        Colors.BrightFg.blue,
-        Colors.BrightFg.cyan,
-    });
-
-    std.debug.print("\nStyles:\n", .{});
-    std.debug.print("  bold={s} dim={s} underline={s} reverse={s}\n", .{
-        Colors.Style.bold,
-        Colors.Style.dim,
-        Colors.Style.underline,
-        Colors.Style.reverse,
-    });
-
-    std.debug.print("\n=== 256-Color Palette ===\n\n", .{});
-
-    // 256-color codes
-    std.debug.print("256-color examples:\n", .{});
-    std.debug.print("  orange (208): {s}\n", .{Colors.fg256(208)});
-    std.debug.print("  purple (141): {s}\n", .{Colors.fg256(141)});
-    std.debug.print("  teal bg (43): {s}\n", .{Colors.bg256(43)});
-
-    std.debug.print("\n=== RGB Colors ===\n\n", .{});
-
-    // RGB color codes
-    std.debug.print("RGB color examples:\n", .{});
-    std.debug.print("  coral (255,127,80): {s}\n", .{Colors.fgRgb(255, 127, 80)});
-    std.debug.print("  lime (50,205,50):   {s}\n", .{Colors.fgRgb(50, 205, 50)});
-    std.debug.print("  navy bg (0,0,128):  {s}\n", .{Colors.bgRgb(0, 0, 128)});
-
-    std.debug.print("\n=== Theme Presets ===\n\n", .{});
+    std.debug.print("\nTheme Presets\n\n", .{});
 
     // Theme presets
     const Theme = logly.Formatter.Theme;
@@ -118,41 +87,36 @@ pub fn main() !void {
     std.debug.print("  Theme.dark()    - Dark terminal\n", .{});
     std.debug.print("  Theme.light()   - Light terminal\n", .{});
 
-    // Show theme colors
+    // Show theme colors rendered as sequences.
     const neon = Theme.neon();
-    std.debug.print("\nNeon theme colors:\n", .{});
-    std.debug.print("  trace={s} debug={s} info={s}\n", .{ neon.trace, neon.debug, neon.info });
-    std.debug.print("  success={s} warning={s} err={s}\n", .{ neon.success, neon.warning, neon.err });
+    const neonTrace = logly.Color.sequence(neon.trace, .trueColor);
+    const neonErr = logly.Color.sequence(neon.err, .trueColor);
+    std.debug.print("\nNeon theme sequences:\n", .{});
+    std.debug.print("  trace={s}sample{s} err={s}sample{s}\n", .{ neonTrace.slice(), reset, neonErr.slice(), reset });
 
-    std.debug.print("\n=== Advanced CustomLevel (v0.2.0) ===\n\n", .{});
+    std.debug.print("\nAdvanced CustomLevel\n\n", .{});
 
-    // Demonstrate advanced CustomLevel creation
+    // Demonstrate CustomLevel creation with tint colors.
     const CustomLevel = logly.CustomLevel;
 
-    // Full color options
-    const audit = CustomLevel.initFull("AUDIT", 35, "36", "96;1", "36;2", "38;5;81");
-    std.debug.print("CustomLevel.initFull - AUDIT:\n", .{});
-    std.debug.print("  effective: {s}\n", .{audit.effectiveColor()});
-    std.debug.print("  bright:    {s}\n", .{audit.getBrightColor()});
-    std.debug.print("  dim:       {s}\n", .{audit.getDimColor()});
-    std.debug.print("  256-color: {s}\n", .{audit.get256Color()});
+    const audit = CustomLevel.init("AUDIT", 35, logly.Color.parse("cyan").?);
+    std.debug.print("CustomLevel.init - AUDIT: {s}\n", .{audit.name});
 
     // RGB custom level
     const metric = CustomLevel.initRgb("METRIC", 25, 50, 205, 50);
-    std.debug.print("\nCustomLevel.initRgb - METRIC:\n", .{});
-    std.debug.print("  has RGB: {}\n", .{metric.hasRgbColor()});
-
-    // Styled custom level
-    const styled = CustomLevel.initStyled("STYLED", 45, "31", "1;4");
-    std.debug.print("\nCustomLevel.initStyled - STYLED:\n", .{});
-    std.debug.print("  has style: {}\n", .{styled.hasStyle()});
+    const metricSeq = logly.Color.sequence(metric.color, .trueColor);
+    std.debug.print("CustomLevel.initRgb - METRIC: {s}sample metric text{s}\n", .{ metricSeq.slice(), reset });
 
     // With background
-    const alert = CustomLevel.initWithBackground("ALERTBG", 50, "97", "41");
-    std.debug.print("\nCustomLevel.initWithBackground - ALERTBG:\n", .{});
-    std.debug.print("  has background: {}\n", .{alert.hasBackground()});
+    const alert = CustomLevel.initWithBackground(
+        "ALERTBG",
+        50,
+        logly.Color.Tint.color.ansi4.brightWhite,
+        logly.Color.Tint.color.ansi4.red,
+    );
+    std.debug.print("CustomLevel with background: hasBackground={}\n", .{alert.hasBackground()});
 
-    std.debug.print("\n=== Platform Support ===\n", .{});
+    std.debug.print("\nPlatform Support\n", .{});
     std.debug.print("Colors work on: Linux, macOS, Windows 10+, VS Code Terminal\n", .{});
     std.debug.print("256-color and RGB require terminal support\n", .{});
     std.debug.print("\nCustom colors example completed!\n", .{});

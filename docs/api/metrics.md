@@ -109,12 +109,12 @@ Available controls:
 
 | Field / Helper | Purpose |
 |----------------|---------|
-| `metric_prefix`, `withPrefix()` / `prefix()` | Namespace exported metrics |
-| `metric_separator` | Separator for Prometheus-compatible names |
-| `statsd_separator` | Separator for StatsD metric names |
-| `sanitize_names` | Replace exporter-unsafe characters |
-| `export_level_breakdown` | Include per-level counters |
-| `export_sink_breakdown` | Include per-sink counters/errors |
+| `metricPrefix`, `withPrefix()` / `prefix()` | Namespace exported metrics |
+| `metricSeparator` | Separator for Prometheus-compatible names |
+| `statsdSeparator` | Separator for StatsD metric names |
+| `sanitizeNames` | Replace exporter-unsafe characters |
+| `exportLevelBreakdown` | Include per-level counters |
+| `exportSinkBreakdown` | Include per-sink counters/errors |
 | `prometheus()` | Configure Prometheus export naming |
 | `statsd()` | Configure StatsD export naming |
 | `withAlerts()` / `alerts()` | Configure error/drop thresholds |
@@ -127,19 +127,19 @@ Global configuration for metrics collection and export.
 ```zig
 pub const MetricsConfig = struct {
     enabled: bool = false,
-    track_levels: bool = true,
-    track_sinks: bool = true,
-    track_latency: bool = false,
-    enable_histogram: bool = false,
-    histogram_buckets: usize = 20,
-    export_format: ExportFormat = .none,
+    trackLevels: bool = true,
+    trackSinks: bool = true,
+    trackLatency: bool = false,
+    enableHistogram: bool = false,
+    histogramBuckets: usize = 20,
+    exportFormat: ExportFormat = .none,
     export_interval_ms: u64 = 60000,
-    export_level_breakdown: bool = true,
-    export_sink_breakdown: bool = true,
-    metric_prefix: []const u8 = "logly",
-    metric_separator: []const u8 = "_",
-    statsd_separator: []const u8 = ".",
-    sanitize_names: bool = true,
+    exportLevelBreakdown: bool = true,
+    exportSinkBreakdown: bool = true,
+    metricPrefix: []const u8 = "logly",
+    metricSeparator: []const u8 = "_",
+    statsdSeparator: []const u8 = ".",
+    sanitizeNames: bool = true,
     
     pub const ExportFormat = enum {
         none,
@@ -158,19 +158,19 @@ The main metrics controller with atomic counters and callback support.
 
 ```zig
 pub const Metrics = struct {
-    total_records: std.atomic.Value(u64),
-    total_bytes: std.atomic.Value(u64),
-    dropped_records: std.atomic.Value(u64),
-    error_count: std.atomic.Value(u64),
-    level_counts: [10]std.atomic.Value(u64),
-    start_time: i64,
-    sink_metrics: std.ArrayList(SinkMetrics),
+    totalRecords: std.atomic.Value(u64),
+    totalBytes: std.atomic.Value(u64),
+    droppedRecords: std.atomic.Value(u64),
+    errorCount: std.atomic.Value(u64),
+    levelCounts: [10]std.atomic.Value(u64),
+    startTime: i64,
+    sinkMetrics: std.ArrayList(SinkMetrics),
     
     // Callbacks
-    on_record_logged: ?*const fn (Level, u64) void,
-    on_metrics_snapshot: ?*const fn (*const Snapshot) void,
-    on_threshold_exceeded: ?*const fn (MetricType, u64, u64) void,
-    on_error_detected: ?*const fn (ErrorEvent, u64) void,
+    onRecordLogged: ?*const fn (Level, u64) void,
+    onMetricsSnapshot: ?*const fn (*const Snapshot) void,
+    onThresholdExceeded: ?*const fn (MetricType, u64, u64) void,
+    onErrorDetected: ?*const fn (ErrorEvent, u64) void,
 };
 ```
 
@@ -180,12 +180,12 @@ Types of metrics for threshold notifications.
 
 ```zig
 pub const MetricType = enum {
-    total_records,
-    total_bytes,
-    dropped_records,
-    error_count,
-    records_per_second,
-    bytes_per_second,
+    totalRecords,
+    totalBytes,
+    droppedRecords,
+    errorCount,
+    recordsPerSecond,
+    bytesPerSecond,
 };
 ```
 
@@ -195,10 +195,10 @@ Error event types for monitoring.
 
 ```zig
 pub const ErrorEvent = enum {
-    records_dropped,
-    sink_write_error,
-    buffer_overflow,
-    sampling_drop,
+    recordsDropped,
+    sinkWriteError,
+    bufferOverflow,
+    samplingDrop,
 };
 ```
 
@@ -209,10 +209,10 @@ Per-sink statistics with atomic counters.
 ```zig
 pub const SinkMetrics = struct {
     name: []const u8,
-    records_written: std.atomic.Value(u64),
-    bytes_written: std.atomic.Value(u64),
-    write_errors: std.atomic.Value(u64),
-    flush_count: std.atomic.Value(u64),
+    recordsWritten: std.atomic.Value(u64),
+    bytesWritten: std.atomic.Value(u64),
+    writeErrors: std.atomic.Value(u64),
+    flushCount: std.atomic.Value(u64),
 };
 ```
 
@@ -240,7 +240,7 @@ pub const SinkMetrics = struct {
 | `getSuccessRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
 | `avgBytesPerRecord()` | `f64` | Calculate average bytes per record |
 | `avgRecordsPerFlush()` | `f64` | Calculate average records per flush |
-| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate bytes per second throughput |
+| `throughputBytesPerSecond(elapsedSeconds)` | `f64` | Calculate bytes per second throughput |
 
 #### Reset
 
@@ -254,14 +254,14 @@ A point-in-time snapshot of metrics, useful for reporting.
 
 ```zig
 pub const Snapshot = struct {
-    total_records: u64,
-    total_bytes: u64,
-    dropped_records: u64,
-    error_count: u64,
-    uptime_ms: i64,
-    records_per_second: f64,
-    bytes_per_second: f64,
-    level_counts: [10]u64,
+    totalRecords: u64,
+    totalBytes: u64,
+    droppedRecords: u64,
+    errorCount: u64,
+    uptimeMs: i64,
+    recordsPerSecond: f64,
+    bytesPerSecond: f64,
+    levelCounts: [10]u64,
     
     pub fn getDropRate(self: *const Snapshot) f64;
 };
@@ -323,7 +323,7 @@ Records a successful log event with its level and size.
 
 **Alias**: `record`, `log`
 
-#### `recordLogWithLatency(level: Level, bytes: u64, latency_ns: u64) void`
+#### `recordLogWithLatency(level: Level, bytes: u64, latencyNs: u64) void`
 
 Records a log with latency measurement for histogram tracking.
 
@@ -349,19 +349,19 @@ Records a log using a custom level.
 
 Adds a sink to track. Returns the sink index.
 
-#### `recordSinkWrite(sink_index: usize, bytes: u64) void`
+#### `recordSinkWrite(sinkIndex: usize, bytes: u64) void`
 
 Records a successful write to a sink.
 
-#### `recordSinkError(sink_index: usize) void`
+#### `recordSinkError(sinkIndex: usize) void`
 
 Records a write error on a sink.
 
-#### `recordSinkFlush(sink_index: usize) void`
+#### `recordSinkFlush(sinkIndex: usize) void`
 
 Records a flush operation on a sink.
 
-#### `getSinkMetrics(sink_index: usize) ?SinkMetrics`
+#### `getSinkMetrics(sinkIndex: usize) ?SinkMetrics`
 
 Returns sink metrics by index.
 
@@ -543,7 +543,7 @@ pub const MetricsPresets = struct {
     pub fn basic(allocator: std.mem.Allocator) Metrics;
     
     /// Creates a metrics sink configuration.
-    pub fn createMetricsSink(file_path: []const u8) SinkConfig;
+    pub fn createMetricsSink(filePath: []const u8) SinkConfig;
 };
 ```
 
@@ -562,8 +562,8 @@ metrics.recordLog(.err, 512);
 
 // Check statistics
 const snapshot = metrics.getSnapshot();
-std.debug.print("Records: {d}\n", .{snapshot.total_records});
-std.debug.print("Rate: {d:.2} rec/s\n", .{snapshot.records_per_second});
+std.debug.print("Records: {d}\n", .{snapshot.totalRecords});
+std.debug.print("Rate: {d:.2} rec/s\n", .{snapshot.recordsPerSecond});
 
 // Check health
 if (metrics.hasHighErrorRate(0.01)) {

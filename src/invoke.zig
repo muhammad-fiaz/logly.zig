@@ -1,16 +1,13 @@
-//! Invoke — extra message system for log records.
+//! Invoke triggers.
 //!
-//! When a log record matches a trigger's conditions, the trigger's
-//! messages are appended to the record. Supports all built-in log
-//! levels (trace, debug, info, warning, err, critical) plus any
-//! custom level by name.
-
+//! Attaches extra messages when records match level, content, or timing rules.
 const std = @import("std");
 const Level = @import("level.zig").Level;
 const Record = @import("record.zig").Record;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
+/// Rule set that attaches extra messages when matching records are logged.
 pub const Invoke = struct {
     allocator: std.mem.Allocator,
     triggers: std.ArrayList(Trigger),
@@ -18,39 +15,45 @@ pub const Invoke = struct {
     mutex: std.Io.Mutex = std.Io.Mutex.init,
     stats: Stats = .{},
 
+    /// Text emitted by a matching invoke rule.
     pub const Message = []const u8;
 
+    /// Counters describing how often invoke rules fired.
     pub const Stats = struct {
-        triggers_evaluated: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        triggers_matched: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        messages_emitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        triggersEvaluated: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        triggersMatched: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        messagesEmitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
+        /// Number of records whose rules were evaluated.
         pub fn getTriggersEvaluated(self: *const Stats) u64 {
-            return Utils.atomicLoadU64(&self.triggers_evaluated);
+            return Utils.atomicLoadU64(&self.triggersEvaluated);
         }
 
+        /// Number of records that matched at least one rule.
         pub fn getTriggersMatched(self: *const Stats) u64 {
-            return Utils.atomicLoadU64(&self.triggers_matched);
+            return Utils.atomicLoadU64(&self.triggersMatched);
         }
 
+        /// Number of messages emitted by rules.
         pub fn getMessagesEmitted(self: *const Stats) u64 {
-            return Utils.atomicLoadU64(&self.messages_emitted);
+            return Utils.atomicLoadU64(&self.messagesEmitted);
         }
 
+        /// Zeroes every counter.
         pub fn reset(self: *Stats) void {
-            self.triggers_evaluated.store(0, .monotonic);
-            self.triggers_matched.store(0, .monotonic);
-            self.messages_emitted.store(0, .monotonic);
+            self.triggersEvaluated.store(0, .monotonic);
+            self.triggersMatched.store(0, .monotonic);
+            self.messagesEmitted.store(0, .monotonic);
         }
     };
 
     /// How to match log levels.
     pub const LevelMatch = union(enum) {
         exact: Level,
-        min_priority: u8,
-        max_priority: u8,
-        priority_range: struct { min: u8, max: u8 },
-        custom_name: []const u8,
+        minPriority: u8,
+        maxPriority: u8,
+        priorityRange: struct { min: u8, max: u8 },
+        customName: []const u8,
         any: void,
     };
 
@@ -61,37 +64,37 @@ pub const Invoke = struct {
         enabled: bool = true,
         once: bool = false,
         fired: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-        level_match: ?LevelMatch = null,
+        levelMatch: ?LevelMatch = null,
         module: ?[]const u8 = null,
         function: ?[]const u8 = null,
-        message_contains: ?[]const u8 = null,
-        message_regex: ?[]const u8 = null,
-        min_duration_ns: ?u64 = null,
+        messageContains: ?[]const u8 = null,
+        messageRegex: ?[]const u8 = null,
+        minDurationNs: ?u64 = null,
         messages: []const Message,
         priority: u8 = 100,
-        cooldown_ms: u64 = 0,
-        last_fired_ms: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        cooldownMs: u64 = 0,
+        lastFiredMs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         pub fn matches(self: *const Trigger, record: *const Record) bool {
             if (!self.enabled) return false;
             if (self.once and self.fired.load(.monotonic)) return false;
 
-            if (self.min_duration_ns) |threshold| {
-                if (record.duration_ns) |dur| {
+            if (self.minDurationNs) |threshold| {
+                if (record.durationNs) |dur| {
                     if (dur < threshold) return false;
                 } else {
                     return false;
                 }
             }
 
-            if (self.level_match) |lm| {
+            if (self.levelMatch) |lm| {
                 const matched = switch (lm) {
                     .exact => |lev| record.level == lev,
-                    .min_priority => |min| record.level.priority() >= min,
-                    .max_priority => |max| record.level.priority() <= max,
-                    .priority_range => |range| record.level.priority() >= range.min and record.level.priority() <= range.max,
-                    .custom_name => |name| blk: {
-                        if (record.custom_level_name) |cname| {
+                    .minPriority => |min| record.level.priority() >= min,
+                    .maxPriority => |max| record.level.priority() <= max,
+                    .priorityRange => |range| record.level.priority() >= range.min and record.level.priority() <= range.max,
+                    .customName => |name| blk: {
+                        if (record.customLevelName) |cname| {
                             break :blk std.mem.eql(u8, cname, name);
                         }
                         break :blk false;
@@ -102,37 +105,37 @@ pub const Invoke = struct {
             }
 
             if (self.module) |mod| {
-                if (record.module) |rec_mod| {
-                    if (!std.mem.eql(u8, rec_mod, mod)) return false;
+                if (record.module) |recMod| {
+                    if (!std.mem.eql(u8, recMod, mod)) return false;
                 } else {
                     return false;
                 }
             }
 
             if (self.function) |func| {
-                if (record.function) |rec_func| {
-                    if (!std.mem.eql(u8, rec_func, func)) return false;
+                if (record.function) |recFunc| {
+                    if (!std.mem.eql(u8, recFunc, func)) return false;
                 } else {
                     return false;
                 }
             }
 
-            if (self.message_contains) |pattern| {
+            if (self.messageContains) |pattern| {
                 if (std.mem.indexOf(u8, record.message, pattern) == null) {
                     return false;
                 }
             }
 
-            if (self.message_regex) |regex| {
+            if (self.messageRegex) |regex| {
                 if (Utils.findRegexPattern(record.message, regex) == null) {
                     return false;
                 }
             }
 
-            if (self.cooldown_ms > 0) {
+            if (self.cooldownMs > 0) {
                 const now: Constants.AtomicUnsigned = @truncate(@as(u64, @intCast(Utils.currentMillis())));
-                const last = self.last_fired_ms.load(.monotonic);
-                if (now - last < self.cooldown_ms) return false;
+                const last = self.lastFiredMs.load(.monotonic);
+                if (now - last < self.cooldownMs) return false;
             }
 
             return true;
@@ -207,24 +210,24 @@ pub const Invoke = struct {
     pub fn evaluate(self: *Invoke, record: *const Record) ?[]const Message {
         if (!self.enabled) return null;
 
-        self.stats.triggers_evaluated.store(
-            self.stats.triggers_evaluated.load(.monotonic) + 1,
+        self.stats.triggersEvaluated.store(
+            self.stats.triggersEvaluated.load(.monotonic) + 1,
             .monotonic,
         );
 
-        var matched_messages: std.ArrayList(Message) = .empty;
-        var any_matched = false;
+        var matchedMessages: std.ArrayList(Message) = .empty;
+        var anyMatched = false;
 
         for (self.triggers.items) |*trigger| {
             if (trigger.matches(record)) {
-                any_matched = true;
-                self.stats.triggers_matched.store(
-                    self.stats.triggers_matched.load(.monotonic) + 1,
+                anyMatched = true;
+                self.stats.triggersMatched.store(
+                    self.stats.triggersMatched.load(.monotonic) + 1,
                     .monotonic,
                 );
 
                 for (trigger.messages) |msg| {
-                    matched_messages.append(self.allocator, msg) catch continue;
+                    matchedMessages.append(self.allocator, msg) catch continue;
                 }
 
                 if (trigger.once) {
@@ -232,23 +235,23 @@ pub const Invoke = struct {
                 }
 
                 const now: Constants.AtomicUnsigned = @truncate(@as(u64, @intCast(Utils.currentMillis())));
-                trigger.last_fired_ms.store(now, .monotonic);
+                trigger.lastFiredMs.store(now, .monotonic);
             }
         }
 
-        if (!any_matched) return null;
+        if (!anyMatched) return null;
 
-        const total = matched_messages.items.len;
-        self.stats.messages_emitted.store(
-            self.stats.messages_emitted.load(.monotonic) + total,
+        const total = matchedMessages.items.len;
+        self.stats.messagesEmitted.store(
+            self.stats.messagesEmitted.load(.monotonic) + total,
             .monotonic,
         );
 
-        return matched_messages.toOwnedSlice(self.allocator) catch null;
+        return matchedMessages.toOwnedSlice(self.allocator) catch null;
     }
 
-    pub fn formatMessages(self: *Invoke, messages: []const Message, writer: anytype, use_color: bool) !void {
-        _ = use_color;
+    pub fn formatMessages(self: *Invoke, messages: []const Message, writer: anytype, useColor: bool) !void {
+        _ = useColor;
         _ = self;
 
         for (messages) |msg| {
@@ -310,7 +313,7 @@ test "invoke add and evaluate" {
 
     try invoke.add(.{
         .id = 0,
-        .level_match = .{ .exact = .err },
+        .levelMatch = .{ .exact = .err },
         .messages = &messages,
     });
 
@@ -337,7 +340,7 @@ test "invoke once firing" {
     try invoke.add(.{
         .id = 0,
         .once = true,
-        .level_match = .{ .exact = .info },
+        .levelMatch = .{ .exact = .info },
         .messages = &messages,
     });
 
@@ -365,13 +368,13 @@ test "invoke custom level" {
 
     try invoke.add(.{
         .id = 1,
-        .level_match = .{ .custom_name = "audit" },
+        .levelMatch = .{ .customName = "audit" },
         .messages = &messages,
     });
 
     var record = Record.init(std.testing.allocator, .info, "audited action");
     defer record.deinit();
-    record.custom_level_name = "audit";
+    record.customLevelName = "audit";
 
     const result = invoke.evaluate(&record);
     try std.testing.expect(result != null);
@@ -393,19 +396,19 @@ test "invoke min priority matches multiple levels" {
 
     try invoke.add(.{
         .id = 1,
-        .level_match = .{ .min_priority = 40 },
+        .levelMatch = .{ .minPriority = 40 },
         .messages = &messages,
     });
 
-    var err_record = Record.init(std.testing.allocator, .err, "error");
-    defer err_record.deinit();
-    const err_result = invoke.evaluate(&err_record);
-    try std.testing.expect(err_result != null);
-    if (err_result) |msgs| std.testing.allocator.free(msgs);
+    var errRecord = Record.init(std.testing.allocator, .err, "error");
+    defer errRecord.deinit();
+    const errResult = invoke.evaluate(&errRecord);
+    try std.testing.expect(errResult != null);
+    if (errResult) |msgs| std.testing.allocator.free(msgs);
 
-    var info_record = Record.init(std.testing.allocator, .info, "info");
-    defer info_record.deinit();
-    try std.testing.expect(invoke.evaluate(&info_record) == null);
+    var infoRecord = Record.init(std.testing.allocator, .info, "info");
+    defer infoRecord.deinit();
+    try std.testing.expect(invoke.evaluate(&infoRecord) == null);
 }
 
 test "invoke priority range" {
@@ -419,19 +422,19 @@ test "invoke priority range" {
 
     try invoke.add(.{
         .id = 1,
-        .level_match = .{ .priority_range = .{ .min = 30, .max = 40 } },
+        .levelMatch = .{ .priorityRange = .{ .min = 30, .max = 40 } },
         .messages = &messages,
     });
 
-    var warn_record = Record.init(std.testing.allocator, .warning, "warn");
-    defer warn_record.deinit();
-    const warn_result = invoke.evaluate(&warn_record);
-    try std.testing.expect(warn_result != null);
-    if (warn_result) |msgs| std.testing.allocator.free(msgs);
+    var warnRecord = Record.init(std.testing.allocator, .warning, "warn");
+    defer warnRecord.deinit();
+    const warnResult = invoke.evaluate(&warnRecord);
+    try std.testing.expect(warnResult != null);
+    if (warnResult) |msgs| std.testing.allocator.free(msgs);
 
-    var debug_record = Record.init(std.testing.allocator, .debug, "debug");
-    defer debug_record.deinit();
-    try std.testing.expect(invoke.evaluate(&debug_record) == null);
+    var debugRecord = Record.init(std.testing.allocator, .debug, "debug");
+    defer debugRecord.deinit();
+    try std.testing.expect(invoke.evaluate(&debugRecord) == null);
 }
 
 test "invoke message_contains filter" {
@@ -445,20 +448,20 @@ test "invoke message_contains filter" {
 
     try invoke.add(.{
         .id = 1,
-        .level_match = .{ .any = {} },
-        .message_contains = "database",
+        .levelMatch = .{ .any = {} },
+        .messageContains = "database",
         .messages = &messages,
     });
 
-    var match_record = Record.init(std.testing.allocator, .err, "database connection failed");
-    defer match_record.deinit();
-    const match_result = invoke.evaluate(&match_record);
-    try std.testing.expect(match_result != null);
-    if (match_result) |msgs| std.testing.allocator.free(msgs);
+    var matchRecord = Record.init(std.testing.allocator, .err, "database connection failed");
+    defer matchRecord.deinit();
+    const matchResult = invoke.evaluate(&matchRecord);
+    try std.testing.expect(matchResult != null);
+    if (matchResult) |msgs| std.testing.allocator.free(msgs);
 
-    var no_match_record = Record.init(std.testing.allocator, .err, "network timeout");
-    defer no_match_record.deinit();
-    try std.testing.expect(invoke.evaluate(&no_match_record) == null);
+    var noMatchRecord = Record.init(std.testing.allocator, .err, "network timeout");
+    defer noMatchRecord.deinit();
+    try std.testing.expect(invoke.evaluate(&noMatchRecord) == null);
 }
 
 test "invoke remove" {
@@ -476,8 +479,8 @@ test "invoke remove" {
     try std.testing.expect(removed);
     try std.testing.expectEqual(@as(usize, 2), invoke.count());
 
-    const not_removed = invoke.remove(999);
-    try std.testing.expect(!not_removed);
+    const notRemoved = invoke.remove(999);
+    try std.testing.expect(!notRemoved);
 }
 
 test "invoke format messages" {
@@ -505,7 +508,7 @@ test "invoke statistics" {
     const messages = [_]Invoke.Message{"msg"};
     try invoke.add(.{
         .id = 1,
-        .level_match = .{ .exact = .err },
+        .levelMatch = .{ .exact = .err },
         .messages = &messages,
     });
 
@@ -566,8 +569,8 @@ test "invoke cooldown" {
     const messages = [_]Invoke.Message{"cooled"};
     try invoke.add(.{
         .id = 1,
-        .level_match = .{ .any = {} },
-        .cooldown_ms = 10000,
+        .levelMatch = .{ .any = {} },
+        .cooldownMs = 10000,
         .messages = &messages,
     });
 
@@ -591,7 +594,7 @@ test "invoke reset once-fired" {
     try invoke.add(.{
         .id = 1,
         .once = true,
-        .level_match = .{ .any = {} },
+        .levelMatch = .{ .any = {} },
         .messages = &messages,
     });
 

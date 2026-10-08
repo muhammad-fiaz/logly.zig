@@ -29,7 +29,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     // Create logger (auto-sink enabled by default)
     const logger = try logly.Logger.init(allocator);

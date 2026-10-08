@@ -66,8 +66,8 @@ const Rotation = @import("logly").Rotation;
 pub fn init(
     allocator: std.mem.Allocator,
     path: []const u8,
-    interval_str: ?[]const u8, // "daily", "hourly", etc.
-    size_limit: ?u64,          // Bytes
+    intervalStr: ?[]const u8, // "daily", "hourly", etc.
+    sizeLimit: ?u64,          // Bytes
     retention: ?usize          // Max files to keep
 ) !Rotation
 ```
@@ -95,7 +95,7 @@ pub fn withNaming(self: *Rotation, strategy: NamingStrategy) void
 
 **Example:**
 ```zig
-rot.withNaming(.iso_datetime);
+rot.withNaming(.isoDatetime);
 ```
 
 #### `withNamingFormat`
@@ -135,7 +135,7 @@ pub fn setInterval(self: *Rotation, interval: ?RotationInterval) void
 Sets interval from string (`"daily"`, `"hourly"`, etc.) or disables interval when passed `null`.
 
 ```zig
-pub fn setIntervalFromString(self: *Rotation, interval_str: ?[]const u8) bool
+pub fn setIntervalFromString(self: *Rotation, intervalStr: ?[]const u8) bool
 ```
 
 Returns `true` when update succeeds.
@@ -145,7 +145,7 @@ Returns `true` when update succeeds.
 Sets size-based rotation threshold in bytes.
 
 ```zig
-pub fn setSizeLimit(self: *Rotation, size_limit: ?u64) void
+pub fn setSizeLimit(self: *Rotation, sizeLimit: ?u64) void
 ```
 
 #### `setRetentionCount`
@@ -153,7 +153,7 @@ pub fn setSizeLimit(self: *Rotation, size_limit: ?u64) void
 Sets retention count directly.
 
 ```zig
-pub fn setRetentionCount(self: *Rotation, retention_count: ?usize) void
+pub fn setRetentionCount(self: *Rotation, retentionCount: ?usize) void
 ```
 
 #### `setRetentionPolicy`
@@ -161,7 +161,7 @@ pub fn setRetentionCount(self: *Rotation, retention_count: ?usize) void
 Sets retention count and max age in one call.
 
 ```zig
-pub fn setRetentionPolicy(self: *Rotation, retention_count: ?usize, max_age_seconds: ?i64) void
+pub fn setRetentionPolicy(self: *Rotation, retentionCount: ?usize, maxAgeSeconds: ?i64) void
 ```
 
 #### `setMaxTotalSize`
@@ -237,16 +237,16 @@ pub fn applyConfig(self: *Rotation, config: RotationConfig) !void
 
 **Example:**
 ```zig
-try rot.applyConfig(global_config.rotation);
+try rot.applyConfig(globalConfig.rotation);
 ```
 
 ### Rotation Decision Helpers
 
-#### `getRotationReason(self: *Rotation, file_ptr: *std.Io.File) ?RotationReason`
+#### `getRotationReason(self: *Rotation, filePtr: *std.Io.File) ?RotationReason`
 
-Returns why rotation would occur right now (`interval`, `size`, or `interval_and_size`).
+Returns why rotation would occur right now (`interval`, `size`, or `intervalAndSize`).
 
-#### `shouldRotate(self: *Rotation, file_ptr: *std.Io.File) bool`
+#### `shouldRotate(self: *Rotation, filePtr: *std.Io.File) bool`
 
 Returns true when any rotation condition is currently met.
 
@@ -266,7 +266,7 @@ Returns the number of seconds since the last rotation.
 
 Returns the next rotated path without mutating internal state.
 
-#### `forceRotate(self: *Rotation, file_ptr: *std.Io.File) !void`
+#### `forceRotate(self: *Rotation, filePtr: *std.Io.File) !void`
 
 Forces an immediate rotation regardless of interval or size checks.
 
@@ -279,24 +279,24 @@ Global configuration struct for rotation defaults.
 pub const RotationConfig = struct {
     enabled: bool = false,
     interval: ?[]const u8 = null,
-    size_limit: ?u64 = null,
-    size_limit_str: ?[]const u8 = null,
-    retention_count: ?usize = null,
-    max_age_seconds: ?i64 = null,
-    naming_strategy: NamingStrategy = .timestamp,
-    naming_format: ?[]const u8 = null,
-    archive_dir: ?[]const u8 = null,
-    clean_empty_dirs: bool = false,
-    async_cleanup: bool = false,
-    keep_original: bool = false,                    // Keep original after compression
-    compress_on_retention: bool = false,            // Compress instead of delete during retention
-    delete_after_retention_compress: bool = true,   // Delete originals after retention compression
-    archive_root_dir: ?[]const u8 = null,           // Root directory for all archives
-    create_date_subdirs: bool = false,              // Create YYYY/MM/DD subdirectories
-    file_prefix: ?[]const u8 = null,                // Custom prefix for rotated files
-    file_suffix: ?[]const u8 = null,                // Custom suffix for rotated files
-    compression_algorithm: CompressionAlgorithm = .gzip,
-    compression_level: CompressionLevel = .default,
+    sizeLimit: ?u64 = null,
+    sizeLimitStr: ?[]const u8 = null,
+    retentionCount: ?usize = null,
+    maxAgeSeconds: ?i64 = null,
+    namingStrategy: NamingStrategy = .timestamp,
+    namingFormat: ?[]const u8 = null,
+    archiveDir: ?[]const u8 = null,
+    cleanEmptyDirs: bool = false,
+    asyncCleanup: bool = false,
+    keepOriginal: bool = false,                    // Keep original after compression
+    compressOnRetention: bool = false,            // Compress instead of delete during retention
+    deleteAfterRetentionCompress: bool = true,   // Delete originals after retention compression
+    archiveRootDir: ?[]const u8 = null,           // Root directory for all archives
+    createDateSubdirs: bool = false,              // Create YYYY/MM/DD subdirectories
+    filePrefix: ?[]const u8 = null,                // Custom prefix for rotated files
+    fileSuffix: ?[]const u8 = null,                // Custom suffix for rotated files
+    compressionAlgorithm: CompressionAlgorithm = .gzip,
+    compressionLevel: CompressionLevel = .default,
 };
 ```
 
@@ -306,32 +306,32 @@ pub const RotationConfig = struct {
 |-------|------|---------|-------------|
 | `enabled` | `bool` | `false` | Enable rotation |
 | `interval` | `?[]const u8` | `null` | Time-based interval (e.g., "daily") |
-| `size_limit` | `?u64` | `null` | Size-based rotation threshold (bytes) |
-| `retention_count` | `?usize` | `null` | Max files to retain |
-| `max_age_seconds` | `?i64` | `null` | Max age for rotated files |
-| `naming_strategy` | `NamingStrategy` | `.timestamp` | File naming strategy |
-| `archive_dir` | `?[]const u8` | `null` | Directory for rotated files |
-| `archive_root_dir` | `?[]const u8` | `null` | Centralized archive root |
-| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
-| `file_prefix` | `?[]const u8` | `null` | Prefix for rotated file names |
-| `file_suffix` | `?[]const u8` | `null` | Suffix for rotated file names |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd v0.1.8+) |
-| `compression_level` | `CompressionLevel` | `.default` | Compression level |
-| `keep_original` | `bool` | `false` | Keep original after compression |
-| `compress_on_retention` | `bool` | `false` | Compress instead of delete |
-| `delete_after_retention_compress` | `bool` | `true` | Delete after retention compression |
-| `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
-| `max_total_size` | `?u64` | `null` | Max combined size of all rotated files |
-| `on_rotate` | `?*const fn ([]const u8) void` | `null` | Custom callback invoked after rotation |
+| `sizeLimit` | `?u64` | `null` | Size-based rotation threshold (bytes) |
+| `retentionCount` | `?usize` | `null` | Max files to retain |
+| `maxAgeSeconds` | `?i64` | `null` | Max age for rotated files |
+| `namingStrategy` | `NamingStrategy` | `.timestamp` | File naming strategy |
+| `archiveDir` | `?[]const u8` | `null` | Directory for rotated files |
+| `archiveRootDir` | `?[]const u8` | `null` | Centralized archive root |
+| `createDateSubdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
+| `filePrefix` | `?[]const u8` | `null` | Prefix for rotated file names |
+| `fileSuffix` | `?[]const u8` | `null` | Suffix for rotated file names |
+| `compressionAlgorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd v0.1.8+) |
+| `compressionLevel` | `CompressionLevel` | `.default` | Compression level |
+| `keepOriginal` | `bool` | `false` | Keep original after compression |
+| `compressOnRetention` | `bool` | `false` | Compress instead of delete |
+| `deleteAfterRetentionCompress` | `bool` | `true` | Delete after retention compression |
+| `cleanEmptyDirs` | `bool` | `false` | Remove empty directories |
+| `maxTotalSize` | `?u64` | `null` | Max combined size of all rotated files |
+| `onRotate` | `?*const fn ([]const u8) void` | `null` | Custom callback invoked after rotation |
 
 ### Parsing Helpers
 
 `RotationConfig` provides convenient parsers to convert strings into configuration limits:
 
-#### `fromSize(size_str: []const u8) !u64`
+#### `fromSize(sizeStr: []const u8) !u64`
 Parses size strings like `"10MB"`, `"2.5GB"`, `"500KB"` into bytes.
 
-#### `fromInterval(dur_str: []const u8) !i64`
+#### `fromInterval(durStr: []const u8) !i64`
 Parses duration strings like `"30d"`, `"12h"`, `"45m"` into seconds.
 
 ## Enums
@@ -355,9 +355,9 @@ Defines how rotated files are named.
 | :--- | :--- | :--- |
 | `.timestamp` | `app.log.167882233` | Default for size/hourly rotation. |
 | `.date` | `app.log.2023-01-01` | Default for daily/weekly/monthly. |
-| `.iso_datetime` | `app.log.2023-01-01T12-00-00` | High precision. |
+| `.isoDatetime` | `app.log.2023-01-01T12-00-00` | High precision. |
 | `.index` | `app.log.1`, `app.log.2` | Rolling log style. |
-| `.custom` | `app-2023-01-01.log` | Uses `naming_format`. |
+| `.custom` | `app-2023-01-01.log` | Uses `namingFormat`. |
 
 ### RotationReason
 Explains which trigger caused rotation.
@@ -366,11 +366,11 @@ Explains which trigger caused rotation.
 | :--- | :--- |
 | `.interval` | Time interval threshold reached. |
 | `.size` | File size threshold reached. |
-| `.interval_and_size` | Both interval and size thresholds reached. |
+| `.intervalAndSize` | Both interval and size thresholds reached. |
 
 ### Custom Format Placeholders
 
-When using `.custom` (or setting `naming_format`), you can use:
+When using `.custom` (or setting `namingFormat`), you can use:
 
 | Placeholder | Description |
 | :--- | :--- |
@@ -391,12 +391,12 @@ The `RotationStats` struct provides insights into the rotation process.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `total_rotations` | `AtomicUnsigned` | Total number of rotations performed. |
-| `files_archived` | `AtomicUnsigned` | Number of files successfully compressed. |
-| `files_deleted` | `AtomicUnsigned` | Number of files deleted due to retention policy. |
-| `last_rotation_time_ms` | `AtomicUnsigned` | Duration of the last rotation operation. |
-| `rotation_errors` | `AtomicUnsigned` | Count of rotation failures. |
-| `compression_errors` | `AtomicUnsigned` | Count of compression failures. |
+| `totalRotations` | `AtomicUnsigned` | Total number of rotations performed. |
+| `filesArchived` | `AtomicUnsigned` | Number of files successfully compressed. |
+| `filesDeleted` | `AtomicUnsigned` | Number of files deleted due to retention policy. |
+| `lastRotationTimeMs` | `AtomicUnsigned` | Duration of the last rotation operation. |
+| `rotationErrors` | `AtomicUnsigned` | Count of rotation failures. |
+| `compressionErrors` | `AtomicUnsigned` | Count of compression failures. |
 
 ### Getter Methods
 

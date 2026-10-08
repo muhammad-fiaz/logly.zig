@@ -36,9 +36,9 @@ try logger.addSink(logly.SinkConfig.createSizeRotatingSink("logs/data.log", 50 *
 You can use `logger.add()` with a struct literal to configure rotation inline, without needing helper functions. This gives you full access to all `SinkConfig` fields.
 
 ```zig
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.log",
-    .size_limit_str = "10MB",       // Use string for easy size definition
+    .sizeLimitStr = "10MB",       // Use string for easy size definition
     // .size_limit = 10 * 1024 * 1024, // Or raw bytes
     .retention = 5,                 // Keep 5 rotated files
     .rotation = "daily",            // Optional: Combine time and size
@@ -51,8 +51,8 @@ _ = try logger.add(.{
 var rot = try logly.Rotation.init(allocator, "logs/app.log", "hourly", null, 7);
 defer rot.deinit();
 
-if (rot.nextRotationAt()) |epoch_seconds| {
-    std.debug.print("Next rotation at: {d}\n", .{epoch_seconds});
+if (rot.nextRotationAt()) |epochSeconds| {
+    std.debug.print("Next rotation at: {d}\n", .{epochSeconds});
 }
 
 const age = rot.rotationAgeSeconds();
@@ -180,14 +180,14 @@ Configure rotation defaults globally. This is useful for enforcing consistency a
 const config = logly.Config{
     .rotation = .{
         .enabled = true,
-        .naming_strategy = .iso_datetime, // Use ISO timestamps
-        .archive_dir = "logs/archive",    // Move old files here
-        .max_age_seconds = 86400 * 30,    // 30 days max age
-        .retention_count = 50,            // Max 50 files total
-        .clean_empty_dirs = true,         // Clean up archive dir if empty
+        .namingStrategy = .isoDatetime, // Use ISO timestamps
+        .archiveDir = "logs/archive",    // Move old files here
+        .maxAgeSeconds = 86400 * 30,    // 30 days max age
+        .retentionCount = 50,            // Max 50 files total
+        .cleanEmptyDirs = true,         // Clean up archive dir if empty
         .interval = "hourly",             // Default interval
-        .keep_original = false,           // Delete originals after compression
-        .compress_on_retention = true,    // Compress during retention cleanup
+        .keepOriginal = false,           // Delete originals after compression
+        .compressOnRetention = true,    // Compress during retention cleanup
     }
 };
 
@@ -215,7 +215,7 @@ try rot.withCompression(.{
 });
 
 // 2. Use ISO timestamps for better sorting
-rot.withNaming(.iso_datetime); 
+rot.withNaming(.isoDatetime); 
 
 // 3. Move rotated files to a dedicated archive folder
 try rot.withArchiveDir("logs/archive/access");
@@ -282,7 +282,7 @@ You can combine rotation with dynamic paths (e.g., date-based directories).
 
 ```zig
 // Writes to logs/2023-10-25/app.log and rotates hourly within that folder
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/{date}/app.log",
     .rotation = "hourly",
     .retention = 24,
@@ -298,6 +298,6 @@ Control exactly how the rotated file is named using a format string.
 try logger.add(.{
     .path = "app.log",
     .rotation = "daily",
-    .naming_format = "{base}-{date}{ext}",
+    .namingFormat = "{base}-{date}{ext}",
 });
 ```

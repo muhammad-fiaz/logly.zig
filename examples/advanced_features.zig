@@ -11,8 +11,8 @@ pub fn main() !void {
 
     // 1. Custom Theme
     const theme = logly.Formatter.Theme{
-        .info = "35", // Magenta for info
-        .err = "33", // Yellow for error
+        .info = logly.Color.parse("35").?, // Magenta for info
+        .err = logly.Color.parse("33").?, // Yellow for error
     };
 
     // Apply theme to the first sink (console)

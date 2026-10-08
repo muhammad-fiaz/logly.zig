@@ -123,14 +123,14 @@ Updates the global configuration of the logger in a thread-safe manner.
 
 ## Distributed Logging
 
-### `withTrace(trace_id: []const u8, span_id: ?[]const u8) DistributedLogger`
+### `withTrace(traceId: []const u8, spanId: ?[]const u8) DistributedLogger`
 
 Creates a lightweight `DistributedLogger` handle that wraps the main logger but automatically injects the specified trace context into every log message. This is the preferred way to handle distributed tracing in concurrent environments (like request handlers).
 
 ```zig
 // In a request handler
-const req_logger = logger.withTrace(header_trace_id, header_span_id);
-try req_logger.info("Processing request", null);
+const reqLogger = logger.withTrace(header_trace_id, header_span_id);
+try reqLogger.info("Processing request", null);
 // Result: { "trace_id": "...", "span_id": "...", "message": "Processing request" }
 ```
 
@@ -142,8 +142,8 @@ Parses an incoming W3C `traceparent` header and returns a request-scoped `Distri
 
 ```zig
 const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-const req_logger = try logger.withTraceparent(incoming);
-try req_logger.info("Continuing distributed trace", null);
+const reqLogger = try logger.withTraceparent(incoming);
+try reqLogger.info("Continuing distributed trace", null);
 ```
 
 ### `setTraceContextFromTraceparent(traceparent: []const u8) !void`
@@ -160,7 +160,7 @@ Formats the current global logger trace context as a W3C `traceparent` header st
 - Returns `null` when trace context is incomplete.
 - Returned string must be freed by the caller.
 
-### `setTraceContext(trace_id: []const u8, span_id: ?[]const u8) !void`
+### `setTraceContext(traceId: []const u8, spanId: ?[]const u8) !void`
 
 **Legacy**. Sets the global trace context for the logger. This affects *all* subsequent logs from this logger instance. Not recommended for multi-threaded applications where different threads handle different requests.
 
@@ -172,27 +172,27 @@ Formats the current global logger trace context as a W3C `traceparent` header st
 
 The `Logger` supports several callbacks for monitoring and extending behavior. These are set directly on the `Logger` instance fields.
 
-### `on_record_logged: ?*const fn (Level, []const u8, *const Record) void`
+### `onRecordLogged: ?*const fn (Level, []const u8, *const Record) void`
 
 Invoked when a record is successfully logged.
 - **Parameters**: `level`, `message`, `record`
 
-### `on_record_filtered: ?*const fn ([]const u8, *const Record) void`
+### `onRecordFiltered: ?*const fn ([]const u8, *const Record) void`
 
 Invoked when a record is filtered/dropped before output (e.g., by level or filter).
 - **Parameters**: `reason`, `record`
 
-### `on_sink_error: ?*const fn ([]const u8, []const u8) void`
+### `onSinkError: ?*const fn ([]const u8, []const u8) void`
 
 Invoked when a sink encounters an error.
-- **Parameters**: `sink_name`, `error_msg`
+- **Parameters**: `sinkName`, `errorMsg`
 
-### `on_logger_initialized: ?*const fn (*const LoggerStats) void`
+### `onLoggerInitialized: ?*const fn (*const LoggerStats) void`
 
 Invoked when the logger is initialized.
 - **Parameters**: `logger_stats`
 
-### `on_logger_destroyed: ?*const fn (*const LoggerStats) void`
+### `onLoggerDestroyed: ?*const fn (*const LoggerStats) void`
 
 Invoked when the logger is destroyed.
 - **Parameters**: `final_stats`
@@ -204,18 +204,18 @@ The `LoggerStats` struct provides comprehensive statistics for logging operation
 ```zig
 pub const LoggerStats = struct {
     /// Total number of records successfully logged.
-    total_records_logged: std.atomic.Value(Constants.AtomicUnsigned),
+    totalRecordsLogged: std.atomic.Value(Constants.AtomicUnsigned),
     /// Number of records filtered/dropped before output.
-    records_filtered: std.atomic.Value(Constants.AtomicUnsigned),
+    recordsFiltered: std.atomic.Value(Constants.AtomicUnsigned),
     /// Number of sink write errors encountered.
-    sink_errors: std.atomic.Value(Constants.AtomicUnsigned),
+    sinkErrors: std.atomic.Value(Constants.AtomicUnsigned),
     /// Number of currently active sinks.
-    active_sinks: std.atomic.Value(u32),
+    activeSinks: std.atomic.Value(u32),
     /// Total bytes written across all sinks.
-    bytes_written: std.atomic.Value(Constants.AtomicUnsigned),
+    bytesWritten: std.atomic.Value(Constants.AtomicUnsigned),
 
     /// Calculate records per second (requires elapsed seconds).
-    pub fn recordsPerSecond(self: *const LoggerStats, elapsed_seconds: f64) f64;
+    pub fn recordsPerSecond(self: *const LoggerStats, elapsedSeconds: f64) f64;
 
     /// Calculate average bytes per record.
     pub fn avgBytesPerRecord(self: *const LoggerStats) f64;
@@ -248,7 +248,7 @@ pub const LoggerStats = struct {
     pub fn getActiveSinks(self: *const LoggerStats) u32;
 
     /// Calculate bytes per second (requires elapsed time in ms).
-    pub fn bytesPerSecond(self: *const LoggerStats, elapsed_ms: i64) f64;
+    pub fn bytesPerSecond(self: *const LoggerStats, elapsedMs: i64) f64;
 };
 ```
 
@@ -271,11 +271,11 @@ if (stats.hasSinkErrors()) {
 }
 
 // Throughput (with elapsed time)
-const elapsed_ms = std.time.milliTimestamp() - start_time;
-std.debug.print("Throughput: {d:.2} bytes/sec\n", .{stats.bytesPerSecond(elapsed_ms)});
+const elapsedMs = std.time.milliTimestamp() - startTime;
+std.debug.print("Throughput: {d:.2} bytes/sec\n", .{stats.bytesPerSecond(elapsedMs)});
 ```
 
-### `log_callback: ?*const fn (*const Record) anyerror!void`
+### `logCallback: ?*const fn (*const Record) anyerror!void`
 
 A generic callback invoked for every log record. Can be used for custom processing or integration with other systems.
 
@@ -290,8 +290,8 @@ Adds a new output sink (e.g., console, file) with the specified configuration.
 
 ```zig
 // Both are equivalent
-_ = try logger.addSink(.{ .path = "app.log" });
-_ = try logger.add(.{ .path = "app.log" });
+ _ = try logger.addSink(.{ .path = "app.log" });
+ _ = try logger.add(.{ .path = "app.log" });
 ```
 
 ### `removeSink(id: usize) void`
@@ -419,20 +419,20 @@ Returns a snapshot of current logging metrics, or null if metrics are not enable
 
 ```zig
 if (logger.getMetrics()) |metrics| {
-    std.debug.print("Total records: {}\n", .{metrics.total_records});
-    std.debug.print("Errors: {}\n", .{metrics.error_count});
+    std.debug.print("Total records: {}\n", .{metrics.totalRecords});
+    std.debug.print("Errors: {}\n", .{metrics.errorCount});
 }
 ```
 
 ## Distributed Tracing
 
-### `withTrace(trace_id: []const u8, span_id: ?[]const u8) DistributedLogger`
+### `withTrace(traceId: []const u8, spanId: ?[]const u8) DistributedLogger`
 
 Creates a request-scoped `DistributedLogger` without mutating global logger context.
 
 ```zig
-const req_logger = logger.withTrace("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7");
-try req_logger.info("Incoming request", @src());
+const reqLogger = logger.withTrace("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7");
+try reqLogger.info("Incoming request", @src());
 ```
 
 ### `withTraceparent(traceparent: []const u8) !DistributedLogger`
@@ -441,12 +441,12 @@ Builds a request-scoped distributed logger directly from an incoming W3C `tracep
 
 ```zig
 const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-const req_logger = try logger.withTraceparent(incoming);
+const reqLogger = try logger.withTraceparent(incoming);
 ```
 
 Returns `LoggerError.InvalidTraceparent` on malformed input.
 
-### `setTraceContext(trace_id: []const u8, span_id: ?[]const u8) !void`
+### `setTraceContext(traceId: []const u8, spanId: ?[]const u8) !void`
 
 Sets the trace context for distributed tracing. All subsequent log records will include these IDs.
 
@@ -474,7 +474,7 @@ if (try logger.getTraceparentHeader(allocator)) |header| {
 }
 ```
 
-### `setCorrelationId(correlation_id: []const u8) !void`
+### `setCorrelationId(correlationId: []const u8) !void`
 
 Sets a correlation ID for request correlation across services.
 
@@ -484,7 +484,7 @@ try logger.setCorrelationId("corr-12345");
 
 ### `clearTraceContext() void`
 
-Clears all trace context (trace_id, span_id, correlation_id).
+Clears all trace context (traceId, spanId, correlationId).
 
 ### `startSpan(name: []const u8) !SpanContext`
 
@@ -498,12 +498,12 @@ defer span.end(null) catch {};
 try logger.info("Executing query");
 ```
 
-### `DistributedLogger.child(child_span_id: []const u8) DistributedLogger`
+### `DistributedLogger.child(childSpanId: []const u8) DistributedLogger`
 
-Returns a child distributed logger that reuses the same `trace_id` and replaces `span_id`.
+Returns a child distributed logger that reuses the same `traceId` and replaces `spanId`.
 
 ```zig
-const child = req_logger.child("7a085853722dc6d2");
+const child = reqLogger.child("7a085853722dc6d2");
 try child.debug("Nested operation", @src());
 ```
 
@@ -512,7 +512,7 @@ try child.debug("Nested operation", @src());
 Returns a distributed logger bound to a specific module name for module-level filtering/routing.
 
 ```zig
-const db = req_logger.inModule("database.query");
+const db = reqLogger.inModule("database.query");
 try db.info("Executing SQL", @src());
 ```
 
@@ -536,8 +536,8 @@ Gets the log level for a specific module, or null if not set.
 Returns a scoped logger for a specific module.
 
 ```zig
-const db_logger = logger.scoped("database");
-try db_logger.info("Connection established");
+const dbLogger = logger.scoped("database");
+try dbLogger.info("Connection established");
 ```
 
 ## Custom Levels
@@ -608,7 +608,7 @@ std.debug.print("Custom levels: {}\n", .{logger.getCustomLevelCount()});
 
 Removes a previously registered custom level.
 
-### `custom(level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### `custom(levelName: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs using a registered custom level. The entire line is colored:
 
@@ -618,7 +618,7 @@ try logger.custom("audit", "User login detected", @src());
 // Output: [2024-01-15 10:30:45] [AUDIT] myfile.zig:42:0: User login detected (bold magenta)
 ```
 
-### `customf(level_name: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
+### `customf(levelName: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
 Formatted logging with custom levels:
 
@@ -649,18 +649,18 @@ Temporarily disables all logging.
 
 > [!NOTE]
 > **Dispatch priority**: When multiple logging backends are enabled, records are dispatched in the following order:
-> 1. **AsyncLogger** (highest priority) — if `async_config.enabled = true`, records are queued in the ring buffer for background processing.
-> 2. **Thread Pool** — if `thread_pool.enabled = true`, records are submitted as tasks to the worker pool.
+> 1. **AsyncLogger** (highest priority) — if `asyncConfig.enabled = true`, records are queued in the ring buffer for background processing.
+> 2. **Thread Pool** — if `threadPool.enabled = true`, records are submitted as tasks to the worker pool.
 > 3. **Direct Sinks** (lowest priority) — records are written synchronously to all configured sinks.
 >
-> `auto_flush` only applies to the **sync** and **async_logger** paths. The thread pool path does **not** flush on `auto_flush` because the task is merely queued to a worker — no sink write has occurred yet at the point `dispatchRecord` returns.
+> `autoFlush` only applies to the **sync** and **asyncLogger** paths. The thread pool path does **not** flush on `autoFlush` because the task is merely queued to a worker — no sink write has occurred yet at the point `dispatchRecord` returns.
 
 ### `flush() !void`
 
 Flushes all sinks, ensuring all buffered data is written.
-Note: `config.auto_flush` defaults to `false` for throughput. Enable it when immediate durability is required.
+Note: `config.autoFlush` defaults to `false` for throughput. Enable it when immediate durability is required.
 
-### `reloadFromFile(file_path: []const u8) !void`
+### `reloadFromFile(filePath: []const u8) !void`
 
 Dynamically reloads the configuration of the logger from a JSON file on disk. This will update the logger's active levels, sinks, formats, and invoke triggers at runtime without dropping log records or restarting the application.
 
@@ -754,7 +754,7 @@ try logger.fatal("System crash imminent!", @src());
 ```
 
 
-### `custom(level_name: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
+### `custom(levelName: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message using a user-defined custom level. The level must be registered first.
 
@@ -770,8 +770,8 @@ For formatted messages, use the `f`-suffix methods:
 ```zig
 // Use infof, debugf, etc. for formatted messages
 try logger.infof("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src());
-try logger.warningf("Request took {d}ms", .{elapsed_ms}, @src());
-try logger.critf("Failed after {d} retries: {s}", .{ retry_count, error_msg }, @src());
+try logger.warningf("Request took {d}ms", .{elapsedMs}, @src());
+try logger.critf("Failed after {d} retries: {s}", .{ retry_count, errorMsg }, @src());
 ```
 
 ### Legacy Format Methods (f-suffix)
@@ -805,16 +805,16 @@ try logger.infof("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src()
 
 - **Alias**: `critf()`
 
-### `customf(level_name: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
+### `customf(levelName: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
 ## Source Location Display
 
-When you enable `show_filename` and `show_lineno` in the configuration and pass `@src()` to logging calls, the output includes clickable file:line:column information:
+When you enable `showFilename` and `showLineno` in the configuration and pass `@src()` to logging calls, the output includes clickable file:line:column information:
 
 ```zig
 var config = logly.Config.default();
-config.show_filename = true;
-config.show_lineno = true;
+config.showFilename = true;
+config.showLineno = true;
 logger.configure(config);
 
 try logger.info("This message has source location", @src());
@@ -825,11 +825,11 @@ The format `file:line:column:` is compatible with most terminals and IDEs, allow
 
 ## Utility Methods
 
-### `logError(message: []const u8, err_val: anyerror) !void`
+### `logError(message: []const u8, errVal: anyerror) !void`
 
 Logs an error with automatic error name resolution.
 
-### `logTimed(level: Level, message: []const u8, start_time: i128, src: ?std.builtin.SourceLocation) !i128`
+### `logTimed(level: Level, message: []const u8, startTime: i128, src: ?std.builtin.SourceLocation) !i128`
 
 Logs a message with elapsed time calculation and optional source location.
 

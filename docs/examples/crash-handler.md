@@ -28,7 +28,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     std.debug.print("=== Logly v0.2.0 Crash Handler Example ===\n\n", .{});
 
@@ -53,7 +53,7 @@ pub fn main() !void {
     std.debug.print("[Crash handler] All sinks are flushed synchronously to capture the crash context.\n", .{});
 
     // --- Show active_logger state ---
-    if (logly.crash.active_logger != null) {
+    if (logly.crash.activeLogger != null) {
         std.debug.print("[Crash handler] active_logger is registered: YES\n", .{});
     }
 
@@ -79,8 +79,8 @@ When you compile and run this example with `zig build run-crash_handler` or `zig
 
 [Crash handler] logPanic was called — in production the process would abort.
 [Crash handler] All sinks are flushed synchronously to capture the crash context.
-[Crash handler] active_logger is registered: YES
-[Crash handler] active_logger unregistered: YES
+[Crash handler] activeLogger is registered: YES
+[Crash handler] activeLogger unregistered: YES
 
 === Crash Handler Example Complete ===
 ```

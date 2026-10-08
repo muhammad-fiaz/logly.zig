@@ -9,7 +9,7 @@ pub fn main() !void {
     // Enable ANSI colors on Windows
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Custom Levels Full Feature Test ===\n\n", .{});
+    std.debug.print("Custom Levels Full Feature Test\n\n", .{});
 
     // Test 1: Custom levels with console color output
     try testConsoleWithColor(allocator);
@@ -29,19 +29,19 @@ pub fn main() !void {
     // Test 6: Custom levels with formatted messages
     try testFormatted(allocator);
 
-    std.debug.print("\n=== All Custom Level Tests Completed! ===\n", .{});
+    std.debug.print("\nAll Custom Level Tests Completed!\n", .{});
 }
 
 fn testConsoleWithColor(allocator: std.mem.Allocator) !void {
-    std.debug.print("--- Test 1: Console with Color ---\n", .{});
+    std.debug.print("Test 1: Console with Color\n", .{});
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     // Register custom levels with distinct colors
-    try logger.addCustomLevel("AUDIT", 25, "35;1"); // Magenta Bold
-    try logger.addCustomLevel("SECURITY", 45, "31;7"); // Red Reverse
-    try logger.addCustomLevel("METRIC", 15, "36"); // Cyan
+    try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35;1").?); // Magenta Bold
+    try logger.addCustomLevel("SECURITY", 45, logly.Color.parse("31;7").?); // Red Reverse
+    try logger.addCustomLevel("METRIC", 15, logly.Color.parse("36").?); // Cyan
 
     try logger.info("Standard INFO message", @src());
     try logger.custom("AUDIT", "User login recorded", @src());
@@ -53,11 +53,11 @@ fn testConsoleWithColor(allocator: std.mem.Allocator) !void {
 }
 
 fn testFileOutput(allocator: std.mem.Allocator) !void {
-    std.debug.print("--- Test 2: File Output (Text) ---\n", .{});
+    std.debug.print("Test 2: File Output (Text)\n", .{});
 
     // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
@@ -71,7 +71,7 @@ fn testFileOutput(allocator: std.mem.Allocator) !void {
     _ = try logger.addSink(.{});
 
     // Register custom level
-    try logger.addCustomLevel("AUDIT", 25, "35");
+    try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
 
     try logger.info("Standard info to file", @src());
     try logger.custom("AUDIT", "Custom AUDIT level in file", @src());
@@ -83,19 +83,19 @@ fn testFileOutput(allocator: std.mem.Allocator) !void {
 }
 
 fn testJsonConsole(allocator: std.mem.Allocator) !void {
-    std.debug.print("--- Test 3: JSON Console Output ---\n", .{});
+    std.debug.print("Test 3: JSON Console Output\n", .{});
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     var config = logly.Config.default();
-    config.json = true;
-    config.pretty_json = true;
+    config.format = .json;
+    config.prettyJson = true;
     config.color = true;
     logger.configure(config);
 
     // Register custom level
-    try logger.addCustomLevel("AUDIT", 25, "35");
+    try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
 
     try logger.info("Standard JSON info", @src());
     try logger.custom("AUDIT", "Custom AUDIT in JSON format", @src());
@@ -104,11 +104,11 @@ fn testJsonConsole(allocator: std.mem.Allocator) !void {
 }
 
 fn testJsonFile(allocator: std.mem.Allocator) !void {
-    std.debug.print("--- Test 4: JSON File Output ---\n", .{});
+    std.debug.print("Test 4: JSON File Output\n", .{});
 
     // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
@@ -116,19 +116,19 @@ fn testJsonFile(allocator: std.mem.Allocator) !void {
     // Add JSON file sink
     _ = try logger.addSink(.{
         .path = "logs/custom_levels.json",
-        .json = true,
-        .pretty_json = true,
+        .format = .json,
+        .prettyJson = true,
     });
 
     // Add console sink
     _ = try logger.addSink(.{
-        .json = true,
-        .pretty_json = true,
+        .format = .json,
+        .prettyJson = true,
     });
 
     // Register custom level
-    try logger.addCustomLevel("AUDIT", 25, "35");
-    try logger.addCustomLevel("SECURITY", 45, "31");
+    try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
+    try logger.addCustomLevel("SECURITY", 45, logly.Color.parse("31").?);
 
     try logger.info("JSON file test - standard info", @src());
     try logger.custom("AUDIT", "JSON file test - custom AUDIT", @src());
@@ -140,14 +140,14 @@ fn testJsonFile(allocator: std.mem.Allocator) !void {
 }
 
 fn testWithContext(allocator: std.mem.Allocator) !void {
-    std.debug.print("--- Test 5: Custom Levels with Context ---\n", .{});
+    std.debug.print("Test 5: Custom Levels with Context\n", .{});
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     var config = logly.Config.default();
-    config.json = true;
-    config.pretty_json = true;
+    config.format = .json;
+    config.prettyJson = true;
     logger.configure(config);
 
     // Bind context
@@ -155,7 +155,7 @@ fn testWithContext(allocator: std.mem.Allocator) !void {
     try logger.bind("version", .{ .string = "2.0.0" });
 
     // Register custom level
-    try logger.addCustomLevel("AUDIT", 25, "35");
+    try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
 
     try logger.custom("AUDIT", "User authentication successful", @src());
 
@@ -169,14 +169,14 @@ fn testWithContext(allocator: std.mem.Allocator) !void {
 }
 
 fn testFormatted(allocator: std.mem.Allocator) !void {
-    std.debug.print("--- Test 6: Formatted Custom Level Messages ---\n", .{});
+    std.debug.print("Test 6: Formatted Custom Level Messages\n", .{});
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     // Register custom level
-    try logger.addCustomLevel("METRIC", 15, "36");
-    try logger.addCustomLevel("AUDIT", 25, "35;1");
+    try logger.addCustomLevel("METRIC", 15, logly.Color.parse("36").?);
+    try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35;1").?);
 
     // Formatted messages with custom levels
     try logger.customf("METRIC", "Response time: {d}ms", .{42}, @src());

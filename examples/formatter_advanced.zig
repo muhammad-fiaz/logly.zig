@@ -9,9 +9,9 @@ pub fn main() !void {
     // Enable ANSI colors on Windows
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("============================================================\n", .{});
-    std.debug.print("  ADVANCED FORMATTING DEMO (v0.2.0)\n", .{});
-    std.debug.print("============================================================\n\n", .{});
+    std.debug.print("\n", .{});
+    std.debug.print("  Advanced Formatting Demo\n", .{});
+    std.debug.print("\n\n", .{});
 
     // Create a mock record to format
     var record = logly.Record.init(allocator, .warning, "Database connection latency detected");
@@ -29,51 +29,43 @@ pub fn main() !void {
     var formatter = logly.Formatter.init(allocator);
     defer formatter.deinit();
 
-    // -------------------------------------------------------------
     // 1. NDJSON (Newline Delimited JSON) Formatting
-    // -------------------------------------------------------------
-    std.debug.print("--- 1. NDJSON Format ---\n", .{});
-    var ndjson_config = logly.Config.default();
-    ndjson_config.ndjson = true;
-    ndjson_config.include_trace_id = true;
+    std.debug.print("1. NDJSON Format\n", .{});
+    var ndjsonConfig = logly.Config.default();
+    ndjsonConfig.format = .ndjson;
+    ndjsonConfig.includeTraceId = true;
 
-    const ndjson_out = try formatter.format(&record, ndjson_config);
-    defer allocator.free(ndjson_out);
-    std.debug.print("{s}\n", .{ndjson_out});
+    const ndjsonOut = try formatter.format(&record, ndjsonConfig);
+    defer allocator.free(ndjsonOut);
+    std.debug.print("{s}\n", .{ndjsonOut});
 
-    // -------------------------------------------------------------
     // 2. Logfmt Formatting
-    // -------------------------------------------------------------
-    std.debug.print("--- 2. Logfmt Format ---\n", .{});
-    var logfmt_config = logly.Config.default();
-    logfmt_config.logfmt = true;
+    std.debug.print("2. Logfmt Format\n", .{});
+    var logfmtConfig = logly.Config.default();
+    logfmtConfig.format = .logfmt;
 
-    const logfmt_out = try formatter.format(&record, logfmt_config);
-    defer allocator.free(logfmt_out);
-    std.debug.print("{s}\n\n", .{logfmt_out});
+    const logfmtOut = try formatter.format(&record, logfmtConfig);
+    defer allocator.free(logfmtOut);
+    std.debug.print("{s}\n\n", .{logfmtOut});
 
-    // -------------------------------------------------------------
-    // 3. CEF (Common Event Format) Formatting
-    // -------------------------------------------------------------
-    std.debug.print("--- 3. CEF (Common Event Format) ---\n", .{});
-    var cef_config = logly.Config.default();
-    cef_config.cef = true;
+    // 3. Syslog (RFC5424) Formatting
+    std.debug.print("3. Syslog Format\n", .{});
+    var syslogConfig = logly.Config.default();
+    syslogConfig.format = .syslog;
 
-    const cef_out = try formatter.format(&record, cef_config);
-    defer allocator.free(cef_out);
-    std.debug.print("{s}\n\n", .{cef_out});
+    const syslogOut = try formatter.format(&record, syslogConfig);
+    defer allocator.free(syslogOut);
+    std.debug.print("{s}\n\n", .{syslogOut});
 
-    // -------------------------------------------------------------
     // 4. Custom Template with Padding and Alignment
-    // -------------------------------------------------------------
-    std.debug.print("--- 4. Template Formatting with Alignments ---\n", .{});
-    var template_config = logly.Config.default();
+    std.debug.print("4. Template Formatting with Alignments\n", .{});
+    var templateConfig = logly.Config.default();
     // Template placeholder padding/alignment: e.g. {level:8} pads level to 8 chars
-    template_config.log_format = "[{level:8}] {time} | {message} (module={module})";
+    templateConfig.logFormat = "[{level:8}] {time} | {message} (module={module})";
 
-    const template_out = try formatter.format(&record, template_config);
-    defer allocator.free(template_out);
-    std.debug.print("{s}\n", .{template_out});
+    const templateOut = try formatter.format(&record, templateConfig);
+    defer allocator.free(templateOut);
+    std.debug.print("{s}\n", .{templateOut});
 
     std.debug.print("\nAdvanced Formatting Example completed successfully!\n", .{});
 }

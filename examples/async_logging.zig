@@ -8,7 +8,7 @@ pub fn main() !void {
 
     // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
@@ -16,8 +16,8 @@ pub fn main() !void {
     // Add a file sink with async writing enabled (default)
     _ = try logger.addSink(.{
         .path = "logs/async.log",
-        .async_write = true,
-        .buffer_size = 4096, // 4KB buffer
+        .asyncWrite = true,
+        .bufferSize = 4096, // 4KB buffer
     });
 
     // Add a console sink

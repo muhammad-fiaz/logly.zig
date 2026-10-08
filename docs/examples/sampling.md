@@ -28,7 +28,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -51,9 +51,9 @@ pub fn main() !void {
 
 ```zig
 // Rate limit to 100 messages per 1000ms (1 second)
-var sampler = Sampler.init(allocator, .{ .rate_limit = .{
-    .max_records = 100,
-    .window_ms = 1000,
+var sampler = Sampler.init(allocator, .{ .rateLimit = .{
+    .maxRecords = 100,
+    .windowMs = 1000,
 }});
 defer sampler.deinit();
 
@@ -98,9 +98,9 @@ pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var sampler = Sampler.init(allocator, .{ .rate_limit = .{
-        .max_records = 5,
-        .window_ms = 1000,
+    var sampler = Sampler.init(allocator, .{ .rateLimit = .{
+        .maxRecords = 5,
+        .windowMs = 1000,
     }});
     defer sampler.deinit();
 
@@ -127,10 +127,10 @@ pub fn main() !void {
 ```zig
 // Automatically adjust sampling based on throughput
 var sampler = Sampler.init(allocator, .{ .adaptive = .{
-    .target_rate = 1000,            // Target 1000 logs/second
-    .min_sample_rate = 0.01,        // Never go below 1%
-    .max_sample_rate = 1.0,         // Up to 100%
-    .adjustment_interval_ms = 1000, // Adjust every second
+    .targetRate = 1000,            // Target 1000 logs/second
+    .minSampleRate = 0.01,        // Never go below 1%
+    .maxSampleRate = 1.0,         // Up to 100%
+    .adjustmentIntervalMs = 1000, // Adjust every second
 }});
 defer sampler.deinit();
 ```
@@ -139,7 +139,7 @@ defer sampler.deinit();
 
 ```zig
 // Sample every 10th record
-var sampler = Sampler.init(allocator, .{ .every_n = 10 });
+var sampler = Sampler.init(allocator, .{ .everyN = 10 });
 defer sampler.deinit();
 
 // Only every 10th log passes through

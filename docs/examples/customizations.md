@@ -39,10 +39,10 @@ The example is organized into 6 demonstrations:
 
 ```zig
 var config = logly.Config.default();
-config.logs_root_path = "./logs";
+config.logsRootPath = "./logs";
 
-_ = try logger.addSink(logly.SinkConfig.file("application.log"));
-_ = try logger.addSink(logly.SinkConfig.file("errors.log"));
+ _ = try logger.addSink(logly.SinkConfig.file("application.log"));
+ _ = try logger.addSink(logly.SinkConfig.file("errors.log"));
 ```
 
 This automatically creates the `./logs` directory and stores both log files there.
@@ -57,11 +57,11 @@ This automatically creates the `./logs` directory and stores both log files ther
 ### 2. Format Structure Customization
 
 ```zig
-config.format_structure = .{
-    .message_prefix = ">>> ",
-    .message_suffix = " <<<",
-    .field_separator = " :: ",
-    .enable_nesting = true,
+config.formatStructure = .{
+    .messagePrefix = ">>> ",
+    .messageSuffix = " <<<",
+    .fieldSeparator = " :: ",
+    .enableNesting = true,
 };
 ```
 
@@ -70,10 +70,10 @@ Customizes how messages appear in the output.
 ### 3. Color Customization Per Level
 
 ```zig
-config.level_colors = .{
-    .info_color = "\x1b[36m",      // Cyan
-    .warning_color = "\x1b[35m",   // Magenta
-    .error_color = "\x1b[31m",     // Red
+config.levelColors = .{
+    .infoColor = "\x1b[36m",      // Cyan
+    .warningColor = "\x1b[35m",   // Magenta
+    .errorColor = "\x1b[31m",     // Red
 };
 ```
 
@@ -84,9 +84,9 @@ Each log level can have a unique color scheme.
 ```zig
 config.highlighters = .{
     .enabled = true,
-    .alert_on_match = true,
-    .alert_min_severity = .warning,
-    .log_matches = true,
+    .alertOnMatch = true,
+    .alertMinSeverity = .warning,
+    .logMatches = true,
 };
 ```
 
@@ -97,28 +97,28 @@ Matches patterns in log messages and triggers alerts.
 All features work together seamlessly:
 
 ```zig
-var config_combined = logly.Config.default();
-config_combined.logs_root_path = "./logs";
+var configCombined = logly.Config.default();
+configCombined.logsRootPath = "./logs";
 
-config_combined.format_structure = .{
-    .message_prefix = "[APP] ",
-    .field_separator = " | ",
-    .enable_nesting = true,
+configCombined.formatStructure = .{
+    .messagePrefix = "[APP] ",
+    .fieldSeparator = " | ",
+    .enableNesting = true,
 };
 
-config_combined.level_colors = .{
-    .info_color = "\x1b[34m",
-    .warning_color = "\x1b[33m",
-    .error_color = "\x1b[31m",
+configCombined.levelColors = .{
+    .infoColor = "\x1b[34m",
+    .warningColor = "\x1b[33m",
+    .errorColor = "\x1b[31m",
 };
 
-config_combined.highlighters = .{
+configCombined.highlighters = .{
     .enabled = true,
-    .alert_on_match = true,
-    .log_matches = true,
+    .alertOnMatch = true,
+    .logMatches = true,
 };
 
-const logger = try logly.Logger.initWithConfig(allocator, config_combined);
+const logger = try logly.Logger.initWithConfig(allocator, configCombined);
 ```
 
 ## Expected Output
@@ -170,30 +170,30 @@ Each file contains the formatted log entries with custom colors (in ANSI format)
 
 | Feature | Config Field | Purpose |
 |---------|-------------|---------|
-| Root Path | `logs_root_path` | Set directory for all file sinks |
-| Format | `format_structure` | Customize message structure |
-| Colors | `level_colors` | Per-level ANSI color codes |
+| Root Path | `logsRootPath` | Set directory for all file sinks |
+| Format | `formatStructure` | Customize message structure |
+| Colors | `levelColors` | Per-level ANSI color codes |
 | Highlighters | `highlighters` | Pattern matching & alerts |
 
 ## Use Cases
 
 **Development:**
 ```zig
-config.logs_root_path = "./dev_logs";
-config.format_structure.message_prefix = "[DEV] ";
+config.logsRootPath = "./dev_logs";
+config.formatStructure.messagePrefix = "[DEV] ";
 config.highlighters.enabled = true;
 ```
 
 **Production:**
 ```zig
-config.logs_root_path = "/var/log/myapp";
-config.level_colors.critical_color = "\x1b[1;31m";
+config.logsRootPath = "/var/log/myapp";
+config.levelColors.criticalColor = "\x1b[1;31m";
 ```
 
 **Testing:**
 ```zig
-config.logs_root_path = "./test_output";
-config.highlighters.log_matches = true;
+config.logsRootPath = "./test_output";
+config.highlighters.logMatches = true;
 ```
 
 ## Learning Resources

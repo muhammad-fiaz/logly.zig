@@ -18,12 +18,12 @@ pub fn main() !void {
     try logger.errf("Failed to connect to {s}:{d}", .{ "localhost", 8080 }, @src());
 
     // 2. Scoped Formatted Logging
-    const db_logger = logger.scoped("database");
-    try db_logger.debugf("Query executed in {d}ms: {s}", .{ 15, "SELECT * FROM users" }, @src());
-    try db_logger.infof("Connected to database '{s}'", .{"production_db"}, @src());
+    const dbLogger = logger.scoped("database");
+    try dbLogger.debugf("Query executed in {d}ms: {s}", .{ 15, "SELECT * FROM users" }, @src());
+    try dbLogger.infof("Connected to database '{s}'", .{"production_db"}, @src());
 
     // 3. Custom Level Formatted Logging
-    try logger.addCustomLevel("AUDIT", 22, "35"); // Magenta
+    try logger.addCustomLevel("AUDIT", 22, logly.Color.parse("35").?); // Magenta
     try logger.customf("AUDIT", "User {s} performed action: {s}", .{ "Bob", "DELETE" }, @src());
 
     // 4. Mixing styles
