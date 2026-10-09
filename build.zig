@@ -107,6 +107,9 @@ pub fn build(b: *std.Build) void {
         .{ .name = "telemetry_mini", .path = "examples/telemetry_mini.zig" },
         .{ .name = "color_modes", .path = "examples/color_modes.zig" },
         .{ .name = "formats", .path = "examples/formats.zig" },
+        .{ .name = "tamper_evident", .path = "examples/tamper_evident.zig" },
+        .{ .name = "allocator_strategies", .path = "examples/allocator_strategies.zig" },
+        .{ .name = "stack_traces", .path = "examples/stack_traces.zig" },
     };
 
     // Create run-all-examples step that runs all examples sequentially
