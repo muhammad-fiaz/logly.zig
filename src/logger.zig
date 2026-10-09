@@ -32,9 +32,10 @@ pub const Logger = struct {
         parentSpanId: ?[]const u8 = null,
     };
 
-    /// Logger-specific errors for distributed tracing helpers.
+    /// Logger-specific errors for distributed tracing and sink lookup helpers.
     pub const LoggerError = error{
         InvalidTraceparent,
+        SinkNotFound,
     };
 
     /// Logger statistics for monitoring and diagnostics.
@@ -209,11 +210,13 @@ pub const Logger = struct {
     }
 
     fn initBaseLoggerWithIo(allocator: std.mem.Allocator, config: Config, io_handle: std.Io) !*Logger {
+        var cfg = config;
+        cfg.resolveConflicts();
         const logger = try allocator.create(Logger);
         logger.* = .{
             .allocator = allocator,
             .io = io_handle,
-            .config = config,
+            .config = cfg,
             .sinks = .empty,
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .customLevels = std.StringHashMap(CustomLevel).init(allocator),
@@ -345,8 +348,10 @@ pub const Logger = struct {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
 
-        self.config = config;
-        self.atomicLevel.store(@backingInt(config.level), .monotonic);
+        var cfg = config;
+        cfg.resolveConflicts();
+        self.config = cfg;
+        self.atomicLevel.store(@backingInt(cfg.level), .monotonic);
     }
 
     /// Reloads the logger configuration from a JSON file.
@@ -782,6 +787,78 @@ pub const Logger = struct {
             return self.sinks.items[id].stats;
         }
         return null;
+    }
+
+    /// Finds a sink by its configured name.
+    pub fn getSinkByName(self: *Logger, name: []const u8) ?*Sink {
+        self.mutex.lockSharedUncancelable(self.io);
+        defer self.mutex.unlockShared(self.io);
+
+        if (self.asyncLogger) |al| {
+            al.mutex.lockUncancelable(al.io);
+            defer al.mutex.unlock(al.io);
+            for (al.sinks.items) |sink| {
+                if (sink.getName()) |n| {
+                    if (std.mem.eql(u8, n, name)) return sink;
+                }
+            }
+            return null;
+        }
+
+        for (self.sinks.items) |sink| {
+            if (sink.getName()) |n| {
+                if (std.mem.eql(u8, n, name)) return sink;
+            }
+        }
+        return null;
+    }
+
+    /// Sets a sink's minimum log level by sink index at runtime.
+    pub fn setSinkLevel(self: *Logger, id: usize, level: ?Level) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        s.setLevel(level);
+    }
+
+    /// Sets a sink's maximum log level by sink index at runtime.
+    pub fn setSinkMaxLevel(self: *Logger, id: usize, maxLevel: ?Level) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        s.setMaxLevel(maxLevel);
+    }
+
+    /// Sets a sink's format by sink index at runtime.
+    pub fn setSinkFormat(self: *Logger, id: usize, format: ?Config.Format) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        s.setFormat(format);
+    }
+
+    /// Enables or disables a sink by sink index at runtime.
+    pub fn setSinkEnabled(self: *Logger, id: usize, enabled: bool) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        if (enabled) s.enable() else s.disable();
+    }
+
+    /// Sets color display on a sink by sink index at runtime.
+    pub fn setSinkColor(self: *Logger, id: usize, color: ?bool) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        s.setColor(color);
+    }
+
+    /// Sets a sink's custom log format template by sink index at runtime.
+    pub fn setSinkLogFormat(self: *Logger, id: usize, logFormat: ?[]const u8) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        s.setLogFormat(logFormat);
+    }
+
+    /// Sets a sink's time format pattern by sink index at runtime.
+    pub fn setSinkTimeFormat(self: *Logger, id: usize, timeFormat: ?[]const u8) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        s.setTimeFormat(timeFormat);
+    }
+
+    /// Reconfigures a sink by sink index at runtime.
+    pub fn configureSink(self: *Logger, id: usize, config: SinkConfig) !void {
+        const s = self.getSink(id) orelse return LoggerError.SinkNotFound;
+        s.configure(config);
     }
 
     /// Checks if a sink is enabled by index.
@@ -1541,6 +1618,121 @@ pub const Logger = struct {
     /// Returns the total number of records logged.
     pub fn getRecordCount(self: *Logger) u64 {
         return @as(u64, self.recordCount.load(.monotonic));
+    }
+
+    /// Sets the minimum log level for the logger at runtime.
+    pub fn setLevel(self: *Logger, level: Level) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.level = level;
+        self.tempLevel = null;
+        self.tempLevelExpiresAt = 0;
+        self.atomicLevel.store(@backingInt(level), .monotonic);
+    }
+
+    /// Dynamically enables or disables terminal color rendering at runtime.
+    pub fn setColor(self: *Logger, color: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.color = color;
+        self.config.globalColorDisplay = color;
+        self.config.resolveConflicts();
+    }
+
+    /// Sets the color rendering mode at runtime.
+    pub fn setColorMode(self: *Logger, mode: Config.ColorMode) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.colorMode = mode;
+        self.config.resolveConflicts();
+    }
+
+    /// Dynamically sets the default serialization format for the logger at runtime.
+    pub fn setFormat(self: *Logger, format: Config.Format) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.format = format;
+        self.config.resolveConflicts();
+    }
+
+    /// Enables or disables pretty-printed JSON formatting at runtime.
+    pub fn setPrettyJson(self: *Logger, pretty: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.prettyJson = pretty;
+    }
+
+    /// Enables or disables tamper-evident SHA-256 record chaining at runtime.
+    pub fn setTamperEvident(self: *Logger, tamperEvident: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.tamperEvident = tamperEvident;
+    }
+
+    /// Dynamically sets custom log format template at runtime.
+    pub fn setLogFormat(self: *Logger, logFormat: ?[]const u8) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.logFormat = logFormat;
+    }
+
+    /// Dynamically sets timestamp format pattern at runtime.
+    pub fn setTimeFormat(self: *Logger, timeFormat: []const u8) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.timeFormat = timeFormat;
+    }
+
+    /// Dynamically sets timestamp timezone at runtime.
+    pub fn setTimezone(self: *Logger, timezone: Config.Timezone) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.timezone = timezone;
+    }
+
+    /// Dynamically enables or disables automatic sink flushing after each log.
+    pub fn setAutoFlush(self: *Logger, autoFlush: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.autoFlush = autoFlush;
+    }
+
+    /// Dynamically toggles global console output across all console sinks.
+    pub fn setGlobalConsoleDisplay(self: *Logger, enabled: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.globalConsoleDisplay = enabled;
+    }
+
+    /// Dynamically toggles global file storage across all file sinks.
+    pub fn setGlobalFileStorage(self: *Logger, enabled: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.globalFileStorage = enabled;
+    }
+
+    /// Dynamically toggles global color display.
+    pub fn setGlobalColorDisplay(self: *Logger, enabled: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.globalColorDisplay = enabled;
+        self.config.color = enabled;
+    }
+
+    /// Dynamically enables or disables stack trace capturing and symbolization.
+    pub fn setCaptureStackTrace(self: *Logger, capture: bool, symbolize: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.captureStackTrace = capture or symbolize;
+        self.config.symbolizeStackTrace = symbolize;
+    }
+
+    /// Applies a partial configuration override to the logger at runtime.
+    pub fn applyOverride(self: *Logger, override: Config.ConfigOverride) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.applyOverride(override);
+        self.atomicLevel.store(@backingInt(self.config.level), .monotonic);
     }
 
     /// Returns the currently active minimum log level.
@@ -3072,5 +3264,79 @@ test "thread pool submitWithDrop records drop and fires hook on overflow" {
     try std.testing.expectEqual(@as(u64, 1), pool.getStats().getDropped());
 
     gate.unlock(Utils.defaultIo());
+}
+
+test "runtime config override and conflict resolution" {
+    const allocator = std.testing.allocator;
+    var config = Config.default();
+    config.autoSink = false;
+    config.level = .info;
+
+    var logger = try Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+
+    // 1. Runtime setLevel
+    try std.testing.expectEqual(Level.info, logger.getLevel());
+    logger.setLevel(.debug);
+    try std.testing.expectEqual(Level.debug, logger.getLevel());
+
+    // 2. Runtime setColor & setColorMode
+    logger.setColor(false);
+    try std.testing.expect(!logger.config.color);
+    try std.testing.expect(!logger.config.globalColorDisplay);
+
+    logger.setColor(true);
+    try std.testing.expect(logger.config.color);
+    try std.testing.expect(logger.config.globalColorDisplay);
+
+    logger.setColorMode(.none);
+    try std.testing.expect(!logger.config.color);
+    try std.testing.expect(!logger.config.globalColorDisplay);
+
+    // 3. Runtime setFormat
+    logger.setFormat(.ndjson);
+    try std.testing.expectEqual(Config.Format.ndjson, logger.config.format);
+
+    // 4. Runtime partial override
+    logger.applyOverride(.{
+        .level = .warning,
+        .format = .json,
+        .prettyJson = true,
+        .symbolizeStackTrace = true,
+    });
+    try std.testing.expectEqual(Level.warning, logger.getLevel());
+    try std.testing.expectEqual(Config.Format.json, logger.config.format);
+    try std.testing.expect(logger.config.prettyJson);
+    try std.testing.expect(logger.config.symbolizeStackTrace);
+    try std.testing.expect(logger.config.captureStackTrace); // conflict resolved: symbolization auto-enables capture
+
+    // 5. Sink runtime overrides and lookup
+    var sinkCfg = SinkConfig.memory();
+    sinkCfg.name = "audit_memory";
+    const sinkIdx = try logger.addSink(sinkCfg);
+
+    const foundSink = logger.getSinkByName("audit_memory");
+    try std.testing.expect(foundSink != null);
+
+    try logger.setSinkLevel(sinkIdx, .err);
+    try std.testing.expectEqual(Level.err, foundSink.?.getLevel().?);
+
+    try logger.setSinkFormat(sinkIdx, .logfmt);
+    try std.testing.expectEqual(Config.Format.logfmt, foundSink.?.getFormat().?);
+
+    try logger.setSinkEnabled(sinkIdx, false);
+    try std.testing.expect(!foundSink.?.isEnabled());
+
+    try logger.setSinkEnabled(sinkIdx, true);
+    try std.testing.expect(foundSink.?.isEnabled());
+
+    // 6. SinkConfig conflict resolution (inverted level range)
+    var inverted = SinkConfig.console();
+    inverted.level = .fatal;
+    inverted.maxLevel = .debug;
+    inverted.resolveConflicts();
+    try std.testing.expect(inverted.level.?.priority() <= inverted.maxLevel.?.priority());
+    try std.testing.expectEqual(Level.debug, inverted.level.?);
+    try std.testing.expectEqual(Level.fatal, inverted.maxLevel.?);
 }
 

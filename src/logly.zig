@@ -45,6 +45,7 @@ pub const RedactionConfig = Config.RedactionConfig;
 pub const BufferConfig = Config.BufferConfig;
 pub const ErrorHandling = Config.ErrorHandling;
 pub const Timezone = Config.Timezone;
+pub const ConfigOverride = Config.ConfigOverride;
 
 // Enterprise components
 pub const Filter = @import("filter.zig").Filter;

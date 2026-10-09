@@ -110,6 +110,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "tamper_evident", .path = "examples/tamper_evident.zig" },
         .{ .name = "allocator_strategies", .path = "examples/allocator_strategies.zig" },
         .{ .name = "stack_traces", .path = "examples/stack_traces.zig" },
+        .{ .name = "runtime_config_override", .path = "examples/runtime_config_override.zig" },
     };
 
     // Create run-all-examples step that runs all examples sequentially

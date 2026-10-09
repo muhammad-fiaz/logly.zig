@@ -337,6 +337,27 @@ pub const SinkConfig = struct {
         propagate,
     };
 
+    /// Resolves configuration conflicts for this sink.
+    pub fn resolveConflicts(self: *SinkConfig) void {
+        if (self.level != null and self.maxLevel != null) {
+            if (self.level.?.priority() > self.maxLevel.?.priority()) {
+                const tmp = self.level;
+                self.level = self.maxLevel;
+                self.maxLevel = tmp;
+            }
+        }
+
+        if (self.format) |f| {
+            if (f != .json) {
+                self.prettyJson = false;
+            }
+        }
+
+        if (self.isMemory) {
+            self.path = null;
+        }
+    }
+
     /// Returns the default sink configuration (Console, async, standard format).
     pub fn default() SinkConfig {
         return .{};
@@ -632,14 +653,16 @@ pub const Sink = struct {
 
     /// Initializes a new sink with explicit Io handle.
     pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: SinkConfig) !*Sink {
+        var cfg = config;
+        cfg.resolveConflicts();
         const sink = try allocator.create(Sink);
         sink.* = .{
             .allocator = allocator,
             .io = io_handle,
-            .config = config,
+            .config = cfg,
             .formatter = Formatter.initWithIo(allocator, io_handle),
             .buffer = .empty,
-            .enabled = config.enabled,
+            .enabled = cfg.enabled,
             .jsonFirstEntry = true,
         };
         errdefer sink.deinit();
@@ -1130,6 +1153,114 @@ pub const Sink = struct {
         return self.config.name;
     }
 
+    /// Dynamically sets the sink's minimum log level at runtime.
+    pub fn setLevel(self: *Sink, level: ?Level) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.level = level;
+    }
+
+    /// Dynamically sets the sink's maximum log level at runtime.
+    pub fn setMaxLevel(self: *Sink, maxLevel: ?Level) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.maxLevel = maxLevel;
+    }
+
+    /// Dynamically sets the sink's serialization format at runtime.
+    pub fn setFormat(self: *Sink, format: ?Config.Format) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.format = format;
+    }
+
+    /// Dynamically enables or disables color output for this sink.
+    pub fn setColor(self: *Sink, color: ?bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.color = color;
+    }
+
+    /// Dynamically sets custom log format template for this sink.
+    pub fn setLogFormat(self: *Sink, logFormat: ?[]const u8) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.logFormat = logFormat;
+    }
+
+    /// Dynamically sets time format pattern for this sink.
+    pub fn setTimeFormat(self: *Sink, timeFormat: ?[]const u8) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.timeFormat = timeFormat;
+    }
+
+    /// Dynamically sets pretty JSON formatting for this sink.
+    pub fn setPrettyJson(self: *Sink, pretty: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.prettyJson = pretty;
+    }
+
+    /// Dynamically sets tamper-evident chaining for this sink.
+    pub fn setTamperEvident(self: *Sink, tamper: bool) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.config.tamperEvident = tamper;
+    }
+
+    /// Returns the sink's current minimum log level.
+    pub fn getLevel(self: *Sink) ?Level {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        return self.config.level;
+    }
+
+    /// Returns the sink's current maximum log level.
+    pub fn getMaxLevel(self: *Sink) ?Level {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        return self.config.maxLevel;
+    }
+
+    /// Returns the sink's current serialization format.
+    pub fn getFormat(self: *Sink) ?Config.Format {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        return self.config.format;
+    }
+
+    /// Returns the sink's color setting.
+    pub fn getColor(self: *Sink) ?bool {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        return self.config.color;
+    }
+
+
+    /// Reconfigures mutable runtime settings on this sink.
+    pub fn configure(self: *Sink, config: SinkConfig) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        var cfg = config;
+        cfg.resolveConflicts();
+        self.config.level = cfg.level;
+        self.config.maxLevel = cfg.maxLevel;
+        self.config.format = cfg.format;
+        self.config.prettyJson = cfg.prettyJson;
+        self.config.tamperEvident = cfg.tamperEvident;
+        self.config.color = cfg.color;
+        self.config.includeTimestamp = cfg.includeTimestamp;
+        self.config.includeLevel = cfg.includeLevel;
+        self.config.includeSource = cfg.includeSource;
+        self.config.includeTraceId = cfg.includeTraceId;
+        self.config.logFormat = cfg.logFormat;
+        self.config.timeFormat = cfg.timeFormat;
+        self.config.rateLimitPerSecond = cfg.rateLimitPerSecond;
+        self.config.filter = cfg.filter;
+        self.enabled = cfg.enabled;
+    }
+
     /// Writes a log record to the sink.
     pub fn write(self: *Sink, record: *const Record, globalConfig: anytype) !void {
         return self.writeWithAllocator(record, globalConfig, null);
@@ -1250,14 +1381,33 @@ pub const Sink = struct {
         if (self.config.tamperEvident) {
             effectiveConfig.tamperEvident = true;
         }
+        if (self.config.logFormat) |lf| {
+            effectiveConfig.logFormat = lf;
+        }
+        if (self.config.timeFormat) |tf| {
+            effectiveConfig.timeFormat = tf;
+        }
+        if (!self.config.includeTimestamp) {
+            effectiveConfig.showTime = false;
+        }
+        if (self.config.includeSource) {
+            effectiveConfig.showFilename = true;
+            effectiveConfig.showLineno = true;
+            effectiveConfig.showFunction = true;
+        }
+        if (self.config.includeTraceId) {
+            effectiveConfig.includeTraceId = true;
+        }
 
         // Override Color setting
-        // If sink is a file, default color to false unless explicitly enabled
+        // If sink is a file/network, default color to false unless explicitly enabled
         if (self.config.color) |c| {
             effectiveConfig.globalColorDisplay = c;
+            effectiveConfig.color = c;
         } else if (self.file != null or self.stream != null or self.udpSocket != null) {
             // Default to no color for files/network
             effectiveConfig.globalColorDisplay = false;
+            effectiveConfig.color = false;
         }
 
         // The sink-owned formatter is reused for every record. A temporary

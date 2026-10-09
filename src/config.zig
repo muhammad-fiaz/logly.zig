@@ -2628,15 +2628,140 @@ pub const Config = struct {
         return result;
     }
 
-    const JsonConfig = struct {
-        level: ?[]const u8 = null,
+    /// Partial configuration structure for runtime overrides.
+    pub const ConfigOverride = struct {
+        level: ?Level = null,
         color: ?bool = null,
-        format: ?[]const u8 = null,
+        colorMode: ?ColorMode = null,
+        format: ?Format = null,
         prettyJson: ?bool = null,
         tamperEvident: ?bool = null,
+        logFormat: ?[]const u8 = null,
+        timeFormat: ?[]const u8 = null,
+        timezone: ?Timezone = null,
+        autoFlush: ?bool = null,
+        globalColorDisplay: ?bool = null,
+        globalConsoleDisplay: ?bool = null,
+        globalFileStorage: ?bool = null,
+        captureStackTrace: ?bool = null,
+        symbolizeStackTrace: ?bool = null,
         appName: ?[]const u8 = null,
         appVersion: ?[]const u8 = null,
         environment: ?[]const u8 = null,
+        maxMessageLength: ?usize = null,
+        structured: ?bool = null,
+        debugMode: ?bool = null,
+        showTime: ?bool = null,
+        showModule: ?bool = null,
+        showFunction: ?bool = null,
+        showFilename: ?bool = null,
+        showLineno: ?bool = null,
+        showThreadId: ?bool = null,
+        showProcessId: ?bool = null,
+        includeHostname: ?bool = null,
+        includePid: ?bool = null,
+        includeTraceId: ?bool = null,
+    };
+
+    /// Resolves configuration conflicts and ensures internal consistency.
+    pub fn resolveConflicts(self: *Config) void {
+        // Color consistency: if color is false or mode is .none, disable color display
+        if (!self.color or self.colorMode == .none) {
+            self.color = false;
+            self.globalColorDisplay = false;
+        } else if (!self.globalColorDisplay) {
+            self.color = false;
+        }
+
+        // Stack trace capture vs symbolization: symbolization requires capture
+        if (self.symbolizeStackTrace) {
+            self.captureStackTrace = true;
+        }
+
+        // Format vs prettyJson: pretty-printing only applies to JSON documents
+        if (self.format != .json) {
+            self.prettyJson = false;
+        }
+
+        // Rate limit sanity
+        if (self.rateLimit.enabled and self.rateLimit.maxPerSecond == 0) {
+            self.rateLimit.maxPerSecond = Constants.RateLimitDefaults.maxPerSecond;
+        }
+
+        // Buffer size sanity
+        if (self.asyncConfig.enabled and self.bufferConfig.size == 0) {
+            self.bufferConfig.size = Constants.BufferSizes.format;
+        }
+    }
+
+    /// Merges partial override settings into this configuration and resolves conflicts.
+    pub fn applyOverride(self: *Config, override: ConfigOverride) void {
+        if (override.level) |v| self.level = v;
+        if (override.color) |v| self.color = v;
+        if (override.colorMode) |v| self.colorMode = v;
+        if (override.format) |v| self.format = v;
+        if (override.prettyJson) |v| self.prettyJson = v;
+        if (override.tamperEvident) |v| self.tamperEvident = v;
+        if (override.logFormat) |v| self.logFormat = v;
+        if (override.timeFormat) |v| self.timeFormat = v;
+        if (override.timezone) |v| self.timezone = v;
+        if (override.autoFlush) |v| self.autoFlush = v;
+        if (override.globalColorDisplay) |v| self.globalColorDisplay = v;
+        if (override.globalConsoleDisplay) |v| self.globalConsoleDisplay = v;
+        if (override.globalFileStorage) |v| self.globalFileStorage = v;
+        if (override.captureStackTrace) |v| self.captureStackTrace = v;
+        if (override.symbolizeStackTrace) |v| self.symbolizeStackTrace = v;
+        if (override.appName) |v| self.appName = v;
+        if (override.appVersion) |v| self.appVersion = v;
+        if (override.environment) |v| self.environment = v;
+        if (override.maxMessageLength) |v| self.maxMessageLength = v;
+        if (override.structured) |v| self.structured = v;
+        if (override.debugMode) |v| self.debugMode = v;
+        if (override.showTime) |v| self.showTime = v;
+        if (override.showModule) |v| self.showModule = v;
+        if (override.showFunction) |v| self.showFunction = v;
+        if (override.showFilename) |v| self.showFilename = v;
+        if (override.showLineno) |v| self.showLineno = v;
+        if (override.showThreadId) |v| self.showThreadId = v;
+        if (override.showProcessId) |v| self.showProcessId = v;
+        if (override.includeHostname) |v| self.includeHostname = v;
+        if (override.includePid) |v| self.includePid = v;
+        if (override.includeTraceId) |v| self.includeTraceId = v;
+
+        self.resolveConflicts();
+    }
+
+    const JsonConfig = struct {
+        level: ?[]const u8 = null,
+        color: ?bool = null,
+        colorMode: ?[]const u8 = null,
+        format: ?[]const u8 = null,
+        prettyJson: ?bool = null,
+        tamperEvident: ?bool = null,
+        autoFlush: ?bool = null,
+        autoSink: ?bool = null,
+        globalColorDisplay: ?bool = null,
+        globalConsoleDisplay: ?bool = null,
+        globalFileStorage: ?bool = null,
+        captureStackTrace: ?bool = null,
+        symbolizeStackTrace: ?bool = null,
+        timeFormat: ?[]const u8 = null,
+        timezone: ?[]const u8 = null,
+        showTime: ?bool = null,
+        showModule: ?bool = null,
+        showFunction: ?bool = null,
+        showFilename: ?bool = null,
+        showLineno: ?bool = null,
+        showThreadId: ?bool = null,
+        showProcessId: ?bool = null,
+        includeHostname: ?bool = null,
+        includePid: ?bool = null,
+        includeTraceId: ?bool = null,
+        maxMessageLength: ?usize = null,
+        structured: ?bool = null,
+        debugMode: ?bool = null,
+        enableMetrics: ?bool = null,
+        enableTracing: ?bool = null,
     };
 
     /// Parses a JSON string to create a Config instance.
@@ -2653,12 +2778,64 @@ pub const Config = struct {
             config.level = if (std.ascii.eqlIgnoreCase(lvl, "trace") or std.ascii.eqlIgnoreCase(lvl, "trc")) .trace else if (std.ascii.eqlIgnoreCase(lvl, "debug") or std.ascii.eqlIgnoreCase(lvl, "dbg")) .debug else if (std.ascii.eqlIgnoreCase(lvl, "info")) .info else if (std.ascii.eqlIgnoreCase(lvl, "notice") or std.ascii.eqlIgnoreCase(lvl, "note")) .notice else if (std.ascii.eqlIgnoreCase(lvl, "success") or std.ascii.eqlIgnoreCase(lvl, "ok")) .success else if (std.ascii.eqlIgnoreCase(lvl, "warning") or std.ascii.eqlIgnoreCase(lvl, "warn")) .warning else if (std.ascii.eqlIgnoreCase(lvl, "err") or std.ascii.eqlIgnoreCase(lvl, "error")) .err else if (std.ascii.eqlIgnoreCase(lvl, "fail")) .fail else if (std.ascii.eqlIgnoreCase(lvl, "critical") or std.ascii.eqlIgnoreCase(lvl, "crit")) .critical else if (std.ascii.eqlIgnoreCase(lvl, "fatal") or std.ascii.eqlIgnoreCase(lvl, "panic")) .fatal else Level.fromString(lvl) orelse return error.InvalidLogLevel;
         }
         if (j.color) |val| config.color = val;
+        if (j.colorMode) |cm| {
+            if (std.ascii.eqlIgnoreCase(cm, "horizontal")) {
+                config.colorMode = .horizontal;
+            } else if (std.ascii.eqlIgnoreCase(cm, "vertical")) {
+                config.colorMode = .vertical;
+            } else if (std.ascii.eqlIgnoreCase(cm, "none")) {
+                config.colorMode = .none;
+            }
+        }
         if (j.format) |name| {
             config.format = Format.fromString(name) orelse return error.InvalidFormat;
         }
         if (j.prettyJson) |val| config.prettyJson = val;
         if (j.tamperEvident) |val| config.tamperEvident = val;
+        if (j.autoFlush) |val| config.autoFlush = val;
+        if (j.autoSink) |val| config.autoSink = val;
+        if (j.globalColorDisplay) |val| config.globalColorDisplay = val;
+        if (j.globalConsoleDisplay) |val| config.globalConsoleDisplay = val;
+        if (j.globalFileStorage) |val| config.globalFileStorage = val;
+        if (j.captureStackTrace) |val| config.captureStackTrace = val;
+        if (j.symbolizeStackTrace) |val| config.symbolizeStackTrace = val;
+        if (j.showTime) |val| config.showTime = val;
+        if (j.showModule) |val| config.showModule = val;
+        if (j.showFunction) |val| config.showFunction = val;
+        if (j.showFilename) |val| config.showFilename = val;
+        if (j.showLineno) |val| config.showLineno = val;
+        if (j.showThreadId) |val| config.showThreadId = val;
+        if (j.showProcessId) |val| config.showProcessId = val;
+        if (j.includeHostname) |val| config.includeHostname = val;
+        if (j.includePid) |val| config.includePid = val;
+        if (j.includeTraceId) |val| config.includeTraceId = val;
+        if (j.maxMessageLength) |val| config.maxMessageLength = val;
+        if (j.structured) |val| config.structured = val;
+        if (j.debugMode) |val| config.debugMode = val;
+        if (j.enableMetrics) |val| config.enableMetrics = val;
+        if (j.enableTracing) |val| config.enableTracing = val;
+        if (j.timeFormat) |tf| {
+            if (std.ascii.eqlIgnoreCase(tf, "iso8601")) {
+                config.timeFormat = TimeFormat.iso8601;
+            } else if (std.ascii.eqlIgnoreCase(tf, "rfc3339")) {
+                config.timeFormat = TimeFormat.rfc3339;
+            } else if (std.ascii.eqlIgnoreCase(tf, "unix")) {
+                config.timeFormat = TimeFormat.unix;
+            } else if (std.ascii.eqlIgnoreCase(tf, "unix_ms")) {
+                config.timeFormat = TimeFormat.unixMs;
+            } else if (std.ascii.eqlIgnoreCase(tf, "default")) {
+                config.timeFormat = TimeFormat.defaultPattern;
+            }
+        }
+        if (j.timezone) |tz| {
+            if (std.ascii.eqlIgnoreCase(tz, "utc")) {
+                config.timezone = .utc;
+            } else if (std.ascii.eqlIgnoreCase(tz, "local")) {
+                config.timezone = .local;
+            }
+        }
 
+        config.resolveConflicts();
         return config;
     }
 
