@@ -93,10 +93,19 @@ Initializes a new `Logger` instance with default configuration.
 
 ### `initWithConfig(allocator: std.mem.Allocator, config: Config) !*Logger`
 
-Initializes a new `Logger` instance with a specific configuration preset.
+Initializes a new `Logger` instance with a specific configuration preset. If `config.io` is set, that I/O handle is used; otherwise, it defaults to `logly.defaultIo()`.
 
 - **allocator**: The memory allocator used for internal structures.
 - **config**: The configuration to use (e.g., `ConfigPresets.production()`).
+- **Returns**: A pointer to the initialized `Logger` or an error.
+
+### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Config) !*Logger`
+
+Initializes a new `Logger` instance with an explicit `std.Io` handle and configuration preset.
+
+- **allocator**: The memory allocator used for internal structures.
+- **io_handle**: The explicit `std.Io` handle to use for all I/O operations.
+- **config**: The configuration to use.
 - **Returns**: A pointer to the initialized `Logger` or an error.
 
 ### Allocator Strategy

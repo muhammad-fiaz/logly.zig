@@ -40,7 +40,7 @@ For more control, use the AsyncLogger directly:
 ```zig
 const logly = @import("logly");
 
-var asyncLogger = try logly.AsyncLogger.init(allocator, .{
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
     .bufferSize = 8192,
     .flushIntervalMs = 100,
     .batchSize = 64,
@@ -348,19 +348,18 @@ const critical_config = logly.AsyncLogger.AsyncConfig{
 ## Example: High-Throughput Setup
 
 ```zig
-var asyncLogger = try logly.AsyncLogger.init(allocator, .{
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
     .bufferSize = 65536,
     .flushIntervalMs = 500,
     .batchSize = 256,
     .overflowPolicy = .dropOldest,
-    .preallocate_buffers = true,
 });
 ```
 
 ## Example: Low-Latency Setup
 
 ```zig
-var asyncLogger = try logly.AsyncLogger.init(allocator, .{
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
     .bufferSize = 1024,
     .flushIntervalMs = 10,
     .batchSize = 16,
@@ -374,10 +373,10 @@ var asyncLogger = try logly.AsyncLogger.init(allocator, .{
 - [Thread Pool Guide](thread-pool.md)
 - [Configuration Guide](configuration.md)
 
-## New Methods (v0.0.9)
+## Lifecycle & State
 
 ```zig
-var asyncLogger = try logly.AsyncLogger.init(allocator, config);
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, config);
 defer asyncLogger.deinit();
 
 // State methods

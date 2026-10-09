@@ -600,6 +600,23 @@ pub fn computeRedactionHash(allocator: std.mem.Allocator, value: []const u8) ![]
 
 **Format:** `[HASH:<16_char_hex>]`
 
+## I/O Utilities
+
+### defaultIo / io
+
+Returns a stateless single-threaded `std.Io` handle targeting standard I/O and process-level file systems. This serves as the default fallback for all Logly subsystems when explicit I/O handles are omitted.
+
+```zig
+pub fn defaultIo() std.Io;
+pub const io = defaultIo;
+```
+
+**Usage:**
+
+```zig
+const io_handle = logly.defaultIo(); // or logly.Utils.defaultIo()
+```
+
 ## General Utilities
 
 ### clamp

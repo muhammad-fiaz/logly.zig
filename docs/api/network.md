@@ -108,12 +108,14 @@ A simple log server for receiving logs over TCP/UDP.
 ```zig
 pub const LogServer = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     running: std.atomic.Value(bool),
     tcpThread: ?std.Thread,
     udpThread: ?std.Thread,
     messagesReceived: std.atomic.Value(Constants.AtomicUnsigned),
     
     pub fn init(allocator: std.mem.Allocator) LogServer;
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) LogServer;
     /// Alias for init()
     pub const create = init;
 
@@ -145,6 +147,44 @@ pub const LogServer = struct {
 };
 ```
 
+### NetworkSink
+
+An advanced network-based log sink manager with automatic reconnect, retry budgets, keepalive, and specialized framing.
+
+```zig
+pub const NetworkSink = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    uri: []const u8,
+    state: ConnectionState,
+    stream: ?std.Io.net.Stream,
+    udpSocket: ?std.Io.net.Socket,
+    udpAddr: ?std.Io.net.IpAddress,
+    keepalive: bool,
+    httpChunked: bool,
+    syslogFormat: bool,
+    maxRetries: u32,
+    retryDelayMs: u64,
+
+    pub fn init(allocator: std.mem.Allocator, uri: []const u8) !NetworkSink;
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !NetworkSink;
+    pub fn deinit(self: *NetworkSink) void;
+    pub fn connect(self: *NetworkSink) !void;
+    pub fn disconnect(self: *NetworkSink) void;
+};
+```
+
+### UdpEndpoint
+
+A UDP socket and its target address endpoint.
+
+```zig
+pub const UdpEndpoint = struct {
+    socket: std.Io.net.Socket,
+    address: std.Io.net.IpAddress,
+};
+```
+
 ### NetworkError
 
 Common network errors.
@@ -166,26 +206,36 @@ pub const NetworkError = error{
 ## Functions
 
 ### `connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.Io.net.Stream`
+### `connectTcpWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !std.Io.net.Stream`
 
 Connects to a TCP host specified by a URI string (e.g., "tcp://127.0.0.1:8080").
 
-### `createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { socket: std.Io.net.Socket, address: std.Io.net.IpAddress }`
+### `createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !UdpEndpoint`
+### `createUdpSocketWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !UdpEndpoint`
 
 Creates a UDP socket connected to a host specified by a URI string (e.g., "udp://127.0.0.1:514").
 
 ### `sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: []const u8) !void`
+### `sendUdpWithIo(socket: std.Io.net.Socket, io_handle: std.Io, address: std.Io.net.IpAddress, data: []const u8) !void`
 
 Sends data via UDP socket.
 
 ### `sendTcp(stream: std.Io.net.Stream, data: []const u8) !void`
+### `sendTcpWithIo(stream: std.Io.net.Stream, io_handle: std.Io, data: []const u8) !void`
 
 Sends data via TCP stream and updates network stats.
 
 ### `sendSyslogUdp(allocator: std.mem.Allocator, socket: std.Io.net.Socket, address: std.Io.net.IpAddress, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, appName: []const u8, message: []const u8) !void`
+### `sendSyslogUdpWithIo(allocator: std.mem.Allocator, io_handle: std.Io, socket: std.Io.net.Socket, address: std.Io.net.IpAddress, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, appName: []const u8, message: []const u8) !void`
 
 Formats a syslog message and sends it over UDP.
 
+### `sendSyslogTcpWithIo(allocator: std.mem.Allocator, io_handle: std.Io, stream: std.Io.net.Stream, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, appName: []const u8, message: []const u8) !void`
+
+Formats a syslog message and sends it over TCP.
+
 ### `fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value)`
+### `fetchJsonWithIo(allocator: std.mem.Allocator, io_handle: std.Io, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value)`
 
 Fetches and parses a JSON response from a URL.
 

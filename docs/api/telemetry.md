@@ -99,7 +99,8 @@ pub const Telemetry = struct {
     metricCount: usize,
     resource: Resource,
     sampler: TelemetrySampler,
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
+    io: std.Io,
     totalSpansCreated: u64,
     totalSpansExported: u64,
     totalMetricsRecorded: u64,
@@ -114,6 +115,7 @@ pub const Telemetry = struct {
     lastBatchExport: i64,
     
     pub fn init(allocator: std.mem.Allocator, config: TelemetryConfig) !Telemetry
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: TelemetryConfig) !Telemetry
     pub fn deinit(self: *Telemetry) void
     pub fn startSpan(self: *Telemetry, name: []const u8, options: SpanOptions) !Span
     pub fn startSpanWithContext(self: *Telemetry, name: []const u8, parent: *const Span, opts: SpanOptions) !Span

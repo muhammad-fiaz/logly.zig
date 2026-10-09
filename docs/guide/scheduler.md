@@ -518,17 +518,21 @@ if (stats.hasFailures()) {
 ### Scheduler Configuration
 
 ```zig
-var scheduler = try logly.Scheduler.init(allocator, .{
-    .check_interval_ms = 60000,     // Check every minute
-    .auto_start = false,            // Manual start
-    .timezone_offset = -5,          // EST (UTC-5)
-    .max_concurrent_tasks = 4,      // Parallel tasks
-    .retry_failed = true,           // Retry on failure
-    .maxRetries = 3,               // Retry attempts
-    .retryDelayMs = 5000,         // Delay between retries
-    .log_executions = true,         // Log task runs
-    .shutdownTimeoutMs = 10000,   // Graceful shutdown
-});
+// Initialize scheduler with explicit allocator (or pass explicit io handle via initWithIo)
+var scheduler = try logly.Scheduler.init(allocator);
+defer scheduler.deinit();
+
+// Alternatively, configure via central Config.SchedulerConfig:
+var config = logly.Config.default();
+config.scheduler = .{
+    .enabled = true,
+    .cleanupMaxAgeDays = 7,
+    .maxFiles = 10,
+    .compressBeforeCleanup = true,
+    .filePattern = "*.log",
+};
+var schedulerFromConfig = try logly.Scheduler.initFromConfig(allocator, config.scheduler, "logs");
+defer schedulerFromConfig.deinit();
 ```
 
 ### Timezone Handling
@@ -695,50 +699,32 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Production scheduler config
-    var scheduler = try logly.Scheduler.init(allocator, .{
-        .check_interval_ms = 60000,
-        .timezone_offset = -5, // EST
-        .max_concurrent_tasks = 2,
-        .retry_failed = true,
-        .maxRetries = 3,
-    });
+    // Initialize scheduler
+    var scheduler = try logly.Scheduler.init(allocator);
     defer scheduler.deinit();
 
     // Daily cleanup at 2 AM - remove logs older than 30 days
-     _ = try scheduler.addTask(.{
-        .name = "daily_cleanup",
-        .taskType = .cleanup,
-        .schedule = logly.Schedule.daily(2, 0),
-        .config = .{ .cleanup = .{
+    _ = try scheduler.addTask(
+        "daily_cleanup",
+        .cleanup,
+        logly.SchedulerPresets.dailyAt(2, 0),
+        .{
             .path = "logs",
-            .maxAgeDays = 30,
-            .min_files_to_keep = 10,
-        }},
-    });
+            .maxAgeSeconds = 30 * 24 * 60 * 60,
+            .filePattern = "*.log",
+        },
+    );
 
-    // Hourly compression - compress logs older than 1 day
-     _ = try scheduler.addTask(.{
-        .name = "hourly_compression",
-        .taskType = .compression,
-        .schedule = logly.Schedule.everyHours(1),
-        .config = .{ .compression = .{
+    // Hourly compression - compress uncompressed logs
+    _ = try scheduler.addTask(
+        "hourly_compression",
+        .compression,
+        .{ .interval = 3600000 },
+        .{
             .path = "logs",
-            .minAgeDays = 1,
-        }},
-    });
-
-    // Weekly deep clean on Sunday
-     _ = try scheduler.addTask(.{
-        .name = "weekly_deep_clean",
-        .taskType = .cleanup,
-        .schedule = logly.Schedule.weekly(0, 3, 0),
-        .config = .{ .cleanup = .{
-            .path = "logs",
-            .maxAgeDays = 7,
-            .include_compressed = true,
-        }},
-    });
+            .filePattern = "*.log",
+        },
+    );
 
     // Start scheduler
     try scheduler.start();

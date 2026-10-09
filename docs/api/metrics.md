@@ -281,6 +281,10 @@ Initializes a new Metrics instance with all counters at zero.
 
 Initializes a new Metrics instance with custom configuration.
 
+#### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: MetricsConfig) Metrics`
+
+Initializes a new Metrics instance with an explicit I/O handle and custom configuration.
+
 #### `deinit(self: *Metrics) void`
 
 Releases all resources associated with metrics.

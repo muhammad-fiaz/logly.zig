@@ -75,6 +75,10 @@ The `Formatter` is typically managed internally by sinks, but can be customized 
 
 Initializes a new Formatter and pre-fetches system metadata (hostname, PID).
 
+#### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) Formatter`
+
+Initializes a new Formatter with an explicit I/O handle and pre-fetches system metadata.
+
 #### `format(record: *const Record, config: anytype) ![]u8`
 
 Formats a log record into a string. The `config` can be `Config` or `SinkConfig`. Uses the internal allocator for string building.

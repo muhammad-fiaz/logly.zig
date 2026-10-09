@@ -275,14 +275,23 @@ pub fn init(allocator: std.mem.Allocator) !*ThreadPool
 
 ### initWithConfig
 
-Create a new thread pool with custom configuration.
+Create a new thread pool with custom configuration. Uses `config.io` if set, otherwise defaults to `logly.defaultIo()`.
 
 ```zig
 pub fn initWithConfig(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool
 ```
 
+### initWithIo
+
+Create a new thread pool with an explicit `std.Io` handle and custom configuration.
+
+```zig
+pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: ThreadPoolConfig) !*ThreadPool
+```
+
 **Parameters:**
 - `allocator`: Memory allocator
+- `io_handle`: Explicit `std.Io` handle for thread coordination and timeout waiting
 - `config`: Thread pool configuration
 
 **Returns:** A pointer to the new `ThreadPool` instance
@@ -706,7 +715,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create thread pool with CPU-bound preset
-    var pool = try logly.ThreadPool.init(
+    var pool = try logly.ThreadPool.initWithConfig(
         allocator,
         logly.ThreadPoolPresets.cpuBound(),
     );

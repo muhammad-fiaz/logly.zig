@@ -47,7 +47,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create thread pool with default settings
-    var pool = try logly.ThreadPool.init(allocator, .{
+    var pool = try logly.ThreadPool.initWithConfig(allocator, .{
         .threadCount = 4,
         .workStealing = true,
     });
@@ -375,7 +375,7 @@ std.debug.print("Avg exec time: {d}ns\n", .{
 
 ```zig
 // Use high throughput preset
-var pool = try logly.ThreadPool.init(
+var pool = try logly.ThreadPool.initWithConfig(
     allocator,
     logly.ThreadPoolPresets.highThroughput(),
 );
@@ -427,7 +427,7 @@ Work stealing improves efficiency when:
 - You want better CPU utilization
 
 ```zig
-var pool = try logly.ThreadPool.init(allocator, .{
+var pool = try logly.ThreadPool.initWithConfig(allocator, .{
     .workStealing = true, // Enable work stealing
     .threadCount = 8,
 });
@@ -445,11 +445,11 @@ var pool = try logly.ThreadPool.init(allocator, .{
 Combine thread pools with async logging:
 
 ```zig
-var asyncLogger = try logly.AsyncLogger.init(allocator, .{
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
     .bufferSize = 8192,
 });
 
-var pool = try logly.ThreadPool.init(allocator, .{
+var pool = try logly.ThreadPool.initWithConfig(allocator, .{
     .threadCount = 4,
 });
 
@@ -554,7 +554,7 @@ pub fn main() !void {
     // Production thread pool config
     const cpuCount = std.Thread.getCpuCount() catch 4;
     
-    var pool = try logly.ThreadPool.init(allocator, .{
+    var pool = try logly.ThreadPool.initWithConfig(allocator, .{
         .threadCount = cpuCount,
         .queueSize = 2048,
         .workStealing = true,
@@ -633,7 +633,7 @@ const total = pool.threadCount();
 ## New Methods (v0.0.9)
 
 ```zig
-var pool = try logly.ThreadPool.init(allocator, config);
+var pool = try logly.ThreadPool.initWithConfig(allocator, config);
 defer pool.deinit();
 
 // State methods

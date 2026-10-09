@@ -48,6 +48,7 @@ Configuration for a sink.
 | `eventLog` | `bool` | `false` | Enable system event log output (Windows Event Log on Windows, Syslog on POSIX). See the Windows Event Log mapping below; constants are provided by `Constants.EventLogConstants`. |
 | `tamperEvident` | `bool` | `false` | Enable cryptographic SHA-256 chaining to produce tamper-evident log records. |
 | `mmap` | `bool` | `false` | Enable virtual memory-mapped zero-copy file logging for microsecond-latency writes. |
+| `io` | `?std.Io` | `null` | Explicit I/O handle for this sink. If `null`, inherits the logger's configured I/O handle or falls back to `logly.defaultIo()`. |
 
 ### Windows Event Log (Windows only)
 
@@ -312,6 +313,10 @@ Use different modes for different sinks:
 Initializes a new sink with the specified configuration.
 
 **Alias:** `create`
+
+### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: SinkConfig) !*Sink`
+
+Initializes a new sink with an explicit I/O handle and the specified configuration.
 
 ### `deinit() void`
 
@@ -647,7 +652,48 @@ pub const SinkConfig = struct {
 
 ## SinkGroup
 
-The `SinkGroup` struct enables atomic fan-out routing of a single log record to multiple named sinks efficiently. It is used when you need multiple outputs to share the identical formatted record representation simultaneously.
+The `SinkGroup` struct enables atomic fan-out routing of a single log record to multiple named sinks efficiently.
+
+```zig
+pub const SinkGroup = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    sinks: std.ArrayListUnmanaged(*Sink),
+    mutex: std.Io.Mutex,
+
+    pub fn init(allocator: std.mem.Allocator) SinkGroup;
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) SinkGroup;
+    pub fn deinit(self: *SinkGroup) void;
+    pub fn addSink(self: *SinkGroup, sink: *Sink) !void;
+    pub fn write(self: *SinkGroup, record: *const Record, globalConfig: anytype) !void;
+    pub fn flush(self: *SinkGroup) !void;
+};
+```
+
+## MmapFile
+
+High-performance memory-mapped file abstraction for sub-microsecond logging.
+
+```zig
+pub const MmapFile = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    file: std.Io.File,
+    memory: []align(std.heap.page_size_min) u8,
+    writePtr: usize,
+    capacity: usize,
+    isMapped: bool,
+
+    pub fn init(allocator: std.mem.Allocator, file: std.Io.File, initialSize: usize) !MmapFile;
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, file: std.Io.File, initialSize: usize) !MmapFile;
+    pub fn deinit(self: *MmapFile) void;
+    pub fn write(self: *MmapFile, data: []const u8) !void;
+    pub fn flush(self: *MmapFile) void;
+    pub fn finalizeForRotation(self: *MmapFile) void;
+    pub fn remapToFile(self: *MmapFile, newFile: std.Io.File, initialSize: usize) !void;
+    pub fn resumeMapping(self: *MmapFile) void;
+};
+```
 
 ## See Also
 

@@ -168,6 +168,10 @@ pub const FilterRule = struct {
 
 Initializes a new Filter instance.
 
+#### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) Filter`
+
+Initializes a new Filter instance with an explicit I/O handle.
+
 #### `deinit(self: *Filter) void`
 
 Releases all resources associated with the filter.

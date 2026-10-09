@@ -103,9 +103,10 @@ Main compression controller with configurable algorithms and strategies.
 ```zig
 pub const Compression = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     config: CompressionConfig,
     stats: CompressionStats,
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
 
     // Callbacks for monitoring
     onCompressionStart: ?*const fn ([]const u8, u64) void,
@@ -731,6 +732,14 @@ var compression = Compression.initWithConfig(allocator, .{
     .strategy = .text,
 });
 defer compression.deinit();
+```
+
+### initWithIo
+
+Creates a Compression instance with an explicit I/O handle and custom configuration.
+
+```zig
+pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: CompressionConfig) Compression
 ```
 
 ### deinit

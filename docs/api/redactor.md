@@ -79,10 +79,11 @@ The main redactor controller with thread-safe operations.
 ```zig
 pub const Redactor = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     patterns: std.ArrayList(RedactionPattern),
     fields: std.StringHashMap(RedactionType),
     stats: RedactorStats,
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
     
     // Callbacks
     onRedactionApplied: ?*const fn ([]const u8, []const u8) void,
@@ -257,6 +258,10 @@ Initializes a new Redactor instance with default configuration.
 #### `initWithConfig(allocator: std.mem.Allocator, config: RedactionConfig) Redactor`
 
 Initializes a new Redactor instance with custom configuration.
+
+#### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: RedactionConfig) Redactor`
+
+Initializes a new Redactor instance with an explicit I/O handle and custom configuration.
 
 ```zig
 var redactor = Redactor.initWithConfig(allocator, .{

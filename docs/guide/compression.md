@@ -765,15 +765,19 @@ std.debug.print("Created data.gz: {d} bytes\n", .{stat.size});
 Use with the scheduler for timed compression:
 
 ```zig
-var scheduler = try logly.Scheduler.init(allocator, .{});
+var scheduler = try logly.Scheduler.init(allocator);
 defer scheduler.deinit();
 
 // Compress logs every hour
- _ = try scheduler.addTask(.{
-    .name = "compress_old_logs",
-    .schedule = .{ .interval_seconds = 3600 },
-    .callback = compressOldLogs,
-});
+ _ = try scheduler.addTask(
+    "compress_old_logs",
+    .compression,
+    .{ .interval = 3600000 },
+    .{
+        .path = "logs",
+        .filePattern = "*.log",
+    },
+);
 
 try scheduler.start();
 ```
@@ -783,7 +787,7 @@ try scheduler.start();
 Offload compression to background threads using the `ThreadPool` so the main application thread doesn't block:
 
 ```zig
-var pool = try logly.ThreadPool.init(allocator, .{});
+var pool = try logly.ThreadPool.init(allocator);
 try pool.start();
 defer pool.stop();
 
@@ -966,7 +970,7 @@ config.rotation = .{
 Automatic scheduled compression:
 
 ```zig
-var scheduler = try logly.Scheduler.init(allocator, .{});
+var scheduler = try logly.Scheduler.init(allocator);
 defer scheduler.deinit();
 
 // Compress logs older than 1 day, every hour

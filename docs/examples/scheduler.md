@@ -50,49 +50,63 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create scheduler with centralized config
-    var scheduler = try logly.Scheduler.init(allocator, .{
-        .check_interval_ms = 60000,
-        .auto_start = false,
-    });
+    // 1. Basic Scheduler Setup
+    const scheduler = try logly.Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    // Add daily cleanup task
-     _ = try scheduler.addTask(.{
-        .name = "log_cleanup",
-        .taskType = .cleanup,
-        .schedule = logly.Schedule.daily(2, 30),
-        .config = .{ .cleanup = .{
+    // 2. Add interval-based cleanup task
+    const cleanupIdx = try scheduler.addTask(
+        "log_cleanup",
+        .cleanup,
+        .{ .interval = 3600000 },
+        .{
             .path = "logs",
-            .maxAgeDays = 30,
-            .pattern = "*.log",
-        }},
-    });
+            .maxAgeSeconds = 7 * 24 * 60 * 60,
+            .filePattern = "*.log",
+        },
+    );
 
-    // Add hourly compression task
-     _ = try scheduler.addTask(.{
-        .name = "log_compression",
-        .taskType = .compression,
-        .schedule = logly.Schedule.everyHours(1),
-        .config = .{ .compression = .{
+    // 3. Add compression task with cron-like preset
+    const compIdx = try scheduler.addTask(
+        "log_compression",
+        .compression,
+        logly.SchedulerPresets.dailyAt(3, 0),
+        .{
             .path = "logs",
-            .minAgeDays = 1,
-        }},
-    });
+            .filePattern = "*.log",
+        },
+    );
+    _ = compIdx;
 
-    // Start scheduler
-    try scheduler.start();
-    defer scheduler.stop();
+    // 4. Add one-shot custom task
+    const OneShotTask = struct {
+        fn execute(_: *logly.Scheduler.ScheduledTask) anyerror!void {
+            std.debug.print("Maintenance task executed!\n", .{});
+        }
+    };
+    _ = try scheduler.addCustomTask("oneshot_task", .{ .interval = 1 }, OneShotTask.execute);
 
-    // List tasks
-    const tasks = scheduler.listTasks();
+    // 5. Task management and control
+    scheduler.setTaskEnabled(cleanupIdx, false); // Cancel / disable
+    scheduler.setTaskEnabled(cleanupIdx, true);  // Re-enable
+
+    // 6. Inspect registered tasks
+    const tasks = scheduler.getTasks();
     for (tasks, 0..) |task, i| {
-        std.debug.print("Task {d}: {s} ({s})\n", .{
+        std.debug.print("Task {d}: '{s}' type={s} enabled={s}\n", .{
             i,
             task.name,
             @tagName(task.taskType),
+            if (task.enabled) "yes" else "no",
         });
     }
+
+    // 7. Check statistics
+    const stats = scheduler.getStats();
+    std.debug.print("Tasks executed: {d}, Files cleaned: {d}\n", .{
+        stats.getExecuted(),
+        stats.getFilesCleaned(),
+    });
 }
 ```
 

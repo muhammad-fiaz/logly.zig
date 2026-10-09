@@ -49,8 +49,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create thread pool with 4 workers
-    var pool = try logly.ThreadPool.init(allocator, .{
+    // Create thread pool with 4 workers using explicit config
+    const pool = try logly.ThreadPool.initWithConfig(allocator, .{
         .threadCount = 4,
         .queueSize = 1024,
         .workStealing = true,
@@ -59,24 +59,22 @@ pub fn main() !void {
 
     // Start workers
     try pool.start();
-    defer pool.stop();
 
     // Submit tasks
-    var counter = std.atomic.Value(u32).init(0);
-    
-    for (0..50) || {
-         _ = pool.submitCallback(incrementCounter, @ptrCast(&counter));
-    }
+    var counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+    const numTasks: u32 = 100;
 
-    // Submit a batch of tasks
-    var tasks: [50]logly.ThreadPool.Task = undefined;
-    for (&tasks) |*task| {
-        task.* = .{ .callback = .{ .func = incrementCounter, .context = @ptrCast(&counter) } };
-    }
-     _ = pool.submitBatch(&tasks, .normal);
+    const TestTask = struct {
+        fn increment(ctx: *anyopaque, maybeAllocator: ?std.mem.Allocator) void {
+            _ = maybeAllocator;
+            const c: *std.atomic.Value(u32) = @ptrCast(@alignCast(ctx));
+            _ = c.fetchAdd(1, .monotonic);
+        }
+    };
 
-    // Submit high priority task
-     _ = pool.submitHighPriority(incrementCounter, @ptrCast(&counter));
+    for (0..numTasks) |_| {
+        _ = pool.submitCallback(TestTask.increment, @ptrCast(&counter));
+    }
 
     // Wait for completion
     pool.waitAll();
@@ -88,11 +86,6 @@ pub fn main() !void {
     std.debug.print("Tasks completed: {d}\n", .{
         stats.getCompleted(),
     });
-}
-
-fn incrementCounter(ctx: *anyopaque) void {
-    const counter: *std.atomic.Value(u32) = @alignCast(@ptrCast(ctx));
-     _ = counter.fetchAdd(1, .monotonic);
 }
 ```
 

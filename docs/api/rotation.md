@@ -70,6 +70,15 @@ pub fn init(
     sizeLimit: ?u64,          // Bytes
     retention: ?usize          // Max files to keep
 ) !Rotation
+
+pub fn initWithIo(
+    allocator: std.mem.Allocator,
+    io_handle: std.Io,
+    path: []const u8,
+    intervalStr: ?[]const u8,
+    sizeLimit: ?u64,
+    retention: ?usize,
+) !Rotation
 ```
 
 ### Configuration Methods

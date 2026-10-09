@@ -18,6 +18,10 @@ The `Config` struct controls the behavior of the logger, including all enterpris
 
 ### Core Settings
 
+#### `io: ?std.Io`
+
+Explicit `std.Io` handle. When `null`, uses the stateless `logly.defaultIo()`. Set this to provide a custom or multi-threaded runtime I/O handle (e.g. `threaded.io()`). Default: `null`.
+
 #### `level: Level`
 
 Minimum log level to output. Default: `.info`.
@@ -599,11 +603,20 @@ const config = try logly.Config.loadFromJson(allocator, json_data);
 
 ### `loadFromFile(allocator: std.mem.Allocator, filePath: []const u8) !Config`
 
-Reads a JSON file from disk and parses it into a `Config` object.
+Reads a JSON file from disk using the default I/O handle and parses it into a `Config` object.
 
 **Example:**
 ```zig
 const config = try logly.Config.loadFromFile(allocator, "config.json");
+```
+
+### `loadFromFileWithIo(allocator: std.mem.Allocator, io_handle: std.Io, filePath: []const u8) !Config`
+
+Reads a JSON file from disk using an explicit `std.Io` handle and parses it into a `Config` object.
+
+**Example:**
+```zig
+const config = try logly.Config.loadFromFileWithIo(allocator, io, "config.json");
 ```
 
 #### `enableCallbacks: bool`

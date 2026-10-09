@@ -171,6 +171,14 @@ Initializes a new Sampler instance with the specified strategy.
 
 **Alias:** `create`
 
+#### `initWithConfig(allocator: std.mem.Allocator, config: Config.SamplingConfig) Sampler`
+
+Initializes a new Sampler with full configuration.
+
+#### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Config.SamplingConfig) Sampler`
+
+Initializes a new Sampler with an explicit I/O handle and full configuration.
+
 #### `deinit(self: *Sampler) void`
 
 Releases all resources associated with the sampler.

@@ -409,9 +409,17 @@ Create a new scheduler.
 pub fn init(allocator: std.mem.Allocator) !*Scheduler
 ```
 
+### initWithIo
+
+Create a new scheduler with an explicit `std.Io` handle.
+
+```zig
+pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) !*Scheduler
+```
+
 ### initWithThreadPool
 
-Create a new scheduler that uses a thread pool for task execution.
+Create a new scheduler that uses a thread pool for task execution (inheriting the pool's I/O handle).
 
 ```zig
 pub fn initWithThreadPool(allocator: std.mem.Allocator, threadPool: *ThreadPool) !*Scheduler
@@ -423,10 +431,18 @@ pub fn initWithThreadPool(allocator: std.mem.Allocator, threadPool: *ThreadPool)
 
 ### initFromConfig
 
-Create a scheduler from global configuration.
+Create a scheduler from global configuration using default I/O.
 
 ```zig
 pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logsPath: ?[]const u8) !*Scheduler
+```
+
+### initFromConfigWithIo
+
+Create a scheduler from global configuration with an explicit `std.Io` handle.
+
+```zig
+pub fn initFromConfigWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: SchedulerConfig, logsPath: ?[]const u8) !*Scheduler
 ```
 
 ### deinit

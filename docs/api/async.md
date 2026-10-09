@@ -239,10 +239,18 @@ pub fn init(allocator: std.mem.Allocator) !*AsyncLogger
 
 ### initWithConfig
 
-Create a new async logger with custom configuration.
+Create a new async logger with custom configuration. Uses `config.io` if set, otherwise defaults to `logly.defaultIo()`.
 
 ```zig
 pub fn initWithConfig(allocator: std.mem.Allocator, config: AsyncConfig) !*AsyncLogger
+```
+
+### initWithIo
+
+Create a new async logger with an explicit `std.Io` handle and custom configuration.
+
+```zig
+pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: AsyncConfig) !*AsyncLogger
 ```
 
 ### deinit
@@ -557,7 +565,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create async logger with high throughput config
-    var asyncLogger = try logly.AsyncLogger.init(
+    var asyncLogger = try logly.AsyncLogger.initWithConfig(
         allocator,
         logly.AsyncPresets.highThroughput(),
     );
