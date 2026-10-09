@@ -46,7 +46,6 @@ A production-grade, high-performance structured logging library for Zig, designe
   - [Method 1: Zig Fetch (Recommended Stable)](#method-1-zig-fetch-recommended-stable)
   - [Method 2: Manual Configuration](#method-2-manual-configuration)
   - [Method 3: Building from Source](#method-3-building-from-source)
-  - [Prebuilt Library](#prebuilt-library)
 - [Quick Start](#quick-start)
 - [Allocator Usage](#allocator-usage)
 - [Explicit I/O Architecture](#explicit-io-architecture)
@@ -275,7 +274,7 @@ exe.root_module.addImport("logly", logly.module("logly"));
 
 ### Method 3: Building from Source
 
-Clone the repository and build Logly:
+Clone the Logly repository and build the library:
 
 ```bash
 git clone https://github.com/muhammad-fiaz/logly.zig.git
@@ -283,19 +282,9 @@ cd logly.zig
 zig build
 ```
 
-### Prebuilt Library
+**Example `build.zig` (Zig 0.17.0):**
 
-> [!NOTE]
-> While we recommend using the Zig Package Manager, we also provide prebuilt static libraries for each release on the [Releases](https://github.com/muhammad-fiaz/logly.zig/releases) page. These can be useful for integration with other build systems or languages.
->
-> - **Windows**: `logly-x86_64-windows.lib`, `logly-x86-windows.lib`
-> - **Linux**: `liblogly-x86_64-linux.a`, `liblogly-x86-linux.a`, `liblogly-aarch64-linux.a`
-> - **macOS**: `liblogly-x86_64-macos.a`, `liblogly-aarch64-macos.a`
-> - **Bare Metal**: `liblogly-x86_64-freestanding.a`, `liblogly-aarch64-freestanding.a`, `liblogly-riscv64-freestanding.a`, `liblogly-arm-freestanding.a`
-
-To use them, link against the static library in your build process.
-
-**Example `build.zig` (Zig 0.16+):**
+Assuming Logly is included in your project under `libs/logly.zig` and exposes its public module through `src/logly.zig`:
 
 ```zig
 const std = @import("std");
@@ -304,6 +293,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const logly = b.createModule(.{
+        .root_source_file = b.path("libs/logly.zig/src/logly.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{
         .name = "app",
         .root_source_file = b.path("src/main.zig"),
@@ -311,13 +306,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Assuming you downloaded the library to `libs/`
-    exe.addLibraryPath(b.path("libs"));
-    exe.linkSystemLibrary("logly");
+    exe.root_module.addImport("logly", logly);
 
     b.installArtifact(exe);
 }
 ```
+
+Import Logly in your application:
+
+```zig
+const logly = @import("logly");
+```
+
 
 ## Quick Start
 
