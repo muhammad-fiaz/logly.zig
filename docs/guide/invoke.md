@@ -49,7 +49,7 @@ invoke.enable();
 ### 3. Define Triggers
 
 ```zig
-const messages = [_]logly.Invoke.Message{
+const messages = []logly.Invoke.Message{
     ">> [ERROR] Database connection pool exhausted",
     ">> [FIX] Increase max_connections in database.yml",
     ">> [DOC] https://docs.example.com/db-pooling",
@@ -57,8 +57,8 @@ const messages = [_]logly.Invoke.Message{
 
 try invoke.add(.{
     .id = 1,
-    .level_match = .{ .exact = .err },
-    .message_contains = "database",
+    .levelMatch = .{ .exact = .err },
+    .messageContains = "database",
     .messages = &messages,
 });
 ```
@@ -86,16 +86,16 @@ Triggers can match by exact level, priority range, or custom level name:
 
 ```zig
 // Match errors only
-.level_match = .{ .exact = .err }
+.levelMatch = .{ .exact = .err }
 
 // Match warnings and above
-.level_match = .{ .min_priority = 30 }
+.levelMatch = .{ .minPriority = 30 }
 
 // Match a custom level
-.level_match = .{ .custom_name = "audit" }
+.levelMatch = .{ .customName = "audit" }
 
 // Match any level
-.level_match = .{ .any = {} }
+.levelMatch = .{ .any = {} }
 ```
 
 ## Message Filtering
@@ -104,13 +104,13 @@ Triggers can filter by message content:
 
 ```zig
 // Substring match
-.message_contains = "database"
+.messageContains = "database"
 
 // Regex match
-.message_regex = "out of memory \\d+"
+.messageRegex = "out of memory \\d+"
 
 // Duration-based (500ms+ operations)
-.min_duration_ns = 500_000_000
+.minDurationNs = 500_000_000
 ```
 
 ## Once-Fire Triggers
@@ -121,7 +121,7 @@ Triggers can fire only once:
 try invoke.add(.{
     .id = 1,
     .once = true,
-    .level_match = .{ .exact = .info },
+    .levelMatch = .{ .exact = .info },
     .messages = &messages,
 });
 ```
@@ -133,7 +133,7 @@ Prevent trigger storms with cooldown:
 ```zig
 try invoke.add(.{
     .id = 1,
-    .cooldown_ms = 10000, // Minimum 10 seconds between fires
+    .cooldownMs = 10000, // Minimum 10 seconds between fires
     .messages = &messages,
 });
 ```

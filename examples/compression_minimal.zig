@@ -1,6 +1,13 @@
 const std = @import("std");
 const logly = @import("logly");
 
+/// Repeats `s` exactly `n` times, returning owned memory.
+fn repeatAlloc(allocator: std.mem.Allocator, s: []const u8, n: usize) ![]u8 {
+    const out = try allocator.alloc(u8, s.len * n);
+    for (0..n) |i| @memcpy(out[i * s.len ..][0..s.len], s);
+    return out;
+}
+
 const Compression = logly.Compression;
 const Config = logly.Config;
 const CompressionConfig = Config.CompressionConfig;
@@ -10,168 +17,162 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("\n" ++ "=" ** 60 ++ "\n", .{});
-    std.debug.print("  Logly Minimal Configuration Compression Examples\n", .{});
-    std.debug.print("=" ** 60 ++ "\n\n", .{});
+    std.debug.print("\nMinimal Configuration Compression Examples\n", .{});
 
     // Part 1: Config Builder Methods (Logger Integration)
-    std.debug.print("PART 1: Config Builder Methods\n", .{});
-    std.debug.print("-" ** 40 ++ "\n", .{});
+    std.debug.print("Part 1: Config Builder Methods\n", .{});
 
     // Simplest one-liner - just enable compression
     const config1 = Config.default().withCompressionEnabled();
-    std.debug.print("✓ withCompressionEnabled(): enabled={}\n", .{config1.compression.enabled});
+    std.debug.print("[OK] withCompressionEnabled(): enabled={}\n", .{config1.compression.enabled});
 
     // Implicit (automatic) compression on rotation
     const config2 = Config.default().withImplicitCompression();
-    std.debug.print("✓ withImplicitCompression(): mode={s}, on_rotation={}\n", .{ @tagName(config2.compression.mode), config2.compression.on_rotation });
+    std.debug.print("[OK] withImplicitCompression(): mode={s}, onRotation={}\n", .{ @tagName(config2.compression.mode), config2.compression.onRotation });
 
     // Explicit (manual) compression control
     const config3 = Config.default().withExplicitCompression();
-    std.debug.print("✓ withExplicitCompression(): mode={s}, on_rotation={}\n", .{ @tagName(config3.compression.mode), config3.compression.on_rotation });
+    std.debug.print("[OK] withExplicitCompression(): mode={s}, onRotation={}\n", .{ @tagName(config3.compression.mode), config3.compression.onRotation });
 
     // Fast compression - prioritize speed
     const config4 = Config.default().withFastCompression();
-    std.debug.print("✓ withFastCompression(): level={s}\n", .{@tagName(config4.compression.level)});
+    std.debug.print("[OK] withFastCompression(): level={s}\n", .{@tagName(config4.compression.level)});
 
     // Best compression - prioritize ratio
     const config5 = Config.default().withBestCompression();
-    std.debug.print("✓ withBestCompression(): level={s}, algorithm={s}\n", .{ @tagName(config5.compression.level), @tagName(config5.compression.algorithm) });
+    std.debug.print("[OK] withBestCompression(): level={s}, algorithm={s}\n", .{ @tagName(config5.compression.level), @tagName(config5.compression.algorithm) });
 
     // Background compression
     const config6 = Config.default().withBackgroundCompression();
-    std.debug.print("✓ withBackgroundCompression(): background={}\n", .{config6.compression.background});
+    std.debug.print("[OK] withBackgroundCompression(): background={}\n", .{config6.compression.background});
 
     // Log-optimized compression
     const config7 = Config.default().withLogCompression();
-    std.debug.print("✓ withLogCompression(): strategy={s}\n", .{@tagName(config7.compression.strategy)});
+    std.debug.print("[OK] withLogCompression(): strategy={s}\n", .{@tagName(config7.compression.strategy)});
 
     // Production-ready compression
     const config8 = Config.default().withProductionCompression();
-    std.debug.print("✓ withProductionCompression(): background={}, checksum={}\n", .{ config8.compression.background, config8.compression.checksum });
+    std.debug.print("[OK] withProductionCompression(): background={}, checksum={}\n", .{ config8.compression.background, config8.compression.checksum });
 
     std.debug.print("\n", .{});
 
     // Part 2: CompressionConfig Presets
-    std.debug.print("PART 2: CompressionConfig Presets\n", .{});
-    std.debug.print("-" ** 40 ++ "\n", .{});
+    std.debug.print("Part 2: CompressionConfig Presets\n", .{});
 
     // Basic presets
-    const enable_cfg = CompressionConfig.enable();
-    std.debug.print("✓ CompressionConfig.enable(): enabled={}\n", .{enable_cfg.enabled});
+    const enableCfg = CompressionConfig.enable();
+    std.debug.print("[OK] CompressionConfig.enable(): enabled={}\n", .{enableCfg.enabled});
 
-    const basic_cfg = CompressionConfig.basic();
-    std.debug.print("✓ CompressionConfig.basic(): enabled={} (alias for enable)\n", .{basic_cfg.enabled});
+    const basicCfg = CompressionConfig.basic();
+    std.debug.print("[OK] CompressionConfig.basic(): enabled={} (alias for enable)\n", .{basicCfg.enabled});
 
-    const implicit_cfg = CompressionConfig.implicit();
-    std.debug.print("✓ CompressionConfig.implicit(): mode={s}\n", .{@tagName(implicit_cfg.mode)});
+    const implicitCfg = CompressionConfig.implicit();
+    std.debug.print("[OK] CompressionConfig.implicit(): mode={s}\n", .{@tagName(implicitCfg.mode)});
 
-    const explicit_cfg = CompressionConfig.explicit();
-    std.debug.print("✓ CompressionConfig.explicit(): mode={s}\n", .{@tagName(explicit_cfg.mode)});
+    const explicitCfg = CompressionConfig.explicit();
+    std.debug.print("[OK] CompressionConfig.explicit(): mode={s}\n", .{@tagName(explicitCfg.mode)});
 
     // Performance presets
-    const fast_cfg = CompressionConfig.fast();
-    std.debug.print("✓ CompressionConfig.fast(): level={s}\n", .{@tagName(fast_cfg.level)});
+    const fastCfg = CompressionConfig.fast();
+    std.debug.print("[OK] CompressionConfig.fast(): level={s}\n", .{@tagName(fastCfg.level)});
 
-    const balanced_cfg = CompressionConfig.balanced();
-    std.debug.print("✓ CompressionConfig.balanced(): level={s}\n", .{@tagName(balanced_cfg.level)});
+    const balancedCfg = CompressionConfig.balanced();
+    std.debug.print("[OK] CompressionConfig.balanced(): level={s}\n", .{@tagName(balancedCfg.level)});
 
-    const best_cfg = CompressionConfig.best();
-    std.debug.print("✓ CompressionConfig.best(): level={s}\n", .{@tagName(best_cfg.level)});
+    const bestCfg = CompressionConfig.best();
+    std.debug.print("[OK] CompressionConfig.best(): level={s}\n", .{@tagName(bestCfg.level)});
 
     // Mode presets
-    const bg_cfg = CompressionConfig.backgroundMode();
-    std.debug.print("✓ CompressionConfig.backgroundMode(): background={}\n", .{bg_cfg.background});
+    const bgCfg = CompressionConfig.backgroundMode();
+    std.debug.print("[OK] CompressionConfig.backgroundMode(): background={}\n", .{bgCfg.background});
 
-    const stream_cfg = CompressionConfig.streamingMode();
-    std.debug.print("✓ CompressionConfig.streamingMode(): streaming={}, mode={s}\n", .{ stream_cfg.streaming, @tagName(stream_cfg.mode) });
+    const streamCfg = CompressionConfig.streamingMode();
+    std.debug.print("[OK] CompressionConfig.streamingMode(): streaming={}, mode={s}\n", .{ streamCfg.streaming, @tagName(streamCfg.mode) });
 
-    const size_cfg = CompressionConfig.onSize(5 * 1024 * 1024);
-    std.debug.print("✓ CompressionConfig.onSize(5MB): mode={s}, threshold={d}MB\n", .{ @tagName(size_cfg.mode), size_cfg.size_threshold / (1024 * 1024) });
+    const sizeCfg = CompressionConfig.onSize(5 * 1024 * 1024);
+    std.debug.print("[OK] CompressionConfig.onSize(5MB): mode={s}, threshold={d}MB\n", .{ @tagName(sizeCfg.mode), sizeCfg.sizeThreshold / (1024 * 1024) });
 
     // Use case presets
-    const logs_cfg = CompressionConfig.forLogs();
-    std.debug.print("✓ CompressionConfig.forLogs(): strategy={s}\n", .{@tagName(logs_cfg.strategy)});
+    const logsCfg = CompressionConfig.forLogs();
+    std.debug.print("[OK] CompressionConfig.forLogs(): strategy={s}\n", .{@tagName(logsCfg.strategy)});
 
-    const archive_cfg = CompressionConfig.archive();
-    std.debug.print("✓ CompressionConfig.archive(): keep_original={}\n", .{archive_cfg.keep_original});
+    const archiveCfg = CompressionConfig.archive();
+    std.debug.print("[OK] CompressionConfig.archive(): keepOriginal={}\n", .{archiveCfg.keepOriginal});
 
-    const keep_cfg = CompressionConfig.keepOriginals();
-    std.debug.print("✓ CompressionConfig.keepOriginals(): keep_original={}\n", .{keep_cfg.keep_original});
+    const keepCfg = CompressionConfig.keepOriginals();
+    std.debug.print("[OK] CompressionConfig.keepOriginals(): keepOriginal={}\n", .{keepCfg.keepOriginal});
 
-    const prod_cfg = CompressionConfig.production();
-    std.debug.print("✓ CompressionConfig.production(): background={}, checksum={}\n", .{ prod_cfg.background, prod_cfg.checksum });
+    const prodCfg = CompressionConfig.production();
+    std.debug.print("[OK] CompressionConfig.production(): background={}, checksum={}\n", .{ prodCfg.background, prodCfg.checksum });
 
-    const dev_cfg = CompressionConfig.development();
-    std.debug.print("✓ CompressionConfig.development(): level={s}, keep_original={}\n", .{ @tagName(dev_cfg.level), dev_cfg.keep_original });
+    const devCfg = CompressionConfig.development();
+    std.debug.print("[OK] CompressionConfig.development(): level={s}, keepOriginal={}\n", .{ @tagName(devCfg.level), devCfg.keepOriginal });
 
-    const disable_cfg = CompressionConfig.disable();
-    std.debug.print("✓ CompressionConfig.disable(): enabled={}\n", .{disable_cfg.enabled});
+    const disableCfg = CompressionConfig.disable();
+    std.debug.print("[OK] CompressionConfig.disable(): enabled={}\n", .{disableCfg.enabled});
 
     std.debug.print("\n", .{});
 
     // Part 3: Compression Instance Presets
-    std.debug.print("PART 3: Compression Instance Presets\n", .{});
-    std.debug.print("-" ** 40 ++ "\n", .{});
+    std.debug.print("Part 3: Compression Instance Presets\n", .{});
 
     // Create compression instances with presets
-    var comp_enable = Compression.enable(allocator);
-    defer comp_enable.deinit();
-    std.debug.print("✓ Compression.enable(): enabled={}\n", .{comp_enable.config.enabled});
+    var compEnable = Compression.enable(allocator);
+    defer compEnable.deinit();
+    std.debug.print("[OK] Compression.enable(): enabled={}\n", .{compEnable.config.enabled});
 
-    var comp_basic = Compression.basic(allocator);
-    defer comp_basic.deinit();
-    std.debug.print("✓ Compression.basic(): enabled={} (alias for enable)\n", .{comp_basic.config.enabled});
+    var compBasic = Compression.basic(allocator);
+    defer compBasic.deinit();
+    std.debug.print("[OK] Compression.basic(): enabled={} (alias for enable)\n", .{compBasic.config.enabled});
 
-    var comp_implicit = Compression.implicit(allocator);
-    defer comp_implicit.deinit();
-    std.debug.print("✓ Compression.implicit(): mode={s}\n", .{@tagName(comp_implicit.config.mode)});
+    var compImplicit = Compression.implicit(allocator);
+    defer compImplicit.deinit();
+    std.debug.print("[OK] Compression.implicit(): mode={s}\n", .{@tagName(compImplicit.config.mode)});
 
-    var comp_explicit = Compression.explicit(allocator);
-    defer comp_explicit.deinit();
-    std.debug.print("✓ Compression.explicit(): mode={s}\n", .{@tagName(comp_explicit.config.mode)});
+    var compExplicit = Compression.explicit(allocator);
+    defer compExplicit.deinit();
+    std.debug.print("[OK] Compression.explicit(): mode={s}\n", .{@tagName(compExplicit.config.mode)});
 
-    var comp_fast = Compression.fast(allocator);
-    defer comp_fast.deinit();
-    std.debug.print("✓ Compression.fast(): level={s}\n", .{@tagName(comp_fast.config.level)});
+    var compFast = Compression.fast(allocator);
+    defer compFast.deinit();
+    std.debug.print("[OK] Compression.fast(): level={s}\n", .{@tagName(compFast.config.level)});
 
-    var comp_balanced = Compression.balanced(allocator);
-    defer comp_balanced.deinit();
-    std.debug.print("✓ Compression.balanced(): level={s}\n", .{@tagName(comp_balanced.config.level)});
+    var compBalanced = Compression.balanced(allocator);
+    defer compBalanced.deinit();
+    std.debug.print("[OK] Compression.balanced(): level={s}\n", .{@tagName(compBalanced.config.level)});
 
-    var comp_best = Compression.best(allocator);
-    defer comp_best.deinit();
-    std.debug.print("✓ Compression.best(): level={s}\n", .{@tagName(comp_best.config.level)});
+    var compBest = Compression.best(allocator);
+    defer compBest.deinit();
+    std.debug.print("[OK] Compression.best(): level={s}\n", .{@tagName(compBest.config.level)});
 
-    var comp_logs = Compression.forLogs(allocator);
-    defer comp_logs.deinit();
-    std.debug.print("✓ Compression.forLogs(): strategy={s}\n", .{@tagName(comp_logs.config.strategy)});
+    var compLogs = Compression.forLogs(allocator);
+    defer compLogs.deinit();
+    std.debug.print("[OK] Compression.forLogs(): strategy={s}\n", .{@tagName(compLogs.config.strategy)});
 
-    var comp_archive = Compression.archive(allocator);
-    defer comp_archive.deinit();
-    std.debug.print("✓ Compression.archive(): level={s}\n", .{@tagName(comp_archive.config.level)});
+    var compArchive = Compression.archive(allocator);
+    defer compArchive.deinit();
+    std.debug.print("[OK] Compression.archive(): level={s}\n", .{@tagName(compArchive.config.level)});
 
-    var comp_prod = Compression.production(allocator);
-    defer comp_prod.deinit();
-    std.debug.print("✓ Compression.production(): background={}\n", .{comp_prod.config.background});
+    var compProd = Compression.production(allocator);
+    defer compProd.deinit();
+    std.debug.print("[OK] Compression.production(): background={}\n", .{compProd.config.background});
 
-    var comp_dev = Compression.development(allocator);
-    defer comp_dev.deinit();
-    std.debug.print("✓ Compression.development(): keep_original={}\n", .{comp_dev.config.keep_original});
+    var compDev = Compression.development(allocator);
+    defer compDev.deinit();
+    std.debug.print("[OK] Compression.development(): keepOriginal={}\n", .{compDev.config.keepOriginal});
 
-    var comp_bg = Compression.background(allocator);
-    defer comp_bg.deinit();
-    std.debug.print("✓ Compression.background(): background={}\n", .{comp_bg.config.background});
+    var compBg = Compression.background(allocator);
+    defer compBg.deinit();
+    std.debug.print("[OK] Compression.background(): background={}\n", .{compBg.config.background});
 
-    var comp_stream = Compression.streaming(allocator);
-    defer comp_stream.deinit();
-    std.debug.print("✓ Compression.streaming(): streaming={}\n", .{comp_stream.config.streaming});
+    var compStream = Compression.streaming(allocator);
+    defer compStream.deinit();
+    std.debug.print("[OK] Compression.streaming(): streaming={}\n", .{compStream.config.streaming});
 
     std.debug.print("\n", .{});
 
     // Part 4: Practical Usage Demo
-    std.debug.print("PART 4: Practical Usage Demo\n", .{});
-    std.debug.print("-" ** 40 ++ "\n", .{});
+    std.debug.print("Part 4: Practical Usage Demo\n", .{});
 
     // Demo 1: Implicit compression (automatic)
     std.debug.print("\n[Demo 1: Implicit Compression]\n", .{});
@@ -181,108 +182,106 @@ pub fn main() !void {
 
     // Demo 2: Explicit compression (manual)
     std.debug.print("\n[Demo 2: Explicit Compression]\n", .{});
-    var explicit_compressor = Compression.explicit(allocator);
-    defer explicit_compressor.deinit();
+    var explicitCompressor = Compression.explicit(allocator);
+    defer explicitCompressor.deinit();
 
     // Create test data
-    const test_data = "INFO: Application started\n" ** 100;
-    const compressed = try explicit_compressor.compress(test_data);
+    const testData = try repeatAlloc(allocator, "INFO: Application started\n", 100);
+    defer allocator.free(testData);
+    const compressed = try explicitCompressor.compress(testData);
     defer allocator.free(compressed);
 
-    const ratio = 1.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(test_data.len)));
+    const ratio = 1.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(testData.len)));
     std.debug.print("Setup: Compression.explicit(allocator)\n", .{});
-    std.debug.print("Original size: {d} bytes\n", .{test_data.len});
+    std.debug.print("Original size: {d} bytes\n", .{testData.len});
     std.debug.print("Compressed size: {d} bytes\n", .{compressed.len});
     std.debug.print("Compression ratio: {d:.1}%\n", .{ratio * 100});
     std.debug.print("Use case: User-controlled compression timing\n", .{});
 
     // Demo 3: Production setup
     std.debug.print("\n[Demo 3: Production Setup]\n", .{});
-    var prod_compressor = Compression.production(allocator);
-    defer prod_compressor.deinit();
+    var prodCompressor = Compression.production(allocator);
+    defer prodCompressor.deinit();
 
-    const prod_compressed = try prod_compressor.compress(test_data);
-    defer allocator.free(prod_compressed);
+    const prodCompressed = try prodCompressor.compress(testData);
+    defer allocator.free(prodCompressed);
 
     std.debug.print("Setup: Compression.production(allocator)\n", .{});
     std.debug.print("Features: background={}, checksum={}, level={s}\n", .{
-        prod_compressor.config.background,
-        prod_compressor.config.checksum,
-        @tagName(prod_compressor.config.level),
+        prodCompressor.config.background,
+        prodCompressor.config.checksum,
+        @tagName(prodCompressor.config.level),
     });
-    std.debug.print("Compressed size: {d} bytes\n", .{prod_compressed.len});
+    std.debug.print("Compressed size: {d} bytes\n", .{prodCompressed.len});
 
     std.debug.print("\n", .{});
 
     // Part 5: File Customization Options
-    std.debug.print("PART 5: File Customization Options\n", .{});
-    std.debug.print("-" ** 40 ++ "\n", .{});
+    std.debug.print("Part 5: File Customization Options\n", .{});
 
     // Demo custom file naming and archive root
-    const custom_cfg = CompressionConfig{
+    const customCfg = CompressionConfig{
         .enabled = true,
         .algorithm = .gzip,
         .level = .best,
-        .file_prefix = "archived_",
-        .file_suffix = "_v1",
-        .archive_root_dir = "logs/compressed",
-        .create_date_subdirs = true,
-        .preserve_dir_structure = true,
-        .naming_pattern = "{base}_{date}{ext}",
+        .filePrefix = "archived_",
+        .fileSuffix = "_v1",
+        .archiveRootDir = "logs/compressed",
+        .createDateSubdirs = true,
+        .preserveDirStructure = true,
+        .namingPattern = "{base}_{date}{ext}",
     };
 
     std.debug.print("\n[Demo: Custom File Naming]\n", .{});
     std.debug.print("Configuration:\n", .{});
-    std.debug.print("  - file_prefix: \"{s}\"\n", .{custom_cfg.file_prefix.?});
-    std.debug.print("  - file_suffix: \"{s}\"\n", .{custom_cfg.file_suffix.?});
-    std.debug.print("  - archive_root_dir: \"{s}\"\n", .{custom_cfg.archive_root_dir.?});
-    std.debug.print("  - create_date_subdirs: {}\n", .{custom_cfg.create_date_subdirs});
-    std.debug.print("  - preserve_dir_structure: {}\n", .{custom_cfg.preserve_dir_structure});
-    std.debug.print("  - naming_pattern: \"{s}\"\n", .{custom_cfg.naming_pattern.?});
+    std.debug.print("  - filePrefix: \"{s}\"\n", .{customCfg.filePrefix.?});
+    std.debug.print("  - fileSuffix: \"{s}\"\n", .{customCfg.fileSuffix.?});
+    std.debug.print("  - archiveRootDir: \"{s}\"\n", .{customCfg.archiveRootDir.?});
+    std.debug.print("  - createDateSubdirs: {}\n", .{customCfg.createDateSubdirs});
+    std.debug.print("  - preserveDirStructure: {}\n", .{customCfg.preserveDirStructure});
+    std.debug.print("  - namingPattern: \"{s}\"\n", .{customCfg.namingPattern.?});
     std.debug.print("\nResult: logs/compressed/2026/01/09/archived_app_2026-01-09_v1.log.gz\n", .{});
 
     // Demo scheduler config customization
-    const sched_cfg = Config.SchedulerConfig{
+    const schedCfg = Config.SchedulerConfig{
         .enabled = true,
-        .archive_root_dir = "logs/scheduled",
-        .create_date_subdirs = true,
-        .compression_algorithm = .gzip,
-        .compression_level = .best,
-        .keep_originals = false,
-        .archive_file_prefix = "sched_",
-        .clean_empty_dirs = true,
+        .archiveRootDir = "logs/scheduled",
+        .createDateSubdirs = true,
+        .compressionAlgorithm = .gzip,
+        .compressionLevel = .best,
+        .keepOriginals = false,
+        .archiveFilePrefix = "sched_",
+        .cleanEmptyDirs = true,
     };
 
     std.debug.print("\n[Demo: Scheduler Compression Config]\n", .{});
     std.debug.print("Configuration:\n", .{});
-    std.debug.print("  - archive_root_dir: \"{s}\"\n", .{sched_cfg.archive_root_dir.?});
-    std.debug.print("  - compression_algorithm: {s}\n", .{@tagName(sched_cfg.compression_algorithm)});
-    std.debug.print("  - compression_level: {s}\n", .{@tagName(sched_cfg.compression_level)});
-    std.debug.print("  - archive_file_prefix: \"{s}\"\n", .{sched_cfg.archive_file_prefix.?});
-    std.debug.print("  - clean_empty_dirs: {}\n", .{sched_cfg.clean_empty_dirs});
+    std.debug.print("  - archiveRootDir: \"{s}\"\n", .{schedCfg.archiveRootDir.?});
+    std.debug.print("  - compressionAlgorithm: {s}\n", .{@tagName(schedCfg.compressionAlgorithm)});
+    std.debug.print("  - compressionLevel: {s}\n", .{@tagName(schedCfg.compressionLevel)});
+    std.debug.print("  - archive_filePrefix: \"{s}\"\n", .{schedCfg.archiveFilePrefix.?});
+    std.debug.print("  - cleanEmptyDirs: {}\n", .{schedCfg.cleanEmptyDirs});
 
     // Demo rotation config customization
-    const rot_cfg = Config.RotationConfig{
+    const rotCfg = Config.RotationConfig{
         .enabled = true,
-        .archive_root_dir = "logs/rotated",
-        .create_date_subdirs = true,
-        .file_prefix = "rot_",
-        .file_suffix = "_old",
-        .compression_algorithm = .deflate,
-        .compression_level = .fast,
-        .compress_on_retention = true,
-        .keep_original = false,
+        .archiveRootDir = "logs/rotated",
+        .createDateSubdirs = true,
+        .filePrefix = "rot_",
+        .fileSuffix = "_old",
+        .compressionAlgorithm = .deflate,
+        .compressionLevel = .fast,
+        .compressOnRetention = true,
+        .keepOriginal = false,
     };
 
     std.debug.print("\n[Demo: Rotation Compression Config]\n", .{});
     std.debug.print("Configuration:\n", .{});
-    std.debug.print("  - archive_root_dir: \"{s}\"\n", .{rot_cfg.archive_root_dir.?});
-    std.debug.print("  - file_prefix: \"{s}\"\n", .{rot_cfg.file_prefix.?});
-    std.debug.print("  - file_suffix: \"{s}\"\n", .{rot_cfg.file_suffix.?});
-    std.debug.print("  - compression_algorithm: {s}\n", .{@tagName(rot_cfg.compression_algorithm)});
-    std.debug.print("  - compress_on_retention: {}\n", .{rot_cfg.compress_on_retention});
+    std.debug.print("  - archiveRootDir: \"{s}\"\n", .{rotCfg.archiveRootDir.?});
+    std.debug.print("  - filePrefix: \"{s}\"\n", .{rotCfg.filePrefix.?});
+    std.debug.print("  - fileSuffix: \"{s}\"\n", .{rotCfg.fileSuffix.?});
+    std.debug.print("  - compressionAlgorithm: {s}\n", .{@tagName(rotCfg.compressionAlgorithm)});
+    std.debug.print("  - compressOnRetention: {}\n", .{rotCfg.compressOnRetention});
 
-    std.debug.print("\n" ++ "=" ** 60 ++ "\n", .{});
-    std.debug.print("  All minimal configuration examples completed!\n", .{});
-    std.debug.print("=" ** 60 ++ "\n", .{});
+    std.debug.print("\nAll minimal configuration examples completed!\n", .{});
 }

@@ -14,22 +14,23 @@ pub fn main() !void {
 
     // Configure JSON logging with extra fields and colors
     var config = logly.Config.default();
-    config.json = true;
-    config.pretty_json = true;
+    config.format = .json;
+    config.prettyJson = true;
     config.color = true; // Enable colors for JSON output
-    config.include_hostname = true;
-    config.include_pid = true;
-    config.time_format = logly.Config.TimeFormat.default_pattern;
+    config.includeHostname = true;
+    config.includePid = true;
+    config.timeFormat = logly.Config.TimeFormat.defaultPattern;
 
     logger.configure(config);
 
     // Add a file sink for JSON output
     _ = try logger.addSink(.{
-        .path = "logs/{}extended.json",
-        .json = true,
-        .pretty_json = true,
+        .path = "logs/extended.json",
+        .format = .json,
+        .prettyJson = true,
     });
 
     try logger.info("This JSON log includes hostname and PID", @src());
     try logger.warning("And also uses formatted timestamp", @src());
+    try logger.flush();
 }

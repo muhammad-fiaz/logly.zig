@@ -12,7 +12,7 @@ head:
 
 # Customization API Reference
 
-## Config.logs_root_path
+## Config.logsRootPath
 
 Global root directory for all log files.
 
@@ -22,10 +22,10 @@ Global root directory for all log files.
 When set, all file-based sinks have their paths automatically resolved relative to this root directory. If the directory doesn't exist, it's automatically created.
 
 ```zig
-config.logs_root_path = "./logs";
+config.logsRootPath = "./logs";
 ```
 
-## Config.format_structure
+## Config.formatStructure
 
 Customization of log message structure and formatting.
 
@@ -35,15 +35,15 @@ Customization of log message structure and formatting.
 
 ```zig
 pub const FormatStructureConfig = struct {
-    message_prefix: ?[]const u8 = null,
-    message_suffix: ?[]const u8 = null,
-    field_separator: []const u8 = " | ",
-    enable_nesting: bool = false,
-    nesting_indent: []const u8 = "  ",
-    field_order: ?[]const []const u8 = null,
-    include_empty_fields: bool = false,
-    placeholder_open: []const u8 = "{",
-    placeholder_close: []const u8 = "}",
+    messagePrefix: ?[]const u8 = null,
+    messageSuffix: ?[]const u8 = null,
+    fieldSeparator: []const u8 = " | ",
+    enableNesting: bool = false,
+    nestingIndent: []const u8 = "  ",
+    fieldOrder: ?[]const []const u8 = null,
+    includeEmptyFields: bool = false,
+    placeholderOpen: []const u8 = "{",
+    placeholderClose: []const u8 = "}",
 };
 ```
 
@@ -51,17 +51,17 @@ pub const FormatStructureConfig = struct {
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `message_prefix` | `?[]const u8` | `null` | Text prepended to every message |
-| `message_suffix` | `?[]const u8` | `null` | Text appended to every message |
-| `field_separator` | `[]const u8` | `" \| "` | Separator between log fields |
-| `enable_nesting` | `bool` | `false` | Enable hierarchical log formatting |
-| `nesting_indent` | `[]const u8` | `"  "` | Indentation for nested items |
-| `field_order` | `?[]const []const u8` | `null` | Custom field ordering |
-| `include_empty_fields` | `bool` | `false` | Include null/empty fields |
-| `placeholder_open` | `[]const u8` | `"{"` | Format placeholder opening |
-| `placeholder_close` | `[]const u8` | `"}"` | Format placeholder closing |
+| `messagePrefix` | `?[]const u8` | `null` | Text prepended to every message |
+| `messageSuffix` | `?[]const u8` | `null` | Text appended to every message |
+| `fieldSeparator` | `[]const u8` | `" \| "` | Separator between log fields |
+| `enableNesting` | `bool` | `false` | Enable hierarchical log formatting |
+| `nestingIndent` | `[]const u8` | `"  "` | Indentation for nested items |
+| `fieldOrder` | `?[]const []const u8` | `null` | Custom field ordering |
+| `includeEmptyFields` | `bool` | `false` | Include null/empty fields |
+| `placeholderOpen` | `[]const u8` | `"{"` | Format placeholder opening |
+| `placeholderClose` | `[]const u8` | `"}"` | Format placeholder closing |
 
-## Config.level_colors
+## Config.levelColors
 
 Per-level ANSI color code customization with theme presets and individual overrides.
 
@@ -72,23 +72,23 @@ Per-level ANSI color code customization with theme presets and individual overri
 ```zig
 pub const LevelColorConfig = struct {
     /// Theme preset for base colors
-    theme_preset: ThemePreset = .default,
+    themePreset: ThemePreset = .default,
     
     /// Individual level color overrides (take precedence over theme)
-    trace_color: ?[]const u8 = null,
-    debug_color: ?[]const u8 = null,
-    info_color: ?[]const u8 = null,
-    notice_color: ?[]const u8 = null,
-    success_color: ?[]const u8 = null,
-    warning_color: ?[]const u8 = null,
-    error_color: ?[]const u8 = null,
-    fail_color: ?[]const u8 = null,
-    critical_color: ?[]const u8 = null,
-    fatal_color: ?[]const u8 = null,
+    traceColor: ?[]const u8 = null,
+    debugColor: ?[]const u8 = null,
+    infoColor: ?[]const u8 = null,
+    noticeColor: ?[]const u8 = null,
+    successColor: ?[]const u8 = null,
+    warningColor: ?[]const u8 = null,
+    errorColor: ?[]const u8 = null,
+    failColor: ?[]const u8 = null,
+    criticalColor: ?[]const u8 = null,
+    fatalColor: ?[]const u8 = null,
     
-    use_rgb: bool = false,
-    support_background: bool = false,
-    reset_code: []const u8 = "\x1b[0m",
+    useRgb: bool = false,
+    supportBackground: bool = false,
+    resetCode: []const u8 = "\x1b[0m",
     
     pub const ThemePreset = enum {
         default,   // Standard ANSI colors
@@ -111,20 +111,20 @@ pub const LevelColorConfig = struct {
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `theme_preset` | `ThemePreset` | `.default` | Base theme for all levels |
-| `trace_color` | `?[]const u8` | `null` | Override for TRACE level |
-| `debug_color` | `?[]const u8` | `null` | Override for DEBUG level |
-| `info_color` | `?[]const u8` | `null` | Override for INFO level |
-| `notice_color` | `?[]const u8` | `null` | Override for NOTICE level |
-| `success_color` | `?[]const u8` | `null` | Override for SUCCESS level |
-| `warning_color` | `?[]const u8` | `null` | Override for WARNING level |
-| `error_color` | `?[]const u8` | `null` | Override for ERROR level |
-| `fail_color` | `?[]const u8` | `null` | Override for FAIL level |
-| `critical_color` | `?[]const u8` | `null` | Override for CRITICAL level |
-| `fatal_color` | `?[]const u8` | `null` | Override for FATAL level |
-| `use_rgb` | `bool` | `false` | Enable RGB color mode |
-| `support_background` | `bool` | `false` | Support background colors |
-| `reset_code` | `[]const u8` | `"\x1b[0m"` | Reset code at end |
+| `themePreset` | `ThemePreset` | `.default` | Base theme for all levels |
+| `traceColor` | `?[]const u8` | `null` | Override for TRACE level |
+| `debugColor` | `?[]const u8` | `null` | Override for DEBUG level |
+| `infoColor` | `?[]const u8` | `null` | Override for INFO level |
+| `noticeColor` | `?[]const u8` | `null` | Override for NOTICE level |
+| `successColor` | `?[]const u8` | `null` | Override for SUCCESS level |
+| `warningColor` | `?[]const u8` | `null` | Override for WARNING level |
+| `errorColor` | `?[]const u8` | `null` | Override for ERROR level |
+| `failColor` | `?[]const u8` | `null` | Override for FAIL level |
+| `criticalColor` | `?[]const u8` | `null` | Override for CRITICAL level |
+| `fatalColor` | `?[]const u8` | `null` | Override for FATAL level |
+| `useRgb` | `bool` | `false` | Enable RGB color mode |
+| `supportBackground` | `bool` | `false` | Support background colors |
+| `resetCode` | `[]const u8` | `"\x1b[0m"` | Reset code at end |
 
 ### Theme Presets
 
@@ -144,8 +144,8 @@ pub const LevelColorConfig = struct {
 
 ```zig
 // Use neon theme for all levels
-config.level_colors = .{
-    .theme_preset = .neon,
+config.levelColors = .{
+    .themePreset = .neon,
 };
 ```
 
@@ -153,10 +153,10 @@ config.level_colors = .{
 
 ```zig
 // Use neon theme but override error color
-config.level_colors = .{
-    .theme_preset = .neon,
-    .error_color = "91;1;4",  // Bright red bold underline
-    .fatal_color = "97;41;1", // White on red bold
+config.levelColors = .{
+    .themePreset = .neon,
+    .errorColor = "91;1;4",  // Bright red bold underline
+    .fatalColor = "97;41;1", // White on red bold
 };
 ```
 
@@ -164,19 +164,19 @@ config.level_colors = .{
 
 ```zig
 // Set individual colors (theme_preset = .default)
-config.level_colors = .{
-    .info_color = "34",       // Blue
-    .warning_color = "33;1",  // Yellow bold
-    .error_color = "91",      // Bright red
-    .critical_color = "91;1;4", // Bright red bold underline
+config.levelColors = .{
+    .infoColor = "34",       // Blue
+    .warningColor = "33;1",  // Yellow bold
+    .errorColor = "91",      // Bright red
+    .criticalColor = "91;1;4", // Bright red bold underline
 };
 ```
 
 ### Using getColorForLevel()
 
 ```zig
-const color_config = config.level_colors;
-const trace_color = color_config.getColorForLevel(.trace);
+const color_config = config.levelColors;
+const traceColor = color_config.getColorForLevel(.trace);
 const err_color = color_config.getColorForLevel(.err);
 // Returns override if set, otherwise theme color
 ```
@@ -193,11 +193,11 @@ Pattern matching and alert configuration.
 pub const HighlighterConfig = struct {
     enabled: bool = false,
     patterns: ?[]const HighlightPattern = null,
-    alert_on_match: bool = false,
-    alert_min_severity: AlertSeverity = .warning,
-    alert_callback: ?[]const u8 = null,
-    max_matches_per_message: usize = 10,
-    log_matches: bool = false,
+    alertOnMatch: bool = false,
+    alertMinSeverity: AlertSeverity = .warning,
+    alertCallback: ?[]const u8 = null,
+    maxMatchesPerMessage: usize = 10,
+    logMatches: bool = false,
 };
 ```
 
@@ -207,11 +207,11 @@ pub const HighlighterConfig = struct {
 |-------|------|---------|---------|
 | `enabled` | `bool` | `false` | Enable highlighter system |
 | `patterns` | `?[]const HighlightPattern` | `null` | Array of patterns to match |
-| `alert_on_match` | `bool` | `false` | Trigger alerts on pattern match |
-| `alert_min_severity` | `AlertSeverity` | `.warning` | Minimum severity to alert |
-| `alert_callback` | `?[]const u8` | `null` | Optional callback name |
-| `max_matches_per_message` | `usize` | `10` | Max patterns to match per message |
-| `log_matches` | `bool` | `false` | Log matches as separate records |
+| `alertOnMatch` | `bool` | `false` | Trigger alerts on pattern match |
+| `alertMinSeverity` | `AlertSeverity` | `.warning` | Minimum severity to alert |
+| `alertCallback` | `?[]const u8` | `null` | Optional callback name |
+| `maxMatchesPerMessage` | `usize` | `10` | Max patterns to match per message |
+| `logMatches` | `bool` | `false` | Log matches as separate records |
 
 ### HighlightPattern
 
@@ -219,8 +219,8 @@ pub const HighlighterConfig = struct {
 pub const HighlightPattern = struct {
     name: []const u8,
     pattern: []const u8,
-    is_regex: bool = false,
-    highlight_color: []const u8 = "\x1b[1;93m",
+    isRegex: bool = false,
+    highlightColor: []const u8 = "\x1b[1;93m",
     severity: AlertSeverity = .warning,
     metadata: ?[]const u8 = null,
 };
@@ -247,25 +247,25 @@ pub const AlertSeverity = enum {
 var config = logly.Config.default();
 
 // Set global logs directory
-config.logs_root_path = "./logs";
+config.logsRootPath = "./logs";
 
 // Customize format
-config.format_structure = .{
-    .message_prefix = "[APP] ",
-    .field_separator = " | ",
+config.formatStructure = .{
+    .messagePrefix = "[APP] ",
+    .fieldSeparator = " | ",
 };
 
 // Set custom colors
-config.level_colors = .{
-    .warning_color = "\x1b[33m",
-    .error_color = "\x1b[31m",
+config.levelColors = .{
+    .warningColor = "\x1b[33m",
+    .errorColor = "\x1b[31m",
 };
 
 // Configure highlighters
 config.highlighters = .{
     .enabled = true,
-    .alert_on_match = true,
-    .log_matches = true,
+    .alertOnMatch = true,
+    .logMatches = true,
 };
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -280,7 +280,7 @@ var config = logly.Config.default()
     .withAsync()
     .withThreadPool(4);
 
-config.logs_root_path = "./logs";
+config.logsRootPath = "./logs";
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```

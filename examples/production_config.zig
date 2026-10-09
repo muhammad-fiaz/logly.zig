@@ -8,10 +8,10 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Production Configuration Example ===\n\n", .{});
+    std.debug.print("Production Configuration Example\n\n", .{});
 
-    // --- Using Production Preset ---
-    std.debug.print("--- 1. Production Preset Configuration ---\n\n", .{});
+    // Using Production Preset
+    std.debug.print("1. Production Preset Configuration\n\n", .{});
     {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
@@ -33,8 +33,8 @@ pub fn main() !void {
         try logger.err("Error: Always logged", @src());
     }
 
-    // --- Using Development Preset ---
-    std.debug.print("\n--- 2. Development Preset Configuration ---\n\n", .{});
+    // Using Development Preset
+    std.debug.print("\n2. Development Preset Configuration\n\n", .{});
     {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
@@ -55,8 +55,8 @@ pub fn main() !void {
         try logger.success("Success: Operation completed", @src());
     }
 
-    // --- Using High Throughput Preset ---
-    std.debug.print("\n--- 3. High Throughput Configuration ---\n\n", .{});
+    // Using High Throughput Preset
+    std.debug.print("\n3. High Throughput Configuration\n\n", .{});
     {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
@@ -79,8 +79,8 @@ pub fn main() !void {
         std.debug.print("Logged 100 messages with sampling\n", .{});
     }
 
-    // --- Using Secure Preset ---
-    std.debug.print("\n--- 4. Secure Configuration (Compliance) ---\n\n", .{});
+    // Using Secure Preset
+    std.debug.print("\n4. Secure Configuration (Compliance)\n\n", .{});
     {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
@@ -100,8 +100,8 @@ pub fn main() !void {
         try logger.info("Payment: card=4111111111111111", @src());
     }
 
-    // --- Custom Production Configuration ---
-    std.debug.print("\n--- 5. Custom Production Setup ---\n\n", .{});
+    // Custom Production Configuration
+    std.debug.print("\n5. Custom Production Setup\n\n", .{});
     {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
@@ -111,17 +111,17 @@ pub fn main() !void {
 
         // Custom modifications
         config.level = .info; // Allow info logs
-        config.include_hostname = true; // Include server hostname
-        config.include_pid = true; // Include process ID
-        config.show_thread_id = true; // Include thread ID
-        config.time_format = "ISO8601"; // ISO 8601 timestamps
+        config.includeHostname = true; // Include server hostname
+        config.includePid = true; // Include process ID
+        config.showThreadId = true; // Include thread ID
+        config.timeFormat = "ISO8601"; // ISO 8601 timestamps
 
         logger.configure(config);
 
         // Add file sink for persistent logging
         _ = try logger.addSink(.{
             .path = "logs/production.log",
-            .json = true,
+            .format = .json,
             .rotation = "daily",
             .retention = 30, // Keep 30 days of logs
         });
@@ -134,12 +134,12 @@ pub fn main() !void {
         try logger.flush();
     }
 
-    // --- Multi-Sink Production Setup ---
-    std.debug.print("\n--- 6. Multi-Sink Production Architecture ---\n\n", .{});
+    // Multi-Sink Production Setup
+    std.debug.print("\n6. Multi-Sink Production Architecture\n\n", .{});
     {
         // Use initWithConfig to disable auto_sink from the start
         var config = Config.default();
-        config.auto_sink = false;
+        config.autoSink = false;
         config.level = .debug;
 
         const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -155,8 +155,8 @@ pub fn main() !void {
         // Application log: All levels
         _ = try logger.addSink(.{
             .name = "app-log",
-            .path = "logs/app.log",
-            .json = true,
+            .path = "logs/production_app.log",
+            .format = .json,
             .level = .info,
             .rotation = "daily",
             .retention = 14,
@@ -165,8 +165,8 @@ pub fn main() !void {
         // Error log: Only errors and critical
         _ = try logger.addSink(.{
             .name = "error-log",
-            .path = "logs/error.log",
-            .json = true,
+            .path = "logs/production_error.log",
+            .format = .json,
             .level = .err,
             .rotation = "daily",
             .retention = 90, // Keep errors longer
@@ -174,8 +174,8 @@ pub fn main() !void {
 
         std.debug.print("Multi-sink setup:\n", .{});
         std.debug.print("  - Console: warnings+ only\n", .{});
-        std.debug.print("  - app.log: info+ (14 days retention)\n", .{});
-        std.debug.print("  - error.log: errors+ (90 days retention)\n\n", .{});
+        std.debug.print("  - production_app.log: info+ (14 days retention)\n", .{});
+        std.debug.print("  - production_error.log: errors+ (90 days retention)\n\n", .{});
 
         try logger.debug("Debug: Only in full app log", @src());
         try logger.info("Info: In app.log", @src());
@@ -185,6 +185,6 @@ pub fn main() !void {
         try logger.flush();
     }
 
-    std.debug.print("\n=== Production Configuration Example Complete ===\n", .{});
+    std.debug.print("\nProduction Configuration Example Complete\n", .{});
     std.debug.print("Check logs/ directory for generated log files.\n", .{});
 }

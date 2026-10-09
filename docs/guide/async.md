@@ -26,10 +26,10 @@ Logly offers multiple async logging options:
 The simplest way to use async logging:
 
 ```zig
-_ = try logger.add(.{  // Short alias for addSink()
+ _ = try logger.add(.{  // Short alias for addSink()
     .path = "logs/app.log",
-    .async_write = true,      // Enable async (default)
-    .buffer_size = 8192,      // Buffer size in bytes (default 8KB)
+    .asyncWrite = true,      // Enable async (default)
+    .bufferSize = 8192,      // Buffer size in bytes (default 8KB)
 });
 ```
 
@@ -40,15 +40,15 @@ For more control, use the AsyncLogger directly:
 ```zig
 const logly = @import("logly");
 
-var async_logger = try logly.AsyncLogger.init(allocator, .{
-    .buffer_size = 8192,
-    .flush_interval_ms = 100,
-    .batch_size = 64,
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
+    .bufferSize = 8192,
+    .flushIntervalMs = 100,
+    .batchSize = 64,
 });
-defer async_logger.deinit();
+defer asyncLogger.deinit();
 
-try async_logger.start();
-defer async_logger.stop();
+try asyncLogger.start();
+defer asyncLogger.stop();
 ```
 
 ## Parallel Logging (Thread Pool)
@@ -59,11 +59,11 @@ For high-throughput scenarios requiring heavy processing (e.g., complex formatti
 
 ```zig
 var config = logly.Config.default();
-config.thread_pool = .{
+config.threadPool = .{
     .enabled = true,
-    .thread_count = 0, // 0 = auto-detect based on CPU cores
-    .queue_size = 10000,
-    .work_stealing = true,
+    .threadCount = 0, // 0 = auto-detect based on CPU cores
+    .queueSize = 10000,
+    .workStealing = true,
 };
 const logger = try logly.Logger.initWithConfig(allocator, config);
 ```
@@ -90,15 +90,15 @@ The async stats object now also tracks backpressure events so you can see when t
 The backpressure threshold and drain timeout are configurable:
 
 ```zig
-const async_cfg = logly.AsyncConfig.lowLatency()
+const asyncCfg = logly.AsyncConfig.lowLatency()
     .buffer(2048)
     .batch(32)
     .backpressure(0.75);
 
-var async_logger = try logly.AsyncLogger.initWithConfig(allocator, async_cfg);
-defer async_logger.deinit();
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, asyncCfg);
+defer asyncLogger.deinit();
 
-_ = async_logger.drainDefault(); // uses async_cfg.drain_timeout_ms
+ _ = asyncLogger.drainDefault(); // uses async_cfg.drain_timeout_ms
 ```
 
 ## Configuration
@@ -111,18 +111,18 @@ Enable async logging through the Config struct:
 const logly = @import("logly");
 
 var config = logly.Config.default();
-config.async_config = .{
+config.asyncConfig = .{
     .enabled = true,              // Enable async logging
-    .buffer_size = 8192,          // Ring buffer size
-    .batch_size = 100,            // Messages per batch
-    .flush_interval_ms = 100,     // Auto-flush interval
-    .overflow_policy = .drop_oldest, // On buffer overflow
-    .background_worker = true,    // Auto-start worker thread
+    .bufferSize = 8192,          // Ring buffer size
+    .batchSize = 100,            // Messages per batch
+    .flushIntervalMs = 100,     // Auto-flush interval
+    .overflowPolicy = .dropOldest, // On buffer overflow
+    .backgroundWorker = true,    // Auto-start worker thread
 };
 
 // Or use helper method
 var config2 = logly.Config.default().withAsync(.{
-    .buffer_size = 16384,
+    .bufferSize = 16384,
 });
 ```
 
@@ -130,12 +130,12 @@ var config2 = logly.Config.default().withAsync(.{
 
 ```zig
 const config = logly.AsyncLogger.AsyncConfig{
-    .buffer_size = 8192,        // Ring buffer size
-    .flush_interval_ms = 100,   // Auto-flush interval
-    .batch_size = 64,           // Messages per batch
-    .overflow_policy = .drop_oldest,
-    .background_worker = true,
-    .enable_metrics = true,
+    .bufferSize = 8192,        // Ring buffer size
+    .flushIntervalMs = 100,   // Auto-flush interval
+    .batchSize = 64,           // Messages per batch
+    .overflowPolicy = .dropOldest,
+    .backgroundWorker = true,
+    .enableMetrics = true,
 };
 ```
 
@@ -143,15 +143,15 @@ const config = logly.AsyncLogger.AsyncConfig{
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `buffer_size` | 8192 | Ring buffer capacity |
-| `flush_interval_ms` | 100 | Auto-flush interval in ms |
-| `min_flush_interval_ms` | 0 | Minimum time between flushes |
-| `max_latency_ms` | 5000 | Maximum latency before forcing flush |
-| `batch_size` | 64 | Messages written per batch |
-| `overflow_policy` | `.drop_oldest` | Behavior when buffer full |
-| `background_worker` | true | Enable background thread |
-| `backpressure_threshold` | 0.9 | Queue utilization ratio that records backpressure |
-| `drain_timeout_ms` | 5000 | Default timeout for `drainDefault()` |
+| `bufferSize` | 8192 | Ring buffer capacity |
+| `flushIntervalMs` | 100 | Auto-flush interval in ms |
+| `minFlushIntervalMs` | 0 | Minimum time between flushes |
+| `maxLatencyMs` | 5000 | Maximum latency before forcing flush |
+| `batchSize` | 64 | Messages written per batch |
+| `overflowPolicy` | `.dropOldest` | Behavior when buffer full |
+| `backgroundWorker` | true | Enable background thread |
+| `backpressureThreshold` | 0.9 | Queue utilization ratio that records backpressure |
+| `drainTimeoutMs` | 5000 | Default timeout for `drainDefault()` |
 
 ## Overflow Policies
 
@@ -159,16 +159,16 @@ Control what happens when the buffer is full:
 
 ```zig
 pub const OverflowPolicy = enum {
-    drop_oldest,  // Remove oldest to make room (default)
-    drop_newest,  // Drop new messages
+    dropOldest,  // Remove oldest to make room (default)
+    dropNewest,  // Drop new messages
     block,        // Block until space available
 };
 ```
 
 ### Choosing a Policy
 
-- **`drop_oldest`**: Best for most applications, ensures recent logs
-- **`drop_newest`**: Use when historical logs are more important
+- **`dropOldest`**: Best for most applications, ensures recent logs
+- **`dropNewest`**: Use when historical logs are more important
 - **`block`**: When you can't afford to lose any logs
 
 ## Callbacks
@@ -181,30 +181,30 @@ fn onOverflow(dropped: u64) void {
     std.debug.print("Dropped {d} records\n", .{dropped});
 }
 
-fn onFlush(count: u64, bytes: u64, elapsed_ms: u64) void {
-    std.debug.print("Flushed {d} records ({d} bytes) in {d}ms\n", .{count, bytes, elapsed_ms});
+fn onFlush(count: u64, bytes: u64, elapsedMs: u64) void {
+    std.debug.print("Flushed {d} records ({d} bytes) in {d}ms\n", .{count, bytes, elapsedMs});
 }
 
 // Register callbacks
-async_logger.setOverflowCallback(onOverflow);
-async_logger.setFlushCallback(onFlush);
-async_logger.setFullCallback(onFull);
-async_logger.setEmptyCallback(onEmpty);
-async_logger.setWorkerStartCallback(onStart);
-async_logger.setWorkerStopCallback(onStop);
-async_logger.setErrorCallback(onError);
+asyncLogger.setOverflowCallback(onOverflow);
+asyncLogger.setFlushCallback(onFlush);
+asyncLogger.setFullCallback(onFull);
+asyncLogger.setEmptyCallback(onEmpty);
+asyncLogger.setWorkerStartCallback(onStart);
+asyncLogger.setWorkerStopCallback(onStop);
+asyncLogger.setErrorCallback(onError);
 ```
 
 Available callbacks:
 - `on_overflow`: Buffer overflow occurred
-- `on_full`: Buffer became full
-- `on_empty`: Buffer became empty
-- `on_flush`: Flush operation completed
-- `on_worker_start`: Worker thread started
-- `on_worker_stop`: Worker thread stopped (provides uptime)
-- `on_batch_processed`: Batch processed (provides processing time)
-- `on_latency_threshold_exceeded`: Latency exceeded threshold
-- `on_error`: Error occurred during write
+- `onFull`: Buffer became full
+- `onEmpty`: Buffer became empty
+- `onFlush`: Flush operation completed
+- `onWorkerStart`: Worker thread started
+- `onWorkerStop`: Worker thread stopped (provides uptime)
+- `onBatchProcessed`: Batch processed (provides processing time)
+- `onLatencyThresholdExceeded`: Latency exceeded threshold
+- `onError`: Error occurred during write
 
 ## Presets
 
@@ -212,16 +212,16 @@ Use built-in presets for common scenarios:
 
 ```zig
 // Maximum throughput
-const high_throughput = logly.AsyncPresets.highThroughput();
+const highThroughput = logly.AsyncPresets.highThroughput();
 
 // Minimum latency
-const low_latency = logly.AsyncPresets.lowLatency();
+const lowLatency = logly.AsyncPresets.lowLatency();
 
 // Balanced (default)
 const balanced = logly.AsyncPresets.balanced();
 
 // Never drop messages
-const no_drop = logly.AsyncPresets.noDrop();
+const noDrop = logly.AsyncPresets.noDrop();
 ```
 
 ## Blocking vs Non-Blocking
@@ -234,12 +234,12 @@ const no_drop = logly.AsyncPresets.noDrop();
 
 These two features serve different purposes and are not the same thing:
 
-- **`auto_flush`** controls whether sinks are flushed after every log record (in the synchronous path) or when the async logger processes a batch. When enabled, each log record is written to the underlying sink immediately. This ensures no data loss but adds I/O overhead per record.
+- **`autoFlush`** controls whether sinks are flushed after every log record (in the synchronous path) or when the async logger processes a batch. When enabled, each log record is written to the underlying sink immediately. This ensures no data loss but adds I/O overhead per record.
 
 - **Async logging** means log records are queued in a ring buffer and processed by background worker threads. Records are batched together before being written to sinks, which improves throughput by reducing the number of I/O operations.
 
 > [!NOTE]
-> `auto_flush = true` with async logging means the async worker flushes after each batch, not that your application thread blocks on I/O. The application thread still enqueues to the ring buffer and returns immediately.
+> `autoFlush = true` with async logging means the async worker flushes after each batch, not that your application thread blocks on I/O. The application thread still enqueues to the ring buffer and returns immediately.
 
 ## Flushing
 
@@ -247,7 +247,7 @@ These two features serve different purposes and are not the same thing:
 
 ```zig
 // Flush all pending logs
-async_logger.flush();
+asyncLogger.flush();
 
 // Or for simple sinks
 try logger.flush();
@@ -256,8 +256,8 @@ try logger.flush();
 ### Auto-Flush
 
 Auto-flush triggers based on:
-- **Time**: After `flush_interval_ms` milliseconds
-- **Size**: When batch reaches `batch_size`
+- **Time**: After `flushIntervalMs` milliseconds
+- **Size**: When batch reaches `batchSize`
 - **Shutdown**: Automatically on `stop()` or `deinit()`
 
 ## Statistics
@@ -265,7 +265,7 @@ Auto-flush triggers based on:
 Monitor async performance:
 
 ```zig
-const stats = async_logger.getStats();
+const stats = asyncLogger.getStats();
 
 std.debug.print("Queued: {d}\\n", .{stats.getQueued()});
 std.debug.print("Written: {d}\\n", .{stats.getWritten()});
@@ -280,10 +280,10 @@ For optimized file writing:
 
 ```zig
 var writer = try logly.AsyncFileWriter.init(allocator, .{
-    .file_path = "logs/app.log",
-    .buffer_size = 64 * 1024, // 64KB
-    .flush_interval_ms = 1000,
-    .sync_on_flush = false,
+    .filePath = "logs/app.log",
+    .bufferSize = 64 * 1024, // 64KB
+    .flushIntervalMs = 1000,
+    .syncOnFlush = false,
 });
 defer writer.deinit();
 
@@ -295,10 +295,10 @@ try writer.flush();
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `file_path` | required | Log file path |
-| `buffer_size` | 64KB | Write buffer size |
-| `flush_interval_ms` | 1000 | Auto-flush interval |
-| `sync_on_flush` | false | fsync on flush |
+| `filePath` | required | Log file path |
+| `bufferSize` | 64KB | Write buffer size |
+| `flushIntervalMs` | 1000 | Auto-flush interval |
+| `syncOnFlush` | false | fsync on flush |
 | `direct_io` | false | Bypass OS cache |
 | `append` | true | Append to existing file |
 
@@ -308,10 +308,10 @@ try writer.flush();
 
 ```zig
 // High volume: larger buffers
-.buffer_size = 65536
+.bufferSize = 65536
 
 // Low latency: smaller buffers
-.buffer_size = 1024
+.bufferSize = 1024
 ```
 
 ### 2. Monitor Drop Rate
@@ -326,7 +326,7 @@ if (stats.dropRate() > 0.01) { // > 1% drops
 
 ```zig
 // Always stop properly to flush pending logs
-defer async_logger.stop();
+defer asyncLogger.stop();
 ```
 
 ### 4. Handle Backpressure
@@ -334,7 +334,7 @@ defer async_logger.stop();
 ```zig
 // For critical logs, use blocking policy
 const critical_config = logly.AsyncLogger.AsyncConfig{
-    .overflow_policy = .block,
+    .overflowPolicy = .block,
 };
 ```
 
@@ -348,23 +348,22 @@ const critical_config = logly.AsyncLogger.AsyncConfig{
 ## Example: High-Throughput Setup
 
 ```zig
-var async_logger = try logly.AsyncLogger.init(allocator, .{
-    .buffer_size = 65536,
-    .flush_interval_ms = 500,
-    .batch_size = 256,
-    .overflow_policy = .drop_oldest,
-    .preallocate_buffers = true,
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
+    .bufferSize = 65536,
+    .flushIntervalMs = 500,
+    .batchSize = 256,
+    .overflowPolicy = .dropOldest,
 });
 ```
 
 ## Example: Low-Latency Setup
 
 ```zig
-var async_logger = try logly.AsyncLogger.init(allocator, .{
-    .buffer_size = 1024,
-    .flush_interval_ms = 10,
-    .batch_size = 16,
-    .overflow_policy = .block,
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
+    .bufferSize = 1024,
+    .flushIntervalMs = 10,
+    .batchSize = 16,
+    .overflowPolicy = .block,
 });
 ```
 
@@ -374,21 +373,21 @@ var async_logger = try logly.AsyncLogger.init(allocator, .{
 - [Thread Pool Guide](thread-pool.md)
 - [Configuration Guide](configuration.md)
 
-## New Methods (v0.0.9)
+## Lifecycle & State
 
 ```zig
-var async_logger = try logly.AsyncLogger.init(allocator, config);
-defer async_logger.deinit();
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, config);
+defer asyncLogger.deinit();
 
 // State methods
-const running = async_logger.isRunning();
-const capacity = async_logger.bufferCapacity();
-const full = async_logger.isFull();
-const depth = async_logger.queueDepth();
-const empty = async_logger.isQueueEmpty();
+const running = asyncLogger.isRunning();
+const capacity = asyncLogger.bufferCapacity();
+const full = asyncLogger.isFull();
+const depth = asyncLogger.queueDepth();
+const empty = asyncLogger.isQueueEmpty();
 
 // Reset statistics
-async_logger.resetStats();
+asyncLogger.resetStats();
 ```
 
 ## Aliases

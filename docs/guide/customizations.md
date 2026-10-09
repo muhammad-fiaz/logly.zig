@@ -25,14 +25,14 @@ The **logs root path** feature allows you to specify a single root directory whe
 
 ```zig
 var config = logly.Config.default();
-config.logs_root_path = "./logs";  // All file sinks will be stored in ./logs
+config.logsRootPath = "./logs";  // All file sinks will be stored in ./logs
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 
 // Adding sinks with relative paths
-_ = try logger.addSink(logly.SinkConfig.file("application.log"));
-_ = try logger.addSink(logly.SinkConfig.file("errors.log"));
-_ = try logger.addSink(logly.SinkConfig.file("debug.log"));
+ _ = try logger.addSink(logly.SinkConfig.file("application.log"));
+ _ = try logger.addSink(logly.SinkConfig.file("errors.log"));
+ _ = try logger.addSink(logly.SinkConfig.file("debug.log"));
 ```
 
 ### Behavior
@@ -40,7 +40,7 @@ _ = try logger.addSink(logly.SinkConfig.file("debug.log"));
 - **Automatic Directory Creation**: If the root path doesn't exist, it will be automatically created
 - **Path Resolution**: File sink paths are automatically prepended with the root path
 - **Non-intrusive**: If directory creation fails, logging continues without interruption
-- **Optional**: If `logs_root_path` is not set, file sinks use absolute or relative paths as specified
+- **Optional**: If `logsRootPath` is not set, file sinks use absolute or relative paths as specified
 
 ### Example Output
 
@@ -59,15 +59,15 @@ Customize how log messages are formatted and structured using `FormatStructureCo
 
 ```zig
 var config = logly.Config.default();
-config.format_structure = .{
-    .message_prefix = ">>> ",        // Add prefix to each message
-    .message_suffix = " <<<",        // Add suffix to each message
-    .field_separator = " | ",        // Separator between fields
-    .enable_nesting = true,          // Enable hierarchical formatting
-    .nesting_indent = "    ",        // Indentation for nested fields
-    .include_empty_fields = false,   // Skip null/empty fields
-    .placeholder_open = "{",         // Custom placeholder syntax
-    .placeholder_close = "}",
+config.formatStructure = .{
+    .messagePrefix = ">>> ",        // Add prefix to each message
+    .messageSuffix = " <<<",        // Add suffix to each message
+    .fieldSeparator = " | ",        // Separator between fields
+    .enableNesting = true,          // Enable hierarchical formatting
+    .nestingIndent = "    ",        // Indentation for nested fields
+    .includeEmptyFields = false,   // Skip null/empty fields
+    .placeholderOpen = "{",         // Custom placeholder syntax
+    .placeholderClose = "}",
 };
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -77,13 +77,13 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 
 | Option | Purpose | Example |
 |--------|---------|---------|
-| `message_prefix` | Text prepended to messages | `">>> "` |
-| `message_suffix` | Text appended to messages | `" <<<"` |
-| `field_separator` | Separator between log fields | `" \| "` |
-| `enable_nesting` | Support nested/hierarchical logs | `true` |
-| `nesting_indent` | Indentation for nested items | `"  "` (2 spaces) |
-| `include_empty_fields` | Include null fields in output | `false` |
-| `placeholder_open`/`close` | Custom placeholder syntax | `"[["`, `"]]"` |
+| `messagePrefix` | Text prepended to messages | `">>> "` |
+| `messageSuffix` | Text appended to messages | `" <<<"` |
+| `fieldSeparator` | Separator between log fields | `" \| "` |
+| `enableNesting` | Support nested/hierarchical logs | `true` |
+| `nestingIndent` | Indentation for nested items | `"  "` (2 spaces) |
+| `includeEmptyFields` | Include null fields in output | `false` |
+| `placeholderOpen`/`close` | Custom placeholder syntax | `"[["`, `"]]"` |
 
 ## Per-Level Color Customization
 
@@ -93,18 +93,18 @@ Define custom ANSI colors for each log level independently.
 
 ```zig
 var config = logly.Config.default();
-config.level_colors = .{
-    .trace_color = "\x1b[36m",      // Cyan
-    .debug_color = "\x1b[35m",      // Magenta
-    .info_color = "\x1b[34m",       // Blue
-    .success_color = "\x1b[32m",    // Green
-    .warning_color = "\x1b[33m",    // Yellow
-    .error_color = "\x1b[31m",      // Red
-    .fail_color = "\x1b[31;1m",     // Bold Red
-    .critical_color = "\x1b[1;31m", // Bold Red
-    .use_rgb = false,               // Standard ANSI (not RGB)
-    .support_background = false,    // Text colors only
-    .reset_code = "\x1b[0m",        // Reset to default
+config.levelColors = .{
+    .traceColor = "\x1b[36m",      // Cyan
+    .debugColor = "\x1b[35m",      // Magenta
+    .infoColor = "\x1b[34m",       // Blue
+    .successColor = "\x1b[32m",    // Green
+    .warningColor = "\x1b[33m",    // Yellow
+    .errorColor = "\x1b[31m",      // Red
+    .failColor = "\x1b[31;1m",     // Bold Red
+    .criticalColor = "\x1b[1;31m", // Bold Red
+    .useRgb = false,               // Standard ANSI (not RGB)
+    .supportBackground = false,    // Text colors only
+    .resetCode = "\x1b[0m",        // Reset to default
 };
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -149,10 +149,10 @@ Configure pattern matching and alerting for specific log messages.
 var config = logly.Config.default();
 config.highlighters = .{
     .enabled = true,
-    .alert_on_match = true,
-    .alert_min_severity = .warning,
-    .log_matches = true,
-    .max_matches_per_message = 10,
+    .alertOnMatch = true,
+    .alertMinSeverity = .warning,
+    .logMatches = true,
+    .maxMatchesPerMessage = 10,
 };
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -163,11 +163,11 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 | Option | Purpose |
 |--------|---------|
 | `enabled` | Enable/disable highlighter system |
-| `alert_on_match` | Trigger alerts when patterns match |
-| `alert_min_severity` | Minimum severity to trigger alerts |
-| `log_matches` | Log pattern matches as separate records |
+| `alertOnMatch` | Trigger alerts when patterns match |
+| `alertMinSeverity` | Minimum severity to trigger alerts |
+| `logMatches` | Log pattern matches as separate records |
 | `patterns` | Array of `HighlightPattern` structures |
-| `max_matches_per_message` | Max patterns to match per message |
+| `maxMatchesPerMessage` | Max patterns to match per message |
 
 ### Pattern Definition
 
@@ -175,8 +175,8 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 pub const HighlightPattern = struct {
     name: []const u8,              // Pattern identifier
     pattern: []const u8,           // Text or regex to match
-    is_regex: bool = false,        // Is this a regex pattern?
-    highlight_color: []const u8,   // Color for highlights
+    isRegex: bool = false,        // Is this a regex pattern?
+    highlightColor: []const u8,   // Color for highlights
     severity: AlertSeverity,       // Severity level
     metadata: ?[]const u8 = null,  // Custom metadata
 };
@@ -213,35 +213,35 @@ pub fn main() !void {
     var config = logly.Config.default();
 
     // Global root path
-    config.logs_root_path = "./logs";
+    config.logsRootPath = "./logs";
 
     // Format structure
-    config.format_structure = .{
-        .message_prefix = "[APP] ",
-        .field_separator = " | ",
-        .enable_nesting = true,
+    config.formatStructure = .{
+        .messagePrefix = "[APP] ",
+        .fieldSeparator = " | ",
+        .enableNesting = true,
     };
 
     // Custom colors
-    config.level_colors = .{
-        .info_color = "\x1b[34m",     // Blue
-        .warning_color = "\x1b[33m",  // Yellow
-        .error_color = "\x1b[31m",    // Red
+    config.levelColors = .{
+        .infoColor = "\x1b[34m",     // Blue
+        .warningColor = "\x1b[33m",  // Yellow
+        .errorColor = "\x1b[31m",    // Red
     };
 
     // Highlighters
     config.highlighters = .{
         .enabled = true,
-        .alert_on_match = true,
-        .log_matches = true,
+        .alertOnMatch = true,
+        .logMatches = true,
     };
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
     // Add sinks (automatically use logs_root_path)
-    _ = try logger.addSink(logly.SinkConfig.file("application.log"));
-    _ = try logger.addSink(logly.SinkConfig.file("errors.log"));
+     _ = try logger.addSink(logly.SinkConfig.file("application.log"));
+     _ = try logger.addSink(logly.SinkConfig.file("errors.log"));
 
     // Log messages
     try logger.info("Application started", @src());

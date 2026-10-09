@@ -81,7 +81,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(gpa.allocator());
     defer logger.deinit();
@@ -108,15 +108,21 @@ pub fn main() !void {
 > [!TIP]
 > Logly.zig aims to be production-ready. While this is a relatively new project and not yet widely adopted, it offers powerful features that can simplify your Zig project's logging. If you love Logly.zig, feel free to use it in your projects and give it a ⭐ on GitHub!
 
-## Installation
+  ## Installation
 
-The easiest way to add Logly to your project.
+  The easiest way to add Logly to your project.
 
-For Zig 0.16 (use `0.1.8` or newer):
+  For Zig 0.17.0+ (use `0.2.2` or newer):
 
-```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
-```
+  ```bash
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  ```
+
+  For Zig 0.16.x (use `0.2.1`):
+
+  ```bash
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
+  ```
 
 For Zig 0.15.0 (use `0.1.7` or earlier):
 

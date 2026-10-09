@@ -1,23 +1,10 @@
-//! Log Record Module
+//! Log record.
 //!
-//! Defines the Record struct representing a single log event with all associated
-//! metadata. Records are the core data structure passed through the logging pipeline.
-//!
-//! A Record contains:
-//! - Timestamp: Unix timestamp in milliseconds
-//! - Level: Severity level of the log entry
-//! - Message: The actual log message text
-//! - Source Location: Module, function, file, line, column
-//! - Tracing: Trace ID, span ID, parent span ID, correlation ID
-//! - Context: Key-value pairs for structured logging
-//! - Error Info: Optional error details and stack traces
-//! - Duration: Optional timing information
-//!
-//! Records are typically created by the Logger and passed to Formatters and Sinks.
-
+//! A single log event: timestamp, level, message, context, and trace data.
 const std = @import("std");
 const Level = @import("level.zig").Level;
 const Utils = @import("utils.zig");
+const Color = @import("color.zig");
 
 /// Represents a single log event.
 pub const Record = struct {
@@ -28,10 +15,11 @@ pub const Record = struct {
     level: Level,
 
     /// Custom level name (overrides standard level display if set).
-    custom_level_name: ?[]const u8 = null,
+    customLevelName: ?[]const u8 = null,
 
     /// Custom level color (overrides standard level color if set).
-    custom_level_color: ?[]const u8 = null,
+    /// A tint `Color` value; no allocation or lifetime management needed.
+    customLevelColor: ?Color.Color = null,
 
     /// The actual log message.
     message: []const u8,
@@ -52,53 +40,53 @@ pub const Record = struct {
     column: ?u32 = null,
 
     /// Thread ID for concurrent logging identification.
-    thread_id: ?u64 = null,
+    threadId: ?u64 = null,
 
     /// Distributed trace ID for request tracing across services.
-    trace_id: ?[]const u8 = null,
+    traceId: ?[]const u8 = null,
 
     /// Span ID for distributed tracing within a trace.
-    span_id: ?[]const u8 = null,
+    spanId: ?[]const u8 = null,
 
     /// Parent span ID for nested spans.
-    parent_span_id: ?[]const u8 = null,
+    parentSpanId: ?[]const u8 = null,
     /// Stack trace (optional).
-    stack_trace: ?*std.builtin.StackTrace = null,
+    stackTrace: ?*std.builtin.StackTrace = null,
     /// Correlation ID for grouping related log entries.
-    correlation_id: ?[]const u8 = null,
+    correlationId: ?[]const u8 = null,
 
     /// Request ID for HTTP request tracking.
-    request_id: ?[]const u8 = null,
+    requestId: ?[]const u8 = null,
 
     /// Session ID for user session tracking.
-    session_id: ?[]const u8 = null,
+    sessionId: ?[]const u8 = null,
 
     /// User ID for audit logging.
-    user_id: ?[]const u8 = null,
+    userId: ?[]const u8 = null,
 
     /// Tags for categorization and filtering.
     tags: ?[]const []const u8 = null,
 
     /// Error information if this log represents an error.
-    error_info: ?ErrorInfo = null,
+    errorInfo: ?ErrorInfo = null,
 
     /// Duration in nanoseconds (for timing logs).
-    duration_ns: ?u64 = null,
+    durationNs: ?u64 = null,
 
     /// Additional context key-value pairs.
     context: std.StringHashMap(std.json.Value),
 
     /// Invoke messages attached to this record (if any triggers matched).
-    invoke_messages: ?[]const InvokeMessage = null,
+    invokeMessages: ?[]const InvokeMessage = null,
 
     /// Allocator reference for managed memory.
     allocator: std.mem.Allocator,
 
     /// Owned strings that need to be freed.
-    owned_strings: std.ArrayList([]const u8),
+    ownedStrings: std.ArrayList([]const u8),
 
     /// Owned stack trace that needs to be freed.
-    owned_stack_trace: ?*std.builtin.StackTrace = null,
+    ownedStackTrace: ?*std.builtin.StackTrace = null,
 
     pub const ErrorCategory = enum {
         io,
@@ -122,9 +110,9 @@ pub const Record = struct {
     pub const ErrorInfo = struct {
         name: []const u8,
         message: []const u8,
-        stack_trace: ?[]const u8 = null,
+        stackTrace: ?[]const u8 = null,
         code: ?i32 = null,
-        error_category: ?ErrorCategory = null,
+        errorCategory: ?ErrorCategory = null,
     };
 
     /// Message type (re-exported from invoke.zig).
@@ -132,23 +120,17 @@ pub const Record = struct {
 
     /// Returns the display name for the level (custom or standard).
     pub fn levelName(self: *const Record) []const u8 {
-        return self.custom_level_name orelse self.level.asString();
+        return self.customLevelName orelse self.level.asString();
     }
 
-    /// Returns the color code for the level (custom or standard).
-    pub fn levelColor(self: *const Record) []const u8 {
-        return self.custom_level_color orelse self.level.defaultColor();
+    /// Returns the color for the level (custom or standard).
+    ///
+    /// Returns a tint `Color` value. Render with `color.sequence()`.
+    pub fn levelColor(self: *const Record) Color.Color {
+        return self.customLevelColor orelse self.level.defaultColor();
     }
 
     /// Creates a new log record.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the context map.
-    ///     level: Log severity.
-    ///     message: Log message content.
-    ///
-    /// Returns:
-    ///     A new Record instance.
     pub fn init(allocator: std.mem.Allocator, level: Level, message: []const u8) Record {
         return .{
             .timestamp = Utils.currentMillis(),
@@ -156,53 +138,31 @@ pub const Record = struct {
             .message = message,
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .allocator = allocator,
-            .owned_strings = .empty,
+            .ownedStrings = .empty,
         };
     }
 
-    /// Alias for init().
-    pub const create = init;
-
     /// Creates a new log record with custom level information.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the context map.
-    ///     level: Base log severity for filtering.
-    ///     custom_name: Custom level name to display.
-    ///     custom_color: Custom color code for the level.
-    ///     message: Log message content.
-    ///
-    /// Returns:
-    ///     A new Record instance with custom level.
     pub fn initCustom(
         allocator: std.mem.Allocator,
         level: Level,
-        custom_name: []const u8,
-        custom_color: []const u8,
+        customName: []const u8,
+        customColor: Color.Color,
         message: []const u8,
     ) Record {
         return .{
             .timestamp = Utils.currentMillis(),
             .level = level,
-            .custom_level_name = custom_name,
-            .custom_level_color = custom_color,
+            .customLevelName = customName,
+            .customLevelColor = customColor,
             .message = message,
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .allocator = allocator,
-            .owned_strings = .empty,
+            .ownedStrings = .empty,
         };
     }
 
     /// Creates a new log record with source location information.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the context map.
-    ///     level: Log severity.
-    ///     message: Log message content.
-    ///     src: Source location information.
-    ///
-    /// Returns:
-    ///     A new Record instance with source information populated.
     pub fn initWithSource(
         allocator: std.mem.Allocator,
         level: Level,
@@ -214,29 +174,29 @@ pub const Record = struct {
             .level = level,
             .message = message,
             .filename = src.file,
-            .function = src.fn_name,
+            .function = src.fnName,
             .line = src.line,
             .column = src.column,
             .context = std.StringHashMap(std.json.Value).init(allocator),
             .allocator = allocator,
-            .owned_strings = .empty,
+            .ownedStrings = .empty,
         };
     }
 
     /// Frees resources associated with the record.
     pub fn deinit(self: *Record) void {
         self.context.deinit();
-        for (self.owned_strings.items) |s| {
+        for (self.ownedStrings.items) |s| {
             self.allocator.free(s);
         }
-        self.owned_strings.deinit(self.allocator);
+        self.ownedStrings.deinit(self.allocator);
 
-        if (self.owned_stack_trace) |st| {
+        if (self.ownedStackTrace) |st| {
             self.allocator.free(st.instruction_addresses);
             self.allocator.destroy(st);
         }
 
-        if (self.invoke_messages) |messages| {
+        if (self.invokeMessages) |messages| {
             self.allocator.free(messages);
         }
 
@@ -245,65 +205,43 @@ pub const Record = struct {
         }
     }
 
-    /// Alias for deinit().
-    pub const destroy = deinit;
-
     /// Sets the trace ID for distributed tracing.
-    ///
-    /// Arguments:
-    ///     trace_id: The trace ID string.
-    pub fn setTraceId(self: *Record, trace_id: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, trace_id);
-        try self.owned_strings.append(self.allocator, owned);
-        self.trace_id = owned;
+    pub fn setTraceId(self: *Record, traceId: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, traceId);
+        try self.ownedStrings.append(self.allocator, owned);
+        self.traceId = owned;
     }
 
     /// Sets the span ID for distributed tracing.
-    ///
-    /// Arguments:
-    ///     span_id: The span ID string.
-    pub fn setSpanId(self: *Record, span_id: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, span_id);
-        try self.owned_strings.append(self.allocator, owned);
-        self.span_id = owned;
+    pub fn setSpanId(self: *Record, spanId: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, spanId);
+        try self.ownedStrings.append(self.allocator, owned);
+        self.spanId = owned;
     }
 
     /// Sets the correlation ID for grouping related logs.
-    ///
-    /// Arguments:
-    ///     correlation_id: The correlation ID string.
-    pub fn setCorrelationId(self: *Record, correlation_id: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, correlation_id);
-        try self.owned_strings.append(self.allocator, owned);
-        self.correlation_id = owned;
+    pub fn setCorrelationId(self: *Record, correlationId: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, correlationId);
+        try self.ownedStrings.append(self.allocator, owned);
+        self.correlationId = owned;
     }
 
     /// Adds a context field to the record.
-    ///
-    /// Arguments:
-    ///     key: The field name.
-    ///     value: The field value.
     pub fn addField(self: *Record, key: []const u8, value: std.json.Value) !void {
-        const owned_key = try self.allocator.dupe(u8, key);
-        try self.owned_strings.append(self.allocator, owned_key);
-        try self.context.put(owned_key, value);
+        const ownedKey = try self.allocator.dupe(u8, key);
+        try self.ownedStrings.append(self.allocator, ownedKey);
+        try self.context.put(ownedKey, value);
     }
 
     /// Sets error information for error-level logs.
-    ///
-    /// Arguments:
-    ///     name: Error name/type.
-    ///     message: Error message.
-    ///     stack_trace: Optional stack trace.
-    ///     code: Optional error code.
     pub fn setError(
         self: *Record,
         name: []const u8,
         message: []const u8,
-        stack_trace: ?[]const u8,
+        stackTrace: ?[]const u8,
         code: ?i32,
     ) !void {
-        try self.setErrorWithCategory(name, message, stack_trace, code, null);
+        try self.setErrorWithCategory(name, message, stackTrace, code, null);
     }
 
     /// Sets error information with a specific category.
@@ -311,28 +249,28 @@ pub const Record = struct {
         self: *Record,
         name: []const u8,
         message: []const u8,
-        stack_trace: ?[]const u8,
+        stackTrace: ?[]const u8,
         code: ?i32,
         category: ?ErrorCategory,
     ) !void {
-        const owned_name = try self.allocator.dupe(u8, name);
-        try self.owned_strings.append(self.allocator, owned_name);
+        const ownedName = try self.allocator.dupe(u8, name);
+        try self.ownedStrings.append(self.allocator, ownedName);
 
-        const owned_message = try self.allocator.dupe(u8, message);
-        try self.owned_strings.append(self.allocator, owned_message);
+        const ownedMessage = try self.allocator.dupe(u8, message);
+        try self.ownedStrings.append(self.allocator, ownedMessage);
 
-        var owned_stack: ?[]const u8 = null;
-        if (stack_trace) |st| {
-            owned_stack = try self.allocator.dupe(u8, st);
-            try self.owned_strings.append(self.allocator, owned_stack.?);
+        var ownedStack: ?[]const u8 = null;
+        if (stackTrace) |st| {
+            ownedStack = try self.allocator.dupe(u8, st);
+            try self.ownedStrings.append(self.allocator, ownedStack.?);
         }
 
-        self.error_info = .{
-            .name = owned_name,
-            .message = owned_message,
-            .stack_trace = owned_stack,
+        self.errorInfo = .{
+            .name = ownedName,
+            .message = ownedMessage,
+            .stackTrace = ownedStack,
             .code = code,
-            .error_category = category,
+            .errorCategory = category,
         };
     }
 
@@ -349,12 +287,12 @@ pub const Record = struct {
         }
         try list.append(self.allocator, owned);
 
-        const old_tags = self.tags;
+        const oldTags = self.tags;
         self.tags = try list.toOwnedSlice(self.allocator);
-        if (old_tags) |ot| {
+        if (oldTags) |ot| {
             self.allocator.free(ot);
         }
-        try self.owned_strings.append(self.allocator, owned);
+        try self.ownedStrings.append(self.allocator, owned);
     }
 
     /// Returns a numeric severity (0-100) derived from level priority.
@@ -375,23 +313,23 @@ pub const Record = struct {
 
     /// Helper to check if severity is at or above a threshold.
     pub fn isHighSeverity(self: *const Record, threshold: Level) bool {
-        return @intFromEnum(self.level) >= @intFromEnum(threshold);
+        return @backingInt(self.level) >= @backingInt(threshold);
     }
 
     fn writeLogfmtString(writer: anytype, value: []const u8) !void {
-        var needs_quoting = false;
+        var needsQuoting = false;
         if (value.len == 0) {
-            needs_quoting = true;
+            needsQuoting = true;
         } else {
             for (value) |c| {
                 if (c == ' ' or c == '=' or c == '"' or c == '\\' or c == '\n' or c == '\r' or c == '\t') {
-                    needs_quoting = true;
+                    needsQuoting = true;
                     break;
                 }
             }
         }
 
-        if (needs_quoting) {
+        if (needsQuoting) {
             try writer.writeByte('"');
             for (value) |c| {
                 switch (c) {
@@ -433,208 +371,93 @@ pub const Record = struct {
         if (self.line) |l| {
             try writer.print(" line={d}", .{l});
         }
-        if (self.trace_id) |tid| {
-            try writer.writeAll(" trace_id=");
+        if (self.traceId) |tid| {
+            try writer.writeAll(" traceId=");
             try writeLogfmtString(writer, tid);
         }
-        if (self.span_id) |sid| {
-            try writer.writeAll(" span_id=");
+        if (self.spanId) |sid| {
+            try writer.writeAll(" spanId=");
             try writeLogfmtString(writer, sid);
         }
 
         var it = self.context.iterator();
         while (it.next()) |entry| {
             try writer.print(" {s}=", .{entry.key_ptr.*});
-            var val_buf: std.ArrayList(u8) = .empty;
-            defer val_buf.deinit(self.allocator);
-            var list_writer = Utils.ArrayListWriter.init(&val_buf, self.allocator);
-            try std.json.stringify(entry.value_ptr.*, .{}, &list_writer.writer);
-            try writeLogfmtString(writer, val_buf.items);
-        }
-    }
-
-    fn escapeCefField(w: anytype, s: []const u8) !void {
-        for (s) |c| {
-            switch (c) {
-                '\\' => try w.writeAll("\\\\"),
-                '|' => try w.writeAll("\\|"),
-                '\n' => try w.writeAll("\\n"),
-                '\r' => try w.writeAll("\\r"),
-                else => try w.writeByte(c),
-            }
-        }
-    }
-
-    fn escapeCefExtensionValue(w: anytype, s: []const u8) !void {
-        for (s) |c| {
-            switch (c) {
-                '\\' => try w.writeAll("\\\\"),
-                '=' => try w.writeAll("\\="),
-                '\n' => try w.writeAll("\\n"),
-                '\r' => try w.writeAll("\\r"),
-                else => try w.writeByte(c),
-            }
-        }
-    }
-
-    /// Serializes the record in CEF (Common Event Format).
-    pub fn toCef(self: *const Record, writer: anytype) !void {
-        try writer.writeAll("CEF:0|");
-        try escapeCefField(writer, "logly");
-        try writer.writeByte('|');
-        try escapeCefField(writer, "logly.zig");
-        try writer.writeByte('|');
-        try escapeCefField(writer, "0.2.0");
-        try writer.writeByte('|');
-        try escapeCefField(writer, self.correlation_id orelse "log");
-        try writer.writeByte('|');
-        try escapeCefField(writer, self.message);
-        try writer.writeByte('|');
-
-        const severity_num: u8 = switch (self.level) {
-            .trace => 1,
-            .debug => 2,
-            .info => 3,
-            .notice => 4,
-            .success => 5,
-            .warning => 6,
-            .err => 7,
-            .fail => 8,
-            .critical => 9,
-            .fatal => 10,
-        };
-        try writer.print("{d}|rt={d}", .{ severity_num, self.timestamp });
-
-        if (self.module) |m| {
-            try writer.writeAll(" module=");
-            try escapeCefExtensionValue(writer, m);
-        }
-        if (self.function) |f| {
-            try writer.writeAll(" function=");
-            try escapeCefExtensionValue(writer, f);
-        }
-        if (self.filename) |f| {
-            try writer.writeAll(" file=");
-            try escapeCefExtensionValue(writer, f);
-        }
-        if (self.line) |l| {
-            try writer.print(" line={d}", .{l});
-        }
-        if (self.trace_id) |tid| {
-            try writer.writeAll(" traceId=");
-            try escapeCefExtensionValue(writer, tid);
-        }
-        if (self.span_id) |sid| {
-            try writer.writeAll(" spanId=");
-            try escapeCefExtensionValue(writer, sid);
-        }
-
-        var it = self.context.iterator();
-        while (it.next()) |entry| {
-            try writer.writeByte(' ');
-            try writer.writeAll(entry.key_ptr.*);
-            try writer.writeByte('=');
-            var val_buf: std.ArrayList(u8) = .empty;
-            defer val_buf.deinit(self.allocator);
-            var list_writer = Utils.ArrayListWriter.init(&val_buf, self.allocator);
-            try std.json.stringify(entry.value_ptr.*, .{}, &list_writer.writer);
-            try escapeCefExtensionValue(writer, val_buf.items);
+            var valBuf: std.ArrayList(u8) = .empty;
+            defer valBuf.deinit(self.allocator);
+            var listWriter = Utils.ArrayListWriter.init(&valBuf, self.allocator);
+            try std.json.stringify(entry.value_ptr.*, .{}, &listWriter.writer);
+            try writeLogfmtString(writer, valBuf.items);
         }
     }
 
     /// Sets the duration for timing logs.
-    ///
-    /// Arguments:
-    ///     duration_ns: Duration in nanoseconds.
-    pub fn setDuration(self: *Record, duration_ns: u64) void {
-        self.duration_ns = duration_ns;
+    pub fn setDuration(self: *Record, durationNs: u64) void {
+        self.durationNs = durationNs;
     }
 
     /// Sets the duration from a timer start time.
-    ///
-    /// Arguments:
-    ///     start_time: The start timestamp from std.time.Timer or nanoTimestamp.
-    pub fn setDurationSince(self: *Record, start_time: i128) void {
+    pub fn setDurationSince(self: *Record, startTime: i128) void {
         const now = Utils.currentNanos();
-        const duration = @as(u64, @intCast(@max(0, now - start_time)));
-        self.duration_ns = duration;
+        const duration = @as(u64, @intCast(@max(0, now - startTime)));
+        self.durationNs = duration;
     }
 
     /// Generates a unique trace ID.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the generated string.
-    ///
-    /// Returns:
-    ///     A unique trace ID string (caller must free).
     pub fn generateTraceId(allocator: std.mem.Allocator) ![]u8 {
         return Utils.generateTraceId(allocator);
     }
 
     /// Generates a unique span ID.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the generated string.
-    ///
-    /// Returns:
-    ///     A unique span ID string (caller must free).
     pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
         return Utils.generateSpanId(allocator);
     }
 
     /// Clones the record.
-    ///
-    /// Arguments:
-    ///     allocator: Allocator for the cloned record.
-    ///
-    /// Returns:
-    ///     A new Record that is a copy of this one.
     pub fn clone(self: *const Record, allocator: std.mem.Allocator) !Record {
         // Deep copy the message
-        const owned_message = try allocator.dupe(u8, self.message);
-        var new_record = Record.init(allocator, self.level, owned_message);
-        try new_record.owned_strings.append(allocator, owned_message);
+        const ownedMessage = try allocator.dupe(u8, self.message);
+        var newRecord = Record.init(allocator, self.level, ownedMessage);
+        try newRecord.ownedStrings.append(allocator, ownedMessage);
 
-        new_record.timestamp = self.timestamp;
-        new_record.line = self.line;
-        new_record.column = self.column;
-        new_record.thread_id = self.thread_id;
-        new_record.duration_ns = self.duration_ns;
+        newRecord.timestamp = self.timestamp;
+        newRecord.line = self.line;
+        newRecord.column = self.column;
+        newRecord.threadId = self.threadId;
+        newRecord.durationNs = self.durationNs;
 
         // Deep copy optional strings
         if (self.module) |m| {
             const owned = try allocator.dupe(u8, m);
-            try new_record.owned_strings.append(allocator, owned);
-            new_record.module = owned;
+            try newRecord.ownedStrings.append(allocator, owned);
+            newRecord.module = owned;
         }
         if (self.function) |f| {
             const owned = try allocator.dupe(u8, f);
-            try new_record.owned_strings.append(allocator, owned);
-            new_record.function = owned;
+            try newRecord.ownedStrings.append(allocator, owned);
+            newRecord.function = owned;
         }
         if (self.filename) |f| {
             const owned = try allocator.dupe(u8, f);
-            try new_record.owned_strings.append(allocator, owned);
-            new_record.filename = owned;
+            try newRecord.ownedStrings.append(allocator, owned);
+            newRecord.filename = owned;
         }
-        if (self.custom_level_name) |n| {
+        if (self.customLevelName) |n| {
             const owned = try allocator.dupe(u8, n);
-            try new_record.owned_strings.append(allocator, owned);
-            new_record.custom_level_name = owned;
+            try newRecord.ownedStrings.append(allocator, owned);
+            newRecord.customLevelName = owned;
         }
-        if (self.custom_level_color) |c| {
-            const owned = try allocator.dupe(u8, c);
-            try new_record.owned_strings.append(allocator, owned);
-            new_record.custom_level_color = owned;
+        if (self.customLevelColor) |c| {
+            newRecord.customLevelColor = c;
         }
 
-        if (self.trace_id) |tid| try new_record.setTraceId(tid);
-        if (self.span_id) |sid| try new_record.setSpanId(sid);
-        if (self.correlation_id) |cid| try new_record.setCorrelationId(cid);
-        if (self.parent_span_id) |psid| try new_record.setParentSpanId(psid);
-        if (self.request_id) |rid| try new_record.setRequestId(rid);
-        if (self.session_id) |sid| try new_record.setSessionId(sid);
-        if (self.user_id) |uid| try new_record.setUserId(uid);
+        if (self.traceId) |tid| try newRecord.setTraceId(tid);
+        if (self.spanId) |sid| try newRecord.setSpanId(sid);
+        if (self.correlationId) |cid| try newRecord.setCorrelationId(cid);
+        if (self.parentSpanId) |psid| try newRecord.setParentSpanId(psid);
+        if (self.requestId) |rid| try newRecord.setRequestId(rid);
+        if (self.sessionId) |sid| try newRecord.setSessionId(sid);
+        if (self.userId) |uid| try newRecord.setUserId(uid);
 
         if (self.tags) |tgs| {
             var list: std.ArrayList([]const u8) = .empty;
@@ -642,52 +465,52 @@ pub const Record = struct {
             for (tgs) |tag| {
                 const owned = try allocator.dupe(u8, tag);
                 try list.append(allocator, owned);
-                try new_record.owned_strings.append(allocator, owned);
+                try newRecord.ownedStrings.append(allocator, owned);
             }
-            new_record.tags = try list.toOwnedSlice(allocator);
+            newRecord.tags = try list.toOwnedSlice(allocator);
         }
 
-        if (self.error_info) |err_i| {
-            const owned_name = try allocator.dupe(u8, err_i.name);
-            try new_record.owned_strings.append(allocator, owned_name);
-            const owned_msg = try allocator.dupe(u8, err_i.message);
-            try new_record.owned_strings.append(allocator, owned_msg);
-            var owned_stack: ?[]const u8 = null;
-            if (err_i.stack_trace) |st| {
-                owned_stack = try allocator.dupe(u8, st);
-                try new_record.owned_strings.append(allocator, owned_stack.?);
+        if (self.errorInfo) |errI| {
+            const ownedName = try allocator.dupe(u8, errI.name);
+            try newRecord.ownedStrings.append(allocator, ownedName);
+            const ownedMsg = try allocator.dupe(u8, errI.message);
+            try newRecord.ownedStrings.append(allocator, ownedMsg);
+            var ownedStack: ?[]const u8 = null;
+            if (errI.stackTrace) |st| {
+                ownedStack = try allocator.dupe(u8, st);
+                try newRecord.ownedStrings.append(allocator, ownedStack.?);
             }
-            new_record.error_info = .{
-                .name = owned_name,
-                .message = owned_msg,
-                .stack_trace = owned_stack,
-                .code = err_i.code,
-                .error_category = err_i.error_category,
+            newRecord.errorInfo = .{
+                .name = ownedName,
+                .message = ownedMsg,
+                .stackTrace = ownedStack,
+                .code = errI.code,
+                .errorCategory = errI.errorCategory,
             };
         }
 
-        if (self.stack_trace) |st| {
-            const new_st = try allocator.create(std.builtin.StackTrace);
-            const new_addresses = try allocator.dupe(usize, st.instruction_addresses);
-            new_st.* = .{
+        if (self.stackTrace) |st| {
+            const newSt = try allocator.create(std.builtin.StackTrace);
+            const newAddresses = try allocator.dupe(usize, st.instruction_addresses);
+            newSt.* = .{
                 .index = st.index,
-                .instruction_addresses = new_addresses,
+                .instruction_addresses = newAddresses,
             };
-            new_record.owned_stack_trace = new_st;
-            new_record.stack_trace = new_st;
+            newRecord.ownedStackTrace = newSt;
+            newRecord.stackTrace = newSt;
         }
 
         var it = self.context.iterator();
         while (it.next()) |entry| {
-            try new_record.addField(entry.key_ptr.*, entry.value_ptr.*);
+            try newRecord.addField(entry.key_ptr.*, entry.value_ptr.*);
         }
 
-        return new_record;
+        return newRecord;
     }
 
     /// Returns true if this record has a custom level.
     pub fn hasCustomLevel(self: *const Record) bool {
-        return self.custom_level_name != null;
+        return self.customLevelName != null;
     }
 
     /// Returns true if this record has context fields.
@@ -702,167 +525,86 @@ pub const Record = struct {
 
     /// Returns true if this record has a stack trace.
     pub fn hasStackTrace(self: *const Record) bool {
-        return self.stack_trace != null;
+        return self.stackTrace != null;
     }
 
     /// Returns true if this record has error info.
     pub fn hasError(self: *const Record) bool {
-        return self.error_info != null;
+        return self.errorInfo != null;
     }
 
     /// Returns true if this record has tracing info.
     pub fn hasTracing(self: *const Record) bool {
-        return self.trace_id != null or self.span_id != null;
+        return self.traceId != null or self.spanId != null;
     }
 
     /// Sets the parent span ID for hierarchical tracing.
-    ///
-    /// Arguments:
-    ///     parent_id: The parent span ID string.
-    pub fn setParentSpanId(self: *Record, parent_id: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, parent_id);
-        try self.owned_strings.append(self.allocator, owned);
-        self.parent_span_id = owned;
+    pub fn setParentSpanId(self: *Record, parentId: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, parentId);
+        try self.ownedStrings.append(self.allocator, owned);
+        self.parentSpanId = owned;
     }
 
     /// Sets the request ID for HTTP request tracking.
-    ///
-    /// Arguments:
-    ///     req_id: The request ID string.
-    pub fn setRequestId(self: *Record, req_id: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, req_id);
-        try self.owned_strings.append(self.allocator, owned);
-        self.request_id = owned;
+    pub fn setRequestId(self: *Record, reqId: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, reqId);
+        try self.ownedStrings.append(self.allocator, owned);
+        self.requestId = owned;
     }
 
     /// Sets the session ID for user session tracking.
-    ///
-    /// Arguments:
-    ///     sess_id: The session ID string.
-    pub fn setSessionId(self: *Record, sess_id: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, sess_id);
-        try self.owned_strings.append(self.allocator, owned);
-        self.session_id = owned;
+    pub fn setSessionId(self: *Record, sessId: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, sessId);
+        try self.ownedStrings.append(self.allocator, owned);
+        self.sessionId = owned;
     }
 
     /// Sets the user ID for audit logging.
-    ///
-    /// Arguments:
-    ///     uid: The user ID string.
     pub fn setUserId(self: *Record, uid: []const u8) !void {
         const owned = try self.allocator.dupe(u8, uid);
-        try self.owned_strings.append(self.allocator, owned);
-        self.user_id = owned;
+        try self.ownedStrings.append(self.allocator, owned);
+        self.userId = owned;
     }
 
     /// Returns true if this record has a request ID.
     pub fn hasRequestId(self: *const Record) bool {
-        return self.request_id != null;
+        return self.requestId != null;
     }
 
     /// Returns true if this record has a session ID.
     pub fn hasSessionId(self: *const Record) bool {
-        return self.session_id != null;
+        return self.sessionId != null;
     }
 
     /// Returns true if this record has a user ID.
     pub fn hasUserId(self: *const Record) bool {
-        return self.user_id != null;
+        return self.userId != null;
     }
 
     /// Returns true if this record has a parent span ID.
     pub fn hasParentSpan(self: *const Record) bool {
-        return self.parent_span_id != null;
+        return self.parentSpanId != null;
     }
-
-    /// Alias for addField
-    pub const setField = addField;
-    pub const put = addField;
-
-    /// Alias for setTraceId
-    pub const trace = setTraceId;
-
-    /// Alias for setSpanId
-    pub const span = setSpanId;
-
-    /// Alias for setCorrelationId
-    pub const correlate = setCorrelationId;
-
-    /// Alias for setParentSpanId
-    pub const parentSpan = setParentSpanId;
-
-    /// Alias for setRequestId
-    pub const request = setRequestId;
-
-    /// Alias for setSessionId
-    pub const session = setSessionId;
-
-    /// Alias for setUserId
-    pub const user = setUserId;
-
-    /// Alias for clone
-    pub const copy = clone;
-    pub const duplicate = clone;
-
-    /// Alias for levelName
-    pub const getLevelName = levelName;
-
-    /// Alias for levelColor
-    pub const getLevelColor = levelColor;
-
-    /// Alias for initCustom
-    pub const createCustom = initCustom;
-    pub const customInit = initCustom;
-
-    /// Alias for initWithSource
-    pub const createWithSource = initWithSource;
-    pub const withSource = initWithSource;
-
-    /// Alias for setError
-    pub const setErrorInfo = setError;
-
-    /// Alias for setDuration
-    // pub const duration = setDuration; // conflicts with local var
-
-    /// Alias for setDurationSince
-    pub const durationFrom = setDurationSince;
-    pub const setDurationFrom = setDurationSince;
-
-    /// Alias for generateTraceId
-    pub const newTraceId = generateTraceId;
-    pub const createTraceId = generateTraceId;
-
-    /// Alias for generateSpanId
-    pub const newSpanId = generateSpanId;
-    pub const createSpanId = generateSpanId;
-
-    /// Alias for hasCustomLevel
-    pub const isCustomLevel = hasCustomLevel;
-
-    /// Alias for hasContext
-    pub const hasFields = hasContext;
-
-    /// Alias for contextCount
-    pub const fieldCount = contextCount;
-
-    /// Alias for hasStackTrace
-    pub const hasTrace = hasStackTrace;
-
-    /// Alias for hasError
-    pub const hasErrorInfo = hasError;
-
-    /// Alias for hasTracing
-    pub const hasTraceInfo = hasTracing;
-
-    /// Alias for hasRequestId
-    pub const hasRequest = hasRequestId;
-
-    /// Alias for hasSessionId
-    pub const hasSession = hasSessionId;
-
-    /// Alias for hasUserId
-    pub const hasUser = hasUserId;
-
-    /// Alias for hasParentSpan
-    pub const hasParent = hasParentSpan;
 };
+
+test "record init sets level and message" {
+    var record = Record.init(std.testing.allocator, .info, "hello");
+    defer record.deinit();
+    try std.testing.expectEqual(Level.info, record.level);
+    try std.testing.expectEqualStrings("hello", record.message);
+}
+
+test "record levelColor uses default and custom" {
+    var record = Record.init(std.testing.allocator, .err, "oops");
+    defer record.deinit();
+    try std.testing.expectEqual(Level.err.defaultColor(), record.levelColor());
+    record.customLevelColor = Color.Tint.color.ansi4.magenta;
+    try std.testing.expectEqual(Color.Tint.color.ansi4.magenta, record.levelColor());
+}
+
+test "record initCustom stores color" {
+    var record = Record.initCustom(std.testing.allocator, .warning, "AUDIT", Color.Tint.color.cyan, "audit");
+    defer record.deinit();
+    try std.testing.expectEqualStrings("AUDIT", record.customLevelName.?);
+    try std.testing.expectEqual(Color.Tint.color.cyan, record.customLevelColor.?);
+}

@@ -46,7 +46,7 @@ Comprehensive log file compression with multiple algorithms, streaming support, 
 
 | Method | Description |
 |--------|-------------|
-| `estimateCompressedSize(data_size)` | Estimate compressed size for given data. |
+| `estimateCompressedSize(dataSize)` | Estimate compressed size for given data. |
 | `getExtension()` | Get the file extension for the configured algorithm |
 | `Utils.getCompressionExtension(algo)` | Returns a canonical extension for a given compression algorithm (e.g., `.gz`, `.zst`, `.lzma`, `.xz`, `.tar.gz`, `.zip`, `.lz4`) |
 | `isZstd()` | Check if using zstd algorithm |
@@ -88,7 +88,7 @@ var config = logly.Config.default();
 config.compression = .{
     .enabled = true,
     .level = .default,
-    .on_rotation = true,
+    .onRotation = true,
     .algorithm = .deflate,
 };
 const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -103,16 +103,17 @@ Main compression controller with configurable algorithms and strategies.
 ```zig
 pub const Compression = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     config: CompressionConfig,
     stats: CompressionStats,
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
 
     // Callbacks for monitoring
-    on_compression_start: ?*const fn ([]const u8, u64) void,
-    on_compression_complete: ?*const fn ([]const u8, []const u8, u64, u64, u64) void,
-    on_compression_error: ?*const fn ([]const u8, anyerror) void,
-    on_decompression_complete: ?*const fn ([]const u8, []const u8) void,
-    on_archive_deleted: ?*const fn ([]const u8) void,
+    onCompressionStart: ?*const fn ([]const u8, u64) void,
+    onCompressionComplete: ?*const fn ([]const u8, []const u8, u64, u64, u64) void,
+    onCompressionError: ?*const fn ([]const u8, anyerror) void,
+    onDecompressionComplete: ?*const fn ([]const u8, []const u8) void,
+    onArchiveDeleted: ?*const fn ([]const u8) void,
 };
 ```
 
@@ -129,23 +130,23 @@ pub const CompressionConfig = struct {
     /// Compression level
     level: CompressionLevel = .default,
     /// Custom zstd level (1-22). If set, overrides the level enum for zstd.
-    custom_zstd_level: ?i32 = null,
+    customZstdLevel: ?i32 = null,
     /// Compress on rotation.
-    on_rotation: bool = true,
+    onRotation: bool = true,
     /// Keep original file after compression.
-    keep_original: bool = false,
+    keepOriginal: bool = false,
     /// When to trigger compression
-    mode: Mode = .on_rotation,
+    mode: Mode = .onRotation,
     /// Size threshold for on_size_threshold mode (bytes)
-    size_threshold: u64 = 10 * 1024 * 1024, // 10MB
+    sizeThreshold: u64 = 10 * 1024 * 1024, // 10MB
     /// Buffer size for streaming compression.
-    buffer_size: usize = 32 * 1024,
+    bufferSize: usize = 32 * 1024,
     /// Compression strategy.
     strategy: Strategy = .default,
     /// File extension for compressed files
     extension: []const u8 = ".gz",
     /// Delete files older than this after compression (seconds, 0 = never)
-    delete_after: u64 = 0,
+    deleteAfter: u64 = 0,
     /// Enable CRC32 checksum validation
     checksum: bool = true,
     /// Enable streaming compression
@@ -157,19 +158,19 @@ pub const CompressionConfig = struct {
     /// Enable multi-threaded compression (large files)
     parallel: bool = false,
     /// Memory limit for compression (bytes, 0 = unlimited)
-    memory_limit: usize = 0,
+    memoryLimit: usize = 0,
     /// Custom prefix for compressed file names
-    file_prefix: ?[]const u8 = null,
+    filePrefix: ?[]const u8 = null,
     /// Custom suffix before extension
-    file_suffix: ?[]const u8 = null,
+    fileSuffix: ?[]const u8 = null,
     /// Root directory for all compressed files
-    archive_root_dir: ?[]const u8 = null,
+    archiveRootDir: ?[]const u8 = null,
     /// Create date-based subdirectories in archive root
-    create_date_subdirs: bool = false,
+    createDateSubdirs: bool = false,
     /// Preserve original directory structure when archiving to root dir.
-    preserve_dir_structure: bool = true,
+    preserveDirStructure: bool = true,
     /// Custom naming pattern for compressed files.
-    naming_pattern: ?[]const u8 = null,
+    namingPattern: ?[]const u8 = null,
 };
 ```
 
@@ -177,11 +178,11 @@ pub const CompressionConfig = struct {
 
 ```zig
 // High-throughput logging (minimize CPU)
-const fast_config = CompressionConfig{
+const fastConfig = CompressionConfig{
     .algorithm = .deflate,
     .level = .fast,
     .strategy = .text,
-    .buffer_size = 64 * 1024,
+    .bufferSize = 64 * 1024,
     .background = true,
 };
 
@@ -191,7 +192,7 @@ const archive_config = CompressionConfig{
     .level = .best,
     .strategy = .adaptive,
     .checksum = true,
-    .keep_original = false,
+    .keepOriginal = false,
 };
 
 // Streaming compression (real-time)
@@ -200,7 +201,7 @@ const streaming_config = CompressionConfig{
     .level = .default,
     .mode = .streaming,
     .streaming = true,
-    .buffer_size = 16 * 1024,
+    .bufferSize = 16 * 1024,
 };
 ```
 
@@ -217,7 +218,7 @@ pub const CompressionAlgorithm = enum {
     /// ZLIB format (DEFLATE with header/checksum)
     zlib,
     /// Raw DEFLATE (no headers)
-    raw_deflate,
+    rawDeflate,
     /// GZIP format (standard compression)
     gzip,
     /// Zstandard compression (high performance)
@@ -229,7 +230,7 @@ pub const CompressionAlgorithm = enum {
     /// XZ format (LZMA2 container)
     xz,
     /// TAR.GZ archive format
-    tar_gz,
+    tarGz,
     /// ZIP archive format
     zip,
     /// LZ4 fast compression
@@ -249,7 +250,7 @@ pub const CompressionAlgorithm = enum {
 | `lzma` | ★★ | ★★★★★ | Long-term archival |
 | `lzma2` | ★★ | ★★★★★ | Large files |
 | `xz` | ★★ | ★★★★★ | Distribution |
-| `tar_gz` | ★★★ | ★★★★ | Multi-file archives |
+| `tarGz` | ★★★ | ★★★★ | Multi-file archives |
 | `zip` | ★★★★ | ★★★ | Cross-platform |
 | `lz4` | ★★★★★ | ★★ | Real-time logging |
 
@@ -330,7 +331,7 @@ const level = cfg.getEffectiveZstdLevel(); // Returns 15
 
 ### getEffectiveZstdLevel
 
-Returns the effective zstd compression level, taking custom_zstd_level into account.
+Returns the effective zstd compression level, taking customZstdLevel into account.
 
 ```zig
 pub fn getEffectiveZstdLevel(self: *const CompressionConfig) i32
@@ -363,12 +364,12 @@ CompressionConfig supports extensive file name and path customization:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `file_prefix` | `?[]const u8` | `null` | Prefix for compressed file names (e.g., "archive_") |
-| `file_suffix` | `?[]const u8` | `null` | Suffix before extension (e.g., "_compressed") |
-| `archive_root_dir` | `?[]const u8` | `null` | Root directory for all compressed files |
-| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD subdirectories in archive |
-| `preserve_dir_structure` | `bool` | `true` | Preserve original directory structure in archive |
-| `naming_pattern` | `?[]const u8` | `null` | Custom naming pattern with placeholders |
+| `filePrefix` | `?[]const u8` | `null` | Prefix for compressed file names (e.g., "archive_") |
+| `fileSuffix` | `?[]const u8` | `null` | Suffix before extension (e.g., "_compressed") |
+| `archiveRootDir` | `?[]const u8` | `null` | Root directory for all compressed files |
+| `createDateSubdirs` | `bool` | `false` | Create YYYY/MM/DD subdirectories in archive |
+| `preserveDirStructure` | `bool` | `true` | Preserve original directory structure in archive |
+| `namingPattern` | `?[]const u8` | `null` | Custom naming pattern with placeholders |
 
 ### Naming Pattern Placeholders
 
@@ -386,11 +387,11 @@ CompressionConfig supports extensive file name and path customization:
 ```zig
 const cfg = logly.Config.CompressionConfig{
     .enabled = true,
-    .file_prefix = "archive_",
-    .file_suffix = "_compressed",
-    .archive_root_dir = "logs/archive",
-    .create_date_subdirs = true,
-    .naming_pattern = "{base}_{date}{ext}",
+    .filePrefix = "archive_",
+    .fileSuffix = "_compressed",
+    .archiveRootDir = "logs/archive",
+    .createDateSubdirs = true,
+    .namingPattern = "{base}_{date}{ext}",
 };
 
 // Result: logs/archive/2026/01/09/archive_app_2026-01-09_compressed.log.gz
@@ -450,7 +451,7 @@ var config4 = logly.Config.default()
 // Production zstd with rotation
 var config5 = logly.Config.default()
     .withZstdProductionCompression()
-    .withRotation(.{ .enabled = true, .max_size = 10 * 1024 * 1024 });
+    .withRotation(.{ .enabled = true, .maxSize = 10 * 1024 * 1024 });
 ```
 
 ## Compression Instance Presets
@@ -500,7 +501,7 @@ try zstd_compressor.compressFile("logs/app.log", null);
 | `none` | 1.0x | Instant | Instant | Testing, debugging |
 | `deflate` | 3-5x | ~200 MB/s | ~300 MB/s | General purpose logs |
 | `zlib` | 3-5x | ~180 MB/s | ~280 MB/s | Network transport |
-| `raw_deflate` | 3-5x | ~220 MB/s | ~320 MB/s | Custom headers |
+| `rawDeflate` | 3-5x | ~220 MB/s | ~320 MB/s | Custom headers |
 | `gzip` | 3-5x | ~190 MB/s | ~290 MB/s | Standard file compatibility |
 | `zstd` | 3-6x | ~400 MB/s | ~1400 MB/s | High-performance, streaming (v0.1.8+) |
 
@@ -549,9 +550,9 @@ pub const Strategy = enum {
     /// Optimized for binary data
     binary,
     /// Huffman-only compression (no LZ77)
-    huffman_only,
+    huffmanOnly,
     /// RLE-only compression for highly repetitive data
-    rle_only,
+    rleOnly,
     /// Adaptive strategy (auto-detect best approach)
     adaptive,
 };
@@ -569,7 +570,7 @@ pub const Strategy = enum {
   - Focuses on byte-level patterns
   - Typical ratio: 2-3x
 
-- **`rle_only`**: Best for highly repetitive data
+- **`rleOnly`**: Best for highly repetitive data
   - Only uses run-length encoding
   - Fast compression/decompression
   - Typical ratio: 8-10x for repetitive logs
@@ -588,9 +589,9 @@ pub const Mode = enum {
     /// No automatic compression
     disabled,
     /// Compress on file rotation
-    on_rotation,
+    onRotation,
     /// Compress when file reaches size threshold
-    on_size_threshold,
+    onSizeThreshold,
     /// Compress on schedule (e.g., daily)
     scheduled,
     /// Always compress output (streaming compression)
@@ -604,17 +605,17 @@ Detailed statistics for compression operations with atomic counters.
 
 ```zig
 pub const CompressionStats = struct {
-    files_compressed: std.atomic.Value(u64),
-    files_decompressed: std.atomic.Value(u64),
-    bytes_before: std.atomic.Value(u64),
-    bytes_after: std.atomic.Value(u64),
-    compression_errors: std.atomic.Value(u64),
-    decompression_errors: std.atomic.Value(u64),
-    last_compression_time: std.atomic.Value(i64),
-    total_compression_time_ns: std.atomic.Value(u64),
-    total_decompression_time_ns: std.atomic.Value(u64),
-    background_tasks_queued: std.atomic.Value(u64),
-    background_tasks_completed: std.atomic.Value(u64),
+    filesCompressed: std.atomic.Value(u64),
+    filesDecompressed: std.atomic.Value(u64),
+    bytesBefore: std.atomic.Value(u64),
+    bytesAfter: std.atomic.Value(u64),
+    compressionErrors: std.atomic.Value(u64),
+    decompressionErrors: std.atomic.Value(u64),
+    lastCompressionTime: std.atomic.Value(i64),
+    totalCompressionTimeNs: std.atomic.Value(u64),
+    totalDecompressionTimeNs: std.atomic.Value(u64),
+    backgroundTasksQueued: std.atomic.Value(u64),
+    backgroundTasksCompleted: std.atomic.Value(u64),
 };
 ```
 
@@ -693,10 +694,10 @@ Result of a compression operation with detailed metrics.
 ```zig
 pub const CompressionResult = struct {
     success: bool,
-    original_size: u64,
-    compressed_size: u64,
-    output_path: ?[]const u8,
-    error_message: ?[]const u8 = null,
+    originalSize: u64,
+    compressedSize: u64,
+    outputPath: ?[]const u8,
+    errorMessage: ?[]const u8 = null,
     
     pub fn ratio(self: *const CompressionResult) f64;
 };
@@ -733,6 +734,14 @@ var compression = Compression.initWithConfig(allocator, .{
 defer compression.deinit();
 ```
 
+### initWithIo
+
+Creates a Compression instance with an explicit I/O handle and custom configuration.
+
+```zig
+pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: CompressionConfig) Compression
+```
+
 ### deinit
 
 Releases resources associated with the compression instance.
@@ -747,7 +756,7 @@ pub fn deinit(self: *Compression) void
 
 Compresses data in memory using advanced algorithms. Uses the internal allocator.
 
-#### `compressWithAllocator(self: *Compression, data: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8`
+#### `compressWithAllocator(self: *Compression, data: []const u8, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Compresses data using an optional scratch allocator. If provided, temporary allocations use this allocator. If null, falls back to the internal allocator.
 
@@ -811,7 +820,7 @@ try std.testing.expectEqualStrings(original_data, decompressed);
 Compresses a file on disk with comprehensive error handling.
 
 ```zig
-pub fn compressFile(self: *Compression, input_path: []const u8, output_path: ?[]const u8) !CompressionResult
+pub fn compressFile(self: *Compression, inputPath: []const u8, outputPath: ?[]const u8) !CompressionResult
 ```
 
 **Features:**
@@ -826,13 +835,13 @@ pub fn compressFile(self: *Compression, input_path: []const u8, output_path: ?[]
 
 ```zig
 const result = try compression.compressFile("app.log", null);
-defer if (result.output_path) |p| allocator.free(p);
+defer if (result.outputPath) |p| allocator.free(p);
 
 if (result.success) {
     std.debug.print("Compressed: {d:.1}% savings\n", .{result.ratio() * 100});
-    std.debug.print("Output: {s}\n", .{result.output_path.?});
+    std.debug.print("Output: {s}\n", .{result.outputPath.?});
 } else {
-    std.debug.print("Error: {s}\n", .{result.error_message.?});
+    std.debug.print("Error: {s}\n", .{result.errorMessage.?});
 }
 ```
 
@@ -841,7 +850,7 @@ if (result.success) {
 Decompresses a file on disk with validation.
 
 ```zig
-pub fn decompressFile(self: *Compression, input_path: []const u8, output_path: ?[]const u8) !bool
+pub fn decompressFile(self: *Compression, inputPath: []const u8, outputPath: ?[]const u8) !bool
 ```
 
 **Example:**
@@ -858,7 +867,7 @@ if (success) {
 Compresses all eligible files in a directory.
 
 ```zig
-pub fn compressDirectory(self: *Compression, dir_path: []const u8) !u64
+pub fn compressDirectory(self: *Compression, dirPath: []const u8) !u64
 ```
 
 **Features:**
@@ -877,14 +886,14 @@ std.debug.print("Compressed {d} files\n", .{count});
 Compresses multiple files in a batch operation.
 
 ```zig
-pub fn compressBatch(self: *Compression, file_paths: []const []const u8) u64
+pub fn compressBatch(self: *Compression, filePaths: []const []const u8) u64
 ```
 
 **Returns:** Number of successfully compressed files.
 
 **Example:**
 ```zig
-const files = &[_][]const u8{
+const files = &[][]const u8{
     "logs/app.log",
     "logs/error.log",
     "logs/access.log",
@@ -898,7 +907,7 @@ std.debug.print("Compressed {d} files\n", .{count});
 Compresses files matching a glob pattern in a directory.
 
 ```zig
-pub fn compressPattern(self: *Compression, dir_path: []const u8, pattern: []const u8) !u64
+pub fn compressPattern(self: *Compression, dirPath: []const u8, pattern: []const u8) !u64
 ```
 
 **Pattern Support:**
@@ -913,7 +922,7 @@ const count = try compression.compressPattern("logs/", "*.log");
 std.debug.print("Compressed {d} log files\n", .{count});
 
 // Compress all json files
-const json_count = try compression.compressPattern("data/", "*.json");
+const jsonCount = try compression.compressPattern("data/", "*.json");
 ```
 
 ### compressOldest (v0.1.8+)
@@ -921,7 +930,7 @@ const json_count = try compression.compressPattern("data/", "*.json");
 Compresses the N oldest files in a directory based on modification time.
 
 ```zig
-pub fn compressOldest(self: *Compression, dir_path: []const u8, count: usize) !u64
+pub fn compressOldest(self: *Compression, dirPath: []const u8, count: usize) !u64
 ```
 
 **Features:**
@@ -941,7 +950,7 @@ std.debug.print("Compressed {d} oldest files\n", .{count});
 Compresses files larger than a specified size threshold.
 
 ```zig
-pub fn compressLargerThan(self: *Compression, dir_path: []const u8, min_size: u64) !u64
+pub fn compressLargerThan(self: *Compression, dirPath: []const u8, minSize: u64) !u64
 ```
 
 **Example:**
@@ -961,7 +970,7 @@ const large_count = try compression.compressLargerThan("logs/", 10 * 1024 * 1024
 Estimates the compressed size based on the configured algorithm and level.
 
 ```zig
-pub fn estimateCompressedSize(self: *const Compression, data_size: u64) u64
+pub fn estimateCompressedSize(self: *const Compression, dataSize: u64) u64
 ```
 
 **Example:**
@@ -1033,11 +1042,11 @@ pub fn compressStream(self: *Compression, reader: anytype, writer: anytype) !voi
 
 ```zig
 var input_stream = std.Io.Reader.fixed(data);
-var output_buffer: std.ArrayList(u8) = .empty;
-defer output_buffer.deinit(allocator);
+var outputBuffer: std.ArrayList(u8) = .empty;
+defer outputBuffer.deinit(allocator);
 
-var output_writer = logly.Utils.ArrayListWriter.init(&output_buffer, allocator);
-try compression.compressStream(&input_stream, &output_writer.writer);
+var outputWriter = logly.Utils.ArrayListWriter.init(&outputBuffer, allocator);
+try compression.compressStream(&input_stream, &outputWriter.writer);
 ```
 
 ### decompressStream
@@ -1051,12 +1060,12 @@ pub fn decompressStream(self: *Compression, reader: anytype, writer: anytype) !v
 **Example:**
 
 ```zig
-var input_stream = std.Io.Reader.fixed(compressed_data);
-var output_buffer: std.ArrayList(u8) = .empty;
-defer output_buffer.deinit(allocator);
+var input_stream = std.Io.Reader.fixed(compressedData);
+var outputBuffer: std.ArrayList(u8) = .empty;
+defer outputBuffer.deinit(allocator);
 
-var output_writer = logly.Utils.ArrayListWriter.init(&output_buffer, allocator);
-try compression.decompressStream(&input_stream, &output_writer.writer);
+var outputWriter = logly.Utils.ArrayListWriter.init(&outputBuffer, allocator);
+try compression.decompressStream(&input_stream, &outputWriter.writer);
 ```
 
 ### shouldCompress
@@ -1064,14 +1073,14 @@ try compression.decompressStream(&input_stream, &output_writer.writer);
 Checks if a file should be compressed based on configuration.
 
 ```zig
-pub fn shouldCompress(self: *const Compression, file_path: []const u8) bool
+pub fn shouldCompress(self: *const Compression, filePath: []const u8) bool
 ```
 
 **Example:**
 
 ```zig
 if (compression.shouldCompress("app.log")) {
-    _ = try compression.compressFile("app.log", null);
+     _ = try compression.compressFile("app.log", null);
 }
 ```
 
@@ -1115,7 +1124,7 @@ Called before compression begins.
 ```zig
 pub fn setCompressionStartCallback(
     self: *Compression, 
-    callback: *const fn (file_path: []const u8, uncompressed_size: u64) void
+    callback: *const fn (filePath: []const u8, uncompressedSize: u64) void
 ) void
 ```
 
@@ -1137,11 +1146,11 @@ Called after successful compression.
 pub fn setCompressionCompleteCallback(
     self: *Compression,
     callback: *const fn (
-        original_path: []const u8,
-        compressed_path: []const u8,
-        original_size: u64,
-        compressed_size: u64,
-        elapsed_ms: u64
+        originalPath: []const u8,
+        compressedPath: []const u8,
+        originalSize: u64,
+        compressedSize: u64,
+        elapsedMs: u64
     ) void
 ) void
 ```
@@ -1171,7 +1180,7 @@ Called when compression fails.
 ```zig
 pub fn setCompressionErrorCallback(
     self: *Compression,
-    callback: *const fn (file_path: []const u8, err: anyerror) void
+    callback: *const fn (filePath: []const u8, err: anyerror) void
 ) void
 ```
 
@@ -1192,7 +1201,7 @@ Called after decompression.
 ```zig
 pub fn setDecompressionCompleteCallback(
     self: *Compression,
-    callback: *const fn (compressed_path: []const u8, decompressed_path: []const u8) void
+    callback: *const fn (compressedPath: []const u8, decompressed_path: []const u8) void
 ) void
 ```
 
@@ -1203,7 +1212,7 @@ Called when archived file is deleted.
 ```zig
 pub fn setArchiveDeletedCallback(
     self: *Compression,
-    callback: *const fn (file_path: []const u8) void
+    callback: *const fn (filePath: []const u8) void
 ) void
 ```
 
@@ -1216,19 +1225,19 @@ Pre-configured compression settings for common use cases.
 
 ```zig
 // No compression
-const none_config = CompressionPresets.none();
+const noneConfig = CompressionPresets.none();
 
 // Fast compression (high-throughput)
-const fast_config = CompressionPresets.fast();
+const fastConfig = CompressionPresets.fast();
 
 // Balanced compression (default)
-const balanced_config = CompressionPresets.balanced();
+const balancedConfig = CompressionPresets.balanced();
 
 // Maximum compression (archival)
-const max_config = CompressionPresets.maximum();
+const maxConfig = CompressionPresets.maximum();
 
 // Size-based trigger
-const size_config = CompressionPresets.onSize(50); // 50MB threshold
+const sizeConfig = CompressionPresets.onSize(50); // 50MB threshold
 ```
 
 ## Performance Characteristics
@@ -1239,7 +1248,7 @@ const size_config = CompressionPresets.onSize(50); // 50MB threshold
 |-----------|--------|-------|
 | compress() | 2-4x input | During compression |
 | decompress() | 1-2x output | During decompression |
-| compressFile() | buffer_size | Streaming I/O |
+| compressFile() | bufferSize | Streaming I/O |
 | Dictionary | dict size | If enabled |
 
 ### Thread Safety
@@ -1258,7 +1267,7 @@ const size_config = CompressionPresets.onSize(50); // 50MB threshold
 2. **Choose right strategy:**
    - Logs: `.text` or `.adaptive`
    - Binary: `.binary`
-   - Repetitive: `.rle_only`
+   - Repetitive: `.rleOnly`
 
 3. **Enable background compression:**
    ```zig
@@ -1267,7 +1276,7 @@ const size_config = CompressionPresets.onSize(50); // 50MB threshold
 
 4. **Tune buffer size:**
    ```zig
-   config.buffer_size = 64 * 1024; // Larger for better throughput
+   config.bufferSize = 64 * 1024; // Larger for better throughput
    ```
 
 5. **Use streaming for real-time:**
@@ -1297,7 +1306,7 @@ const compressed = compression.compress(data) catch |err| {
     switch (err) {
         error.OutOfMemory => {
             // Reduce buffer size or use streaming
-            compression.configure(.{ .buffer_size = 16 * 1024 });
+            compression.configure(.{ .bufferSize = 16 * 1024 });
         },
         else => {
             std.debug.print("Compression error: {s}\n", .{@errorName(err)});
@@ -1324,7 +1333,7 @@ pub fn main() !void {
         .level = .best,
         .strategy = .text,
         .checksum = true,
-        .keep_original = false,
+        .keepOriginal = false,
     });
     defer compression.deinit();
 
@@ -1334,7 +1343,7 @@ pub fn main() !void {
 
     // Compress a log file
     const result = try compression.compressFile("app.log", null);
-    defer if (result.output_path) |p| allocator.free(p);
+    defer if (result.outputPath) |p| allocator.free(p);
 
     if (result.success) {
         std.debug.print("✓ Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});

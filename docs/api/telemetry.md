@@ -10,15 +10,15 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 - **Distributed Tracing**: Full W3C Trace Context specification support with parent-child span relationships
 - **W3C Baggage**: Context propagation for arbitrary key-value pairs across service boundaries
 - **Metrics Collection**: Counter, gauge, histogram, and summary metrics with configurable export formats
-- **Metrics Export Paths**: `metrics_file_path` overrides the default file exporter path for JSON/Prometheus metrics
-- **Metric Name Controls**: `metric_prefix`, `metric_prefix_separator`, and `sanitize_metric_names` normalize exported metric names for Prometheus-compatible output
+- **Metrics Export Paths**: `metricsFilePath` overrides the default file exporter path for JSON/Prometheus metrics
+- **Metric Name Controls**: `metricPrefix`, `metricPrefixSeparator`, and `sanitizeMetricNames` normalize exported metric names for Prometheus-compatible output
 - **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span and metric export
 - **Export Modes**: Synchronous, async buffered, batch, and network export modes
-- **Span Processor Semantics**: `span_processor_type` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
+- **Span Processor Semantics**: `spanProcessorType` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
 - **Note (v0.1.8)**: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor semantics; telemetry now builds cleanly across targets.
 - **Exporter Statistics**: Real-time monitoring of export performance with atomic counters
 - **Resource Detection**: Automatic detection of service metadata and resource attributes
-- **Sampling Strategies**: Four sampling algorithms (always_on, always_off, trace_id_ratio, parent_based)
+- **Sampling Strategies**: Four sampling algorithms (alwaysOn, alwaysOff, traceIdRatio, parentBased)
 - **Custom Callbacks**: User-defined handlers for span lifecycle and metric events
 - **Thread Safety**: Mutex-protected concurrent access to spans and metrics
 - **Utils Integration**: Leverages utils.zig for ID generation, time calculations, and JSON escaping
@@ -27,8 +27,8 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 
 ```zig
 var config = logly.TelemetryConfig.development();
-config.metric_format = .json; // or .prometheus
-config.metrics_file_path = "telemetry_metrics.jsonl";
+config.metricFormat = .json; // or .prometheus
+config.metricsFilePath = "telemetry_metrics.jsonl";
 
 var telemetry = try logly.Telemetry.init(allocator, config);
 defer telemetry.deinit();
@@ -43,14 +43,14 @@ try telemetry.exportMetrics();
 var config = logly.TelemetryConfig.development()
     .withPrometheusMetrics("metrics.prom")
     .withMetricPrefix("api.v1");
-config.metric_prefix_separator = ":";
-config.sanitize_metric_names = true;
+config.metricPrefixSeparator = ":";
+config.sanitizeMetricNames = true;
 
 // "http.requests-total" exports as "api_v1:http_requests_total"
 try telemetry.recordCounter("http.requests-total", 1.0);
 ```
 
-Sanitization replaces unsupported characters with `_` and protects names that
+Sanitization replaces unsupported characters with `` and protects names that
 start with digits. Disable it with `withMetricNameSanitization(false)` when a
 custom backend expects raw metric names.
 
@@ -92,28 +92,30 @@ pub const Telemetry = struct {
     config: TelemetryConfig,
     enabled: bool,
     spans: std.ArrayList(Span),
-    completed_spans: std.ArrayList(Span),
+    completedSpans: std.ArrayList(Span),
     metrics: std.ArrayList(Metric),
-    active_span_count: usize,
-    completed_span_count: usize,
-    metric_count: usize,
+    activeSpanCount: usize,
+    completedSpanCount: usize,
+    metricCount: usize,
     resource: Resource,
     sampler: TelemetrySampler,
-    mutex: std.Thread.Mutex,
-    total_spans_created: u64,
-    total_spans_exported: u64,
-    total_metrics_recorded: u64,
-    exporter_stats: ExporterStats,
-    on_span_start: ?*const fn ([]const u8, []const u8) void,
-    on_span_end: ?*const fn ([]const u8, u64) void,
-    on_metric_recorded: ?*const fn ([]const u8, f64) void,
-    on_error: ?*const fn ([]const u8) void,
-    network_socket: ?std.Io.net.Socket,
-    network_address: ?std.Io.net.IpAddress,
-    batch_buffer: std.ArrayList(u8),
-    last_batch_export: i64,
+    mutex: std.Io.Mutex,
+    io: std.Io,
+    totalSpansCreated: u64,
+    totalSpansExported: u64,
+    totalMetricsRecorded: u64,
+    exporterStats: ExporterStats,
+    onSpanStart: ?*const fn ([]const u8, []const u8) void,
+    onSpanEnd: ?*const fn ([]const u8, u64) void,
+    onMetricRecorded: ?*const fn ([]const u8, f64) void,
+    onError: ?*const fn ([]const u8) void,
+    networkSocket: ?std.Io.net.Socket,
+    networkAddress: ?std.Io.net.IpAddress,
+    batchBuffer: std.ArrayList(u8),
+    lastBatchExport: i64,
     
     pub fn init(allocator: std.mem.Allocator, config: TelemetryConfig) !Telemetry
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: TelemetryConfig) !Telemetry
     pub fn deinit(self: *Telemetry) void
     pub fn startSpan(self: *Telemetry, name: []const u8, options: SpanOptions) !Span
     pub fn startSpanWithContext(self: *Telemetry, name: []const u8, parent: *const Span, opts: SpanOptions) !Span
@@ -136,16 +138,16 @@ pub const Telemetry = struct {
     pub fn parseTraceparentHeader(header: []const u8) ?TraceContext
     pub fn setEnabled(self: *Telemetry, enabled: bool) void
     pub fn isEnabled(self: *Telemetry) bool
-    pub fn setSampling(self: *Telemetry, strategy: TelemetryConfig.SamplingStrategy, sampling_rate: f64) void
+    pub fn setSampling(self: *Telemetry, strategy: TelemetryConfig.SamplingStrategy, samplingRate: f64) void
     pub fn getSampling(self: *Telemetry) SamplingSnapshot
-    pub fn setContextHeaders(self: *Telemetry, trace_header: []const u8, baggage_header: []const u8) void
+    pub fn setContextHeaders(self: *Telemetry, traceHeader: []const u8, baggageHeader: []const u8) void
     pub fn getContextHeaders(self: *Telemetry) ContextHeaders
     pub fn hasPendingData(self: *Telemetry) bool
     pub fn pendingItemCount(self: *Telemetry) usize
     pub fn getResource(self: *Telemetry) Resource
     pub fn setResource(self: *Telemetry, resource: Resource) void
     pub fn resetStats(self: *Telemetry) void
-    pub fn findSpanByTraceId(self: *Telemetry, trace_id: []const u8) ?*const Span
+    pub fn findSpanByTraceId(self: *Telemetry, traceId: []const u8) ?*const Span
 };
 ```
 
@@ -160,8 +162,8 @@ pub const SamplingSnapshot = struct {
 };
 
 pub const ContextHeaders = struct {
-    trace_header: []const u8,
-    baggage_header: []const u8,
+    traceHeader: []const u8,
+    baggageHeader: []const u8,
 };
 
 pub const MetricInput = struct {
@@ -173,8 +175,8 @@ pub const MetricInput = struct {
 
 Runtime control notes:
 
-- `setSampling(strategy, sampling_rate)` clamps rate to `[0.0, 1.0]` and treats `NaN` as `0.0` for deterministic behavior.
-- `setContextHeaders(trace_header, baggage_header)` updates propagation header names in-place.
+- `setSampling(strategy, samplingRate)` clamps rate to `[0.0, 1.0]` and treats `NaN` as `0.0` for deterministic behavior.
+- `setContextHeaders(traceHeader, baggageHeader)` updates propagation header names in-place.
 - `hasPendingData()` and `pendingItemCount()` report pending spans/metrics before explicit export or flush.
 
 ### ExporterStats
@@ -212,7 +214,7 @@ Statistics for monitoring export performance.
 | `getSuccessRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
 | `avgSpansPerBatch()` | `f64` | Calculate average spans per batch export |
 | `avgBytesPerSpan()` | `f64` | Calculate average bytes per span |
-| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate throughput (bytes per second) |
+| `throughputBytesPerSecond(elapsedSeconds)` | `f64` | Calculate throughput (bytes per second) |
 
 #### Reset
 
@@ -237,7 +239,7 @@ Initializes the telemetry system with the specified configuration.
 
 ```zig
 var config = logly.TelemetryConfig.jaeger();
-config.service_name = "my-service";
+config.serviceName = "my-service";
 var telemetry = try logly.Telemetry.init(allocator, config);
 defer telemetry.deinit();
 ```
@@ -249,7 +251,7 @@ Creates and starts a new span.
 **Parameters:**
 
 - `name`: Human-readable span name
-- `options`: SpanOptions struct with kind, parent_span_id, etc.
+- `options`: SpanOptions struct with kind, parentSpanId, etc.
 
 **Returns:** Active Span struct
 
@@ -261,7 +263,7 @@ var span = try telemetry.startSpan("request_processing", .{
 });
 defer {
     span.end();
-    _ = telemetry.endSpan(&span) catch {};
+     _ = telemetry.endSpan(&span) catch {};
 }
 ```
 
@@ -272,7 +274,7 @@ Creates a child span that inherits trace context from a parent span.
 **Parameters:**
 
 - `name`: Human-readable span name
-- `parent`: Pointer to the parent Span (inherits trace_id)
+- `parent`: Pointer to the parent Span (inherits traceId)
 - `options`: SpanOptions struct with kind, etc.
 
 **Returns:** Active Span struct with parent context
@@ -280,10 +282,10 @@ Creates a child span that inherits trace context from a parent span.
 **Example:**
 
 ```zig
-var parent_span = try telemetry.startSpan("http_request", .{ .kind = .server });
-defer parent_span.deinit();
+var parentSpan = try telemetry.startSpan("http_request", .{ .kind = .server });
+defer parentSpan.deinit();
 
-var child_span = try telemetry.startSpanWithContext("database_query", &parent_span, .{
+var child_span = try telemetry.startSpanWithContext("database_query", &parentSpan, .{
     .kind = .client,
 });
 defer child_span.deinit();
@@ -382,11 +384,11 @@ Records a batch of metric entries.
 **Example:**
 
 ```zig
-const metrics = [_]logly.Telemetry.MetricInput{
+const metrics = []logly.Telemetry.MetricInput{
     .{ .name = "requests.total", .value = 10.0, .options = .{ .kind = .counter } },
     .{ .name = "cpu.usage", .value = 55.0, .options = .{ .kind = .gauge, .unit = "%" } },
 };
-_ = try telemetry.recordMetricsBatch(metrics[0..]);
+ _ = try telemetry.recordMetricsBatch(metrics[0..]);
 ```
 
 ##### `getExporterStats() -> ExporterStats`
@@ -435,8 +437,8 @@ Parses a W3C traceparent header to extract trace context.
 
 ```zig
 const ctx = Telemetry.parseTraceparentHeader("00-4bf92f3577b34da6a-00f067aa0ba902b7-01");
-if (ctx) |trace_ctx| {
-    std.debug.print("Trace ID: {s}, Sampled: {}\n", .{ trace_ctx.trace_id, trace_ctx.sampled });
+if (ctx) |traceCtx| {
+    std.debug.print("Trace ID: {s}, Sampled: {}\n", .{ traceCtx.traceId, traceCtx.sampled });
 }
 ```
 
@@ -466,7 +468,7 @@ telemetry.setEnabled(false);
 telemetry.setEnabled(true);
 ```
 
-##### `setSampling(strategy, sampling_rate) -> void`
+##### `setSampling(strategy, samplingRate) -> void`
 
 Updates runtime sampling strategy and effective sampling rate. Sampling rate is clamped into `[0.0, 1.0]`.
 
@@ -474,7 +476,7 @@ Updates runtime sampling strategy and effective sampling rate. Sampling rate is 
 
 Returns current `strategy` and `rate` used by telemetry sampler.
 
-##### `setContextHeaders(trace_header, baggage_header) -> void`
+##### `setContextHeaders(traceHeader, baggageHeader) -> void`
 
 Updates trace and baggage header names used for context propagation.
 
@@ -514,8 +516,8 @@ Update resource configuration at runtime.
 
 ```zig
 telemetry.setResource(.{
-    .service_name = "updated-service",
-    .service_version = "2.0.0",
+    .serviceName = "updated-service",
+    .serviceVersion = "2.0.0",
     .environment = "staging",
     .datacenter = "us-west-2",
 });
@@ -525,13 +527,13 @@ telemetry.setResource(.{
 
 Reset all statistics counters to zero.
 
-##### `findSpanByTraceId(trace_id: []const u8) -> ?*const Span`
+##### `findSpanByTraceId(traceId: []const u8) -> ?*const Span`
 
 Find an active span by trace ID for distributed trace continuation.
 
 **Parameters:**
 
-- `trace_id`: Trace ID to search for
+- `traceId`: Trace ID to search for
 
 **Returns:** Optional pointer to the Span, or null if not found
 
@@ -567,14 +569,14 @@ Represents a single unit of work in a trace.
 
 ```zig
 pub const Span = struct {
-    span_id: [32]u8,
-    trace_id: [32]u8,
-    parent_span_id: ?[32]u8,
+    spanId: [32]u8,
+    traceId: [32]u8,
+    parentSpanId: ?[32]u8,
     name: []const u8,
     kind: SpanKind,
     status: SpanStatus,
-    start_time: i64,
-    end_time: ?i64,
+    startTime: i64,
+    endTime: ?i64,
     attributes: std.StringHashMap(SpanAttribute),
     events: std.ArrayList(SpanEvent),
     
@@ -588,14 +590,14 @@ pub const Span = struct {
 
 #### Fields
 
-- `span_id`: Unique 16-byte identifier (rendered as hex string)
-- `trace_id`: Trace context identifier (shared by parent and child spans)
-- `parent_span_id`: Optional parent span identifier for relationship tracking
+- `spanId`: Unique 16-byte identifier (rendered as hex string)
+- `traceId`: Trace context identifier (shared by parent and child spans)
+- `parentSpanId`: Optional parent span identifier for relationship tracking
 - `name`: Human-readable operation name
 - `kind`: SpanKind enum (server, client, internal, producer, consumer)
 - `status`: SpanStatus (unset, ok, error)
-- `start_time`: Creation timestamp in nanoseconds
-- `end_time`: Completion timestamp, set by `end()`
+- `startTime`: Creation timestamp in nanoseconds
+- `endTime`: Completion timestamp, set by `end()`
 - `attributes`: Key-value metadata (strings, numbers, booleans, arrays)
 - `events`: Timestamped events during span lifetime
 
@@ -708,13 +710,13 @@ Real-time statistics for monitoring export performance using atomic counters.
 
 ```zig
 pub const ExporterStats = struct {
-    spans_exported: std.atomic.Value(u64),
-    metrics_exported: std.atomic.Value(u64),
-    export_errors: std.atomic.Value(u64),
-    bytes_sent: std.atomic.Value(u64),
-    last_export_time_ns: std.atomic.Value(i64),
-    batch_exports: std.atomic.Value(u64),
-    network_exports: std.atomic.Value(u64),
+    spansExported: std.atomic.Value(u64),
+    metricsExported: std.atomic.Value(u64),
+    exportErrors: std.atomic.Value(u64),
+    bytesSent: std.atomic.Value(u64),
+    lastExportTimeNs: std.atomic.Value(i64),
+    batchExports: std.atomic.Value(u64),
+    networkExports: std.atomic.Value(u64),
 };
 ```
 
@@ -759,7 +761,7 @@ pub const ExporterStats = struct {
 | `getSuccessRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
 | `avgSpansPerBatch()` | `f64` | Calculate average spans per batch export |
 | `avgBytesPerSpan()` | `f64` | Calculate average bytes per span |
-| `throughputBytesPerSecond(elapsed_seconds)` | `f64` | Calculate bytes per second throughput |
+| `throughputBytesPerSecond(elapsedSeconds)` | `f64` | Calculate bytes per second throughput |
 
 #### Reset
 
@@ -792,7 +794,7 @@ Export mode for spans and metrics.
 ```zig
 pub const ExportMode = enum {
     sync,          // Synchronous export (blocking)
-    async_buffer,  // Asynchronous export using ring buffer
+    asyncBuffer,  // Asynchronous export using ring buffer
     batch,         // Batch export with configurable size
     network,       // Network export (TCP/UDP)
 };
@@ -806,8 +808,8 @@ Trace context for W3C propagation.
 
 ```zig
 pub const TraceContext = struct {
-    trace_id: []const u8,
-    span_id: []const u8,
+    traceId: []const u8,
+    spanId: []const u8,
     sampled: bool = true,
 };
 ```
@@ -817,7 +819,7 @@ pub const TraceContext = struct {
 ```zig
 // Parse incoming traceparent header
 const ctx = Telemetry.parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
-if (ctx) |trace_ctx| {
+if (ctx) |traceCtx| {
     // Use trace_ctx.trace_id to continue the distributed trace
 }
 ```
@@ -869,8 +871,8 @@ Retrieves a baggage item value.
 **Example:**
 
 ```zig
-if (baggage.get("user.id")) |user_id| {
-    std.debug.print("User: {s}\n", .{user_id});
+if (baggage.get("user.id")) |userId| {
+    std.debug.print("User: {s}\n", .{userId});
 }
 ```
 
@@ -905,8 +907,8 @@ Service and environment metadata.
 
 ```zig
 pub const Resource = struct {
-    service_name: []const u8,
-    service_version: ?[]const u8,
+    serviceName: []const u8,
+    serviceVersion: ?[]const u8,
     environment: ?[]const u8,
     attributes: std.StringHashMap([]const u8),
 };
@@ -921,25 +923,25 @@ Controls trace sampling decision.
 ```zig
 pub const TelemetrySampler = struct {
     strategy: SamplingStrategy,
-    sampling_rate: f64,
+    samplingRate: f64,
     
-    pub fn shouldSample(self: TelemetrySampler, trace_id: []const u8) bool
+    pub fn shouldSample(self: TelemetrySampler, traceId: []const u8) bool
 };
 
 pub const SamplingStrategy = enum {
-    always_on,        // Sample all traces
-    always_off,       // Sample no traces
-    trace_id_ratio,   // Sample based on trace ID hash
-    parent_based,     // Follow parent span decision
+    alwaysOn,        // Sample all traces
+    alwaysOff,       // Sample no traces
+    traceIdRatio,   // Sample based on trace ID hash
+    parentBased,     // Follow parent span decision
 };
 ```
 
 #### Strategies
 
-- **always_on**: All traces sampled (high overhead, development only)
-- **always_off**: No traces sampled (zero overhead)
-- **trace_id_ratio**: Statistically sample X% of traces (configurable via `sampling_rate`)
-- **parent_based**: Inherit parent span's sampling decision (distributed tracing)
+- **alwaysOn**: All traces sampled (high overhead, development only)
+- **alwaysOff**: No traces sampled (zero overhead)
+- **traceIdRatio**: Statistically sample X% of traces (configurable via `samplingRate`)
+- **parentBased**: Inherit parent span's sampling decision (distributed tracing)
 
 ---
 
@@ -951,31 +953,31 @@ Configuration structure for OpenTelemetry initialization.
 pub const TelemetryConfig = struct {
     enabled: bool = false,
     provider: Provider = .none,
-    exporter_endpoint: ?[]const u8 = null,
-    api_key: ?[]const u8 = null,
-    connection_string: ?[]const u8 = null,
-    project_id: ?[]const u8 = null,
+    exporterEndpoint: ?[]const u8 = null,
+    apiKey: ?[]const u8 = null,
+    connectionString: ?[]const u8 = null,
+    projectId: ?[]const u8 = null,
     region: ?[]const u8 = null,
-    exporter_file_path: ?[]const u8 = null,
-    batch_size: usize = 256,
-    batch_timeout_ms: u64 = 5000,
-    sampling_strategy: SamplingStrategy = .always_on,
-    sampling_rate: f64 = 1.0,
-    service_name: ?[]const u8 = null,
-    service_version: ?[]const u8 = null,
+    exporterFilePath: ?[]const u8 = null,
+    batchSize: usize = 256,
+    batchTimeoutMs: u64 = 5000,
+    samplingStrategy: SamplingStrategy = .alwaysOn,
+    samplingRate: f64 = 1.0,
+    serviceName: ?[]const u8 = null,
+    serviceVersion: ?[]const u8 = null,
     environment: ?[]const u8 = null,
     datacenter: ?[]const u8 = null,
-    span_processor_type: SpanProcessorType = .simple,
-    metric_format: MetricFormat = .otlp,
-    compress_exports: bool = false,
-    custom_exporter_fn: ?*const fn () anyerror!void = null,
-    on_span_start: ?*const fn ([]const u8, []const u8) void = null,
-    on_span_end: ?*const fn ([]const u8, u64) void = null,
-    on_metric_recorded: ?*const fn ([]const u8, f64) void = null,
-    on_error: ?*const fn ([]const u8) void = null,
-    auto_context_propagation: bool = true,
-    trace_header: []const u8 = "traceparent",
-    baggage_header: []const u8 = "baggage",
+    spanProcessorType: SpanProcessorType = .simple,
+    metricFormat: MetricFormat = .otlp,
+    compressExports: bool = false,
+    customExporterFn: ?*const fn () anyerror!void = null,
+    onSpanStart: ?*const fn ([]const u8, []const u8) void = null,
+    onSpanEnd: ?*const fn ([]const u8, u64) void = null,
+    onMetricRecorded: ?*const fn ([]const u8, f64) void = null,
+    onError: ?*const fn ([]const u8) void = null,
+    autoContextPropagation: bool = true,
+    traceHeader: []const u8 = "traceparent",
+    baggageHeader: []const u8 = "baggage",
 };
 
 pub const Provider = enum {
@@ -983,10 +985,10 @@ pub const Provider = enum {
     jaeger,
     zipkin,
     datadog,
-    google_cloud,
-    google_analytics,   // Google Analytics 4 (Measurement Protocol)
-    google_tag_manager, // Google Tag Manager (Server-Side)
-    aws_xray,
+    googleCloud,
+    googleAnalytics,   // Google Analytics 4 (Measurement Protocol)
+    googleTagManager, // Google Tag Manager (Server-Side)
+    awsXray,
     azure,
     generic,
     file,
@@ -994,10 +996,10 @@ pub const Provider = enum {
 };
 
 pub const SamplingStrategy = enum {
-    always_on,
-    always_off,
-    trace_id_ratio,
-    parent_based,
+    alwaysOn,
+    alwaysOff,
+    traceIdRatio,
+    parentBased,
 };
 
 pub const MetricFormat = enum {
@@ -1025,13 +1027,13 @@ Jaeger distributed tracing backend.
 - Endpoint: `http://localhost:6831` (Jaeger Agent UDP)
 - Batch Size: 256
 - Processor: Batch
-- Sampling: trace_id_ratio at 10%
+- Sampling: traceIdRatio at 10%
 
 **Example:**
 
 ```zig
 var config = logly.TelemetryConfig.jaeger();
-config.service_name = "user-service";
+config.serviceName = "user-service";
 ```
 
 #### `TelemetryConfig.zipkin() -> TelemetryConfig`
@@ -1044,13 +1046,13 @@ Zipkin distributed tracing.
 - Format: JSON
 - Batch Size: 512
 
-#### `TelemetryConfig.datadog(api_key: []const u8) -> TelemetryConfig`
+#### `TelemetryConfig.datadog(apiKey: []const u8) -> TelemetryConfig`
 
 Datadog APM integration.
 
 **Parameters:**
 
-- `api_key`: Datadog API key (required)
+- `apiKey`: Datadog API key (required)
 
 **Example:**
 
@@ -1059,23 +1061,23 @@ var config = logly.TelemetryConfig.datadog("dd_api_key_here");
 config.environment = "production";
 ```
 
-#### `TelemetryConfig.googleCloud(project_id: []const u8, api_key: []const u8) -> TelemetryConfig`
+#### `TelemetryConfig.googleCloud(projectId: []const u8, apiKey: []const u8) -> TelemetryConfig`
 
 Google Cloud Trace integration.
 
 **Parameters:**
 
-- `project_id`: GCP project ID
-- `api_key`: GCP API key
+- `projectId`: GCP project ID
+- `apiKey`: GCP API key
 
-#### `TelemetryConfig.googleAnalytics(measurement_id: []const u8, api_secret: []const u8) -> TelemetryConfig`
+#### `TelemetryConfig.googleAnalytics(measurementId: []const u8, apiSecret: []const u8) -> TelemetryConfig`
 
 Google Analytics 4 (GA4) Measurement Protocol integration.
 
 **Parameters:**
 
-- `measurement_id`: GA4 Measurement ID (e.g., "G-XXXXXXXXXX")
-- `api_secret`: GA4 Measurement Protocol API secret
+- `measurementId`: GA4 Measurement ID (e.g., "G-XXXXXXXXXX")
+- `apiSecret`: GA4 Measurement Protocol API secret
 
 **Default Settings:**
 
@@ -1086,17 +1088,17 @@ Google Analytics 4 (GA4) Measurement Protocol integration.
 
 ```zig
 var config = logly.TelemetryConfig.googleAnalytics("G-ABC123XYZ", "my_api_secret");
-config.service_name = "analytics-service";
+config.serviceName = "analytics-service";
 ```
 
-#### `TelemetryConfig.googleTagManager(container_url: []const u8, api_key: ?[]const u8) -> TelemetryConfig`
+#### `TelemetryConfig.googleTagManager(containerUrl: []const u8, apiKey: ?[]const u8) -> TelemetryConfig`
 
 Google Tag Manager Server-Side container integration.
 
 **Parameters:**
 
-- `container_url`: Server-side GTM container URL
-- `api_key`: Optional API key for authentication (can be null)
+- `containerUrl`: Server-side GTM container URL
+- `apiKey`: Optional API key for authentication (can be null)
 
 **Example:**
 
@@ -1116,13 +1118,13 @@ AWS X-Ray integration.
 
 - `region`: AWS region (e.g., "us-east-1")
 
-#### `TelemetryConfig.azure(connection_string: []const u8) -> TelemetryConfig`
+#### `TelemetryConfig.azure(connectionString: []const u8) -> TelemetryConfig`
 
 Azure Application Insights integration.
 
 **Parameters:**
 
-- `connection_string`: Application Insights connection string
+- `connectionString`: Application Insights connection string
 
 #### `TelemetryConfig.otelCollector(endpoint: []const u8) -> TelemetryConfig`
 
@@ -1146,13 +1148,13 @@ File-based exporter (development/testing).
 var config = logly.TelemetryConfig.file("traces.jsonl");
 ```
 
-#### `TelemetryConfig.custom(exporter_fn: *const fn () anyerror!void) -> TelemetryConfig`
+#### `TelemetryConfig.custom(exporterFn: *const fn () anyerror!void) -> TelemetryConfig`
 
 Custom exporter implementation using a callback function.
 
 **Parameters:**
 
-- `exporter_fn`: Pointer to custom exporter callback function
+- `exporterFn`: Pointer to custom exporter callback function
 
 **Example:**
 
@@ -1163,7 +1165,7 @@ fn myCustomExporter() anyerror!void {
 }
 
 var config = logly.TelemetryConfig.custom(&myCustomExporter);
-config.service_name = "custom-service";
+config.serviceName = "custom-service";
 ```
 
 #### `TelemetryConfig.highThroughput() -> TelemetryConfig`
@@ -1176,7 +1178,7 @@ Pre-configured for high-throughput scenarios.
 - Endpoint: `http://localhost:6831`
 - Batch Size: 1024
 - Batch Timeout: 2000ms
-- Sampling: trace_id_ratio at 1%
+- Sampling: traceIdRatio at 1%
 
 #### `TelemetryConfig.development() -> TelemetryConfig`
 
@@ -1187,7 +1189,7 @@ Pre-configured for development.
 - Provider: File-based
 - Output: `telemetry_spans.jsonl`
 - Processor: Simple (immediate export)
-- Sampling: always_on
+- Sampling: alwaysOn
 
 ---
 
@@ -1197,7 +1199,7 @@ Pre-configured for development.
 
 ```zig
 var config = logly.TelemetryConfig.jaeger();
-config.service_name = "my-app";
+config.serviceName = "my-app";
 
 var telemetry = try logly.Telemetry.init(allocator, config);
 defer telemetry.deinit();
@@ -1207,7 +1209,7 @@ var span = try telemetry.startSpan("process_request", .{
 });
 defer {
     span.end();
-    _ = telemetry.endSpan(&span) catch {};
+     _ = telemetry.endSpan(&span) catch {};
 }
 
 try span.setAttribute("request.id", logly.SpanAttribute{ .string = "req-123" });
@@ -1221,17 +1223,17 @@ try span.addEvent("processing_started", null);
 var parent = try telemetry.startSpan("http_request", .{});
 defer {
     parent.end();
-    _ = telemetry.endSpan(&parent) catch {};
+     _ = telemetry.endSpan(&parent) catch {};
 }
 
 // Child span (automatic trace propagation)
 var child = try telemetry.startSpan("database_query", .{
-    .parent_span_id = parent.span_id,
+    .parentSpanId = parent.spanId,
     .kind = .client,
 });
 defer {
     child.end();
-    _ = telemetry.endSpan(&child) catch {};
+     _ = telemetry.endSpan(&child) catch {};
 }
 ```
 
@@ -1249,7 +1251,7 @@ defer allocator.free(traceparent);
 // Parse incoming traceparent header
 const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 if (logly.Telemetry.parseTraceparentHeader(incoming)) |ctx| {
-    std.debug.print("Continuing trace: {s}\n", .{ctx.trace_id});
+    std.debug.print("Continuing trace: {s}\n", .{ctx.traceId});
 }
 ```
 
@@ -1283,11 +1285,11 @@ if (parsed.get("user.id")) |uid| {
 
 ```zig
 // Create parent span (inherits new trace)
-var root_span = try telemetry.startSpan("http_handler", .{ .kind = .server });
-defer root_span.deinit();
+var rootSpan = try telemetry.startSpan("http_handler", .{ .kind = .server });
+defer rootSpan.deinit();
 
 // Create child span using context helper (inherits trace_id, sets parent_span_id)
-var db_span = try telemetry.startSpanWithContext("database_query", &root_span, .{ .kind = .client });
+var db_span = try telemetry.startSpanWithContext("database_query", &rootSpan, .{ .kind = .client });
 defer db_span.deinit();
 
 // Create grandchild span
@@ -1340,23 +1342,23 @@ std.debug.print("Error rate: {d:.2}%\n", .{stats.getErrorRate() * 100.0});
 
 ```zig
 var config = logly.TelemetryConfig.file("traces.jsonl");
-config.on_span_start = onSpanStart;
-config.on_span_end = onSpanEnd;
-config.on_error = onTelemetryError;
+config.onSpanStart = onSpanStart;
+config.onSpanEnd = onSpanEnd;
+config.onError = onTelemetryError;
 
 var telemetry = try logly.Telemetry.init(allocator, config);
 
-fn onSpanStart(span_id: []const u8, name: []const u8) void {
+fn onSpanStart(spanId: []const u8, name: []const u8) void {
     std.debug.print("Span started: {s}\n", .{name});
 }
 
-fn onSpanEnd(span_id: []const u8, duration_ns: u64) void {
-    const ms = @as(f64, @floatFromInt(duration_ns)) / 1_000_000.0;
+fn onSpanEnd(spanId: []const u8, durationNs: u64) void {
+    const ms = @as(f64, @floatFromInt(durationNs)) / 1_000_000.0;
     std.debug.print("Span ended: {d}ms\n", .{ms});
 }
 
-fn onTelemetryError(error_msg: []const u8) void {
-    std.debug.print("Telemetry error: {s}\n", .{error_msg});
+fn onTelemetryError(errorMsg: []const u8) void {
+    std.debug.print("Telemetry error: {s}\n", .{errorMsg});
 }
 ```
 
@@ -1368,10 +1370,10 @@ var config = logly.TelemetryConfig.development();
 
 // Sample 10% of traces (production)
 var config = logly.TelemetryConfig.highThroughput();
-config.sampling_rate = 0.1;
+config.samplingRate = 0.1;
 
 // Intelligent sampling based on parent
-config.sampling_strategy = .parent_based;
+config.samplingStrategy = .parentBased;
 ```
 
 ---
@@ -1390,7 +1392,7 @@ All Telemetry operations are thread-safe:
 var span = try telemetry.startSpan("concurrent_operation", .{});
 defer {
     span.end();
-    _ = telemetry.endSpan(&span) catch {};
+     _ = telemetry.endSpan(&span) catch {};
 }
 ```
 
@@ -1416,8 +1418,8 @@ Common errors:
 
 ## Performance Considerations
 
-1. **Sampling**: Use `trace_id_ratio` strategy for production to reduce overhead
-2. **Batch Size**: Increase batch_size for high-throughput scenarios
+1. **Sampling**: Use `traceIdRatio` strategy for production to reduce overhead
+2. **Batch Size**: Increase batchSize for high-throughput scenarios
 3. **Metrics Granularity**: Avoid recording high-cardinality metrics
 4. **Memory**: Completed spans stored in ArrayList; consider periodic clearing for long-running processes
 
@@ -1425,7 +1427,7 @@ Common errors:
 
 ## Compatibility
 
-- Zig: 0.16.0+
+- Zig: 0.17.0+
 - OpenTelemetry: Specification 1.0+
 - Platforms: Linux, macOS, Windows (x86_64, aarch64, x86)
 

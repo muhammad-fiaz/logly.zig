@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const test_filter = b.option([]const u8, "test-filter", "Run only tests whose name contains this substring");
 
     // Resolve zstd dependency
     const zstd_dep = b.dependency("zstd", .{
@@ -18,12 +19,20 @@ pub fn build(b: *std.Build) void {
     });
     const brotli_mod = brotli_dep.module("brotli");
 
-    // Create the logly module with zstd and brotli support
+    // Resolve tint dependency (terminal colors and text styling)
+    const tint_dep = b.dependency("tint", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const tint_mod = tint_dep.module("tint");
+
+    // Create the logly module with zstd, brotli, and tint support
     const logly_module = b.createModule(.{
         .root_source_file = b.path("src/logly.zig"),
     });
     logly_module.addImport("zstd", zstd_mod);
     logly_module.addImport("brotli", brotli_mod);
+    logly_module.addImport("tint", tint_mod);
 
     // Expose the module for external projects that depend on this package.
     // This allows users to do: `const logly = @import("logly");` in their code
@@ -33,6 +42,7 @@ pub fn build(b: *std.Build) void {
     });
     exposed_module.addImport("zstd", zstd_mod);
     exposed_module.addImport("brotli", brotli_mod);
+    exposed_module.addImport("tint", tint_mod);
 
     const examples = [_]struct { name: []const u8, path: []const u8, skip_run_all: bool = false }{
         .{ .name = "basic", .path = "examples/basic.zig" },
@@ -88,6 +98,19 @@ pub fn build(b: *std.Build) void {
         .{ .name = "hot_reload", .path = "examples/hot_reload.zig" },
         .{ .name = "mmap_sink", .path = "examples/mmap_sink.zig" },
         .{ .name = "context_filter", .path = "examples/context_filter.zig" },
+        // v0.2.2 examples (previously unlisted)
+        .{ .name = "network_send_helpers", .path = "examples/network_send_helpers.zig", .skip_run_all = true },
+        .{ .name = "redaction_truncate", .path = "examples/redaction_truncate.zig" },
+        .{ .name = "rotation_helpers", .path = "examples/rotation_helpers.zig" },
+        .{ .name = "sampling_key", .path = "examples/sampling_key.zig" },
+        .{ .name = "telemetry_metrics_export", .path = "examples/telemetry_metrics_export.zig" },
+        .{ .name = "telemetry_mini", .path = "examples/telemetry_mini.zig" },
+        .{ .name = "color_modes", .path = "examples/color_modes.zig" },
+        .{ .name = "formats", .path = "examples/formats.zig" },
+        .{ .name = "tamper_evident", .path = "examples/tamper_evident.zig" },
+        .{ .name = "allocator_strategies", .path = "examples/allocator_strategies.zig" },
+        .{ .name = "stack_traces", .path = "examples/stack_traces.zig" },
+        .{ .name = "runtime_config_override", .path = "examples/runtime_config_override.zig" },
     };
 
     // Create run-all-examples step that runs all examples sequentially
@@ -145,9 +168,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libc = true,
         }),
+        .filters = if (test_filter) |f| &.{f} else &.{},
     });
     tests.root_module.addImport("zstd", zstd_mod);
     tests.root_module.addImport("brotli", brotli_mod);
+    tests.root_module.addImport("tint", tint_mod);
 
     if (target.result.os.tag == .windows) {
         tests.root_module.linkSystemLibrary("ws2_32", .{});
@@ -230,5 +255,6 @@ pub fn build(b: *std.Build) void {
     });
     lib.root_module.addImport("zstd", zstd_mod);
     lib.root_module.addImport("brotli", brotli_mod);
+    lib.root_module.addImport("tint", tint_mod);
     b.installArtifact(lib);
 }

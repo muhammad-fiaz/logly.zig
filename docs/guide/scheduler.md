@@ -33,14 +33,14 @@ const logly = @import("logly");
 var config = logly.Config.default();
 config.scheduler = .{
     .enabled = true,              // Enable scheduler
-    .cleanup_max_age_days = 7,    // Delete logs older than 7 days
-    .max_files = 10,              // Keep max 10 rotated files
-    .compress_before_cleanup = true, // Compress before deleting
-    .file_pattern = "*.log",      // Pattern for log files
+    .cleanupMaxAgeDays = 7,    // Delete logs older than 7 days
+    .maxFiles = 10,              // Keep max 10 rotated files
+    .compressBeforeCleanup = true, // Compress before deleting
+    .filePattern = "*.log",      // Pattern for log files
 };
 
 // Or use helper method
-var config2 = logly.Config.default().withScheduler(.{ .cleanup_max_age_days = 7 });
+var config2 = logly.Config.default().withScheduler(.{ .cleanupMaxAgeDays = 7 });
 ```
 
 ### Advanced Configuration
@@ -49,23 +49,23 @@ var config2 = logly.Config.default().withScheduler(.{ .cleanup_max_age_days = 7 
 var config = logly.Config.default();
 config.scheduler = .{
     .enabled = true,
-    .cleanup_max_age_days = 7,
-    .compress_before_cleanup = true,
+    .cleanupMaxAgeDays = 7,
+    .compressBeforeCleanup = true,
     // Archive root directory for all compressed files
-    .archive_root_dir = "logs/archive",
-    .create_date_subdirs = true,        // Organize by YYYY/MM/DD
+    .archiveRootDir = "logs/archive",
+    .createDateSubdirs = true,        // Organize by YYYY/MM/DD
     // Compression settings
-    .compression_algorithm = .gzip,
-    .compression_level = .best,
-    .keep_originals = false,
+    .compressionAlgorithm = .gzip,
+    .compressionLevel = .best,
+    .keepOriginals = false,
     // File naming customization
-    .archive_file_prefix = "archived_",
-    .archive_file_suffix = "_v1",
-    .preserve_dir_structure = true,
+    .archiveFilePrefix = "archived_",
+    .archiveFileSuffix = "_v1",
+    .preserveDirStructure = true,
     // Cleanup settings
-    .clean_empty_dirs = true,
-    .min_age_days_for_compression = 1,
-    .max_concurrent_compressions = 4,
+    .cleanEmptyDirs = true,
+    .minAgeDaysForCompression = 1,
+    .maxConcurrentCompressions = 4,
 };
 ```
 
@@ -74,21 +74,21 @@ config.scheduler = .{
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | `bool` | `false` | Enable the scheduler |
-| `cleanup_max_age_days` | `u64` | `7` | Max age for cleanup tasks |
-| `max_files` | `?usize` | `null` | Max files to retain |
-| `compress_before_cleanup` | `bool` | `false` | Compress before deleting |
-| `file_pattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
-| `archive_root_dir` | `?[]const u8` | `null` | Root directory for archives |
-| `create_date_subdirs` | `bool` | `false` | Create YYYY/MM/DD structure |
-| `compression_algorithm` | `CompressionAlgorithm` | `.gzip` | Compression algorithm (gzip, zlib, deflate, zstd, lzma, lzma2, xz, zip, tar.gz, lz4) |
-| `compression_level` | `CompressionLevel` | `.default` | Compression level |
-| `keep_originals` | `bool` | `false` | Keep original files |
-| `archive_file_prefix` | `?[]const u8` | `null` | Prefix for file names |
-| `archive_file_suffix` | `?[]const u8` | `null` | Suffix for file names |
-| `preserve_dir_structure` | `bool` | `true` | Preserve directory structure |
-| `clean_empty_dirs` | `bool` | `false` | Remove empty directories |
-| `min_age_days_for_compression` | `u64` | `1` | Min age before compression |
-| `max_concurrent_compressions` | `usize` | `2` | Max parallel compressions |
+| `cleanupMaxAgeDays` | `u64` | `7` | Max age for cleanup tasks |
+| `maxFiles` | `?usize` | `null` | Max files to retain |
+| `compressBeforeCleanup` | `bool` | `false` | Compress before deleting |
+| `filePattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
+| `archiveRootDir` | `?[]const u8` | `null` | Root directory for archives |
+| `createDateSubdirs` | `bool` | `false` | Create YYYY/MM/DD structure |
+| `compressionAlgorithm` | `CompressionAlgorithm` | `.gzip` | Compression algorithm (gzip, zlib, deflate, zstd, lzma, lzma2, xz, zip, tar.gz, lz4) |
+| `compressionLevel` | `CompressionLevel` | `.default` | Compression level |
+| `keepOriginals` | `bool` | `false` | Keep original files |
+| `archiveFilePrefix` | `?[]const u8` | `null` | Prefix for file names |
+| `archiveFileSuffix` | `?[]const u8` | `null` | Suffix for file names |
+| `preserveDirStructure` | `bool` | `true` | Preserve directory structure |
+| `cleanEmptyDirs` | `bool` | `false` | Remove empty directories |
+| `minAgeDaysForCompression` | `u64` | `1` | Min age before compression |
+| `maxConcurrentCompressions` | `usize` | `2` | Max parallel compressions |
 
 ## Quick Start
 
@@ -106,13 +106,13 @@ pub fn main() !void {
     defer scheduler.deinit();
 
     // Add a cleanup task
-    _ = try scheduler.addTask(.{
+     _ = try scheduler.addTask(.{
         .name = "daily_cleanup",
-        .task_type = .cleanup,
+        .taskType = .cleanup,
         .schedule = .{ .daily = .{ .hour = 2, .minute = 0 } },
         .config = .{
             .path = "logs",
-            .max_age_seconds = 30 * 24 * 60 * 60, // 30 days
+            .maxAgeSeconds = 30 * 24 * 60 * 60, // 30 days
         },
     });
 
@@ -198,13 +198,13 @@ Add optional random delay (jitter) to prevent thundering herd when multiple task
 Remove old log files:
 
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "log_cleanup",
-    .task_type = .cleanup,
+    .taskType = .cleanup,
     .schedule = logly.Schedule.daily(3, 0),
     .config = .{ .cleanup = .{
         .path = "logs",
-        .max_age_days = 30,
+        .maxAgeDays = 30,
         .pattern = "*.log",
         .include_compressed = true,
         .min_files_to_keep = 5,
@@ -218,7 +218,7 @@ _ = try scheduler.addTask(.{
 | Option | Default | Description |
 |--------|---------|-------------|
 | `path` | required | Directory to clean |
-| `max_age_days` | 30 | Maximum file age |
+| `maxAgeDays` | 30 | Maximum file age |
 | `pattern` | "*.log" | Glob pattern |
 | `include_compressed` | true | Include .gz files |
 | `min_files_to_keep` | 5 | Keep at least N files |
@@ -229,14 +229,14 @@ _ = try scheduler.addTask(.{
 Compress old log files:
 
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "log_compression",
-    .task_type = .compression,
+    .taskType = .compression,
     .schedule = logly.Schedule.everyHours(1),
     .config = .{ .compression = .{
         .path = "logs",
         .pattern = "*.log",
-        .min_age_days = 1,
+        .minAgeDays = 1,
         .delete_originals = true,
         .skip_compressed = true,
     }},
@@ -249,7 +249,7 @@ _ = try scheduler.addTask(.{
 |--------|---------|-------------|
 | `path` | required | Directory to compress |
 | `pattern` | "*.log" | File pattern |
-| `min_age_days` | 1 | Minimum age to compress |
+| `minAgeDays` | 1 | Minimum age to compress |
 | `delete_originals` | true | Delete after compression |
 | `skip_compressed` | true | Skip .gz files |
 
@@ -259,37 +259,37 @@ The scheduler supports multiple compression strategies:
 
 | Mode | Field | Behavior |
 |------|-------|----------|
-| **Compress & Delete** | `compress_before_delete = true` | Compress file, then delete original |
-| **Compress & Keep** | `compress_and_keep = true` | Compress file, keep both versions |
-| **Compress Only** | `compress_only = true` | Compress file, never delete anything |
+| **Compress & Delete** | `compressBeforeDelete = true` | Compress file, then delete original |
+| **Compress & Keep** | `compressAndKeep = true` | Compress file, keep both versions |
+| **Compress Only** | `compressOnly = true` | Compress file, never delete anything |
 
 **Example: Compress and Keep Both**
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "archive_logs",
-    .task_type = .cleanup,
+    .taskType = .cleanup,
     .schedule = logly.Schedule.daily(2, 0),
     .config = .{
         .path = "logs",
-        .file_pattern = "*.log",
-        .min_age_seconds = 24 * 60 * 60, // 1 day
-        .compress_and_keep = true,       // Keep both original and compressed
-        .skip_already_compressed = true,
+        .filePattern = "*.log",
+        .minAgeSeconds = 24 * 60 * 60, // 1 day
+        .compressAndKeep = true,       // Keep both original and compressed
+        .skipAlreadyCompressed = true,
     },
 });
 ```
 
 **Example: Compress Only (No Deletion)**
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "pure_archive",
-    .task_type = .cleanup,
+    .taskType = .cleanup,
     .schedule = logly.Schedule.daily(3, 0),
     .config = .{
         .path = "logs",
-        .file_pattern = "*.log",
-        .compress_only = true,           // Only compress, never delete
-        .skip_already_compressed = true,
+        .filePattern = "*.log",
+        .compressOnly = true,           // Only compress, never delete
+        .skipAlreadyCompressed = true,
     },
 });
 ```
@@ -299,9 +299,9 @@ _ = try scheduler.addTask(.{
 Force log rotation:
 
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "forced_rotation",
-    .task_type = .rotation,
+    .taskType = .rotation,
     .schedule = logly.Schedule.daily(0, 0), // Midnight
     .config = .{ .rotation = .{
         .path = "logs/app.log",
@@ -315,9 +315,9 @@ _ = try scheduler.addTask(.{
 Run custom maintenance functions:
 
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "custom_maintenance",
-    .task_type = .custom,
+    .taskType = .custom,
     .schedule = logly.Schedule.everyMinutes(30),
     .config = .{ .custom = .{
         .callback = myMaintenanceFunction,
@@ -337,9 +337,9 @@ fn myMaintenanceFunction(ctx: *anyopaque) void {
 Flush all log buffers:
 
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "periodic_flush",
-    .task_type = .flush,
+    .taskType = .flush,
     .schedule = logly.Schedule.everyMinutes(5),
     .config = .{ .none = {} },
 });
@@ -350,9 +350,9 @@ _ = try scheduler.addTask(.{
 Run periodic health checks:
 
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "health_check",
-    .task_type = .health_check,
+    .taskType = .healthCheck,
     .schedule = logly.Schedule.interval(300), // 5 minutes
     .config = .{ .none = {} },
 });
@@ -363,7 +363,7 @@ _ = try scheduler.addTask(.{
 ### Adding Tasks
 
 ```zig
-const task_index = try scheduler.addTask(.{
+const taskIndex = try scheduler.addTask(.{
     .name = "my_task",
     // ...
 });
@@ -372,17 +372,17 @@ const task_index = try scheduler.addTask(.{
 ### Removing Tasks
 
 ```zig
-try scheduler.removeTask(task_index);
+try scheduler.removeTask(taskIndex);
 ```
 
 ### Enabling/Disabling Tasks
 
 ```zig
 // Disable temporarily
-scheduler.disableTask(task_index);
+scheduler.disableTask(taskIndex);
 
 // Re-enable
-scheduler.enableTask(task_index);
+scheduler.enableTask(taskIndex);
 ```
 
 ### Global Pause and Resume
@@ -399,7 +399,7 @@ scheduler.unpause();
 
 ```zig
 // Execute immediately, regardless of schedule
-try scheduler.runTaskNow(task_index);
+try scheduler.runTaskNow(taskIndex);
 ```
 
 ### Listing Tasks
@@ -410,7 +410,7 @@ for (tasks, 0..) |task, i| {
     std.debug.print("Task {d}: {s} ({s})\n", .{
         i,
         task.name,
-        @tagName(task.task_type),
+        @tagName(task.taskType),
     });
 }
 ```
@@ -421,17 +421,17 @@ Use built-in presets for common scenarios:
 
 ```zig
 // Daily cleanup at 2 AM, keep 30 days
-_ = try scheduler.addTask(
+ _ = try scheduler.addTask(
     logly.SchedulerPresets.dailyCleanup("logs"),
 );
 
 // Hourly compression
-_ = try scheduler.addTask(
+ _ = try scheduler.addTask(
     logly.SchedulerPresets.hourlyCompression("logs"),
 );
 
 // Weekly deep clean on Sunday 3 AM
-_ = try scheduler.addTask(
+ _ = try scheduler.addTask(
     logly.SchedulerPresets.weeklyDeepClean("logs"),
 );
 ```
@@ -518,17 +518,21 @@ if (stats.hasFailures()) {
 ### Scheduler Configuration
 
 ```zig
-var scheduler = try logly.Scheduler.init(allocator, .{
-    .check_interval_ms = 60000,     // Check every minute
-    .auto_start = false,            // Manual start
-    .timezone_offset = -5,          // EST (UTC-5)
-    .max_concurrent_tasks = 4,      // Parallel tasks
-    .retry_failed = true,           // Retry on failure
-    .max_retries = 3,               // Retry attempts
-    .retry_delay_ms = 5000,         // Delay between retries
-    .log_executions = true,         // Log task runs
-    .shutdown_timeout_ms = 10000,   // Graceful shutdown
-});
+// Initialize scheduler with explicit allocator (or pass explicit io handle via initWithIo)
+var scheduler = try logly.Scheduler.init(allocator);
+defer scheduler.deinit();
+
+// Alternatively, configure via central Config.SchedulerConfig:
+var config = logly.Config.default();
+config.scheduler = .{
+    .enabled = true,
+    .cleanupMaxAgeDays = 7,
+    .maxFiles = 10,
+    .compressBeforeCleanup = true,
+    .filePattern = "*.log",
+};
+var schedulerFromConfig = try logly.Scheduler.initFromConfig(allocator, config.scheduler, "logs");
+defer schedulerFromConfig.deinit();
 ```
 
 ### Timezone Handling
@@ -553,8 +557,8 @@ var scheduler = try logly.Scheduler.init(allocator, .{
 
 ```zig
 .retry_failed = true,
-.max_retries = 3,
-.retry_delay_ms = 5000,
+.maxRetries = 3,
+.retryDelayMs = 5000,
 ```
 
 ### Task Failure Handling & Retries
@@ -562,17 +566,17 @@ var scheduler = try logly.Scheduler.init(allocator, .{
 When a task fails (its callback returns an error):
 1. Error is logged (if `log_executions` is true)
 2. `failure_count` is incremented
-3. If `max_retries` is configured, the task is retried with exponential backoff: `delay = retry_backoff_ms * (2 ^ attempt)`
-4. After `max_retries` attempts, the task remains enabled but marked as failed until the next scheduled interval
+3. If `maxRetries` is configured, the task is retried with exponential backoff: `delay = retryBackoffMs * (2 ^ attempt)`
+4. After `maxRetries` attempts, the task remains enabled but marked as failed until the next scheduled interval
 
 ```zig
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "my_task",
-    .task_type = .custom,
+    .taskType = .custom,
     .schedule = logly.Schedule.daily(2, 0),
     .config = .{
-        .max_retries = 3,         // Retry up to 3 times
-        .retry_backoff_ms = 1000, // Starts at 1s, then 2s, then 4s
+        .maxRetries = 3,         // Retry up to 3 times
+        .retryBackoffMs = 1000, // Starts at 1s, then 2s, then 4s
     },
 });
 ```
@@ -601,8 +605,8 @@ var compression = logly.Compression.init(allocator, .{
 });
 
 // Compression triggered by scheduler
-_ = try scheduler.addTask(.{
-    .task_type = .compression,
+ _ = try scheduler.addTask(.{
+    .taskType = .compression,
     .config = .{ .compression = .{
         .path = "logs",
     }},
@@ -613,9 +617,9 @@ _ = try scheduler.addTask(.{
 
 ```zig
 // Daily rotation at midnight
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "daily_rotation",
-    .task_type = .rotation,
+    .taskType = .rotation,
     .schedule = logly.Schedule.daily(0, 0),
     .config = .{ .rotation = .{
         .path = "logs/app.log",
@@ -636,9 +640,9 @@ _ = try scheduler.addTask(.{
 
 ```zig
 // Don't run all tasks at the same time
-_ = scheduler.addTask(.{ .schedule = logly.Schedule.daily(2, 0) });  // Cleanup
-_ = scheduler.addTask(.{ .schedule = logly.Schedule.daily(3, 0) });  // Compression
-_ = scheduler.addTask(.{ .schedule = logly.Schedule.daily(4, 0) });  // Health check
+ _ = scheduler.addTask(.{ .schedule = logly.Schedule.daily(2, 0) });  // Cleanup
+ _ = scheduler.addTask(.{ .schedule = logly.Schedule.daily(3, 0) });  // Compression
+ _ = scheduler.addTask(.{ .schedule = logly.Schedule.daily(4, 0) });  // Health check
 ```
 
 ### 3. Use Dry Run for Testing
@@ -695,50 +699,32 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Production scheduler config
-    var scheduler = try logly.Scheduler.init(allocator, .{
-        .check_interval_ms = 60000,
-        .timezone_offset = -5, // EST
-        .max_concurrent_tasks = 2,
-        .retry_failed = true,
-        .max_retries = 3,
-    });
+    // Initialize scheduler
+    var scheduler = try logly.Scheduler.init(allocator);
     defer scheduler.deinit();
 
     // Daily cleanup at 2 AM - remove logs older than 30 days
-    _ = try scheduler.addTask(.{
-        .name = "daily_cleanup",
-        .task_type = .cleanup,
-        .schedule = logly.Schedule.daily(2, 0),
-        .config = .{ .cleanup = .{
+    _ = try scheduler.addTask(
+        "daily_cleanup",
+        .cleanup,
+        logly.SchedulerPresets.dailyAt(2, 0),
+        .{
             .path = "logs",
-            .max_age_days = 30,
-            .min_files_to_keep = 10,
-        }},
-    });
+            .maxAgeSeconds = 30 * 24 * 60 * 60,
+            .filePattern = "*.log",
+        },
+    );
 
-    // Hourly compression - compress logs older than 1 day
-    _ = try scheduler.addTask(.{
-        .name = "hourly_compression",
-        .task_type = .compression,
-        .schedule = logly.Schedule.everyHours(1),
-        .config = .{ .compression = .{
+    // Hourly compression - compress uncompressed logs
+    _ = try scheduler.addTask(
+        "hourly_compression",
+        .compression,
+        .{ .interval = 3600000 },
+        .{
             .path = "logs",
-            .min_age_days = 1,
-        }},
-    });
-
-    // Weekly deep clean on Sunday
-    _ = try scheduler.addTask(.{
-        .name = "weekly_deep_clean",
-        .task_type = .cleanup,
-        .schedule = logly.Schedule.weekly(0, 3, 0),
-        .config = .{ .cleanup = .{
-            .path = "logs",
-            .max_age_days = 7,
-            .include_compressed = true,
-        }},
-    });
+            .filePattern = "*.log",
+        },
+    );
 
     // Start scheduler
     try scheduler.start();
@@ -769,7 +755,7 @@ const logly = @import("logly");
 // Create telemetry instance
 var telemetry = try logly.Telemetry.init(allocator, .{
     .provider = .file,
-    .exporter_file_path = "scheduler_telemetry.jsonl",
+    .exporterFilePath = "scheduler_telemetry.jsonl",
 });
 defer telemetry.deinit();
 
@@ -781,13 +767,13 @@ defer scheduler.deinit();
 scheduler.setTelemetry(&telemetry);
 
 // Add tasks and start
-_ = try scheduler.addTask(.{
+ _ = try scheduler.addTask(.{
     .name = "daily_cleanup",
-    .task_type = .cleanup,
+    .taskType = .cleanup,
     .schedule = logly.Schedule.daily(2, 0),
     .config = .{
         .path = "logs",
-        .max_age_seconds = 30 * 24 * 60 * 60,
+        .maxAgeSeconds = 30 * 24 * 60 * 60,
     },
 });
 
@@ -802,12 +788,12 @@ Task execution spans include:
 |-----------|------------|-------------|
 | `task.type` | All | Task type name |
 | `task.priority` | All | Task priority |
-| `task.duration_ms` | All | Execution time |
-| `cleanup.files_deleted` | cleanup | Files deleted |
-| `cleanup.bytes_freed` | cleanup | Bytes freed |
+| `task.durationMs` | All | Execution time |
+| `cleanup.filesDeleted` | cleanup | Files deleted |
+| `cleanup.bytesFreed` | cleanup | Bytes freed |
 | `compression.files` | compression | Files compressed |
-| `compression.bytes_saved` | compression | Space saved |
-| `health.healthy` | health_check | Health status |
+| `compression.bytesSaved` | compression | Space saved |
+| `health.healthy` | healthCheck | Health status |
 
 ### Export to External Systems
 

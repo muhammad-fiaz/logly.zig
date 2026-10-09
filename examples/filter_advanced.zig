@@ -9,31 +9,29 @@ pub fn main() !void {
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("============================================================\n", .{});
-    std.debug.print("  ADVANCED FILTERING DEMO (v0.2.0)\n", .{});
-    std.debug.print("============================================================\n\n", .{});
+    std.debug.print("\n", .{});
+    std.debug.print("  Advanced Filtering Demo\n", .{});
+    std.debug.print("\n\n", .{});
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // -------------------------------------------------------------
     // 1. Setup an Advanced Filter with Composite Modes
-    // -------------------------------------------------------------
-    std.debug.print("--- 1. Glob matching and Rate Limiting ---\n", .{});
+    std.debug.print("1. Glob matching and Rate Limiting\n", .{});
 
-    var advanced_filter = logly.Filter.init(allocator);
-    defer advanced_filter.deinit();
+    var advancedFilter = logly.Filter.init(allocator);
+    defer advancedFilter.deinit();
 
     // Set logical mode to .any (logical OR: passes if any rule matches)
-    advanced_filter.setMode(.any);
+    advancedFilter.setMode(.any);
 
     // Glob pattern rule: allow any modules matching "auth.*"
-    try advanced_filter.addGlobMatchRule("auth.*", .allow);
+    try advancedFilter.addGlobModule("auth.*", .allow);
 
     // Rate-limiting rule: limit logs to 5 messages per second
-    try advanced_filter.addRateLimitRule(5, .allow);
+    try advancedFilter.addRateRule(5, .allow);
 
-    logger.setFilter(&advanced_filter);
+    logger.setFilter(&advancedFilter);
 
     // Simulated logs from different modules
     var rec1 = logly.Record.init(allocator, .info, "User login success");
@@ -46,25 +44,21 @@ pub fn main() !void {
     try logger.dispatchRecord(&rec2);
     rec2.deinit();
 
-    // -------------------------------------------------------------
     // 2. Time-Window Filtering Rules
-    // -------------------------------------------------------------
-    std.debug.print("\n--- 2. Time-Window Rules ---\n", .{});
-    var time_filter = logly.Filter.init(allocator);
-    defer time_filter.deinit();
+    std.debug.print("\n2. Time-Window Rules\n", .{});
+    var timeFilter = logly.Filter.init(allocator);
+    defer timeFilter.deinit();
 
     // Define a rule allowing logs only between 09:00 (9 AM) and 17:00 (5 PM)
-    try time_filter.addTimeWindowRule(9, 17, .allow);
-    logger.setFilter(&time_filter);
+    try timeFilter.addTimeWindowRule(9, 17, .allow);
+    logger.setFilter(&timeFilter);
 
     var rec3 = logly.Record.init(allocator, .info, "Standard business hours activity");
     try logger.dispatchRecord(&rec3);
     rec3.deinit();
 
-    // -------------------------------------------------------------
     // 3. Batch Filtering of Records
-    // -------------------------------------------------------------
-    std.debug.print("\n--- 3. Batch Filtering API ---\n", .{});
+    std.debug.print("\n3. Batch Filtering API\n", .{});
 
     var batch: std.ArrayList(logly.Record) = .empty;
     defer {
@@ -76,9 +70,9 @@ pub fn main() !void {
     try batch.append(allocator, logly.Record.init(allocator, .err, "Critical database corruption"));
     try batch.append(allocator, logly.Record.init(allocator, .info, "User logoff event"));
 
-    var min_level_filter = logly.Filter.init(allocator);
-    defer min_level_filter.deinit();
-    try min_level_filter.addMinLevel(.info);
+    var minLevelFilter = logly.Filter.init(allocator);
+    defer minLevelFilter.deinit();
+    try minLevelFilter.addMinLevel(.info);
 
     std.debug.print("Evaluating batch of {d} records...\n", .{batch.items.len});
 
@@ -86,19 +80,19 @@ pub fn main() !void {
     const results = try allocator.alloc(logly.Filter.FilterResult, batch.items.len);
     defer allocator.free(results);
 
-    const record_ptrs = try allocator.alloc(*const logly.Record, batch.items.len);
-    defer allocator.free(record_ptrs);
+    const recordPtrs = try allocator.alloc(*const logly.Record, batch.items.len);
+    defer allocator.free(recordPtrs);
     for (batch.items, 0..) |*r, i| {
-        record_ptrs[i] = r;
+        recordPtrs[i] = r;
     }
 
-    min_level_filter.filterBatch(record_ptrs, results);
+    minLevelFilter.filterBatch(recordPtrs, results);
 
     std.debug.print("Batch filtering completed.\n", .{});
     for (results, 0..) |res, i| {
         std.debug.print("  - Record {d} Level {s}: Passed: {s}, Reason: {s}\n", .{
             i,
-            record_ptrs[i].level.asString(),
+            recordPtrs[i].level.asString(),
             if (res.allowed) "Yes" else "No",
             res.reason,
         });

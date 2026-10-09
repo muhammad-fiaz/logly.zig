@@ -1,9 +1,12 @@
 const std = @import("std");
 const logly = @import("logly");
 
-// Custom callback function matching: ?*const fn (old_path: []const u8, new_path: []const u8) void
-fn onRotateCallback(old_path: []const u8, new_path: []const u8) void {
-    std.debug.print("[CALLBACK] Log rotated! Old path: {s} -> New path: {s}\n", .{ old_path, new_path });
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
+/// Sink rotation callback. Receives the archived and current paths.
+fn onRotate(oldPath: []const u8, newPath: []const u8) void {
+    std.debug.print("[CALLBACK] rotated: {s} -> {s}\n", .{ oldPath, newPath });
 }
 
 pub fn main() !void {
@@ -11,72 +14,54 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly v0.2.0 Advanced Rotation Demonstration ===\n\n", .{});
+    std.debug.print("Rotation demonstration\n\n", .{});
 
-    // 1. Configure the logger
     var config = logly.Config.default();
-    config.auto_sink = false;
-
-    // Use our new parsing helpers to create rotation configurations
-    const size_rotation = logly.Config.RotationConfig.fromSize("10KB");
-    const interval_rotation = logly.Config.RotationConfig.fromInterval("24h");
-
-    std.debug.print("Parsed fromSize('10KB') size limit: {?s} bytes\n", .{size_rotation.size_limit_str});
-    std.debug.print("Parsed fromInterval('24h') interval: {?s}\n", .{interval_rotation.interval});
+    config.autoSink = false;
+    // Rotation callbacks are a logger-wide setting, so they belong on the
+    // rotation config rather than on an individual sink.
+    config.rotation.onRotate = onRotate;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    // 2. Add a sink using dynamic, hourly rotation with a custom on_rotate callback
-    var hourly_rot_config = logly.Config.RotationConfig.fromInterval("hourly");
-    hourly_rot_config.retention_count = 3;
-    hourly_rot_config.max_total_size = 50 * 1024; // Limit to 50KB total size across rotated logs
-    hourly_rot_config.on_rotate = onRotateCallback;
-
-    std.debug.print("Adding hourly rotating sink with 50KB total size cap...\n", .{});
+    // Time-based rotation with a retention count.
+    std.debug.print("Adding hourly rotating sink (3 retained files)...\n", .{});
     _ = try logger.addSink(.{
+        .name = "hourly",
         .path = "logs/hourly_rotation.log",
         .rotation = "hourly",
         .retention = 3,
-        // Wait, addSink accepts SinkConfig, so we configure rotation settings
     });
 
-    // 3. Let's create a Rotation instance directly to showcase fine-grained manual/programmatic rotation checks and dry-run
-    std.debug.print("\nCreating programmatic Rotation instance for 'logs/programmatic.log'...\n", .{});
-    var rotation = try logly.Rotation.init(allocator, "logs/programmatic.log", "hourly", 1024, 3);
-    defer rotation.deinit();
+    // Size-based rotation: roll the file once it passes 5KB.
+    std.debug.print("Adding size-based rotating sink (5KB cap)...\n", .{});
+    _ = try logger.addSink(.{
+        .name = "size-based",
+        .path = "logs/size_rotation.log",
+        .sizeLimit = 5 * 1024,
+        .retention = 5,
+        .overwriteMode = true,
+    });
 
-    // Configure additional features
-    rotation.withMaxTotalSize(2048); // enforce 2KB total size limit
-    rotation.withOnRotate(onRotateCallback);
+    // Drive the size-based sink past its threshold so rotation is exercised.
+    // SinkConfig.sizeLimit is a byte count, so the trigger is a real write,
+    // not a simulated size report.
+    const payload = "size-based rotation payload: the quick brown fox jumps over the lazy dog, repeatedly, until the file passes its byte threshold and rolls over.";
+    var i: usize = 0;
+    while (i < 40) : (i += 1) {
+        try logger.info(payload, null);
+    }
+    try logger.flush();
 
-    std.debug.print("Rotation dry-run enabled check: isEnabled() = {}\n", .{rotation.isEnabled()});
-    std.debug.print("Next rotation in seconds: {?d}\n", .{rotation.nextRotationInSeconds()});
+    // A rotating file sink writes one record per line; confirm the file exists
+    // and carries content after the run.
+    const rotated = try std.Io.Dir.cwd().openFile(io, "logs/size_rotation.log", .{});
+    defer rotated.close(io);
+    const stat = try rotated.stat(io);
+    std.debug.print("size_rotation.log is {d} bytes after writing ~{d} records\n", .{ stat.size, i });
 
-    // Let's simulate creating a file and testing shouldRotate
-    const test_file_path = "logs/programmatic.log";
-    // Ensure directory exists
-    std.Io.Dir.cwd().createDirPath(logly.Utils.io(), "logs") catch {};
-    var test_file = try std.Io.Dir.cwd().createFile(logly.Utils.io(), test_file_path, .{ .read = true, .truncate = true });
-    defer test_file.close(logly.Utils.io());
-
-    // Write some bytes
-    try test_file.writeStreamingAll(logly.Utils.io(), "A" ** 500);
-
-    // Dry-run check (shouldRotate does not perform rotation)
-    const would_rotate = rotation.shouldRotate(&test_file);
-    std.debug.print("Should rotate with 500 bytes of data (limit 1KB)? {}\n", .{would_rotate});
-
-    // Write more to trigger size limit
-    try test_file.writeStreamingAll(logly.Utils.io(), "B" ** 600);
-    const would_rotate_now = rotation.shouldRotate(&test_file);
-    std.debug.print("Should rotate with 1100 bytes of data (limit 1KB)? {}\n", .{would_rotate_now});
-
-    // Force rotate to show custom callback triggers
-    std.debug.print("\nForcing programmatic rotation...\n", .{});
-    try rotation.forceRotate(&test_file);
-
-    try logger.info("Rotation example - advanced capabilities demonstrated successfully", @src());
+    try logger.info("rotation example completed", null);
     try logger.flush();
 
     std.debug.print("\nRotation example completed successfully!\n", .{});

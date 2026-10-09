@@ -2,70 +2,110 @@
 
 ## Supported Versions
 
-The following table shows which versions of this project are currently
-supported with security updates.
+Security updates are provided for currently supported releases.
 
-| Version   | Supported          |
-| --------- | ------------------ |
-| 0.2.1     | :white_check_mark: |
-| 0.2.0     | :white_check_mark: |
-| < 0.2.0   | :x:                |
+| Version | Supported          |
+| ------- | ------------------ |
+| 0.2.2   | :white_check_mark: |
+| 0.2.1   | :white_check_mark: |
+| < 0.2.1 | :x:                |
 
-⚠️ Versions below **0.2.0** are considered **end-of-life** and will not receive
-security fixes or updates.
+Versions below **0.2.1** are end-of-life and will not receive security fixes.
 
 ## Zig Compatibility
 
-- **0.1.7 or earlier** supports **Zig 0.15.0**
-- **0.1.8 or newer** supports **Zig 0.16.0+**
-- Zig downloads and release notes: [ziglang.org](https://ziglang.org/)
+- **0.2.2 or newer** requires **Zig 0.17.0+**
+- **0.2.1** requires **Zig 0.16.x**
+- **0.1.7 or earlier** requires **Zig 0.15.0**
+- Zig downloads: [ziglang.org](https://ziglang.org/)
+
+---
+
+## Security Model
+
+Logly is a logging library. It writes, formats, transports, and stores
+potentially sensitive application data. Understand the following before
+logging secrets, PII, or credentials.
+
+### Redaction
+
+Use `Redactor` (fields, patterns, presets) to mask secrets before output.
+Redaction runs during record processing, before formatting and sinks.
+Verify rules with `wouldRedact`/`previewRedaction` in tests.
+
+Redaction is pattern-based, not a guarantee: review rules against actual
+log output. Structured context values are redacted by field name; unknown
+field names pass through unmasked.
+
+### Log Injection
+
+Messages containing newlines or control characters are passed through to
+text sinks. JSON output escapes per RFC 8259. Log viewers that interpret
+ANSI codes or HTML must sanitize independently; Logly does not neutralize
+terminal escape sequences inside message content.
+
+### ANSI Codes
+
+Colors come from configuration (`tint.zig` values), not from message text.
+Message content is never interpreted as color codes. File sinks default to
+no colors; enabling colors in files writes raw escape bytes.
+
+### Network Transport
+
+TCP/UDP/syslog sinks send plaintext with no encryption, authentication,
+or delivery acknowledgment. Do not send secrets over untrusted networks
+unless tunneled (TLS/VPN). UDP delivery is best-effort by design.
+
+### File Output
+
+Log files inherit default OS permissions. Restrict sensitive log
+directories yourself. Rotation renames files in place; archival and
+compression preserve permissions of the containing directory.
+
+### Crash Dumps
+
+Panic/signal handlers flush sinks synchronously and print to stderr.
+Crash output may include in-flight messages, stack addresses, and module
+paths. Treat crash logs as potentially sensitive.
+
+### Dependencies
+
+- `tint.zig` 0.0.2 (colors, no I/O, no allocation)
+- `brotli.zig` 0.0.4 (compression)
+- `zstd.zig` 0.0.4 (compression)
+
+Review dependency sources before use in sensitive environments.
 
 ---
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it responsibly.
+Report responsibly. Do not include live secrets or exploit details in
+public issues for critical findings; use a private advisory instead.
 
-### Where to Report
+**Where to report:**
 
-**Preferred reporting method:**
-- 🐛 **Open an issue on the repository (preferred)**  
-  https://github.com/muhammad-fiaz/logly.zig/issues  
+- Open an issue: https://github.com/muhammad-fiaz/logly.zig/issues
+- Or open a pull request with a fix (omit sensitive details)
+- Or create a GitHub Security Advisory for private disclosure
 
-**Other supported options:**
-- 🔧 **Create a Pull Request** if you have already resolved the issue  
-  (avoid including sensitive exploit details)
-- 🔒 **Create a GitHub Security Advisory** for private disclosure
+**Include:**
 
-❗ If the vulnerability is **critical or sensitive**, please start with a  
-**GitHub Security Advisory** instead of a public issue.
-
-### What to Include
-
-When reporting a vulnerability, please include:
 - Affected version(s)
-- Clear description of the issue
-- Steps to reproduce (if applicable)
-- Potential impact or severity
-- Suggested fix or mitigation (optional)
+- Clear description
+- Steps to reproduce
+- Potential impact
+- Suggested fix (optional)
 
-### Response Timeline
-- **Acknowledgement:** within 48 hours
-- **Initial review:** within 5–7 days
-- **Resolution:** depending on severity and complexity
+**Timeline:**
 
-### Accepted vs Declined Reports
+- Acknowledgement: within 48 hours
+- Initial review: within 5–7 days
+- Resolution: depending on severity
 
-- ✅ **Accepted:**  
-  - A fix will be released for supported versions  
-  - A security advisory may be published  
-  - Credit will be given upon request  
-
-- ❌ **Declined:**  
-  - Issues affecting unsupported versions (< 0.1.0)  
-  - Expected or documented behavior  
-  - Issues already fixed in a newer release  
+Reports affecting unsupported versions, documented behavior, or already
+fixed releases may be declined.
 
 ---
 
-Thank you for helping keep this project secure 🤝
+Thank you for helping keep this project secure.

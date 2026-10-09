@@ -85,7 +85,7 @@ For microservices, you may also want to manually configure distributed settings:
 var config = Config.production();
 config.distributed = .{
     .enabled = true,
-    .service_name = "order-service",
+    .serviceName = "order-service",
     .environment = getEnv("APP_ENV") orelse "production", // Helper to get env var
     .region = "us-west-2",
 };
@@ -101,17 +101,17 @@ const Config = logly.Config;
 var config = Config.production();
 
 config.level = .info;           // Allow info logs
-config.include_hostname = true;  // Include server hostname
-config.include_pid = true;       // Include process ID
-config.show_thread_id = true;    // Include thread ID
-config.time_format = "iso8601";  // ISO timestamps
+config.includeHostname = true;  // Include server hostname
+config.includePid = true;       // Include process ID
+config.showThreadId = true;    // Include thread ID
+config.timeFormat = "iso8601";  // ISO timestamps
 
 logger.configure(config);
 
 // Add file sink
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/production.log",
-    .json = true,
+    .format = .json,
     .rotation = "daily",
     .retention = 30,  // Keep 30 rotated files
 });
@@ -125,27 +125,27 @@ config.level = .debug;
 logger.configure(config);
 
 // Console: Colored warnings+ for monitoring
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .name = "console",
     .level = .warning,
     .color = true,
 });
 
 // Application log: All info+
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .name = "app-log",
     .path = "logs/app.log",
-    .json = true,
+    .format = .json,
     .level = .info,
     .rotation = "daily",
     .retention = 14,
 });
 
 // Error log: Errors only, longer retention
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .name = "error-log",
     .path = "logs/error.log",
-    .json = true,
+    .format = .json,
     .level = .err,
     .retention = 90,
 });
@@ -200,10 +200,10 @@ pub fn checkHealth(m: *Metrics) bool {
     const snapshot = m.getSnapshot();
     
     // Alert if error rate > 5%
-    if (snapshot.total_records > 0) {
-        const error_rate = @as(f64, @floatFromInt(snapshot.error_count)) / 
-                          @as(f64, @floatFromInt(snapshot.total_records));
-        return error_rate < 0.05;
+    if (snapshot.totalRecords > 0) {
+        const errorRate = @as(f64, @floatFromInt(snapshot.errorCount)) / 
+                          @as(f64, @floatFromInt(snapshot.totalRecords));
+        return errorRate < 0.05;
     }
     
     return true;

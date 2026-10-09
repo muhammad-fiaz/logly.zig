@@ -15,7 +15,67 @@ head:
 
 # Colors & Styling
 
-Logly-Zig provides comprehensive ANSI color support for console output, with options to enable colors in file output as well.
+Logly colors console output via tint.zig. Two rendering modes plus off:
+
+```zig
+var config = logly.Config.default();
+config.colorMode = .horizontal; // whole record in level color (default)
+config.colorMode = .vertical;   // per-column colors (below)
+config.colorMode = .none;       // plain text
+```
+
+## Horizontal
+
+One level color for the complete record (existing whole-line behavior).
+
+```text
+[entire log record uses one level color]
+2026-10-07 12:00:00 [INFO] Application started
+```
+
+## Vertical
+
+Independent colors per field. Unset columns render uncolored; `level`
+falls back to the resolved level color.
+
+```zig
+config.columnColors.timestamp = logly.Color.Tint.color.ansi4.blue;
+config.columnColors.message = logly.Color.Tint.color.ansi4.yellow;
+```
+
+```text
+[timestamp: blue] [level: green] [message: yellow]
+2026-10-07 12:00:00 [INFO] Application started
+```
+
+Precedence: `color`/`globalColorDisplay` off wins first, then `colorMode`,
+then column colors, then level colors, then defaults. Multiline messages
+keep the color across lines with a trailing reset; every field reset
+prevents leakage into later output.
+
+## Format Color Policy
+
+Serialization is always valid on its own; color is a presentation layer
+applied afterwards, never inside the data. All rendering goes through
+`tint.zig` — Logly keeps no second ANSI implementation.
+
+| Format | No color | Horizontal | Vertical |
+|---|---|---|---|
+| `text`, `logfmt` | plain | whole record in level color | per-field column colors |
+| `json`, `ndjson` | plain valid JSON | whole rendered line wrapped | JSON re-rendered with per-key colors |
+| `syslog`, `syslog3164` | plain | whole rendered line wrapped | whole rendered line wrapped |
+| `msgpack` | raw bytes | unsupported (bytes stay raw) | unsupported (bytes stay raw) |
+| custom template | plain | whole-line wrap | per-field spans |
+
+Stripping ANSI from any colored text/JSON/syslog output recovers the exact
+uncolored bytes. `msgpack` output never contains color under any setting.
+
+Per-sink selection: set `.color = true` to force presentation color even
+when piped, `.color = false` to disable, or leave `null` for automatic
+behavior (colored on interactive terminals, plain otherwise). A `text`
+console plus a plain JSON file plus a binary network sink can share one
+record without interfering, because presentation is computed per sink
+from the same record.
 
 ## Platform Support
 
@@ -38,7 +98,7 @@ const logly = @import("logly");
 
 pub fn main() !void {
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
     
     // ... rest of your code
 }
@@ -152,7 +212,7 @@ Create custom log levels with your own colors:
 const logly = @import("logly");
 
 pub fn main() !void {
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
     
     var gpa = std.heap.DebugAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -178,132 +238,109 @@ pub fn main() !void {
 
 ## Enhanced Color Options (v0.1.8)
 
-### Level Color Variants
+### Level Colors
 
-Each log level now supports multiple color variants:
+Each log level has a default tint color. `Level.defaultColor()` returns a
+tint `Color` value; render it to an SGR sequence when writing output:
 
 ```zig
 const Level = logly.Level;
 
-// Default colors
-const trace_color = Level.trace.defaultColor();  // "36" (Cyan)
+// Default color as a tint Color value.
+const traceColor = Level.trace.defaultColor();
 
-// Bright/Bold variants
-const trace_bright = Level.trace.brightColor();  // "96;1" (Bright Cyan Bold)
-
-// Dim variants
-const trace_dim = Level.trace.dimColor();        // "36;2" (Cyan Dim)
-
-// Underline variants
-const trace_underline = Level.trace.underlineColor();  // "36;4"
-
-// 256-color variants
-const trace_256 = Level.trace.color256();        // "38;5;51"
+// Render to an escape sequence for output.
+const seq = logly.Color.sequence(traceColor, .trueColor);
+// seq.slice() gives e.g. "\x1b[36m" for trace.
 ```
 
-### Color Constants
+### tint Colors
 
-Use builtin color constants from `Constants.Colors`:
+All terminal colors come from tint.zig via `logly.Color`:
 
 ```zig
-const Colors = logly.Constants.Colors;
+const tint = logly.Color.Tint;
 
-// Foreground colors
-const red = Colors.Fg.red;           // "31"
-const bright_red = Colors.BrightFg.red;  // "91"
+// Named ANSI colors.
+const red = tint.color.ansi4.red;
+const brightRed = tint.color.ansi4.brightRed;
 
-// Background colors
-const red_bg = Colors.Bg.red;        // "41"
-const bright_red_bg = Colors.BrightBg.red;  // "101"
+// 256-color palette.
+const orange = tint.color.ansi256.index(208);
 
-// Styles
-const bold = Colors.Style.bold;      // "1"
-const underline = Colors.Style.underline;  // "4"
-const italic = Colors.Style.italic;  // "3"
-const reverse = Colors.Style.reverse;  // "7"
+// RGB colors.
+const coral = tint.color.rgb(255, 127, 80);
+
+// Render any color to a sequence.
+const seq = logly.Color.sequence(red, .trueColor);
+```
+
+Parse user-supplied text (names, `#rrggbb`, or SGR params) with
+`logly.Color.parse`:
+
+```zig
+const magenta = logly.Color.parse("magenta").?;
+const custom = logly.Color.parse("38;5;196").?;
 ```
 
 ### Theme Presets
 
-Logly v0.1.8 includes multiple color theme presets:
+Logly includes multiple color theme presets built on tint colors:
 
 ```zig
 const Formatter = logly.Formatter;
 
-// Use preset themes
-const default_theme = Formatter.Theme{};           // Standard colors
-const bright_theme = Formatter.Theme.bright();     // Bold/bright colors
-const dim_theme = Formatter.Theme.dim();           // Dim colors
-const underlined_theme = Formatter.Theme.underlined(); // Underlined colors (v0.1.8)
-const minimal_theme = Formatter.Theme.minimal();   // Subtle grays
-const neon_theme = Formatter.Theme.neon();         // Vivid 256-colors
-const pastel_theme = Formatter.Theme.pastel();     // Soft colors
-const dark_theme = Formatter.Theme.dark();         // Dark terminal optimized
-const light_theme = Formatter.Theme.light();       // Light terminal optimized
+// Use preset themes (each field is a tint Color).
+const defaultTheme = Formatter.Theme{};           // Standard colors
+const brightTheme = Formatter.Theme.bright();     // Bright colors
+const dimTheme = Formatter.Theme.dim();           // Dim colors
+const minimalTheme = Formatter.Theme.minimal();   // Subtle grays
+const neonTheme = Formatter.Theme.neon();         // Vivid 256-colors
+const pastelTheme = Formatter.Theme.pastel();     // Soft colors
+const darkTheme = Formatter.Theme.dark();         // Dark terminal optimized
+const lightTheme = Formatter.Theme.light();       // Light terminal optimized
 
 // Apply theme to formatter
 var formatter = Formatter.init(allocator);
 formatter.setTheme(Formatter.Theme.neon());
 ```
 
-### 256-Color Palette
+### Custom Themes
 
-Use the extended 256-color palette:
-
-```zig
-const Colors = logly.Constants.Colors;
-
-// Generate 256-color codes
-const orange = Colors.fg256(208);     // "38;5;208"
-const purple_bg = Colors.bg256(141);  // "48;5;141"
-
-// Theme presets using 256-colors
-const neon = Colors.Themes.neon;
-// trace: "38;5;51", debug: "38;5;33", err: "38;5;196"
-```
-
-### RGB Color Support
-
-Define colors using RGB values:
+Define per-level tint colors directly:
 
 ```zig
-const Colors = logly.Constants.Colors;
-
-// Generate RGB color codes
-const coral = Colors.fgRgb(255, 127, 80);   // "38;2;255;127;80"
-const navy_bg = Colors.bgRgb(0, 0, 128);    // "48;2;0;0;128"
-
-// Custom level with RGB
-const CustomLevel = logly.CustomLevel;
-const rgb_level = CustomLevel.initRgb("CUSTOM", 42, 255, 128, 64);
+const Theme = logly.Formatter.Theme;
+const custom = Theme{
+    .trace = logly.Color.parse("cyan").?,
+    .err = logly.Color.Tint.color.rgb(255, 80, 80),
+};
+formatter.setTheme(custom);
 ```
 
-### Advanced CustomLevel Options
+  ### Advanced CustomLevel Options
 
-Create custom levels with full color control:
+  Create custom levels with full tint color control:
 
-```zig
-const CustomLevel = logly.CustomLevel;
+  ```zig
+  const CustomLevel = logly.CustomLevel;
 
-// Basic custom level
-const audit = CustomLevel.init("AUDIT", 35, "36;1");
+  // Basic custom level with a tint color
+  const audit = CustomLevel.init("AUDIT", 35, logly.Color.parse("cyan").?);
 
-// Full color options
-const custom = CustomLevel.initFull(
-    "CUSTOM",           // name
-    42,                 // priority
-    "32",               // base color
-    "92;1",             // bright color
-    "32;2",             // dim color
-    "38;5;46",          // 256-color
-);
+  // Styled custom level (explicit tint style)
+  const styled = CustomLevel.initStyled("STYLED", 45, .{
+      .foreground = logly.Color.Tint.color.red,
+      .underline = true,
+  });
 
-// Styled custom level
-const styled = CustomLevel.initStyled("STYLED", 45, "31", "1;4");  // bold underline
-
-// With background color
-const alert = CustomLevel.initWithBackground("ALERT", 50, "97", "41");  // white on red
-```
+  // With background color
+  const alert = CustomLevel.initWithBackground(
+      "ALERT", 50,
+      logly.Color.Tint.color.ansi4.brightWhite,
+      logly.Color.Tint.color.ansi4.red,
+  );
+  ```
 
 ## Color Configuration
 
@@ -313,11 +350,11 @@ const alert = CustomLevel.initWithBackground("ALERT", 50, "97", "41");  // white
 var config = logly.Config.default();
 
 // Master switch - disables colors everywhere
-config.global_color_display = false;
+config.globalColorDisplay = false;
 logger.configure(config);
 
 // Re-enable colors
-config.global_color_display = true;
+config.globalColorDisplay = true;
 config.color = true;
 logger.configure(config);
 ```
@@ -326,18 +363,18 @@ logger.configure(config);
 
 ```zig
 // Console sink with colors (default)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .color = true,  // Explicitly enable colors
 });
 
 // File sink without colors (default for files)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .color = null,  // Auto-detect: false for files
 });
 
 // File sink WITH colors (for terminals that read log files)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/colored.log",
     .color = true,  // Force colors in file
 });
@@ -355,29 +392,29 @@ try logger.warning("Yellow text");  // \x1b[33m...\x1b[0m
 try logger.err("Red text");         // \x1b[31m...\x1b[0m
 ```
 
-### JSON Output with Colors
+### JSON Output Is Never Colored
 
-JSON output also supports colors when enabled:
+Serialization formats never contain ANSI sequences, even with colors
+enabled — color is a presentation concern for human-readable text only:
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
-config.pretty_json = true;
-config.color = true;  // Enable colors for JSON
+config.format = .json;
+config.color = true; // Has no effect on JSON output
 logger.configure(config);
 
-try logger.info("Colored JSON");
-try logger.warning("Yellow JSON block");
+try logger.info("Plain JSON object, no escape codes");
 ```
 
-The entire JSON block will be wrapped in the level's color.
+Color applies to `text` and `logfmt` output. `json`, `ndjson`, `syslog`,
+`syslog3164`, and `msgpack` output is always plain.
 
 ### File Output
 
 By default, file sinks disable colors. To enable:
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/colored.log",
     .color = true,  // Enable ANSI codes in file
 });
@@ -395,7 +432,7 @@ Custom format strings also support colors:
 
 ```zig
 var config = logly.Config.default();
-config.log_format = "{time} | {level} | {message}";
+config.logFormat = "{time} | {level} | {message}";
 config.color = true;
 logger.configure(config);
 
@@ -411,7 +448,7 @@ try logger.warning("Formatted warning");
 // Disable colors globally
 var config = logly.Config.default();
 config.color = false;
-config.global_color_display = false;
+config.globalColorDisplay = false;
 logger.configure(config);
 ```
 
@@ -419,9 +456,9 @@ logger.configure(config);
 
 ```zig
 // JSON file without colors (for log aggregation)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.json",
-    .json = true,
+    .format = .json,
     .color = false,  // No ANSI codes
 });
 ```
@@ -434,7 +471,7 @@ const logly = @import("logly");
 
 pub fn main() !void {
     // Enable Windows ANSI support
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
     
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -443,10 +480,10 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
     
-    // Add custom colored levels
-    try logger.addCustomLevel("AUDIT", 35, "35");      // Magenta
-    try logger.addCustomLevel("NOTICE", 22, "36;1");   // Bold Cyan
-    try logger.addCustomLevel("HIGHLIGHT", 52, "33;7"); // Yellow Reverse
+      // Add custom colored levels (tint colors)
+      try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("magenta").?);
+      try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("cyan").?);
+      try logger.addCustomLevel("HIGHLIGHT", 52, logly.Color.parse("yellow").?);
     
     // Standard levels (all colored)
     try logger.trace("Cyan trace message");
@@ -464,18 +501,67 @@ pub fn main() !void {
     try logger.custom("HIGHLIGHT", "Yellow reverse highlight");
     
     // Add file sink with colors
-    _ = try logger.addSink(.{
+     _ = try logger.addSink(.{
         .path = "logs/colored.log",
         .color = true,
     });
     
     // Add JSON sink without colors
-    _ = try logger.addSink(.{
+     _ = try logger.addSink(.{
         .path = "logs/app.json",
-        .json = true,
+        .format = .json,
         .color = false,
     });
     
     try logger.info("This goes to console (colored) and both files");
 }
 ```
+
+## Structured formats and presentation
+
+Color never corrupts serialized data. For `json`, `ndjson`, `syslog`, and
+`syslog3164` the record is serialized first and color is applied *around* the
+result, so stripping ANSI recovers the exact document — `PRI`, timestamp,
+hostname, and structured data included.
+
+| Format | No color | Horizontal | Vertical | Custom / level colors |
+|--------|:--------:|:----------:|:--------:|:---------------------:|
+| `text` | yes | yes | yes | yes |
+| `logfmt` | yes | yes | yes | yes |
+| `json` | yes | yes | yes | yes |
+| `ndjson` | yes | yes | yes | yes |
+| `syslog` / `syslog3164` | yes | yes | whole-record | yes |
+| `msgpack` | yes | presentation only | presentation only | presentation only |
+
+A JSON file sink writes a single array document (`[`, records, `]`), so a
+colored record is wrapped inside the array and the file stays valid JSON.
+
+`msgpack` is never colored. Binary payloads stay byte-exact: no ANSI, no
+trailing newline, and length-prefixed framing is preserved.
+
+## Color is per sink
+
+Each sink decides independently whether to present color, so enabling
+console color never injects ANSI into a file or network sink.
+
+| Target | Default | How to enable |
+|--------|---------|---------------|
+| Console | Auto | Colored when stdout is a TTY; plain when piped, redirected, or in CI |
+| File | Off | `color = true` |
+| Network | Off | `color = true` |
+| MessagePack | Never | Not supported |
+
+```zig
+_ = try logger.addSink(.{ .name = "console", .color = true });
+_ = try logger.addSink(.{ .path = "logs/app.log", .color = false });
+_ = try logger.addSink(.{ .path = "logs/app.json", .format = .json, .color = false });
+```
+
+## Async logging
+
+Async mode queues the uncolored serialized record together with its resolved
+level color. Presentation is applied per sink at write time, which means
+background workers cannot push console color into files or network sinks, and
+ANSI sequences cannot interleave between records from different workers.
+
+See [Async](/guide/async) for the queue and worker model.

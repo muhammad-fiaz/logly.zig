@@ -22,7 +22,7 @@ const logly = @import("logly");
 
 pub fn main() !void {
     // Enable ANSI colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -33,8 +33,8 @@ pub fn main() !void {
 
     // Enable JSON output with colors
     var config = logly.Config.default();
-    config.json = true;
-    config.pretty_json = true;
+    config.format = .json;
+    config.prettyJson = true;
     config.color = true;  // Enable colors for JSON output
     logger.configure(config);
 
@@ -67,7 +67,7 @@ To enable JSON colors:
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 config.color = true;  // Enable colors for JSON
 logger.configure(config);
 ```
@@ -93,10 +93,10 @@ When logging JSON to files, Logly automatically formats the output as a valid JS
 
 ```zig
 // Add a JSON file sink
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.json",
-    .json = true,
-    .pretty_json = true,
+    .format = .json,
+    .prettyJson = true,
 });
 
 try logger.info("First message", @src());
@@ -142,7 +142,7 @@ To output plain JSON without ANSI codes (for file storage or log aggregation):
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 config.color = false;  // No colors in JSON
 logger.configure(config);
 ```

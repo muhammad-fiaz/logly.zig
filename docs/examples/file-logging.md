@@ -30,16 +30,16 @@ pub fn main() !void {
 
     // Configure to disable auto console sink
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
     logger.configure(config);
 
     // Add file sink (also available as logger.add())
-    _ = try logger.addSink(.{
+     _ = try logger.addSink(.{
         .path = "logs/app.log",
     });
 
     // Add console sink
-    _ = try logger.add(.{});  // Using the short alias
+     _ = try logger.add(.{});  // Using the short alias
 
     try logger.info("Logging to both file and console", @src());
     try logger.success("File created in logs/app.log", @src());

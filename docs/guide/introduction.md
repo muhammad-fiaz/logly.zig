@@ -13,14 +13,14 @@ Logly.zig is a high-performance, structured logging library for Zig, designed to
 
 ## Key Features
 
-### 🚀 Performance
+### ðŸš€ Performance
 
 - **Zero-Copy Architecture**: Minimized allocations for maximum throughput.
 - **Asynchronous I/O**: Non-blocking write operations to keep your application responsive.
 - **Thread-Safety**: Fully optimized for concurrent execution environments.
 - **Efficient Buffering**: Configurable buffer strategies to balance latency and throughput.
 
-### 🛠️ Flexibility
+### ðŸ› ï¸ Flexibility
 
 - **Comprehensive Log Levels**: 10 distinct levels (TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL) for granular control.
 - **Multi-Sink Support**: Simultaneously output to console, files, and custom destinations.
@@ -34,7 +34,7 @@ Logly.zig is a high-performance, structured logging library for Zig, designed to
 - **Custom Levels**: Define your own log levels with custom names, priorities, and colors.
 - **Cross-Platform Colors**: Works on Linux, macOS, Windows 10+, and popular terminals.
 
-### 🛡️ Reliability
+### ðŸ›¡ï¸ Reliability
 
 - **Concurrency Safe**: Robust locking mechanisms ensure data integrity across threads.
 - **Resilient Error Handling**: Comprehensive error types and recovery strategies.
@@ -51,61 +51,35 @@ Logly.Zig is built upon the following core principles:
 4.  **Zero-Cost Abstractions**: Features that incur no runtime overhead when unused.
 5.  **Modularity**: A composable architecture allowing you to include only what you need.
 
-## Comparison with Other Implementations
-
-| Feature                   | Logly.zig              | std.log               |
-| :------------------------ | :--------------------- | :-------------------- |
-| **Performance**           | Native Zig (Fast)      | Raw (Manual)          |
-| **Memory Safety**         | **Compile-time**       | Compile-time          |
-| **Async Support**         | **✓ Automatic**        | ✗ Manual              |
-| **File Rotation**         | **✓ Automatic**        | ✗ Manual              |
-| **JSON Logging**          | **✓ Automatic**        | ✗ Manual              |
-| **Custom Colors**         | **✓ Automatic**        | ✗                     |
-| **Simplified API**        | ✓                       | ✓                    | **✓**               | ✓ Basic |
-| **Filtering**             | ✓ Automatic             | ✓ Automatic          | **✓ Automatic**     | ✓ Manual |
-| **Sampling**              | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
-| **Redaction**             | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
-| **Metrics**               | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
-| **Tracing**               | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
-| **Compression**           | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
-| **Thread Pool**           | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
-| **Scheduler**             | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ |
-| **Custom Formats**        | ✗ (Planned)             | ✗ (Planned)          | **✓ Automatic**     | ✗ Manual |
-| **Cross-Platform Colors** | ✓                       | ✓                    | **✓**               | ✗ |
-| **Invoke System (v0.0.9+)**| ✗                       | ✗                    | **✓ Automatic**     | ✗ |
-
-> [!TIP]
-> For a comprehensive comparison with other Zig logging libraries including nexlog, log.zig, and std.log, see the [Comparison](/guide/comparison) page.
-
 ## Enterprise Features
 
 Logly.zig v0.0.6+ includes enterprise-grade features:
 
-### 🔍 Filtering
+### ðŸ” Filtering
 
 Rule-based log filtering by level, message patterns, or modules.
 
-### 📊 Sampling
+### ðŸ“Š Sampling
 
 Probability-based sampling, rate limiting, and every-Nth message sampling for high-volume scenarios.
 
-### 🔒 Redaction
+### ðŸ”’ Redaction
 
 Automatic masking of sensitive data (passwords, API keys, PII) in log messages.
 
-### 📈 Metrics
+### ðŸ“ˆ Metrics
 
 Built-in metrics collection for logging performance monitoring.
 
-### 🔗 Distributed Tracing
+### ðŸ”— Distributed Tracing
 
 OpenTelemetry-compatible trace context propagation with automatic span ID generation.
 
-### 🎨 Cross-Platform Colors
+### ðŸŽ¨ Cross-Platform Colors
 
 Enhanced ANSI color support for Windows, Linux, macOS, and bare metal/freestanding targets.
 
-### 📝 Method Aliases
+### ðŸ“ Method Aliases
 
 Short aliases for common methods: `warn`/`crit` for levels, `add`/`remove`/`clear`/`count` for sink management.
 

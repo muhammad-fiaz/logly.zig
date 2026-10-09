@@ -7,15 +7,17 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     var config = logly.TelemetryConfig.development();
-    config.metric_format = .json;
-    config.metrics_file_path = "telemetry_metrics.jsonl";
+    config.metricFormat = .json;
+    config.metricsFilePath = "telemetry_metrics.jsonl";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
+
+    std.debug.print("Telemetry Metrics Export Example\n\n", .{});
 
     try telemetry.recordCounter("requests.total", 1.0);
     try telemetry.recordGauge("cpu.usage", 42.0);
     try telemetry.exportMetrics();
 
-    std.debug.print("Metrics exported to {s}\n", .{config.metrics_file_path.?});
+    std.debug.print("Metrics exported to {s}\n", .{config.metricsFilePath.?});
 }

@@ -1,79 +1,89 @@
 const std = @import("std");
 const logly = @import("logly");
 
+/// Renders one record through a memory sink and prints the result. Formatting
+/// is a sink concern, so every demo here goes through the public logger API
+/// rather than constructing a formatter directly.
+fn render(allocator: std.mem.Allocator, format: ?logly.Config.Format) !void {
+    var config = logly.Config.default();
+    config.autoSink = false;
+    config.globalConsoleDisplay = false;
+    config.color = false;
+    if (format) |f| config.format = f;
+    config.includeTraceId = true;
+
+    const logger = try logly.Logger.initWithConfig(allocator, config);
+    defer logger.deinit();
+
+    const sink = logger.getSink(try logger.addSink(logly.SinkConfig.memory())) orelse
+        return error.SinkUnavailable;
+
+    // Two public ways to enrich a record: scoped() fixes the module, and
+    // ctx() attaches structured fields. @src() records file:line.
+    const msg = "Database connection latency detected";
+    try logger.scoped("db.client").warning(msg, @src());
+
+    // ctx() is consumed by the level call: ContextLogger.log() deinits it, so
+    // do not defer deinit here.
+    var ctx = logger.ctx();
+    _ = ctx
+        .int("latency_ms", 250)
+        .int("retry_count", 2);
+    try ctx.warning(msg, @src());
+    try logger.flush();
+
+    var msgs = try sink.messages(allocator);
+    defer msgs.deinit();
+    if (msgs.len() == 0) return error.NoMessageCaptured;
+
+    // Both the scoped record and the context record reach the sink.
+    for (msgs.items) |m| std.debug.print("{s}\n", .{m});
+}
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Enable ANSI colors on Windows
     _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("============================================================\n", .{});
-    std.debug.print("  ADVANCED FORMATTING DEMO (v0.2.0)\n", .{});
-    std.debug.print("============================================================\n\n", .{});
+    std.debug.print("\n", .{});
+    std.debug.print("  Advanced Formatting Demo\n", .{});
+    std.debug.print("\n\n", .{});
 
-    // Create a mock record to format
-    var record = logly.Record.init(allocator, .warning, "Database connection latency detected");
-    defer record.deinit();
-    record.module = "db.client";
-    record.function = "connect";
-    record.filename = "client.zig";
-    record.line = 42;
-    try record.setTraceId("trace-1234567890abcdef");
-    try record.setSpanId("span-12345");
-    try record.setCorrelationId("corr-998877");
-    try record.addField("latency_ms", .{ .integer = 250 });
-    try record.addField("retry_count", .{ .integer = 2 });
+    // 1. NDJSON (Newline Delimited JSON)
+    std.debug.print("1. NDJSON Format\n", .{});
+    try render(allocator, .ndjson);
 
-    var formatter = logly.Formatter.init(allocator);
-    defer formatter.deinit();
+    // 2. Logfmt
+    std.debug.print("\n2. Logfmt Format\n", .{});
+    try render(allocator, .logfmt);
 
-    // -------------------------------------------------------------
-    // 1. NDJSON (Newline Delimited JSON) Formatting
-    // -------------------------------------------------------------
-    std.debug.print("--- 1. NDJSON Format ---\n", .{});
-    var ndjson_config = logly.Config.default();
-    ndjson_config.ndjson = true;
-    ndjson_config.include_trace_id = true;
+    // 3. Syslog (RFC5424)
+    std.debug.print("\n3. Syslog Format\n", .{});
+    try render(allocator, .syslog);
 
-    const ndjson_out = try formatter.format(&record, ndjson_config);
-    defer allocator.free(ndjson_out);
-    std.debug.print("{s}\n", .{ndjson_out});
+    // 4. Custom template. Placeholders accept padding, e.g. {level:8}.
+    std.debug.print("\n4. Template Formatting with Alignments\n", .{});
+    var templateConfig = logly.Config.default();
+    templateConfig.autoSink = false;
+    templateConfig.globalConsoleDisplay = false;
+    templateConfig.color = false;
+    templateConfig.logFormat = "[{level:8}] {time} | {message} (module={module})";
 
-    // -------------------------------------------------------------
-    // 2. Logfmt Formatting
-    // -------------------------------------------------------------
-    std.debug.print("--- 2. Logfmt Format ---\n", .{});
-    var logfmt_config = logly.Config.default();
-    logfmt_config.logfmt = true;
+    const template_logger = try logly.Logger.initWithConfig(allocator, templateConfig);
+    defer template_logger.deinit();
+    const template_sink = template_logger.getSink(
+        try template_logger.addSink(logly.SinkConfig.memory()),
+    ) orelse return error.SinkUnavailable;
 
-    const logfmt_out = try formatter.format(&record, logfmt_config);
-    defer allocator.free(logfmt_out);
-    std.debug.print("{s}\n\n", .{logfmt_out});
+    const tpl = template_logger.scoped("db.client");
+    try tpl.warning("Database connection latency detected", null);
+    try template_logger.flush();
 
-    // -------------------------------------------------------------
-    // 3. CEF (Common Event Format) Formatting
-    // -------------------------------------------------------------
-    std.debug.print("--- 3. CEF (Common Event Format) ---\n", .{});
-    var cef_config = logly.Config.default();
-    cef_config.cef = true;
-
-    const cef_out = try formatter.format(&record, cef_config);
-    defer allocator.free(cef_out);
-    std.debug.print("{s}\n\n", .{cef_out});
-
-    // -------------------------------------------------------------
-    // 4. Custom Template with Padding and Alignment
-    // -------------------------------------------------------------
-    std.debug.print("--- 4. Template Formatting with Alignments ---\n", .{});
-    var template_config = logly.Config.default();
-    // Template placeholder padding/alignment: e.g. {level:8} pads level to 8 chars
-    template_config.log_format = "[{level:8}] {time} | {message} (module={module})";
-
-    const template_out = try formatter.format(&record, template_config);
-    defer allocator.free(template_out);
-    std.debug.print("{s}\n", .{template_out});
+    var tpl_msgs = try template_sink.messages(allocator);
+    defer tpl_msgs.deinit();
+    for (tpl_msgs.items) |m| std.debug.print("{s}\n", .{m});
 
     std.debug.print("\nAdvanced Formatting Example completed successfully!\n", .{});
 }

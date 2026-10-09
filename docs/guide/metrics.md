@@ -27,13 +27,13 @@ For targeted cleanup, `Metrics.resetLevelMetrics(level)` clears a single log-lev
 Prometheus and StatsD exports can be namespaced and shaped from config:
 
 ```zig
-const metrics_cfg = logly.Config.MetricsConfig.production()
+const metricsCfg = logly.Config.MetricsConfig.production()
     .prometheus()
     .prefix("api.gateway")
     .histogram(20)
     .breakdowns(true, true);
 
-var metrics = logly.Metrics.initWithConfig(allocator, metrics_cfg);
+var metrics = logly.Metrics.initWithConfig(allocator, metricsCfg);
 ```
 
 This produces exporter-safe names like `api_gateway_records_total` for Prometheus. Per-level and per-sink breakdowns are enabled by default and can be disabled when you need smaller exports.
@@ -65,10 +65,10 @@ pub fn main() !void {
     const snapshot = metrics.getSnapshot();
     
     std.debug.print("=== Logging Metrics ===\n", .{});
-    std.debug.print("Total records: {d}\n", .{snapshot.total_records});
-    std.debug.print("Total bytes: {d}\n", .{snapshot.total_bytes});
-    std.debug.print("Error count: {d}\n", .{snapshot.error_count});
-    std.debug.print("Records/sec: {d:.2}\n", .{snapshot.records_per_second});
+    std.debug.print("Total records: {d}\n", .{snapshot.totalRecords});
+    std.debug.print("Total bytes: {d}\n", .{snapshot.totalBytes});
+    std.debug.print("Error count: {d}\n", .{snapshot.errorCount});
+    std.debug.print("Records/sec: {d:.2}\n", .{snapshot.recordsPerSecond});
 }
 ```
 
@@ -78,14 +78,14 @@ The `Metrics.Snapshot` struct contains:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `total_records` | `u64` | Total number of log records processed |
-| `total_bytes` | `u64` | Total bytes logged |
-| `dropped_records` | `u64` | Records dropped (by sampling/filtering) |
-| `error_count` | `u64` | Number of errors recorded |
-| `uptime_ms` | `i64` | Time since metrics started (milliseconds) |
-| `records_per_second` | `f64` | Current record rate |
-| `bytes_per_second` | `f64` | Current throughput rate |
-| `level_counts` | `[8]u64` | Per-level record counts |
+| `totalRecords` | `u64` | Total number of log records processed |
+| `totalBytes` | `u64` | Total bytes logged |
+| `droppedRecords` | `u64` | Records dropped (by sampling/filtering) |
+| `errorCount` | `u64` | Number of errors recorded |
+| `uptimeMs` | `i64` | Time since metrics started (milliseconds) |
+| `recordsPerSecond` | `f64` | Current record rate |
+| `bytesPerSecond` | `f64` | Current throughput rate |
+| `levelCounts` | `[8]u64` | Per-level record counts |
 
 ## Level Counts
 
@@ -95,11 +95,11 @@ Access counts per log level using the level index:
 const snapshot = metrics.getSnapshot();
 
 // Level indices: trace=0, debug=1, info=2, success=3, warning=4, err=5, fail=6, critical=7
-const debug_count = snapshot.level_counts[1];   // debug
-const info_count = snapshot.level_counts[2];    // info
-const warning_count = snapshot.level_counts[4]; // warning
-const error_count = snapshot.level_counts[5];   // err
-const critical_count = snapshot.level_counts[7]; // critical
+const debug_count = snapshot.levelCounts[1];   // debug
+const info_count = snapshot.levelCounts[2];    // info
+const warning_count = snapshot.levelCounts[4]; // warning
+const errorCount = snapshot.levelCounts[5];   // err
+const critical_count = snapshot.levelCounts[7]; // critical
 ```
 
 ## Recording Events
@@ -210,19 +210,19 @@ const Metrics = logly.Metrics;
 pub fn reportMetrics(m: *Metrics) void {
     const snapshot = m.getSnapshot();
     
-    const error_rate = if (snapshot.total_records > 0)
-        @as(f64, @floatFromInt(snapshot.error_count)) / 
-        @as(f64, @floatFromInt(snapshot.total_records)) * 100.0
+    const errorRate = if (snapshot.totalRecords > 0)
+        @as(f64, @floatFromInt(snapshot.errorCount)) / 
+        @as(f64, @floatFromInt(snapshot.totalRecords)) * 100.0
     else
         0.0;
 
     std.debug.print(
         "[Metrics] Total: {d} | Errors: {d} ({d:.2}%) | Rate: {d:.1} rec/sec\n",
         .{
-            snapshot.total_records,
-            snapshot.error_count,
-            error_rate,
-            snapshot.records_per_second,
+            snapshot.totalRecords,
+            snapshot.errorCount,
+            errorRate,
+            snapshot.recordsPerSecond,
         }
     );
 }
@@ -257,20 +257,20 @@ Configure metrics globally through `Config.MetricsConfig`:
 
 ```zig
 var config = logly.Config.default();
-config.enable_metrics = true;
+config.enableMetrics = true;
 config.metrics = .{
     .enabled = true,
-    .track_levels = true,
-    .track_sinks = true,
-    .track_throughput = true,
-    .track_latency = true,
-    .snapshot_interval_ms = 60000,  // 1 minute
-    .error_rate_threshold = 0.01,   // 1% error rate alert
-    .drop_rate_threshold = 0.001,   // 0.1% drop rate alert
-    .export_format = .json,
-    .enable_histogram = true,
-    .histogram_buckets = 20,
-    .history_size = 60,
+    .trackLevels = true,
+    .trackSinks = true,
+    .trackThroughput = true,
+    .trackLatency = true,
+    .snapshotIntervalMs = 60000,  // 1 minute
+    .errorRateThreshold = 0.01,   // 1% error rate alert
+    .dropRateThreshold = 0.001,   // 0.1% drop rate alert
+    .exportFormat = .json,
+    .enableHistogram = true,
+    .histogramBuckets = 20,
+    .historySize = 60,
 };
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -281,18 +281,18 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled` | `bool` | `false` | Enable metrics collection |
-| `track_levels` | `bool` | `true` | Track per-level counts |
-| `track_sinks` | `bool` | `true` | Track per-sink metrics |
-| `track_throughput` | `bool` | `true` | Calculate records/bytes per second |
-| `track_latency` | `bool` | `false` | Track logging latency |
-| `snapshot_interval_ms` | `u64` | `0` | Auto-snapshot interval (0 = disabled) |
-| `error_rate_threshold` | `f32` | `0.0` | Error rate alert threshold |
-| `drop_rate_threshold` | `f32` | `0.0` | Drop rate alert threshold |
-| `max_records_per_second` | `u64` | `0` | Max rate alert threshold |
-| `export_format` | `ExportFormat` | `.text` | Export format (text/json/prometheus/statsd) |
-| `enable_histogram` | `bool` | `false` | Enable latency histogram |
-| `histogram_buckets` | `u8` | `10` | Number of histogram buckets |
-| `history_size` | `u16` | `0` | Snapshots to retain in history |
+| `trackLevels` | `bool` | `true` | Track per-level counts |
+| `trackSinks` | `bool` | `true` | Track per-sink metrics |
+| `trackThroughput` | `bool` | `true` | Calculate records/bytes per second |
+| `trackLatency` | `bool` | `false` | Track logging latency |
+| `snapshotIntervalMs` | `u64` | `0` | Auto-snapshot interval (0 = disabled) |
+| `errorRateThreshold` | `f32` | `0.0` | Error rate alert threshold |
+| `dropRateThreshold` | `f32` | `0.0` | Drop rate alert threshold |
+| `maxRecordsPerSecond` | `u64` | `0` | Max rate alert threshold |
+| `exportFormat` | `ExportFormat` | `.text` | Export format (text/json/prometheus/statsd) |
+| `enableHistogram` | `bool` | `false` | Enable latency histogram |
+| `histogramBuckets` | `u8` | `10` | Number of histogram buckets |
+| `historySize` | `u16` | `0` | Snapshots to retain in history |
 
 ### Configuration Presets
 
@@ -330,11 +330,11 @@ const S = struct {
     }
     
     fn onSnapshotTaken(snapshot: *const Metrics.Snapshot) void {
-        std.debug.print("Snapshot: {d} records\n", .{snapshot.total_records});
+        std.debug.print("Snapshot: {d} records\n", .{snapshot.totalRecords});
     }
     
-    fn onThresholdExceeded(metric_type: Metrics.MetricType, value: u64, threshold: u64) void {
-        std.debug.print("Threshold exceeded: {any} = {d} > {d}\n", .{metric_type, value, threshold});
+    fn onThresholdExceeded(metricType: Metrics.MetricType, value: u64, threshold: u64) void {
+        std.debug.print("Threshold exceeded: {any} = {d} > {d}\n", .{metricType, value, threshold});
     }
     
     fn onErrorDetected(event: Metrics.ErrorEvent, count: u64) void {
@@ -358,8 +358,8 @@ Track logging latency for performance monitoring:
 ```zig
 var metrics = Metrics.initWithConfig(allocator, .{
     .enabled = true,
-    .track_latency = true,
-    .enable_histogram = true,
+    .trackLatency = true,
+    .enableHistogram = true,
 });
 defer metrics.deinit();
 
@@ -383,13 +383,13 @@ Track flush operations on sinks:
 var metrics = Metrics.init(allocator);
 defer metrics.deinit();
 
-const sink_idx = try metrics.addSink("file_sink");
+const sinkIdx = try metrics.addSink("file_sink");
 
 // Record flush
-metrics.recordSinkFlush(sink_idx);
+metrics.recordSinkFlush(sinkIdx);
 
 // Get sink metrics by index or name
-if (metrics.getSinkMetrics(sink_idx)) |sink| {
+if (metrics.getSinkMetrics(sinkIdx)) |sink| {
     std.debug.print("Flushes: {d}\\n", .{sink.getFlushCount()});
 }
 
@@ -445,13 +445,13 @@ const errors = metrics.errorCount();
 const drops = metrics.droppedCount();
 
 // Rate calculations
-const err_rate = metrics.errorRate();   // 0.0 - 1.0
-const drop_rate = metrics.dropRate();   // 0.0 - 1.0
+const errRate = metrics.errorRate();   // 0.0 - 1.0
+const dropRate = metrics.dropRate();   // 0.0 - 1.0
 const rps = metrics.rate();             // records per second
 const bps = metrics.bytesPerSecond();   // bytes per second
 
 // Uptime
-const uptime_ms = metrics.uptime();
+const uptimeMs = metrics.uptime();
 const uptime_sec = metrics.uptimeSeconds();
 
 // Level-specific counts

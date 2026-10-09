@@ -24,7 +24,7 @@ pub fn main() !void {
     // IMPORTANT: Call this first on Windows for color support
     // This enables Virtual Terminal Processing
     // No-op on Linux/macOS
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -50,7 +50,7 @@ defer logger.deinit();
 var config = logly.Config.default();
 
 // Master switch - disables colors everywhere
-config.global_color_display = false;
+config.globalColorDisplay = false;
 logger.configure(config);
 
 // All output will be plain text (no ANSI codes)
@@ -58,7 +58,7 @@ try logger.info("No colors here");
 try logger.warning("Still no colors");
 
 // Re-enable colors
-config.global_color_display = true;
+config.globalColorDisplay = true;
 config.color = true;
 logger.configure(config);
 
@@ -72,25 +72,25 @@ const logger = try logly.Logger.init(allocator);
 defer logger.deinit();
 
 var config = logly.Config.default();
-config.auto_sink = false;  // Don't create default console sink
+config.autoSink = false;  // Don't create default console sink
 logger.configure(config);
 
 // Console sink WITH colors (entire line colored)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .name = "console",
     .color = true,
 });
 
 // File sink WITHOUT colors (no ANSI codes in file)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .color = false,
 });
 
 // JSON file sink (colors never apply to JSON)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.json",
-    .json = true,
+    .format = .json,
     .color = false,
 });
 
@@ -103,22 +103,22 @@ try logger.err("Error appears red on console only");
 
 ```zig
 // Console: all levels
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .color = true,
 });
 
 // Error file: only errors and above
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/errors.log",
     .level = .err,
     .color = false,
 });
 
 // Debug file: only debug and trace
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/debug.log",
     .level = .trace,
-    .max_level = .debug,
+    .maxLevel = .debug,
     .color = false,
 });
 ```
@@ -127,7 +127,7 @@ _ = try logger.addSink(.{
 
 ```zig
 // Enable colors first
-_ = logly.Terminal.enableAnsiColors();
+ _ = logly.Terminal.enableAnsiColors();
 
 const logger = try logly.Logger.init(allocator);
 defer logger.deinit();
@@ -204,8 +204,8 @@ Custom level names appear in JSON output:
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
-config.pretty_json = true;
+config.format = .json;
+config.prettyJson = true;
 logger.configure(config);
 
 try logger.addCustomLevel("AUDIT", 35, "35");
@@ -233,7 +233,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable Windows color support
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -257,7 +257,7 @@ pub fn main() !void {
 
     // Disable colors for comparison
     var config = logly.Config.default();
-    config.global_color_display = false;
+    config.globalColorDisplay = false;
     logger.configure(config);
 
     try logger.info("Plain text - no colors");

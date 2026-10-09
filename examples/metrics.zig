@@ -6,14 +6,14 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly v0.2.0 Metrics Collection Example ===\n\n", .{});
+    std.debug.print("Metrics Collection Example\n\n", .{});
 
     // Create logger with metrics enabled
     var config = logly.Config.default();
     config.metrics.enabled = true;
-    config.metrics.track_levels = true;
-    config.metrics.track_latency = true;
-    config.metrics.enable_histogram = true;
+    config.metrics.trackLevels = true;
+    config.metrics.trackLatency = true;
+    config.metrics.enableHistogram = true;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
@@ -21,7 +21,7 @@ pub fn main() !void {
     // Enable metrics on the logger
     logger.enableMetrics();
 
-    std.debug.print("--- Logging messages to collect metrics ---\n\n", .{});
+    std.debug.print("Logging messages to collect metrics\n\n", .{});
 
     // Log various messages at different levels
     try logger.trace("Trace message for metrics", @src());
@@ -32,40 +32,46 @@ pub fn main() !void {
     try logger.warning("Warning message 1", @src());
     try logger.err("Error message 1", @src());
     try logger.critical("Critical message 1", @src());
+    // Flush so log lines appear before the metrics summary below
+    // (logger writes to stdout, section headers write to stderr).
+    try logger.flush();
 
-    std.debug.print("\n--- Basic Metrics Snapshot ---\n\n", .{});
+    std.debug.print("\nBasic Metrics Snapshot\n\n", .{});
 
     // Get metrics snapshot from logger
     if (logger.getMetrics()) |snapshot| {
-        std.debug.print("Total Records:      {d}\n", .{snapshot.total_records});
-        std.debug.print("Total Bytes:        {d}\n", .{snapshot.total_bytes});
-        std.debug.print("Dropped Records:    {d}\n", .{snapshot.dropped_records});
-        std.debug.print("Error Count:        {d}\n", .{snapshot.error_count});
-        std.debug.print("Uptime (ms):        {d}\n", .{snapshot.uptime_ms});
-        std.debug.print("Records/second:     {d:.2}\n", .{snapshot.records_per_second});
-        std.debug.print("Bytes/second:       {d:.2}\n", .{snapshot.bytes_per_second});
+        std.debug.print("Total Records:      {d}\n", .{snapshot.totalRecords});
+        std.debug.print("Total Bytes:        {d}\n", .{snapshot.totalBytes});
+        std.debug.print("Dropped Records:    {d}\n", .{snapshot.droppedRecords});
+        std.debug.print("Error Count:        {d}\n", .{snapshot.errorCount});
+        std.debug.print("Uptime (ms):        {d}\n", .{snapshot.uptimeMs});
+        std.debug.print("Records/second:     {d:.2}\n", .{snapshot.recordsPerSecond});
+        std.debug.print("Bytes/second:       {d:.2}\n", .{snapshot.bytesPerSecond});
 
-        std.debug.print("\n--- Level Breakdown ---\n\n", .{});
-        const level_names = [_][]const u8{ "Trace", "Debug", "Info", "Notice", "Success", "Warning", "Error", "Fail", "Critical", "Fatal" };
-        for (snapshot.level_counts, 0..) |count, i| {
-            if (i < level_names.len) {
-                std.debug.print("{s:<10} {d}\n", .{ level_names[i], count });
+        std.debug.print("\nLevel Breakdown\n\n", .{});
+        const levelNames = [_][]const u8{ "Trace", "Debug", "Info", "Notice", "Success", "Warning", "Error", "Fail", "Critical", "Fatal" };
+        for (snapshot.levelCounts, 0..) |count, i| {
+            if (i < levelNames.len) {
+                std.debug.print("{s:<10} {d}\n", .{ levelNames[i], count });
             }
         }
     } else {
         std.debug.print("Metrics not enabled\n", .{});
     }
 
-    // --- Prometheus Export Demo ---
-    std.debug.print("\n--- Prometheus Text Export ---\n\n", .{});
+    // Prometheus Export Demo
+    // NOTE: this uses a fresh Metrics instance with its own synthetic
+    // sample data, so its totals intentionally differ from the logger
+    // snapshot above (which counted real log records).
+    std.debug.print("\nPrometheus Text Export\n\n", .{});
     {
         var metrics = logly.Metrics.initWithConfig(allocator, .{
             .enabled = true,
-            .track_levels = true,
-            .enable_histogram = true,
-            .export_format = .prometheus,
-            .export_level_breakdown = true,
-            .metric_prefix = "logly",
+            .trackLevels = true,
+            .enableHistogram = true,
+            .exportFormat = .prometheus,
+            .exportLevelBreakdown = true,
+            .metricPrefix = "logly",
         });
         defer metrics.deinit();
 
@@ -76,18 +82,19 @@ pub fn main() !void {
         metrics.recordLogWithLatency(.info, 100, 15_000);
         metrics.recordLogWithLatency(.info, 80, 25_000);
 
-        const prom_output = try metrics.exportPrometheus(allocator);
-        defer allocator.free(prom_output);
-        std.debug.print("{s}\n", .{prom_output});
+        const promOutput = try metrics.exportPrometheus(allocator);
+        defer allocator.free(promOutput);
+        std.debug.print("{s}\n", .{promOutput});
     }
 
-    // --- StatsD Export Demo ---
-    std.debug.print("--- StatsD Export ---\n\n", .{});
+    // StatsD Export Demo
+    // NOTE: separate synthetic instance; totals differ from above by design.
+    std.debug.print("StatsD Export\n\n", .{});
     {
         var metrics = logly.Metrics.initWithConfig(allocator, .{
             .enabled = true,
-            .export_format = .statsd,
-            .metric_prefix = "logly",
+            .exportFormat = .statsd,
+            .metricPrefix = "logly",
         });
         defer metrics.deinit();
 
@@ -95,18 +102,18 @@ pub fn main() !void {
         metrics.recordLog(.err, 200);
         metrics.recordDrop();
 
-        const statsd_output = try metrics.exportStatsd(allocator);
-        defer allocator.free(statsd_output);
-        std.debug.print("{s}\n", .{statsd_output});
+        const statsdOutput = try metrics.exportStatsd(allocator);
+        defer allocator.free(statsdOutput);
+        std.debug.print("{s}\n", .{statsdOutput});
     }
 
-    // --- P95/P99 Latency Demo ---
-    std.debug.print("--- P95/P99 Latency Calculation ---\n\n", .{});
+    // P95/P99 Latency Demo
+    std.debug.print("P95/P99 Latency Calculation\n\n", .{});
     {
         var metrics = logly.Metrics.initWithConfig(allocator, .{
             .enabled = true,
-            .track_latency = true,
-            .enable_histogram = true,
+            .trackLatency = true,
+            .enableHistogram = true,
         });
         defer metrics.deinit();
 
@@ -118,16 +125,16 @@ pub fn main() !void {
 
         const latency = metrics.getLatencySummary();
         std.debug.print("Latency Summary ({d} samples):\n", .{latency.samples});
-        std.debug.print("  Min:  {d} ns\n", .{latency.min_ns});
-        std.debug.print("  P50:  {d} ns\n", .{latency.p50_ns});
-        std.debug.print("  P95:  {d} ns\n", .{latency.p95_ns});
-        std.debug.print("  P99:  {d} ns\n", .{latency.p99_ns});
-        std.debug.print("  Max:  {d} ns\n", .{latency.max_ns});
-        std.debug.print("  Avg:  {d} ns\n", .{latency.avg_ns});
+        std.debug.print("  Min:  {d} ns\n", .{latency.minNs});
+        std.debug.print("  P50:  {d} ns\n", .{latency.p50Ns});
+        std.debug.print("  P95:  {d} ns\n", .{latency.p95Ns});
+        std.debug.print("  P99:  {d} ns\n", .{latency.p99Ns});
+        std.debug.print("  Max:  {d} ns\n", .{latency.maxNs});
+        std.debug.print("  Avg:  {d} ns\n", .{latency.avgNs});
     }
 
-    // --- Metrics Reset Demo ---
-    std.debug.print("\n--- Metrics Reset ---\n\n", .{});
+    // Metrics Reset Demo
+    std.debug.print("\nMetrics Reset\n\n", .{});
     {
         var metrics = logly.Metrics.init(allocator);
         defer metrics.deinit();
@@ -136,13 +143,13 @@ pub fn main() !void {
         metrics.recordLog(.warning, 50);
 
         const snap1 = metrics.getSnapshot();
-        std.debug.print("Before reset: {d} records\n", .{snap1.total_records});
+        std.debug.print("Before reset: {d} records\n", .{snap1.totalRecords});
 
         metrics.reset();
 
         const snap2 = metrics.getSnapshot();
-        std.debug.print("After reset:  {d} records\n", .{snap2.total_records});
+        std.debug.print("After reset:  {d} records\n", .{snap2.totalRecords});
     }
 
-    std.debug.print("\n=== Metrics Example Complete ===\n", .{});
+    std.debug.print("\nMetrics Example Complete\n", .{});
 }

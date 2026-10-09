@@ -24,7 +24,7 @@ Learn the basics of Logly-Zig with practical examples.
 For colors to display correctly on Windows, call this at startup:
 
 ```zig
-_ = logly.Terminal.enableAnsiColors(); // No-op on Linux/macOS
+ _ = logly.Terminal.enableAnsiColors(); // No-op on Linux/macOS
 ```
 
 ### Simple Console Logging
@@ -39,7 +39,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -88,10 +88,10 @@ const logger = try logly.Logger.init(allocator);
 defer logger.deinit();
 
 var config = logly.Config.default();
-config.auto_sink = false; // Disable auto console sink
+config.autoSink = false; // Disable auto console sink
 logger.configure(config);
 
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "app.log",
     .color = false, // Disable colors for file (default)
 });
@@ -105,7 +105,7 @@ try logger.flush(); // Ensure data is written
 ### File Rotation
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .rotation = "daily",
     .retention = 7, // Keep 7 days
@@ -116,7 +116,7 @@ _ = try logger.addSink(.{
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 logger.configure(config);
 
 try logger.info("JSON formatted", @src());
@@ -156,15 +156,15 @@ logger.setLogCallback(&logCallback);
 
 ```zig
 // Console sink
-_ = try logger.addSink(.{});
+ _ = try logger.addSink(.{});
 
 // File sink
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "app.log",
 });
 
 // Error-only file
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "errors.log",
     .level = .err,
 });
@@ -178,7 +178,6 @@ _ = try logger.addSink(.{
 var config = logly.Config.default();
 config.level = .debug;
 config.color = true;
-config.json = false;
 logger.configure(config);
 ```
 
@@ -186,9 +185,9 @@ logger.configure(config);
 
 ```zig
 var config = logly.Config.default();
-config.global_console_display = true;  // Enable console
-config.global_file_storage = true;     // Enable file storage
-config.global_color_display = true;    // Enable colors
+config.globalConsoleDisplay = true;  // Enable console
+config.globalFileStorage = true;     // Enable file storage
+config.globalColorDisplay = true;    // Enable colors
 logger.configure(config);
 ```
 
@@ -211,14 +210,14 @@ pub fn main() !void {
     var config = logly.Config.default();
     config.level = .debug;
     config.color = true;
-    config.show_filename = true;  // Enable clickable file:line
-    config.show_lineno = true;
-    config.enable_callbacks = true;  // Enable only when using log callbacks
+    config.showFilename = true;  // Enable clickable file:line
+    config.showLineno = true;
+    config.enableCallbacks = true;  // Enable only when using log callbacks
     logger.configure(config);
 
     // Add sinks
-    _ = try logger.addSink(.{}); // Console
-    _ = try logger.addSink(.{
+     _ = try logger.addSink(.{}); // Console
+     _ = try logger.addSink(.{
         .path = "logs/app.log",
         .rotation = "daily",
         .retention = 7,

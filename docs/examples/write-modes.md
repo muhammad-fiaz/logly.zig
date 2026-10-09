@@ -15,15 +15,15 @@ head:
 
 # Sink Write Modes
 
-Learn how to control whether log files are appended to or overwritten using the `write_mode` field.
+Learn how to control whether log files are appended to or overwritten using the `writeMode` field.
 
 ## Overview
 
-The `write_mode` field in `SinkConfig` controls how files are written:
+The `writeMode` field in `SinkConfig` controls how files are written:
 
-- **Append Mode** (default, `write_mode = .append`): New logs are added to existing files, preserving history
-- **Overwrite Mode** (`write_mode = .overwrite`): Files are truncated when the sink initializes, starting fresh
-- **Append Rotate Mode** (`write_mode = .append_rotate`): Append with explicit rotation trigger
+- **Append Mode** (default, `writeMode = .append`): New logs are added to existing files, preserving history
+- **Overwrite Mode** (`writeMode = .overwrite`): Files are truncated when the sink initializes, starting fresh
+- **Append Rotate Mode** (`writeMode = .appendRotate`): Append with explicit rotation trigger
 
 This is useful for scenarios like:
 - **Append**: Permanent audit logs, error tracking, system history
@@ -48,9 +48,9 @@ pub fn main() !void {
     defer logger.deinit();
 
     var config = logly.SinkConfig.file("logs/app.log");
-    config.overwrite_mode = false;  // Append mode (this is the default)
+    config.overwriteMode = false;  // Append mode (this is the default)
     
-    _ = try logger.addSink(config);
+     _ = try logger.addSink(config);
 
     try logger.info("First run", @src());
     try logger.info("This is appended", @src());
@@ -82,9 +82,9 @@ pub fn main() !void {
     defer logger.deinit();
 
     var config = logly.SinkConfig.file("logs/session.log");
-    config.overwrite_mode = true;  // Enable overwrite mode
+    config.overwriteMode = true;  // Enable overwrite mode
     
-    _ = try logger.addSink(config);
+     _ = try logger.addSink(config);
 
     try logger.info("Fresh start", @src());
     try logger.info("Previous logs discarded", @src());
@@ -116,19 +116,19 @@ pub fn main() !void {
 
     // Sink 1: Persistent audit log (append mode)
     var audit = logly.SinkConfig.file("logs/audit.log");
-    audit.overwrite_mode = false;  // Keep all history
-    _ = try logger.addSink(audit);
+    audit.overwriteMode = false;  // Keep all history
+     _ = try logger.addSink(audit);
 
     // Sink 2: Current session debug log (overwrite mode)
     var debug = logly.SinkConfig.file("logs/debug.log");
-    debug.overwrite_mode = true;   // Fresh each run
-    _ = try logger.addSink(debug);
+    debug.overwriteMode = true;   // Fresh each run
+     _ = try logger.addSink(debug);
 
     // Sink 3: Error log (append mode for permanent record)
     var errors = logly.SinkConfig.file("logs/errors.log");
     errors.level = .err;
-    errors.overwrite_mode = false;  // Keep error history
-    _ = try logger.addSink(errors);
+    errors.overwriteMode = false;  // Keep error history
+     _ = try logger.addSink(errors);
 
     try logger.info("Logged to audit.log and debug.log", @src());
     try logger.err("Logged to errors.log", @src());
@@ -147,10 +147,10 @@ Overwrite mode works with JSON sinks too:
 ```zig
 // JSON file that overwrites each run
 var config = logly.SinkConfig.file("logs/session.json");
-config.json = true;
-config.pretty_json = true;
-config.overwrite_mode = true;  // Overwrite JSON file
-_ = try logger.addSink(config);
+config.format = .json;
+config.prettyJson = true;
+config.overwriteMode = true;  // Overwrite JSON file
+ _ = try logger.addSink(config);
 ```
 
 ## Use Cases
@@ -166,8 +166,8 @@ _ = try logger.addSink(config);
 // Permanent error log
 var errors = logly.SinkConfig.file("logs/errors.log");
 errors.level = .err;
-errors.overwrite_mode = false;  // Never discard
-_ = try logger.addSink(errors);
+errors.overwriteMode = false;  // Never discard
+ _ = try logger.addSink(errors);
 ```
 
 ### Overwrite Mode
@@ -180,8 +180,8 @@ _ = try logger.addSink(errors);
 ```zig
 // Fresh debug log each time
 var debug = logly.SinkConfig.file("logs/debug.log");
-debug.overwrite_mode = true;  // Reset each run
-_ = try logger.addSink(debug);
+debug.overwriteMode = true;  // Reset each run
+ _ = try logger.addSink(debug);
 ```
 
 ## Performance Considerations
@@ -193,15 +193,15 @@ Both modes use the same high-performance async writing internally.
 
 ## File Rotation
 
-The `overwrite_mode` parameter works independently from file rotation:
+The `overwriteMode` parameter works independently from file rotation:
 
 ```zig
 // Rotation + Append mode: rotated files accumulate
 var config = logly.SinkConfig.file("logs/app.log");
 config.rotation = "daily";      // Daily rotation
-config.overwrite_mode = false;  // Append mode
+config.overwriteMode = false;  // Append mode
 config.retention = 7;           // Keep 7 days of rotated files
-_ = try logger.addSink(config);
+ _ = try logger.addSink(config);
 ```
 
 ## See Also

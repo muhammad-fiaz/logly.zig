@@ -1,28 +1,35 @@
 const std = @import("std");
 const logly = @import("logly");
 
+/// Repeats `s` exactly `n` times, returning owned memory.
+fn repeatAlloc(allocator: std.mem.Allocator, s: []const u8, n: usize) ![]u8 {
+    const out = try allocator.alloc(u8, s.len * n);
+    for (0..n) |i| @memcpy(out[i * s.len ..][0..s.len], s);
+    return out;
+}
+
 const Compression = logly.Compression;
 const CompressionPresets = logly.CompressionPresets;
 
-/// Comprehensive compression demo for Logly v0.2.0
+/// Comprehensive compression demo for Logly v0.2.2
 /// Demonstrates all compression algorithms: deflate, gzip, zlib, zstd, brotli, lzma, lzma2, xz, zip, tar.gz, lz4
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     std.debug.print("\n", .{});
-    std.debug.print("=" ** 70 ++ "\n", .{});
-    std.debug.print("  Logly Compression Demo v0.2.0\n", .{});
+    std.debug.print("  Compression Demo\n", .{});
     std.debug.print("  All Compression Algorithms: deflate, gzip, zstd, brotli, lzma, xz, zip, tar.gz, lz4\n", .{});
-    std.debug.print("=" ** 70 ++ "\n\n", .{});
 
-    const log_dir = "logs";
-    const io = logly.Utils.io();
-    std.Io.Dir.cwd().createDirPath(io, log_dir) catch {};
+    const logDir = "logs";
+    std.Io.Dir.cwd().createDirPath(io, logDir) catch {};
 
     // Create sample log data
-    const sample_log =
+    const sampleLogBase =
         \\[2026-01-19 19:30:00] INFO  Application started successfully
         \\[2026-01-19 19:30:01] DEBUG Loading configuration from config.json
         \\[2026-01-19 19:30:02] INFO  Database connection established
@@ -32,222 +39,194 @@ pub fn main() !void {
         \\[2026-01-19 19:30:06] ERROR Connection timeout to external service
         \\[2026-01-19 19:30:07] INFO  Retry successful after 3 attempts
         \\
-    ** 50;
+    ;
+    const sampleLog = try repeatAlloc(allocator, sampleLogBase, 50);
+    defer allocator.free(sampleLog);
 
-    std.debug.print("Sample log data: {} bytes\n\n", .{sample_log.len});
+    std.debug.print("Sample log data: {} bytes\n\n", .{sampleLog.len});
 
-    // =========================================================================
     // Test 1: DEFLATE (Default)
-    // =========================================================================
     std.debug.print("Test 1: DEFLATE Compression (Default)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.init(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
     // Test 2: GZIP
-    // =========================================================================
     std.debug.print("Test 2: GZIP Compression\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.initWithConfig(allocator, .{ .algorithm = .gzip });
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
     // Test 3: ZSTD
-    // =========================================================================
-    std.debug.print("Test 3: ZSTD Compression (v0.1.8+)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
+    std.debug.print("Test 3: ZSTD Compression (v0.2.2+)\n", .{});
     {
         var comp = Compression.zstdCompression(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
-    // Test 4: LZMA (v0.1.8+)
-    // =========================================================================
-    std.debug.print("Test 4: LZMA Compression (v0.1.8+)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
+    // Test 4: LZMA (v0.2.2+)
+    std.debug.print("Test 4: LZMA Compression (v0.2.2+)\n", .{});
     {
         var comp = Compression.lzmaCompression(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
-    // Test 5: LZMA2 (v0.1.8+)
-    // =========================================================================
-    std.debug.print("Test 5: LZMA2 Compression (v0.1.8+)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
+    // Test 5: LZMA2 (v0.2.2+)
+    std.debug.print("Test 5: LZMA2 Compression (v0.2.2+)\n", .{});
     {
         var comp = Compression.lzma2Compression(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
-    // Test 6: XZ (v0.1.8+)
-    // =========================================================================
-    std.debug.print("Test 6: XZ Compression (v0.1.8+)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
+    // Test 6: XZ (v0.2.2+)
+    std.debug.print("Test 6: XZ Compression (v0.2.2+)\n", .{});
     {
         var comp = Compression.xzCompression(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
-    // Test 7: ZIP (v0.1.8+)
-    // =========================================================================
-    std.debug.print("Test 7: ZIP Compression (v0.1.8+)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
+    // Test 7: ZIP (v0.2.2+)
+    std.debug.print("Test 7: ZIP Compression (v0.2.2+)\n", .{});
     {
         var comp = Compression.zipCompression(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
-    // Test 8: TAR.GZ (v0.1.8+)
-    // =========================================================================
-    std.debug.print("Test 8: TAR.GZ Compression (v0.1.8+)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
+    // Test 8: TAR.GZ (v0.2.2+)
+    std.debug.print("Test 8: TAR.GZ Compression (v0.2.2+)\n", .{});
     {
         var comp = Compression.tarGzCompression(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
-    // Test 9: LZ4 (v0.1.8+)
-    // =========================================================================
-    std.debug.print("Test 9: LZ4 Compression (v0.1.8+)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
+    // Test 9: LZ4 (v0.2.2+)
+    std.debug.print("Test 9: LZ4 Compression (v0.2.2+)\n", .{});
     {
         var comp = Compression.lz4Compression(allocator);
         defer comp.deinit();
 
-        const compressed = try comp.compress(sample_log);
+        const compressed = try comp.compress(sampleLog);
         defer allocator.free(compressed);
 
         const decompressed = try comp.decompress(compressed);
         defer allocator.free(decompressed);
 
-        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sample_log.len)) * 100.0);
-        std.debug.print("  Original:    {} bytes\n", .{sample_log.len});
+        const ratio = 100.0 - (@as(f64, @floatFromInt(compressed.len)) / @as(f64, @floatFromInt(sampleLog.len)) * 100.0);
+        std.debug.print("  Original:    {} bytes\n", .{sampleLog.len});
         std.debug.print("  Compressed:  {} bytes\n", .{compressed.len});
         std.debug.print("  Saved:       {d:.1}%\n", .{ratio});
-        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sample_log, decompressed)) "✓ OK" else "✗ FAILED"});
+        std.debug.print("  Roundtrip:   {s}\n\n", .{if (std.mem.eql(u8, sampleLog, decompressed)) "[OK] OK" else "[FAIL] FAILED"});
     }
 
-    // =========================================================================
     // Test 10: File Compression - Create actual compressed files
-    // =========================================================================
     std.debug.print("Test 10: File Compression (Creates actual files)\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
 
     // Create log file
-    const log_file_path = log_dir ++ "/app.log";
+    const logFilePath = logDir ++ "/app.log";
     {
-        const f = try std.Io.Dir.cwd().createFile(io, log_file_path, .{});
+        const f = try std.Io.Dir.cwd().createFile(io, logFilePath, .{});
         defer f.close(io);
-        try f.writeStreamingAll(io, sample_log);
+        try f.writeStreamingAll(io, sampleLog);
     }
-    std.debug.print("  Created: {s} ({} bytes)\n", .{ log_file_path, sample_log.len });
+    std.debug.print("  Created: {s} ({} bytes)\n", .{ logFilePath, sampleLog.len });
 
     // Compress with different algorithms
     const algorithms = [_]struct { name: []const u8, factory: *const fn (std.mem.Allocator) Compression, ext: []const u8 }{
@@ -264,40 +243,37 @@ pub fn main() !void {
     for (algorithms) |algo| {
         // Re-create log file for each algorithm since some might delete it
         {
-            const f = try std.Io.Dir.cwd().createFile(io, log_file_path, .{});
+            const f = try std.Io.Dir.cwd().createFile(io, logFilePath, .{});
             defer f.close(io);
-            try f.writeStreamingAll(io, sample_log);
+            try f.writeStreamingAll(io, sampleLog);
         }
 
         var comp = algo.factory(allocator);
         defer comp.deinit();
 
-        const out_path = std.fmt.allocPrint(allocator, "{s}/app_{s}.log{s}", .{ log_dir, algo.name, algo.ext }) catch continue;
-        defer allocator.free(out_path);
+        const outPath = std.fmt.allocPrint(allocator, "{s}/app_{s}.log{s}", .{ logDir, algo.name, algo.ext }) catch continue;
+        defer allocator.free(outPath);
 
-        const result = try comp.compressFile(log_file_path, out_path);
-        if (result.output_path) |p| allocator.free(p);
+        const result = try comp.compressFile(logFilePath, outPath);
+        if (result.outputPath) |p| allocator.free(p);
 
         if (result.success) {
-            std.debug.print("  {s:8}: {s} ({} bytes)\n", .{ algo.name, out_path, result.compressed_size });
+            std.debug.print("  {s:8}: {s} ({} bytes)\n", .{ algo.name, outPath, result.compressedSize });
         } else {
-            std.debug.print("  {s:8}: FAILED ({s})\n", .{ algo.name, result.error_message orelse "unknown" });
+            std.debug.print("  {s:8}: FAILED ({s})\n", .{ algo.name, result.errorMessage orelse "unknown" });
         }
     }
     std.debug.print("\n", .{});
 
-    // =========================================================================
     // Test 11: Compression Statistics
-    // =========================================================================
     std.debug.print("Test 11: Compression Statistics\n", .{});
-    std.debug.print("-" ** 50 ++ "\n", .{});
     {
         var comp = Compression.init(allocator);
         defer comp.deinit();
 
         // Run multiple compressions
         for (0..5) |_| {
-            const c = try comp.compress(sample_log);
+            const c = try comp.compress(sampleLog);
             allocator.free(c);
         }
 
@@ -309,8 +285,6 @@ pub fn main() !void {
     }
 
     std.debug.print("\n", .{});
-    std.debug.print("=" ** 70 ++ "\n", .{});
     std.debug.print("  Compression Demo Complete!\n", .{});
-    std.debug.print("  Log files created in: {s}/\n", .{log_dir});
-    std.debug.print("=" ** 70 ++ "\n", .{});
+    std.debug.print("  Log files created in: {s}/\n", .{logDir});
 }

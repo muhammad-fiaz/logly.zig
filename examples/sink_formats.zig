@@ -8,14 +8,14 @@ pub fn main() !void {
 
     // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
 
     // Enable filename and line number display
-    config.show_filename = true;
-    config.show_lineno = true;
+    config.showFilename = true;
+    config.showLineno = true;
 
     // Custom date format
-    config.time_format = logly.Config.TimeFormat.default_pattern;
+    config.timeFormat = logly.Config.TimeFormat.defaultPattern;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
@@ -32,14 +32,14 @@ pub fn main() !void {
     // 3. JSON File Sink
     _ = try logger.addSink(.{
         .path = "logs/data.json",
-        .json = true,
+        .format = .json,
     });
 
     // 4. Pretty JSON File Sink
     _ = try logger.addSink(.{
         .path = "logs/pretty.json",
-        .json = true,
-        .pretty_json = true,
+        .format = .json,
+        .prettyJson = true,
     });
 
     // 5. Colored Log File (if you really want ANSI codes in file)

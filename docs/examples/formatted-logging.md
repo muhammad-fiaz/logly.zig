@@ -25,7 +25,7 @@ const logly = @import("logly");
 
 pub fn main() !void {
     // Enable ANSI colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -46,9 +46,9 @@ pub fn main() !void {
 
     // 2. Scoped Formatted Logging
     // Scoped loggers also support formatted methods with colors
-    const db_logger = logger.scoped("database");
-    try db_logger.debugf("Query executed in {d}ms: {s}", .{ 15, "SELECT * FROM users" }, @src());
-    try db_logger.infof("Connected to database '{s}'", .{ "production_db" }, @src());
+    const dbLogger = logger.scoped("database");
+    try dbLogger.debugf("Query executed in {d}ms: {s}", .{ 15, "SELECT * FROM users" }, @src());
+    try dbLogger.infof("Connected to database '{s}'", .{ "production_db" }, @src());
 
     // 3. Custom Level Formatted Logging with Custom Colors
     try logger.addCustomLevel("AUDIT", 22, "35"); // Magenta
@@ -82,7 +82,7 @@ You can also use custom format strings with colors:
 
 ```zig
 var config = logly.Config.default();
-config.log_format = "{time} | {level} | {message}";
+config.logFormat = "{time} | {level} | {message}";
 config.color = true;  // Colors apply to entire formatted line
 logger.configure(config);
 

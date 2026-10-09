@@ -66,17 +66,17 @@ For temporary context that should only apply to a specific scope or chain of ope
 
 ```zig
 // Create a scoped logger with specific context
-var req_logger = logger.with();
-defer req_logger.deinit();
+var reqLogger = logger.with();
+defer reqLogger.deinit();
 
 // Chain context methods
-_ = req_logger.str("request_id", "req-123")
+ _ = reqLogger.str("request_id", "req-123")
               .str("user_id", "user-456")
               .boolean("is_admin", true);
 
 // Log using the scoped logger
-try req_logger.info("Processing request", @src());
-try req_logger.warn("Resource usage high", @src());
+try reqLogger.info("Processing request", @src());
+try reqLogger.warn("Resource usage high", @src());
 ```
 
 ## JSON Output
@@ -102,7 +102,7 @@ For temporary context that should only apply to a specific scope or set of opera
     var scoped = logger.with();
     defer scoped.deinit();
     
-    _ = scoped.str("request_id", "req-123")
+     _ = scoped.str("request_id", "req-123")
               .int("attempt", 1);
               
     try scoped.info("Processing request"); // Includes request_id and attempt

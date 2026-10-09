@@ -79,15 +79,16 @@ The main redactor controller with thread-safe operations.
 ```zig
 pub const Redactor = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     patterns: std.ArrayList(RedactionPattern),
     fields: std.StringHashMap(RedactionType),
     stats: RedactorStats,
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
     
     // Callbacks
-    on_redaction_applied: ?*const fn ([]const u8, []const u8) void,
+    onRedactionApplied: ?*const fn ([]const u8, []const u8) void,
     on_field_redacted: ?*const fn ([]const u8, RedactionType) void,
-    on_pattern_matched: ?*const fn ([]const u8, []const u8) void,
+    onPatternMatched: ?*const fn ([]const u8, []const u8) void,
 };
 ```
 
@@ -98,7 +99,7 @@ Defines a pattern to search for and redact.
 ```zig
 pub const RedactionPattern = struct {
     name: []const u8,
-    pattern_type: PatternType,
+    patternType: PatternType,
     pattern: []const u8,
     replacement: []const u8,
 
@@ -108,7 +109,7 @@ pub const RedactionPattern = struct {
         suffix,
         contains,
         regex,
-        regex_replace,
+        regexReplace,
     };
 };
 ```
@@ -120,10 +121,10 @@ Defines how the value should be masked.
 ```zig
 pub const RedactionType = enum {
     full,           // Replace with [REDACTED]
-    partial_start,  // ****1234
-    partial_end,    // 1234****
+    partialStart,  // ****1234
+    partialEnd,    // 1234****
     hash,           // SHA256 hash
-    mask_middle,    // 12****34
+    maskMiddle,    // 12****34
     truncate,       // Truncate to N chars
     
     pub fn apply(self: RedactionType, allocator: Allocator, value: []const u8) ![]u8;
@@ -136,11 +137,11 @@ Statistics for redaction operations with atomic counters.
 
 ```zig
 pub const RedactorStats = struct {
-    total_values_processed: std.atomic.Value(u64),
-    values_redacted: std.atomic.Value(u64),
-    patterns_matched: std.atomic.Value(u64),
-    fields_redacted: std.atomic.Value(u64),
-    redaction_errors: std.atomic.Value(u64),
+    totalValuesProcessed: std.atomic.Value(u64),
+    valuesRedacted: std.atomic.Value(u64),
+    patternsMatched: std.atomic.Value(u64),
+    fieldsRedacted: std.atomic.Value(u64),
+    redactionErrors: std.atomic.Value(u64),
 };
 ```
 
@@ -194,27 +195,27 @@ pub const RedactionConfig = struct {
     /// Default replacement text.
     replacement: []const u8 = "[REDACTED]",
     /// Default redaction type for fields.
-    default_type: RedactionType = .full,
+    defaultType: RedactionType = .full,
     /// Enable regex pattern matching.
-    enable_regex: bool = false,
+    enableRegex: bool = false,
     /// Hash algorithm for hash redaction type.
-    hash_algorithm: HashAlgorithm = .sha256,
+    hashAlgorithm: HashAlgorithm = .sha256,
     /// Maximum length before truncation (truncate redaction type).
-    truncate_length: usize = 24,
+    truncateLength: usize = 24,
     /// Suffix to append after truncation.
-    truncate_suffix: []const u8 = "...",
+    truncateSuffix: []const u8 = "...",
     /// Characters to reveal at start for partial redaction.
-    partial_start_chars: u8 = 4,
+    partialStartChars: u8 = 4,
     /// Characters to reveal at end for partial redaction.
-    partial_end_chars: u8 = 4,
+    partialEndChars: u8 = 4,
     /// Mask character for redacted content.
-    mask_char: u8 = '*',
+    maskChar: u8 = '*',
     /// Enable case-insensitive field matching.
-    case_insensitive: bool = true,
+    caseInsensitive: bool = true,
     /// Log when redaction is applied (for audit).
-    audit_redactions: bool = false,
+    auditRedactions: bool = false,
     /// Compliance preset to use (null for custom).
-    compliance_preset: ?CompliancePreset = null,
+    compliancePreset: ?CompliancePreset = null,
 
     // Presets
     pub fn pciDss() RedactionConfig;
@@ -228,7 +229,7 @@ pub const RedactionConfig = struct {
 
 ```zig
 pub const CompliancePreset = enum {
-    pci_dss,
+    pciDss,
     hipaa,
     gdpr,
     sox,
@@ -258,15 +259,19 @@ Initializes a new Redactor instance with default configuration.
 
 Initializes a new Redactor instance with custom configuration.
 
+#### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: RedactionConfig) Redactor`
+
+Initializes a new Redactor instance with an explicit I/O handle and custom configuration.
+
 ```zig
 var redactor = Redactor.initWithConfig(allocator, .{
     .enabled = true,
     .replacement = "[HIDDEN]",
-    .mask_char = '#',
-    .partial_start_chars = 3,
-    .partial_end_chars = 3,
-    .case_insensitive = true,
-    .audit_redactions = true,
+    .maskChar = '#',
+    .partialStartChars = 3,
+    .partialEndChars = 3,
+    .caseInsensitive = true,
+    .auditRedactions = true,
 });
 ```
 
@@ -276,19 +281,19 @@ Releases all resources associated with the redactor.
 
 ### Pattern Management
 
-#### `addPattern(name: []const u8, pattern_type: PatternType, pattern: []const u8, replacement: []const u8) !void`
+#### `addPattern(name: []const u8, patternType: PatternType, pattern: []const u8, replacement: []const u8) !void`
 
 Adds a new pattern-based redaction rule.
 
 **Alias**: `addRule`
 
-#### `addField(field_name: []const u8, redaction_type: RedactionType) !void`
+#### `addField(fieldName: []const u8, redactionType: RedactionType) !void`
 
 Adds a field-based redaction rule (for structured logging context).
 
 **Alias**: `field`, `sensitiveField`
 
-#### `addFields(field_names: []const []const u8, redaction_type: RedactionType) !usize`
+#### `addFields(fieldNames: []const []const u8, redactionType: RedactionType) !usize`
 
 Adds multiple field-based redaction rules and returns the number of fields added.
 
@@ -300,7 +305,7 @@ Adds multiple pattern-based redaction rules and returns the number of patterns a
 
 **Alias**: `addPatternBatch`, `addRules`
 
-#### `removeField(field_name: []const u8) bool`
+#### `removeField(fieldName: []const u8) bool`
 
 Removes a field redaction rule by name.
 
@@ -335,7 +340,7 @@ Applies redaction to a string value using pattern rules. Returns a new allocated
 
 **Alias**: `mask`, `sanitize`, `process`
 
-#### `redactWithAllocator(value: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8`
+#### `redactWithAllocator(value: []const u8, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Applies redaction using an optional scratch allocator. If provided, temporary allocations use the scratch allocator (useful for arena allocators). If null, uses the redactor's main allocator.
 
@@ -350,19 +355,19 @@ Previews how full-message pattern redaction would look without mutating stats or
 
 **Alias**: `previewMessage`, `preview`
 
-#### `previewRedactionWithAllocator(value: []const u8, scratch_allocator: ?std.mem.Allocator) ![]u8`
+#### `previewRedactionWithAllocator(value: []const u8, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Allocator-aware variant of `previewRedaction(...)`.
 
 **Alias**: `previewMessageWithAllocator`
 
-#### `redactField(field_name: []const u8, value: []const u8) ![]u8`
+#### `redactField(fieldName: []const u8, value: []const u8) ![]u8`
 
 Redacts a field value based on field rules with config settings.
 
 **Alias**: `maskField`
 
-#### `previewFieldRedaction(field_name: []const u8, value: []const u8) ![]u8`
+#### `previewFieldRedaction(fieldName: []const u8, value: []const u8) ![]u8`
 
 Returns how a field value would be redacted without incrementing runtime counters.
 
@@ -444,7 +449,7 @@ Returns the number of pattern rules.
 
 Returns the number of field rules.
 
-#### `hasFieldRule(field_name: []const u8) bool`
+#### `hasFieldRule(fieldName: []const u8) bool`
 
 Returns true if a field rule exists (including case-insensitive matches when enabled).
 
@@ -485,7 +490,7 @@ pub const RedactionPresets = struct {
     pub fn financial(allocator: std.mem.Allocator) !Redactor;
     
     /// Creates a secure sink configuration with redaction enabled.
-    pub fn createSecureSink(file_path: []const u8) SinkConfig;
+    pub fn createSecureSink(filePath: []const u8) SinkConfig;
 };
 ```
 
@@ -501,15 +506,15 @@ defer redactor.deinit();
 
 // Add custom rules
 try redactor.addField("password", .full);
-try redactor.addField("credit_card", .mask_middle);
+try redactor.addField("credit_card", .maskMiddle);
 try redactor.addPattern("api_key_pattern", .contains, "api_key=", "[API_KEY_REDACTED]");
 
 // Or use compliance presets
 var pci_redactor = try RedactionPresets.pciDss(allocator);
 defer pci_redactor.deinit();
 
-var gdpr_redactor = try RedactionPresets.gdpr(allocator);
-defer gdpr_redactor.deinit();
+var gdprRedactor = try RedactionPresets.gdpr(allocator);
+defer gdprRedactor.deinit();
 
 // Apply redaction
 const original = "User password=secret123 logged in";

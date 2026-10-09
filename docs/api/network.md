@@ -42,11 +42,14 @@ The `Network` module provides utilities for network-based logging, including TCP
 | `messageCount()` | `messagesReceived()`, `receivedCount()` | Get message count |
 | `startTcp()` | `listenTcp()` | Start TCP listener |
 | `startUdp()` | `listenUdp()` | Start UDP listener |
-| `createTcpSink()` | `tcpSink()` | Create TCP sink config |
-| `createUdpSink()` | `udpSink()` | Create UDP sink config |
-| `createSyslogSink()` | `syslogSink()` | Create syslog sink config |
-| `getStats()` | `networkStats()`, `getNetworkStats()` | Get network statistics |
-| `resetStats()` | `clearStats()`, `resetNetworkStats()` | Reset network statistics |
+  | `createTcpSink()` | `tcpSink()` | Create TCP sink config |
+  | `createUdpSink()` | `udpSink()` | Create UDP sink config |
+  | `createSyslogSink()` | `syslogSink()` | Create syslog sink config |
+  | `getStats()` | `networkStats()`, `getNetworkStats()` | Get network statistics |
+  | `resetStats()` | `clearStats()`, `resetNetworkStats()` | Reset network statistics |
+
+  > Sink factories take an allocator: `createTcpSink(allocator, host, port)`.
+  > The returned URI string is caller-owned; free `config.path.?` after use.
 
 ## Overview
 
@@ -60,10 +63,10 @@ Statistics for network operations.
 
 ```zig
 pub const NetworkStats = struct {
-    bytes_sent: std.atomic.Value(Constants.AtomicUnsigned),
-    bytes_received: std.atomic.Value(Constants.AtomicUnsigned),
-    messages_sent: std.atomic.Value(Constants.AtomicUnsigned),
-    connections_made: std.atomic.Value(Constants.AtomicUnsigned),
+    bytesSent: std.atomic.Value(Constants.AtomicUnsigned),
+    bytesReceived: std.atomic.Value(Constants.AtomicUnsigned),
+    messagesSent: std.atomic.Value(Constants.AtomicUnsigned),
+    connectionsMade: std.atomic.Value(Constants.AtomicUnsigned),
     errors: std.atomic.Value(Constants.AtomicUnsigned),
 };
 ```
@@ -105,12 +108,14 @@ A simple log server for receiving logs over TCP/UDP.
 ```zig
 pub const LogServer = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     running: std.atomic.Value(bool),
-    tcp_thread: ?std.Thread,
-    udp_thread: ?std.Thread,
-    messages_received: std.atomic.Value(Constants.AtomicUnsigned),
+    tcpThread: ?std.Thread,
+    udpThread: ?std.Thread,
+    messagesReceived: std.atomic.Value(Constants.AtomicUnsigned),
     
     pub fn init(allocator: std.mem.Allocator) LogServer;
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) LogServer;
     /// Alias for init()
     pub const create = init;
 
@@ -142,6 +147,44 @@ pub const LogServer = struct {
 };
 ```
 
+### NetworkSink
+
+An advanced network-based log sink manager with automatic reconnect, retry budgets, keepalive, and specialized framing.
+
+```zig
+pub const NetworkSink = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    uri: []const u8,
+    state: ConnectionState,
+    stream: ?std.Io.net.Stream,
+    udpSocket: ?std.Io.net.Socket,
+    udpAddr: ?std.Io.net.IpAddress,
+    keepalive: bool,
+    httpChunked: bool,
+    syslogFormat: bool,
+    maxRetries: u32,
+    retryDelayMs: u64,
+
+    pub fn init(allocator: std.mem.Allocator, uri: []const u8) !NetworkSink;
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !NetworkSink;
+    pub fn deinit(self: *NetworkSink) void;
+    pub fn connect(self: *NetworkSink) !void;
+    pub fn disconnect(self: *NetworkSink) void;
+};
+```
+
+### UdpEndpoint
+
+A UDP socket and its target address endpoint.
+
+```zig
+pub const UdpEndpoint = struct {
+    socket: std.Io.net.Socket,
+    address: std.Io.net.IpAddress,
+};
+```
+
 ### NetworkError
 
 Common network errors.
@@ -163,30 +206,40 @@ pub const NetworkError = error{
 ## Functions
 
 ### `connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.Io.net.Stream`
+### `connectTcpWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !std.Io.net.Stream`
 
 Connects to a TCP host specified by a URI string (e.g., "tcp://127.0.0.1:8080").
 
-### `createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { socket: std.Io.net.Socket, address: std.Io.net.IpAddress }`
+### `createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !UdpEndpoint`
+### `createUdpSocketWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !UdpEndpoint`
 
 Creates a UDP socket connected to a host specified by a URI string (e.g., "udp://127.0.0.1:514").
 
 ### `sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: []const u8) !void`
+### `sendUdpWithIo(socket: std.Io.net.Socket, io_handle: std.Io, address: std.Io.net.IpAddress, data: []const u8) !void`
 
 Sends data via UDP socket.
 
 ### `sendTcp(stream: std.Io.net.Stream, data: []const u8) !void`
+### `sendTcpWithIo(stream: std.Io.net.Stream, io_handle: std.Io, data: []const u8) !void`
 
 Sends data via TCP stream and updates network stats.
 
-### `sendSyslogUdp(allocator: std.mem.Allocator, socket: std.Io.net.Socket, address: std.Io.net.IpAddress, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, app_name: []const u8, message: []const u8) !void`
+### `sendSyslogUdp(allocator: std.mem.Allocator, socket: std.Io.net.Socket, address: std.Io.net.IpAddress, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, appName: []const u8, message: []const u8) !void`
+### `sendSyslogUdpWithIo(allocator: std.mem.Allocator, io_handle: std.Io, socket: std.Io.net.Socket, address: std.Io.net.IpAddress, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, appName: []const u8, message: []const u8) !void`
 
 Formats a syslog message and sends it over UDP.
 
+### `sendSyslogTcpWithIo(allocator: std.mem.Allocator, io_handle: std.Io, stream: std.Io.net.Stream, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, appName: []const u8, message: []const u8) !void`
+
+Formats a syslog message and sends it over TCP.
+
 ### `fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value)`
+### `fetchJsonWithIo(allocator: std.mem.Allocator, io_handle: std.Io, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value)`
 
 Fetches and parses a JSON response from a URL.
 
-### `formatSyslog(allocator: std.mem.Allocator, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, app_name: []const u8, message: []const u8) ![]u8`
+### `formatSyslog(allocator: std.mem.Allocator, facility: SyslogFacility, severity: SyslogSeverity, hostname: []const u8, appName: []const u8, message: []const u8) ![]u8`
 
 Formats a log message as a Syslog message (RFC 5424). Uses `Constants.SyslogConstants.Severity` and `Constants.SyslogConstants.Facility` for the enums.
 
@@ -238,16 +291,16 @@ pub const NetworkSinkConfig = struct {
 };
 
 // TCP sink
-const tcp_sink = logly.SinkConfig{
+const tcpSink = logly.SinkConfig{
     .network = "tcp://logserver.example.com:8080",
-    .json = true,
+    .format = .json,
     .color = false,
 };
 
 // UDP sink (Syslog)
-const udp_sink = logly.SinkConfig{
+const udpSink = logly.SinkConfig{
     .network = "udp://localhost:514",
-    .syslog = true,
+    .format = .syslog,
 };
 ```
 
@@ -278,8 +331,8 @@ const json = try Network.fetchJson(allocator, "https://api.example.com/config", 
 defer json.deinit();
 
 // Format Syslog message
-const syslog_msg = try Network.formatSyslog(allocator, .user, .info, "localhost", "myapp", "Log message");
-defer allocator.free(syslog_msg);
+const syslogMsg = try Network.formatSyslog(allocator, .user, .info, "localhost", "myapp", "Log message");
+defer allocator.free(syslogMsg);
 
 // Get network statistics
 const stats = Network.getStats();

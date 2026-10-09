@@ -1,31 +1,20 @@
-//! Utility Functions Module
+//! Shared utilities.
 //!
-//! Provides common utility functions used throughout the Logly logging library.
-//! All functions are designed for high performance with minimal allocations.
-//!
-//! Categories:
-//! - Size Parsing/Formatting: Parse "10MB" to bytes, format bytes to "10 MB"
-//! - Duration Parsing/Formatting: Parse "30s" to milliseconds
-//! - Time Utilities: Epoch conversion, time components, elapsed time
-//! - Date/Time Formatting: ISO 8601, custom patterns, RFC 3339
-//! - JSON Utilities: String escaping for JSON output
-//! - Math Utilities: Rate calculations, averages, clamping
-//! - ID Generation: Trace IDs, span IDs for distributed tracing
-//! - Statistics: Error rates, throughput, averages
-//!
-//! Performance Characteristics:
-//! - Most functions are O(1) or O(n) where n is string length
-//! - Zero allocations for formatting to writers
-//! - Thread-safe (no global state)
-
+//! Time, formatting, parsing, IDs, and statistics helpers used across Logly.
 const std = @import("std");
 const builtin = @import("builtin");
 const Constants = @import("constants.zig");
-var threaded = std.Io.Threaded.init_single_threaded;
 
-pub fn io() std.Io {
-    return threaded.io();
+/// Stateless default single-threaded Io handle.
+pub fn defaultIo() std.Io {
+    const Holder = struct {
+        var threaded = std.Io.Threaded.init_single_threaded;
+    };
+    return Holder.threaded.io();
 }
+
+/// Pure stateless default I/O accessor.
+pub const io = defaultIo;
 
 /// Adapts an unmanaged `std.ArrayList(u8)` to the Zig 0.16 `std.Io.Writer` interface.
 pub const ArrayListWriter = struct {
@@ -95,39 +84,39 @@ pub fn parseSize(s: []const u8) ?u64 {
     const num = std.fmt.parseInt(u64, s[0..end], 10) catch return null;
 
     // Skip whitespace
-    var unit_start = end;
-    while (unit_start < s.len and std.ascii.isWhitespace(s[unit_start])) : (unit_start += 1) {}
+    var unitStart = end;
+    while (unitStart < s.len and std.ascii.isWhitespace(s[unitStart])) : (unitStart += 1) {}
 
-    if (unit_start >= s.len) return num; // Default to bytes if no unit
+    if (unitStart >= s.len) return num; // Default to bytes if no unit
 
-    const unit = s[unit_start..];
+    const unit = s[unitStart..];
 
     // Supports B, KB, MB, GB, TB (case insensitive)
     if (std.ascii.eqlIgnoreCase(unit, "B")) return num;
-    if (std.ascii.eqlIgnoreCase(unit, "K") or std.ascii.eqlIgnoreCase(unit, "KB")) return num * Constants.SizeConstants.bytes_per_kb;
-    if (std.ascii.eqlIgnoreCase(unit, "M") or std.ascii.eqlIgnoreCase(unit, "MB")) return num * Constants.SizeConstants.bytes_per_mb;
-    if (std.ascii.eqlIgnoreCase(unit, "G") or std.ascii.eqlIgnoreCase(unit, "GB")) return num * Constants.SizeConstants.bytes_per_gb;
-    if (std.ascii.eqlIgnoreCase(unit, "T") or std.ascii.eqlIgnoreCase(unit, "TB")) return num * Constants.SizeConstants.bytes_per_tb;
+    if (std.ascii.eqlIgnoreCase(unit, "K") or std.ascii.eqlIgnoreCase(unit, "KB")) return num * Constants.SizeConstants.bytesPerKb;
+    if (std.ascii.eqlIgnoreCase(unit, "M") or std.ascii.eqlIgnoreCase(unit, "MB")) return num * Constants.SizeConstants.bytesPerMb;
+    if (std.ascii.eqlIgnoreCase(unit, "G") or std.ascii.eqlIgnoreCase(unit, "GB")) return num * Constants.SizeConstants.bytesPerGb;
+    if (std.ascii.eqlIgnoreCase(unit, "T") or std.ascii.eqlIgnoreCase(unit, "TB")) return num * Constants.SizeConstants.bytesPerTb;
 
     return num;
 }
 
 /// Writes a human-readable byte size to the writer.
 pub fn writeSize(writer: anytype, bytes: u64) !void {
-    const units = [_][]const u8{ "B", "KB", "MB", "GB", "TB" };
-    const bytes_per_kb_f: f64 = @floatFromInt(Constants.SizeConstants.bytes_per_kb);
+    const units = [][]const u8{ "B", "KB", "MB", "GB", "TB" };
+    const bytesPerKbF: f64 = @floatFromInt(Constants.SizeConstants.bytesPerKb);
     var value: f64 = @floatFromInt(bytes);
-    var unit_idx: usize = 0;
+    var unitIdx: usize = 0;
 
-    while (value >= bytes_per_kb_f and unit_idx < units.len - 1) {
-        value /= bytes_per_kb_f;
-        unit_idx += 1;
+    while (value >= bytesPerKbF and unitIdx < units.len - 1) {
+        value /= bytesPerKbF;
+        unitIdx += 1;
     }
 
-    if (unit_idx == 0) {
-        try writer.print("{d} {s}", .{ bytes, units[unit_idx] });
+    if (unitIdx == 0) {
+        try writer.print("{d} {s}", .{ bytes, units[unitIdx] });
     } else {
-        try writer.print("{d:.2} {s}", .{ value, units[unit_idx] });
+        try writer.print("{d:.2} {s}", .{ value, units[unitIdx] });
     }
 }
 
@@ -158,39 +147,39 @@ pub fn parseDuration(s: []const u8) ?i64 {
     const num = std.fmt.parseInt(i64, s[0..end], 10) catch return null;
 
     // Skip whitespace
-    var unit_start = end;
-    while (unit_start < s.len and std.ascii.isWhitespace(s[unit_start])) : (unit_start += 1) {}
+    var unitStart = end;
+    while (unitStart < s.len and std.ascii.isWhitespace(s[unitStart])) : (unitStart += 1) {}
 
-    if (unit_start >= s.len) return num; // Default to milliseconds if no unit
+    if (unitStart >= s.len) return num; // Default to milliseconds if no unit
 
-    const unit = s[unit_start..];
+    const unit = s[unitStart..];
 
     if (std.ascii.eqlIgnoreCase(unit, "ms")) return num;
-    if (std.ascii.eqlIgnoreCase(unit, "s")) return num * @as(i64, @intCast(Constants.TimeConstants.ms_per_second));
-    if (std.ascii.eqlIgnoreCase(unit, "m")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second));
-    if (std.ascii.eqlIgnoreCase(unit, "h")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second));
-    if (std.ascii.eqlIgnoreCase(unit, "d")) return num * @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
+    if (std.ascii.eqlIgnoreCase(unit, "s")) return num * @as(i64, @intCast(Constants.TimeConstants.msPerSecond));
+    if (std.ascii.eqlIgnoreCase(unit, "m")) return num * @as(i64, @intCast(Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond));
+    if (std.ascii.eqlIgnoreCase(unit, "h")) return num * @as(i64, @intCast(Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond));
+    if (std.ascii.eqlIgnoreCase(unit, "d")) return num * @as(i64, @intCast(Constants.TimeConstants.secondsPerDay * Constants.TimeConstants.msPerSecond));
 
     return num;
 }
 
 /// Writes a human-readable duration to the writer.
 pub fn writeDuration(writer: anytype, ms: i64) !void {
-    const ms_per_sec = @as(i64, @intCast(Constants.TimeConstants.ms_per_second));
-    const ms_per_min = @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second));
-    const ms_per_hour = @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second));
-    const ms_per_day = @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
+    const msPerSec = @as(i64, @intCast(Constants.TimeConstants.msPerSecond));
+    const msPerMin = @as(i64, @intCast(Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond));
+    const msPerHour = @as(i64, @intCast(Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond));
+    const msPerDay = @as(i64, @intCast(Constants.TimeConstants.secondsPerDay * Constants.TimeConstants.msPerSecond));
 
-    if (ms < ms_per_sec) {
+    if (ms < msPerSec) {
         try writer.print("{d}ms", .{ms});
-    } else if (ms < ms_per_min) {
-        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_sec))});
-    } else if (ms < ms_per_hour) {
-        try writer.print("{d:.2}m", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_min))});
-    } else if (ms < ms_per_day) {
-        try writer.print("{d:.2}h", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_hour))});
+    } else if (ms < msPerMin) {
+        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerSec))});
+    } else if (ms < msPerHour) {
+        try writer.print("{d:.2}m", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerMin))});
+    } else if (ms < msPerDay) {
+        try writer.print("{d:.2}h", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerHour))});
     } else {
-        try writer.print("{d:.2}d", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(ms_per_day))});
+        try writer.print("{d:.2}d", .{@as(f64, @floatFromInt(ms)) / @as(f64, @floatFromInt(msPerDay))});
     }
 }
 
@@ -214,8 +203,8 @@ pub const TimeComponents = struct {
 
 /// Extracts time components from a Unix epoch timestamp (seconds).
 pub fn fromEpochSeconds(timestamp: i64) TimeComponents {
-    const safe_ts: u64 = if (timestamp < 0) 0 else @intCast(timestamp);
-    const epoch = std.time.epoch.EpochSeconds{ .secs = safe_ts };
+    const safeTs: u64 = if (timestamp < 0) 0 else @intCast(timestamp);
+    const epoch = std.time.epoch.EpochSeconds{ .secs = safeTs };
     const yd = epoch.getEpochDay().calculateYearDay();
     const md = yd.calculateMonthDay();
     const ds = epoch.getDaySeconds();
@@ -232,7 +221,7 @@ pub fn fromEpochSeconds(timestamp: i64) TimeComponents {
 
 /// Extracts time components from a millisecond timestamp.
 pub fn fromMilliTimestamp(timestamp: i64) TimeComponents {
-    return fromEpochSeconds(@divFloor(timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second))));
+    return fromEpochSeconds(@divFloor(timestamp, @as(i64, @intCast(Constants.TimeConstants.msPerSecond))));
 }
 
 /// Converts a civil date to days since Unix epoch (1970-01-01).
@@ -243,11 +232,11 @@ fn daysFromCivil(year: i32, month: u8, day: u8) i64 {
     const m: i64 = @as(i64, @intCast(month));
     const d: i64 = @as(i64, @intCast(day));
 
-    const adjusted_year = y - (if (m <= 2) @as(i64, 1) else @as(i64, 0));
-    const era = @divFloor(if (adjusted_year >= 0) adjusted_year else adjusted_year - 399, 400);
-    const yoe = adjusted_year - era * 400;
-    const month_adjusted = m + (if (m > 2) @as(i64, -3) else @as(i64, 9));
-    const doy = @divFloor(153 * month_adjusted + 2, 5) + d - 1;
+    const adjustedYear = y - (if (m <= 2) @as(i64, 1) else @as(i64, 0));
+    const era = @divFloor(if (adjustedYear >= 0) adjustedYear else adjustedYear - 399, 400);
+    const yoe = adjustedYear - era * 400;
+    const monthAdjusted = m + (if (m > 2) @as(i64, -3) else @as(i64, 9));
+    const doy = @divFloor(153 * monthAdjusted + 2, 5) + d - 1;
     const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
 
     return era * 146097 + doe - 719468;
@@ -258,39 +247,39 @@ fn daysFromCivil(year: i32, month: u8, day: u8) i64 {
 /// Treats the components as a UTC-like civil instant.
 fn epochSecondsFromComponents(tc: TimeComponents) i64 {
     const days = daysFromCivil(tc.year, tc.month, tc.day);
-    const seconds_in_day: i64 = @as(i64, @intCast(tc.hour)) * @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour)) +
-        @as(i64, @intCast(tc.minute)) * @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute)) +
+    const secondsInDay: i64 = @as(i64, @intCast(tc.hour)) * @as(i64, @intCast(Constants.TimeConstants.secondsPerHour)) +
+        @as(i64, @intCast(tc.minute)) * @as(i64, @intCast(Constants.TimeConstants.secondsPerMinute)) +
         @as(i64, @intCast(tc.second));
-    return days * @as(i64, @intCast(Constants.TimeConstants.seconds_per_day)) + seconds_in_day;
+    return days * @as(i64, @intCast(Constants.TimeConstants.secondsPerDay)) + secondsInDay;
 }
 
 /// Converts epoch seconds to local-time components via libc.
 ///
 /// Returns `null` when libc or timezone APIs are unavailable.
-fn localTimeComponentsFromLibc(timestamp_seconds: i64) ?TimeComponents {
+fn localTimeComponentsFromLibc(timestampSeconds: i64) ?TimeComponents {
     if (!builtin.link_libc) return null;
 
     if (comptime (@hasDecl(std.c, "time_t") and @hasDecl(std.c, "tm"))) {
-        var epoch_seconds: std.c.time_t = @intCast(timestamp_seconds);
-        var local_tm: std.c.tm = undefined;
+        var epochSeconds: std.c.time_t = @intCast(timestampSeconds);
+        var localTm: std.c.tm = undefined;
 
         if (@hasDecl(std.c, "localtime_r")) {
-            if (std.c.localtime_r(&epoch_seconds, &local_tm) == null) return null;
+            if (std.c.localtime_r(&epochSeconds, &localTm) == null) return null;
         } else if (@hasDecl(std.c, "localtime")) {
-            const tm_ptr = std.c.localtime(&epoch_seconds);
-            if (tm_ptr == null) return null;
-            local_tm = tm_ptr.*;
+            const tmPtr = std.c.localtime(&epochSeconds);
+            if (tmPtr == null) return null;
+            localTm = tmPtr.*;
         } else {
             return null;
         }
 
         return .{
-            .year = @as(i32, @intCast(local_tm.tm_year + 1900)),
-            .month = @as(u8, @intCast(local_tm.tm_mon + 1)),
-            .day = @as(u8, @intCast(local_tm.tm_mday)),
-            .hour = @as(u64, @intCast(local_tm.tm_hour)),
-            .minute = @as(u64, @intCast(local_tm.tm_min)),
-            .second = @as(u64, @intCast(local_tm.tm_sec)),
+            .year = @as(i32, @intCast(localTm.tm_year + 1900)),
+            .month = @as(u8, @intCast(localTm.tm_mon + 1)),
+            .day = @as(u8, @intCast(localTm.tm_mday)),
+            .hour = @as(u64, @intCast(localTm.tm_hour)),
+            .minute = @as(u64, @intCast(localTm.tm_min)),
+            .second = @as(u64, @intCast(localTm.tm_sec)),
         };
     }
 
@@ -300,65 +289,65 @@ fn localTimeComponentsFromLibc(timestamp_seconds: i64) ?TimeComponents {
 /// Extracts local-time components from a millisecond timestamp.
 /// Falls back to UTC conversion when libc localtime support is unavailable.
 pub fn fromMilliTimestampLocal(timestamp: i64) TimeComponents {
-    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
-    if (localTimeComponentsFromLibc(safe_seconds)) |tc| {
+    const safeSeconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.msPerSecond)));
+    if (localTimeComponentsFromLibc(safeSeconds)) |tc| {
         return tc;
     }
-    return fromEpochSeconds(safe_seconds);
+    return fromEpochSeconds(safeSeconds);
 }
 
 /// Returns local UTC offset in minutes for a millisecond timestamp.
 /// Returns 0 when local timezone conversion is unavailable.
 pub fn localUtcOffsetMinutes(timestamp: i64) i16 {
-    const safe_seconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.ms_per_second)));
-    const local_tc = localTimeComponentsFromLibc(safe_seconds) orelse return 0;
+    const safeSeconds = @divFloor(if (timestamp < 0) 0 else timestamp, @as(i64, @intCast(Constants.TimeConstants.msPerSecond)));
+    const localTc = localTimeComponentsFromLibc(safeSeconds) orelse return 0;
 
-    const local_as_utc_seconds = epochSecondsFromComponents(local_tc);
-    const offset_minutes = @divTrunc(local_as_utc_seconds - safe_seconds, @as(i64, @intCast(Constants.TimeConstants.seconds_per_minute)));
+    const localAsUtcSeconds = epochSecondsFromComponents(localTc);
+    const offsetMinutes = @divTrunc(localAsUtcSeconds - safeSeconds, @as(i64, @intCast(Constants.TimeConstants.secondsPerMinute)));
 
-    const min_offset = @as(i64, Constants.TimeConstants.min_utc_offset_minutes);
-    const max_offset = @as(i64, Constants.TimeConstants.max_utc_offset_minutes);
-    const bounded = std.math.clamp(offset_minutes, min_offset, max_offset);
+    const minOffset = @as(i64, Constants.TimeConstants.minUtcOffsetMinutes);
+    const maxOffset = @as(i64, Constants.TimeConstants.maxUtcOffsetMinutes);
+    const bounded = std.math.clamp(offsetMinutes, minOffset, maxOffset);
 
     return @as(i16, @intCast(bounded));
 }
 
-fn splitUtcOffsetMinutes(offset_minutes: i16) struct { sign: u8, hours: u16, minutes: u16 } {
-    const clamped_offset = std.math.clamp(offset_minutes, Constants.TimeConstants.min_utc_offset_minutes, Constants.TimeConstants.max_utc_offset_minutes);
-    const sign: u8 = if (clamped_offset < 0) '-' else '+';
-    const abs_minutes_i32: i32 = if (clamped_offset < 0)
-        -@as(i32, clamped_offset)
+fn splitUtcOffsetMinutes(offsetMinutes: i16) struct { sign: u8, hours: u16, minutes: u16 } {
+    const clampedOffset = std.math.clamp(offsetMinutes, Constants.TimeConstants.minUtcOffsetMinutes, Constants.TimeConstants.maxUtcOffsetMinutes);
+    const sign: u8 = if (clampedOffset < 0) '-' else '+';
+    const absMinutesI32: i32 = if (clampedOffset < 0)
+        -@as(i32, clampedOffset)
     else
-        @as(i32, clamped_offset);
-    const abs_minutes_u16: u16 = @intCast(abs_minutes_i32);
-    const minutes_per_hour: u16 = Constants.TimeConstants.minutes_per_hour;
+        @as(i32, clampedOffset);
+    const absMinutesU16: u16 = @intCast(absMinutesI32);
+    const minutesPerHour: u16 = Constants.TimeConstants.minutesPerHour;
 
     return .{
         .sign = sign,
-        .hours = @divFloor(abs_minutes_u16, minutes_per_hour),
-        .minutes = @mod(abs_minutes_u16, minutes_per_hour),
+        .hours = @divFloor(absMinutesU16, minutesPerHour),
+        .minutes = @mod(absMinutesU16, minutesPerHour),
     };
 }
 
 /// Writes a UTC offset in `+HH:MM` or `-HH:MM` format.
 ///
 /// The offset is expressed in minutes and is clamped by callers to a safe range.
-pub fn writeUtcOffset(writer: anytype, offset_minutes: i16) !void {
-    const offset_parts = splitUtcOffsetMinutes(offset_minutes);
+pub fn writeUtcOffset(writer: anytype, offsetMinutes: i16) !void {
+    const offsetParts = splitUtcOffsetMinutes(offsetMinutes);
 
-    try writer.writeByte(offset_parts.sign);
-    try write2Digits(writer, offset_parts.hours);
+    try writer.writeByte(offsetParts.sign);
+    try write2Digits(writer, offsetParts.hours);
     try writer.writeByte(':');
-    try write2Digits(writer, offset_parts.minutes);
+    try write2Digits(writer, offsetParts.minutes);
 }
 
 /// Writes a compact UTC offset in `+HHMM` or `-HHMM` format.
-pub fn writeUtcOffsetCompact(writer: anytype, offset_minutes: i16) !void {
-    const offset_parts = splitUtcOffsetMinutes(offset_minutes);
+pub fn writeUtcOffsetCompact(writer: anytype, offsetMinutes: i16) !void {
+    const offsetParts = splitUtcOffsetMinutes(offsetMinutes);
 
-    try writer.writeByte(offset_parts.sign);
-    try write2Digits(writer, offset_parts.hours);
-    try write2Digits(writer, offset_parts.minutes);
+    try writer.writeByte(offsetParts.sign);
+    try write2Digits(writer, offsetParts.hours);
+    try write2Digits(writer, offsetParts.minutes);
 }
 
 /// Gets current time components.
@@ -382,14 +371,24 @@ pub fn currentNanos() i128 {
 }
 
 /// Sleeps for the specified duration in nanoseconds.
-pub fn sleepNs(duration_ns: u64) void {
-    const duration = std.Io.Duration.fromNanoseconds(@as(i96, @intCast(duration_ns)));
+pub fn sleepNs(durationNs: u64) void {
+    const duration = std.Io.Duration.fromNanoseconds(@as(i96, @intCast(durationNs)));
     _ = std.Io.sleep(io(), duration, .awake) catch {};
 }
 
 /// Sleeps for the specified duration in milliseconds.
-pub fn sleepMs(duration_ms: u64) void {
-    sleepNs(duration_ms * Constants.TimeConstants.ns_per_ms);
+pub fn sleepMs(durationMs: u64) void {
+    sleepNs(durationMs * Constants.TimeConstants.nsPerMs);
+}
+
+/// Whether stdout refers to an interactive terminal.
+///
+/// Never fails; returns false on any error (including missing TTY support
+/// on the platform). Used to gate automatic console coloring: piped,
+/// redirected, and CI output stays plain unless colors are explicitly
+/// forced. Pure query with no shared state; safe from any thread.
+pub fn stdoutIsTty() bool {
+    return std.Io.File.stdout().isTty(io()) catch false;
 }
 
 /// Checks if two timestamps are on the same day.
@@ -409,25 +408,42 @@ pub fn isSameHour(ts1: i64, ts2: i64) bool {
 /// Returns the start of the current day (midnight) as epoch seconds.
 pub fn startOfDay(timestamp: i64) i64 {
     const tc = fromEpochSeconds(timestamp);
-    return timestamp - @as(i64, @intCast(tc.hour * Constants.TimeConstants.seconds_per_hour + tc.minute * Constants.TimeConstants.seconds_per_minute + tc.second));
+    return timestamp - @as(i64, @intCast(tc.hour * Constants.TimeConstants.secondsPerHour + tc.minute * Constants.TimeConstants.secondsPerMinute + tc.second));
 }
 
 /// Returns the start of the current hour as epoch seconds.
 pub fn startOfHour(timestamp: i64) i64 {
     const tc = fromEpochSeconds(timestamp);
-    return timestamp - @as(i64, @intCast(tc.minute * Constants.TimeConstants.seconds_per_minute + tc.second));
+    return timestamp - @as(i64, @intCast(tc.minute * Constants.TimeConstants.secondsPerMinute + tc.second));
 }
 
-/// Calculates elapsed time in milliseconds since start_time.
-pub fn elapsedMs(start_time: i64) u64 {
-    const now_time = currentMillis();
-    if (now_time < start_time) return 0;
-    return @intCast(now_time - start_time);
+/// Returns monotonic milliseconds (saturating on overflow).
+///
+/// Use for durations, timeouts, intervals, and uptime. Immune to
+/// wall-clock jumps (NTP, DST, manual changes). For calendar timestamps
+/// shown to users, use `currentMillis` instead.
+pub fn monotonicMillis() i64 {
+    const ns = nowMonotonic().toNanoseconds();
+    const ms = @divFloor(ns, @as(i96, 1_000_000));
+    const clamped = std.math.clamp(ms, @as(i96, std.math.minInt(i64)), @as(i96, std.math.maxInt(i64)));
+    return @intCast(clamped);
+}
+
+/// Calculates elapsed milliseconds since a monotonic start time.
+///
+/// Both this call and `startTime` must use the monotonic clock
+/// (`monotonicMillis`). Never pass wall-clock timestamps here;
+/// wall-clock jumps would corrupt the result. Returns 0 on backward jump
+/// (defensive; monotonic time should never go backward).
+pub fn elapsedMs(startTime: i64) u64 {
+    const nowTime = monotonicMillis();
+    if (nowTime < startTime) return 0;
+    return @intCast(nowTime - startTime);
 }
 
 /// Calculates elapsed time in seconds since start_time.
-pub fn elapsedSeconds(start_time: i64) u64 {
-    return elapsedMs(start_time) / Constants.TimeConstants.ms_per_second;
+pub fn elapsedSeconds(startTime: i64) u64 {
+    return elapsedMs(startTime) / Constants.TimeConstants.msPerSecond;
 }
 
 /// Formats a date/time string based on a format pattern using granular tokens.
@@ -451,11 +467,11 @@ pub fn formatDatePattern(writer: anytype, fmt: []const u8, year: i32, month: u8,
 }
 
 /// Formats a date/time pattern and enables timezone tokens (`ZZZ`, `ZZ`).
-pub fn formatDatePatternWithOffset(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: i16) !void {
-    return formatDatePatternInternal(writer, fmt, year, month, day, hour, minute, second, millis, timezone_offset_minutes);
+pub fn formatDatePatternWithOffset(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezoneOffsetMinutes: i16) !void {
+    return formatDatePatternInternal(writer, fmt, year, month, day, hour, minute, second, millis, timezoneOffsetMinutes);
 }
 
-fn formatDatePatternInternal(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: ?i16) !void {
+fn formatDatePatternInternal(writer: anytype, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezoneOffsetMinutes: ?i16) !void {
     var i: usize = 0;
     while (i < fmt.len) {
         if (i + 4 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 4], "YYYY")) {
@@ -465,14 +481,14 @@ fn formatDatePatternInternal(writer: anytype, fmt: []const u8, year: i32, month:
             try write2Digits(writer, @mod(year, 100));
             i += 2;
         } else if (i + 3 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 3], "ZZZ")) {
-            if (timezone_offset_minutes) |offset| {
+            if (timezoneOffsetMinutes) |offset| {
                 try writeUtcOffset(writer, offset);
             } else {
                 try writer.writeAll("ZZZ");
             }
             i += 3;
         } else if (i + 2 <= fmt.len and std.mem.eql(u8, fmt[i .. i + 2], "ZZ")) {
-            if (timezone_offset_minutes) |offset| {
+            if (timezoneOffsetMinutes) |offset| {
                 try writeUtcOffsetCompact(writer, offset);
             } else {
                 try writer.writeAll("ZZ");
@@ -527,9 +543,9 @@ pub fn formatDateToBuf(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8
 }
 
 /// Formats a date/time to a caller-provided buffer with timezone token support.
-pub fn formatDateToBufWithOffset(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezone_offset_minutes: i16) ![]u8 {
+pub fn formatDateToBufWithOffset(buf: []u8, fmt: []const u8, year: i32, month: u8, day: u8, hour: u64, minute: u64, second: u64, millis: u64, timezoneOffsetMinutes: i16) ![]u8 {
     var writer = std.Io.Writer.fixed(buf);
-    try formatDatePatternWithOffset(&writer, fmt, year, month, day, hour, minute, second, millis, timezone_offset_minutes);
+    try formatDatePatternWithOffset(&writer, fmt, year, month, day, hour, minute, second, millis, timezoneOffsetMinutes);
     return buf[0..writer.end];
 }
 
@@ -607,16 +623,9 @@ pub fn safeToUnsigned(comptime T: type, value: anytype) T {
     return @intCast(value);
 }
 
-/// Alias for formatDatePattern (for date_formatting module compatibility)
-pub const format = formatDatePattern;
-
-/// Alias for formatDateToBuf
-pub const formatToBuf = formatDateToBuf;
-
 /// Escapes a string for safe inclusion in JSON output.
 /// Handles all JSON special characters including control characters.
 ///
-/// Performance: O(n) where n = string length
 /// Memory: Zero allocations - writes directly to the provided writer
 ///
 /// Example:
@@ -650,13 +659,6 @@ pub fn escapeJsonString(writer: anytype, s: []const u8) !void {
 
 /// Escapes a string for JSON and writes it to a buffer.
 /// Returns the written slice.
-///
-/// Arguments:
-///     buf: Output buffer
-///     s: String to escape
-///
-/// Returns:
-///     Slice of written content
 pub fn escapeJsonStringToBuf(buf: []u8, s: []const u8) ![]u8 {
     var writer = std.Io.Writer.fixed(buf);
     try escapeJsonString(&writer, s);
@@ -665,15 +667,6 @@ pub fn escapeJsonStringToBuf(buf: []u8, s: []const u8) ![]u8 {
 
 /// Calculates a rate as a floating-point ratio (0.0 - 1.0).
 /// Safely handles division by zero by returning 0.
-///
-/// Performance: O(1)
-///
-/// Arguments:
-///     numerator: The count of specific items
-///     denominator: The total count
-///
-/// Returns:
-///     The rate as a float between 0.0 and 1.0
 pub fn calculateRate(numerator: u64, denominator: u64) f64 {
     if (denominator == 0) return 0.0;
     return @as(f64, @floatFromInt(numerator)) / @as(f64, @floatFromInt(denominator));
@@ -681,49 +674,22 @@ pub fn calculateRate(numerator: u64, denominator: u64) f64 {
 
 /// Calculates a percentage (0.0 - 100.0).
 /// Safely handles division by zero by returning 0.
-///
-/// Performance: O(1)
-///
-/// Arguments:
-///     numerator: The count of specific items
-///     denominator: The total count
-///
-/// Returns:
-///     The percentage as a float between 0.0 and 100.0
 pub fn calculatePercentage(numerator: u64, denominator: u64) f64 {
     return calculateRate(numerator, denominator) * 100.0;
 }
 
 /// Calculates throughput (items per second) given a count and elapsed time.
-///
-/// Performance: O(1)
-///
-/// Arguments:
-///     count: Number of items processed
-///     elapsed_ns: Elapsed time in nanoseconds
-///
-/// Returns:
-///     Items per second as a float
-pub fn calculateThroughput(count: u64, elapsed_ns: u64) f64 {
-    if (elapsed_ns == 0) return 0.0;
-    const ns_per_sec = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
-    const seconds = @as(f64, @floatFromInt(elapsed_ns)) / ns_per_sec;
+pub fn calculateThroughput(count: u64, elapsedNs: u64) f64 {
+    if (elapsedNs == 0) return 0.0;
+    const nsPerSec = @as(f64, @floatFromInt(Constants.TimeConstants.nsPerSecond));
+    const seconds = @as(f64, @floatFromInt(elapsedNs)) / nsPerSec;
     return @as(f64, @floatFromInt(count)) / seconds;
 }
 
 /// Calculates throughput in milliseconds.
-///
-/// Performance: O(1)
-///
-/// Arguments:
-///     count: Number of items processed
-///     elapsed_ms: Elapsed time in milliseconds
-///
-/// Returns:
-///     Items per second as a float
-pub fn calculateThroughputMs(count: u64, elapsed_ms: i64) f64 {
-    if (elapsed_ms <= 0) return 0.0;
-    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / @as(f64, @floatFromInt(Constants.TimeConstants.ms_per_second));
+pub fn calculateThroughputMs(count: u64, durationMs: i64) f64 {
+    if (durationMs <= 0) return 0.0;
+    const seconds = @as(f64, @floatFromInt(durationMs)) / @as(f64, @floatFromInt(Constants.TimeConstants.msPerSecond));
     return @as(f64, @floatFromInt(count)) / seconds;
 }
 
@@ -757,34 +723,34 @@ test "calculatePercentage" {
 
 test "calculateThroughput" {
     // 100 items in 1 second = 100 items/sec
-    try std.testing.expectEqual(@as(f64, 100.0), calculateThroughput(100, Constants.TimeConstants.ns_per_second));
+    try std.testing.expectEqual(@as(f64, 100.0), calculateThroughput(100, Constants.TimeConstants.nsPerSecond));
     // 0 elapsed time = 0 throughput
     try std.testing.expectEqual(@as(f64, 0.0), calculateThroughput(100, 0));
 }
 
 test "parseSize bytes" {
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), parseSize("1024"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerKb), parseSize("1024"));
     try std.testing.expectEqual(@as(?u64, 100), parseSize("100B"));
 }
 
 test "parseSize kilobytes" {
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), parseSize("1KB"));
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_kb), parseSize("1K"));
-    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_kb), parseSize("10KB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerKb), parseSize("1KB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerKb), parseSize("1K"));
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytesPerKb), parseSize("10KB"));
 }
 
 test "parseSize megabytes" {
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_mb), parseSize("1MB"));
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_mb), parseSize("1M"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerMb), parseSize("1MB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerMb), parseSize("1M"));
 }
 
 test "parseSize gigabytes" {
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), parseSize("1GB"));
-    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytes_per_gb), parseSize("1G"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerGb), parseSize("1GB"));
+    try std.testing.expectEqual(@as(?u64, Constants.SizeConstants.bytesPerGb), parseSize("1G"));
 }
 
 test "parseSize with whitespace" {
-    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytes_per_mb), parseSize("10 MB"));
+    try std.testing.expectEqual(@as(?u64, 10 * Constants.SizeConstants.bytesPerMb), parseSize("10 MB"));
 }
 
 test "parseSize invalid" {
@@ -793,12 +759,12 @@ test "parseSize invalid" {
 }
 
 test "parseDuration" {
-    try std.testing.expectEqual(@as(?i64, @intCast(Constants.TimeConstants.ms_per_second)), parseDuration("1000ms"));
-    try std.testing.expectEqual(@as(?i64, @intCast(30 * Constants.TimeConstants.ms_per_second)), parseDuration("30s"));
-    try std.testing.expectEqual(@as(?i64, @intCast(5 * Constants.TimeConstants.seconds_per_minute * Constants.TimeConstants.ms_per_second)), parseDuration("5m"));
-    try std.testing.expectEqual(@as(?i64, @intCast(2 * Constants.TimeConstants.seconds_per_hour * Constants.TimeConstants.ms_per_second)), parseDuration("2h"));
-    const one_day_ms = @as(i64, @intCast(Constants.TimeConstants.seconds_per_day * Constants.TimeConstants.ms_per_second));
-    try std.testing.expectEqual(@as(?i64, one_day_ms), parseDuration("1d"));
+    try std.testing.expectEqual(@as(?i64, @intCast(Constants.TimeConstants.msPerSecond)), parseDuration("1000ms"));
+    try std.testing.expectEqual(@as(?i64, @intCast(30 * Constants.TimeConstants.msPerSecond)), parseDuration("30s"));
+    try std.testing.expectEqual(@as(?i64, @intCast(5 * Constants.TimeConstants.secondsPerMinute * Constants.TimeConstants.msPerSecond)), parseDuration("5m"));
+    try std.testing.expectEqual(@as(?i64, @intCast(2 * Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond)), parseDuration("2h"));
+    const oneDayMs = @as(i64, @intCast(Constants.TimeConstants.secondsPerDay * Constants.TimeConstants.msPerSecond));
+    try std.testing.expectEqual(@as(?i64, oneDayMs), parseDuration("1d"));
 }
 
 test "fromEpochSeconds" {
@@ -819,12 +785,12 @@ test "fromMilliTimestampLocal returns valid components" {
 
 test "localUtcOffsetMinutes is bounded" {
     const offset = localUtcOffsetMinutes(1735689600000);
-    try std.testing.expect(offset >= Constants.TimeConstants.min_utc_offset_minutes and offset <= Constants.TimeConstants.max_utc_offset_minutes);
+    try std.testing.expect(offset >= Constants.TimeConstants.minUtcOffsetMinutes and offset <= Constants.TimeConstants.maxUtcOffsetMinutes);
 }
 
 test "isSameDay" {
-    try std.testing.expect(isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.seconds_per_hour))));
-    try std.testing.expect(!isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.seconds_per_day))));
+    try std.testing.expect(isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.secondsPerHour))));
+    try std.testing.expect(!isSameDay(1735689600, 1735689600 + @as(i64, @intCast(Constants.TimeConstants.secondsPerDay))));
 }
 
 test "clamp" {
@@ -937,8 +903,8 @@ pub fn generateSpanId(allocator: std.mem.Allocator) ![]u8 {
 /// Parsed W3C traceparent context.
 pub const TraceparentContext = struct {
     version: []const u8,
-    trace_id: []const u8,
-    span_id: []const u8,
+    traceId: []const u8,
+    spanId: []const u8,
     flags: []const u8,
     sampled: bool,
 };
@@ -971,41 +937,41 @@ pub fn parseTraceparentHeader(header: []const u8) ?TraceparentContext {
     if (header[2] != '-' or header[35] != '-' or header[52] != '-') return null;
 
     const version = header[0..2];
-    const trace_id = header[3..35];
-    const span_id = header[36..52];
+    const traceId = header[3..35];
+    const spanId = header[36..52];
     const flags = header[53..55];
 
-    if (!isHexSlice(version) or !isHexSlice(trace_id) or !isHexSlice(span_id) or !isHexSlice(flags)) {
+    if (!isHexSlice(version) or !isHexSlice(traceId) or !isHexSlice(spanId) or !isHexSlice(flags)) {
         return null;
     }
 
-    if (isAllZerosHex(trace_id) or isAllZerosHex(span_id)) {
+    if (isAllZerosHex(traceId) or isAllZerosHex(spanId)) {
         return null;
     }
 
-    const flags_byte = std.fmt.parseInt(u8, flags, 16) catch return null;
+    const flagsByte = std.fmt.parseInt(u8, flags, 16) catch return null;
 
     return .{
         .version = version,
-        .trace_id = trace_id,
-        .span_id = span_id,
+        .traceId = traceId,
+        .spanId = spanId,
         .flags = flags,
-        .sampled = (flags_byte & 0x01) == 0x01,
+        .sampled = (flagsByte & 0x01) == 0x01,
     };
 }
 
 /// Formats a W3C `traceparent` header string.
-pub fn formatTraceparentHeader(allocator: std.mem.Allocator, trace_id: []const u8, span_id: []const u8, sampled: bool) ![]u8 {
-    if (trace_id.len != 32 or !isHexSlice(trace_id) or isAllZerosHex(trace_id)) {
+pub fn formatTraceparentHeader(allocator: std.mem.Allocator, traceId: []const u8, spanId: []const u8, sampled: bool) ![]u8 {
+    if (traceId.len != 32 or !isHexSlice(traceId) or isAllZerosHex(traceId)) {
         return TraceparentError.InvalidTraceId;
     }
 
-    if (span_id.len != 16 or !isHexSlice(span_id) or isAllZerosHex(span_id)) {
+    if (spanId.len != 16 or !isHexSlice(spanId) or isAllZerosHex(spanId)) {
         return TraceparentError.InvalidSpanId;
     }
 
     const flags = if (sampled) "01" else "00";
-    return std.fmt.allocPrint(allocator, "00-{s}-{s}-{s}", .{ trace_id, span_id, flags });
+    return std.fmt.allocPrint(allocator, "00-{s}-{s}-{s}", .{ traceId, spanId, flags });
 }
 
 /// Determines if a trace should be sampled based on the sampling rate.
@@ -1013,31 +979,31 @@ pub fn formatTraceparentHeader(allocator: std.mem.Allocator, trace_id: []const u
 pub fn shouldSample(rate: f64) bool {
     if (rate >= 1.0) return true;
     if (rate <= 0.0) return false;
-    const rng_impl: std.Random.IoSource = .{ .io = io() };
-    const rng = rng_impl.interface();
+    const rngImpl: std.Random.IoSource = .{ .io = io() };
+    const rng = rngImpl.interface();
     return rng.float(f64) < rate;
 }
 
 test "generateTraceId" {
     const allocator = std.testing.allocator;
-    const trace_id = try generateTraceId(allocator);
-    defer allocator.free(trace_id);
-    try std.testing.expectEqual(trace_id.len, 32);
+    const traceId = try generateTraceId(allocator);
+    defer allocator.free(traceId);
+    try std.testing.expectEqual(traceId.len, 32);
 }
 
 test "generateSpanId" {
     const allocator = std.testing.allocator;
-    const span_id = try generateSpanId(allocator);
-    defer allocator.free(span_id);
-    try std.testing.expectEqual(span_id.len, 16);
+    const spanId = try generateSpanId(allocator);
+    defer allocator.free(spanId);
+    try std.testing.expectEqual(spanId.len, 16);
 }
 
 test "parseTraceparentHeader valid and sampled" {
     const ctx = parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
     try std.testing.expect(ctx != null);
     try std.testing.expectEqualStrings("00", ctx.?.version);
-    try std.testing.expectEqualStrings("4bf92f3577b34da6a3ce929d0e0e4736", ctx.?.trace_id);
-    try std.testing.expectEqualStrings("00f067aa0ba902b7", ctx.?.span_id);
+    try std.testing.expectEqualStrings("4bf92f3577b34da6a3ce929d0e0e4736", ctx.?.traceId);
+    try std.testing.expectEqualStrings("00f067aa0ba902b7", ctx.?.spanId);
     try std.testing.expect(ctx.?.sampled);
 }
 
@@ -1065,15 +1031,6 @@ test "shouldSample" {
 
 /// Calculates an error rate from atomic counter values.
 /// This is a common pattern used in stats structs across the codebase.
-///
-/// Arguments:
-///     errors: Number of errors (or numerator)
-///     total: Total number of operations (or denominator)
-///
-/// Returns:
-///     Error rate as a float between 0.0 and 1.0
-///
-/// Performance: O(1)
 pub fn calculateErrorRate(errors: u64, total: u64) f64 {
     if (total == 0) return 0.0;
     return @as(f64, @floatFromInt(errors)) / @as(f64, @floatFromInt(total));
@@ -1081,30 +1038,12 @@ pub fn calculateErrorRate(errors: u64, total: u64) f64 {
 
 /// Calculates an average value from a sum and count.
 /// Safely handles division by zero.
-///
-/// Arguments:
-///     sum: Total sum of values
-///     count: Number of values
-///
-/// Returns:
-///     Average as a float
-///
-/// Performance: O(1)
 pub fn calculateAverage(sum: u64, count: u64) f64 {
     if (count == 0) return 0.0;
     return @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(count));
 }
 
 /// Safe floating-point division that returns 0.0 for division by zero.
-///
-/// Arguments:
-///     numerator: The dividend
-///     denominator: The divisor
-///
-/// Returns:
-///     Result of division, or 0.0 if denominator is 0
-///
-/// Performance: O(1)
 pub fn safeFloatDiv(numerator: f64, denominator: f64) f64 {
     if (denominator == 0.0) return 0.0;
     return numerator / denominator;
@@ -1112,30 +1051,13 @@ pub fn safeFloatDiv(numerator: f64, denominator: f64) f64 {
 
 /// Loads a u64 value from an atomic counter, handling different atomic unsigned types.
 /// This is useful for cross-platform compatibility where atomic types vary.
-///
-/// Arguments:
-///     atomic: Pointer to the atomic value
-///
-/// Returns:
-///     The loaded value as u64
-///
-/// Performance: O(1)
 pub fn atomicLoadU64(atomic: anytype) u64 {
     return @as(u64, atomic.load(.monotonic));
 }
 
 /// Calculates bytes per second throughput.
-///
-/// Arguments:
-///     bytes: Total bytes transferred
-///     elapsed_ms: Elapsed time in milliseconds
-///
-/// Returns:
-///     Bytes per second as a float
-///
-/// Performance: O(1)
-pub fn calculateThroughputBytes(bytes: u64, elapsed_ms: i64) f64 {
-    return calculateBytesPerSecond(bytes, elapsed_ms);
+pub fn calculateThroughputBytes(bytes: u64, durationMs: i64) f64 {
+    return calculateBytesPerSecond(bytes, durationMs);
 }
 
 /// Calculates CRC32 checksum of data.
@@ -1145,61 +1067,38 @@ pub fn calculateCRC32(data: []const u8) u32 {
 }
 
 /// Calculates bytes per second throughput from bytes and elapsed milliseconds.
-pub fn calculateBytesPerSecond(bytes: u64, elapsed_ms: i64) f64 {
-    if (elapsed_ms <= 0) return 0.0;
-    const seconds = @as(f64, @floatFromInt(elapsed_ms)) / @as(f64, @floatFromInt(Constants.TimeConstants.ms_per_second));
+pub fn calculateBytesPerSecond(bytes: u64, durationMs: i64) f64 {
+    if (durationMs <= 0) return 0.0;
+    const seconds = @as(f64, @floatFromInt(durationMs)) / @as(f64, @floatFromInt(Constants.TimeConstants.msPerSecond));
     return @as(f64, @floatFromInt(bytes)) / seconds;
 }
 
 /// Calculates records per second throughput.
-///
-/// Arguments:
-///     records: Total records processed
-///     elapsed_ms: Elapsed time in milliseconds
-///
-/// Returns:
-///     Records per second as a float
-///
-/// Performance: O(1)
-pub fn calculateRecordsPerSecond(records: u64, elapsed_ms: i64) f64 {
-    return calculateBytesPerSecond(records, elapsed_ms);
+pub fn calculateRecordsPerSecond(records: u64, durationMs: i64) f64 {
+    return calculateBytesPerSecond(records, durationMs);
 }
 
 /// Creates a nanosecond duration from a start time to now.
-///
-/// Arguments:
-///     start_time: The start timestamp in nanoseconds
-///
-/// Returns:
-///     Duration in nanoseconds as u64
-///
-/// Performance: O(1)
-pub fn durationSinceNs(start_time: i128) u64 {
+pub fn durationSinceNs(startTime: i128) u64 {
     const now = currentNanos();
-    if (now < start_time) return 0;
-    return @intCast(@max(0, now - start_time));
+    if (now < startTime) return 0;
+    return @intCast(@max(0, now - startTime));
 }
 
 /// Formats a nanosecond duration to a human-readable string.
-///
-/// Arguments:
-///     writer: Output writer
-///     ns: Duration in nanoseconds
-///
-/// Performance: O(1)
 pub fn writeDurationNs(writer: anytype, ns: u64) !void {
-    const ns_per_us = Constants.TimeConstants.ns_per_us;
-    const ns_per_ms = Constants.TimeConstants.ns_per_ms;
-    const ns_per_sec = Constants.TimeConstants.ns_per_second;
+    const nsPerUs = Constants.TimeConstants.nsPerUs;
+    const nsPerMs = Constants.TimeConstants.nsPerMs;
+    const nsPerSec = Constants.TimeConstants.nsPerSecond;
 
-    if (ns < ns_per_us) {
+    if (ns < nsPerUs) {
         try writer.print("{d}ns", .{ns});
-    } else if (ns < ns_per_ms) {
-        try writer.print("{d:.2}µs", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(ns_per_us))});
-    } else if (ns < ns_per_sec) {
-        try writer.print("{d:.2}ms", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(ns_per_ms))});
+    } else if (ns < nsPerMs) {
+        try writer.print("{d:.2}µs", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(nsPerUs))});
+    } else if (ns < nsPerSec) {
+        try writer.print("{d:.2}ms", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(nsPerMs))});
     } else {
-        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(ns_per_sec))});
+        try writer.print("{d:.2}s", .{@as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(nsPerSec))});
     }
 }
 
@@ -1226,57 +1125,57 @@ pub fn findRegexPattern(input: []const u8, pattern: []const u8) ?[]const u8 {
     if (pattern.len == 0) return input[0..0];
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {
-        if (matchInternal(input, pattern, i, 0)) |end_idx| {
-            return input[i..end_idx];
+        if (matchInternal(input, pattern, i, 0)) |endIdx| {
+            return input[i..endIdx];
         }
     }
     return null;
 }
 
-fn matchInternal(input: []const u8, pattern: []const u8, i_idx: usize, p_idx: usize) ?usize {
-    if (p_idx == pattern.len) return i_idx;
+fn matchInternal(input: []const u8, pattern: []const u8, iIdx: usize, pIdx: usize) ?usize {
+    if (pIdx == pattern.len) return iIdx;
 
     // Handle special case: * or + at the very beginning or after another quantifier
     // Treat as matching ANY character (.)
-    var p_char: u8 = undefined;
-    var is_escaped = false;
-    var current_p_idx = p_idx;
+    var pChar: u8 = undefined;
+    var isEscaped = false;
+    var currentPIdx = pIdx;
 
-    if (pattern[p_idx] == '\\' and p_idx + 1 < pattern.len) {
-        is_escaped = true;
-        p_char = pattern[p_idx + 1];
-        current_p_idx += 2;
+    if (pattern[pIdx] == '\\' and pIdx + 1 < pattern.len) {
+        isEscaped = true;
+        pChar = pattern[pIdx + 1];
+        currentPIdx += 2;
     } else {
-        p_char = pattern[p_idx];
-        current_p_idx += 1;
+        pChar = pattern[pIdx];
+        currentPIdx += 1;
     }
 
     // Check for quantifiers after the current token
-    if (current_p_idx < pattern.len) {
-        const quant = pattern[current_p_idx];
+    if (currentPIdx < pattern.len) {
+        const quant = pattern[currentPIdx];
         if (quant == '*' or quant == '+' or quant == '?') {
-            const next_pattern_idx = current_p_idx + 1;
+            const nextPatternIdx = currentPIdx + 1;
 
             if (quant == '?') {
                 // Try matching one
-                if (i_idx < input.len and matchesToken(input[i_idx], p_char, is_escaped)) {
-                    if (matchInternal(input, pattern, i_idx + 1, next_pattern_idx)) |res| return res;
+                if (iIdx < input.len and matchesToken(input[iIdx], pChar, isEscaped)) {
+                    if (matchInternal(input, pattern, iIdx + 1, nextPatternIdx)) |res| return res;
                 }
                 // Try matching zero
-                return matchInternal(input, pattern, i_idx, next_pattern_idx);
+                return matchInternal(input, pattern, iIdx, nextPatternIdx);
             }
 
             if (quant == '*') {
                 // Greedy match zero or more
-                var max_matches: usize = 0;
-                while (i_idx + max_matches < input.len and matchesToken(input[i_idx + max_matches], p_char, is_escaped)) {
-                    max_matches += 1;
+                var maxMatches: usize = 0;
+                while (iIdx + maxMatches < input.len and matchesToken(input[iIdx + maxMatches], pChar, isEscaped)) {
+                    maxMatches += 1;
                 }
 
                 while (true) {
-                    if (matchInternal(input, pattern, i_idx + max_matches, next_pattern_idx)) |res| return res;
-                    if (max_matches == 0) break;
-                    max_matches -= 1;
+                    if (matchInternal(input, pattern, iIdx + maxMatches, nextPatternIdx)) |res| return res;
+                    if (maxMatches == 0) break;
+                    maxMatches -= 1;
                 }
                 return null;
             }
@@ -1284,13 +1183,13 @@ fn matchInternal(input: []const u8, pattern: []const u8, i_idx: usize, p_idx: us
             if (quant == '+') {
                 // Greedy match one or more
                 var count: usize = 0;
-                while (i_idx + count < input.len and matchesToken(input[i_idx + count], p_char, is_escaped)) {
+                while (iIdx + count < input.len and matchesToken(input[iIdx + count], pChar, isEscaped)) {
                     count += 1;
                 }
                 if (count == 0) return null;
 
                 while (count > 0) {
-                    if (matchInternal(input, pattern, i_idx + count, next_pattern_idx)) |res| return res;
+                    if (matchInternal(input, pattern, iIdx + count, nextPatternIdx)) |res| return res;
                     count -= 1;
                 }
                 return null;
@@ -1299,27 +1198,27 @@ fn matchInternal(input: []const u8, pattern: []const u8, i_idx: usize, p_idx: us
     }
 
     // Single token match
-    if (i_idx < input.len and matchesToken(input[i_idx], p_char, is_escaped)) {
-        return matchInternal(input, pattern, i_idx + 1, current_p_idx);
+    if (iIdx < input.len and matchesToken(input[iIdx], pChar, isEscaped)) {
+        return matchInternal(input, pattern, iIdx + 1, currentPIdx);
     }
 
     return null;
 }
 
-fn matchesToken(c: u8, p_char: u8, is_escaped: bool) bool {
-    if (is_escaped) {
-        return switch (p_char) {
+fn matchesToken(c: u8, pChar: u8, isEscaped: bool) bool {
+    if (isEscaped) {
+        return switch (pChar) {
             'd' => std.ascii.isDigit(c),
             'w' => std.ascii.isAlphanumeric(c) or c == '_',
             's' => std.ascii.isWhitespace(c),
             'D' => !std.ascii.isDigit(c),
             'W' => !(std.ascii.isAlphanumeric(c) or c == '_'),
             'S' => !std.ascii.isWhitespace(c),
-            else => c == p_char,
+            else => c == pChar,
         };
     }
-    if (p_char == '.') return true;
-    return c == p_char;
+    if (pChar == '.') return true;
+    return c == pChar;
 }
 
 /// Masks a string for redaction purposes.
@@ -1327,52 +1226,52 @@ fn matchesToken(c: u8, p_char: u8, is_escaped: bool) bool {
 pub fn maskString(
     allocator: std.mem.Allocator,
     value: []const u8,
-    mask_char: u8,
-    start_reveal: usize,
-    end_reveal: usize,
-    mode: enum { full, partial_start, partial_end, mask_middle },
+    maskChar: u8,
+    startReveal: usize,
+    endReveal: usize,
+    mode: enum { full, partialStart, partialEnd, maskMiddle },
 ) ![]u8 {
     if (mode == .full) {
         // Create a masked string of the same length as the input.
         const result = try allocator.alloc(u8, value.len);
-        @memset(result, mask_char);
+        @memset(result, maskChar);
         return result;
     }
 
-    if (mode == .partial_start) {
-        if (value.len <= end_reveal) {
-            const result = try allocator.alloc(u8, end_reveal);
-            @memset(result, mask_char);
+    if (mode == .partialStart) {
+        if (value.len <= endReveal) {
+            const result = try allocator.alloc(u8, endReveal);
+            @memset(result, maskChar);
             return result;
         }
         const result = try allocator.alloc(u8, value.len);
-        @memset(result[0 .. value.len - end_reveal], mask_char);
-        @memcpy(result[value.len - end_reveal ..], value[value.len - end_reveal ..]);
+        @memset(result[0 .. value.len - endReveal], maskChar);
+        @memcpy(result[value.len - endReveal ..], value[value.len - endReveal ..]);
         return result;
     }
 
-    if (mode == .partial_end) {
-        if (value.len <= start_reveal) {
-            const result = try allocator.alloc(u8, start_reveal);
-            @memset(result, mask_char);
+    if (mode == .partialEnd) {
+        if (value.len <= startReveal) {
+            const result = try allocator.alloc(u8, startReveal);
+            @memset(result, maskChar);
             return result;
         }
         const result = try allocator.alloc(u8, value.len);
-        @memcpy(result[0..start_reveal], value[0..start_reveal]);
-        @memset(result[start_reveal..], mask_char);
+        @memcpy(result[0..startReveal], value[0..startReveal]);
+        @memset(result[startReveal..], maskChar);
         return result;
     }
 
-    if (mode == .mask_middle) {
-        const reveal = @min(start_reveal, 3);
+    if (mode == .maskMiddle) {
+        const reveal = @min(startReveal, 3);
         if (value.len <= reveal * 2) {
             const result = try allocator.alloc(u8, 3);
-            @memset(result, mask_char);
+            @memset(result, maskChar);
             return result;
         }
         const result = try allocator.alloc(u8, value.len);
         @memcpy(result[0..reveal], value[0..reveal]);
-        @memset(result[reveal .. value.len - reveal], mask_char);
+        @memset(result[reveal .. value.len - reveal], maskChar);
         @memcpy(result[value.len - reveal ..], value[value.len - reveal ..]);
         return result;
     }
@@ -1385,20 +1284,22 @@ pub fn maskString(
 pub fn computeRedactionHash(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
     var hash: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(value, &hash, .{});
-    const hex_val = try bytesToHexLowerAlloc(allocator, hash[0..8]);
-    defer allocator.free(hex_val);
-    return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hex_val});
+    const hexVal = try bytesToHexLowerAlloc(allocator, hash[0..8]);
+    defer allocator.free(hexVal);
+    return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hexVal});
 }
 
 /// Converts bytes to a lowercase hexadecimal string using the provided allocator.
 pub fn bytesToHexLowerAlloc(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
-    const hex_chars = "0123456789abcdef";
-    const result = try allocator.alloc(u8, bytes.len * 2);
+    // std.fmt.bytesToHex needs a comptime length; for runtime slices,
+    // encode manually (hex digits only, no allocation beyond output).
+    const hexDigits = "0123456789abcdef";
+    const out = try allocator.alloc(u8, bytes.len * 2);
     for (bytes, 0..) |b, i| {
-        result[i * 2] = hex_chars[b >> 4];
-        result[i * 2 + 1] = hex_chars[b & 0x0f];
+        out[i * 2] = hexDigits[b >> 4];
+        out[i * 2 + 1] = hexDigits[b & 0x0f];
     }
-    return result;
+    return out;
 }
 
 /// Returns true when a byte is safe in an exported telemetry metric name.
@@ -1422,14 +1323,14 @@ pub fn writeTelemetryMetricName(
     name: []const u8,
     sanitize: bool,
 ) !void {
-    var wrote_any = false;
+    var wroteAny = false;
     if (prefix.len > 0) {
-        try writeTelemetryMetricNamePart(writer, prefix, sanitize, &wrote_any);
+        try writeTelemetryMetricNamePart(writer, prefix, sanitize, &wroteAny);
         if (separator.len > 0 and name.len > 0) {
-            try writeTelemetryMetricNamePart(writer, separator, sanitize, &wrote_any);
+            try writeTelemetryMetricNamePart(writer, separator, sanitize, &wroteAny);
         }
     }
-    try writeTelemetryMetricNamePart(writer, name, sanitize, &wrote_any);
+    try writeTelemetryMetricNamePart(writer, name, sanitize, &wroteAny);
 }
 
 /// Writes a Prometheus label value with the minimal required escaping.
@@ -1449,28 +1350,26 @@ pub fn writePrometheusLabelValue(writer: anytype, value: []const u8) !void {
     try writer.writeByte('"');
 }
 
-fn writeTelemetryMetricNamePart(writer: anytype, part: []const u8, sanitize: bool, wrote_any: *bool) !void {
+fn writeTelemetryMetricNamePart(writer: anytype, part: []const u8, sanitize: bool, wroteAny: *bool) !void {
     for (part) |c| {
         if (!sanitize) {
             try writer.writeByte(c);
-            wrote_any.* = true;
+            wroteAny.* = true;
             continue;
         }
 
-        if (!wrote_any.* and std.ascii.isDigit(c)) {
+        if (!wroteAny.* and std.ascii.isDigit(c)) {
             try writer.writeByte('_');
-            wrote_any.* = true;
+            wroteAny.* = true;
         }
 
         try writer.writeByte(if (isTelemetryMetricNameChar(c)) c else '_');
-        wrote_any.* = true;
+        wroteAny.* = true;
     }
 }
 
 /// Replaces all occurrences of a substring with a replacement string.
 /// Allocates a new string for the result.
-///
-/// Performance: O(N) where N is output length.
 pub fn replaceString(allocator: std.mem.Allocator, input: []const u8, needle: []const u8, replacement: []const u8) ![]u8 {
     const size = std.mem.replacementSize(u8, input, needle, replacement);
     const result = try allocator.alloc(u8, size);
@@ -1479,16 +1378,14 @@ pub fn replaceString(allocator: std.mem.Allocator, input: []const u8, needle: []
 }
 /// Returns the file extension for a given compression algorithm.
 /// Supports both CompressionConfig.CompressionAlgorithm and other similar enums.
-///
-/// Performance: O(1)
 pub fn getCompressionExtension(algo: anytype) []const u8 {
     return switch (algo) {
-        .deflate, .zlib, .raw_deflate, .gzip => Constants.CompressionConstants.ArchivingExtensions.gzip,
+        .deflate, .zlib, .rawDeflate, .gzip => Constants.CompressionConstants.ArchivingExtensions.gzip,
         .zstd => Constants.CompressionConstants.ArchivingExtensions.zstd,
         .lzma => Constants.CompressionConstants.ArchivingExtensions.lzma,
         .lzma2 => Constants.CompressionConstants.ArchivingExtensions.lzma2,
         .xz => Constants.CompressionConstants.ArchivingExtensions.xz,
-        .tar_gz => Constants.CompressionConstants.ArchivingExtensions.tar_gz,
+        .tarGz => Constants.CompressionConstants.ArchivingExtensions.tarGz,
         .zip => Constants.CompressionConstants.ArchivingExtensions.zip,
         .lz4 => Constants.CompressionConstants.ArchivingExtensions.lz4,
         .brotli => Constants.CompressionConstants.ArchivingExtensions.brotli,
@@ -1497,13 +1394,13 @@ pub fn getCompressionExtension(algo: anytype) []const u8 {
 }
 
 test "getCompressionExtension" {
-    const Algo = enum { none, deflate, zlib, raw_deflate, gzip, zstd, lzma, lzma2, xz, tar_gz, zip, lz4, brotli };
+    const Algo = enum { none, deflate, zlib, rawDeflate, gzip, zstd, lzma, lzma2, xz, tarGz, zip, lz4, brotli };
     try std.testing.expectEqualStrings(".gz", getCompressionExtension(Algo.gzip));
     try std.testing.expectEqualStrings(".gz", getCompressionExtension(Algo.deflate));
     try std.testing.expectEqualStrings(".zst", getCompressionExtension(Algo.zstd));
     try std.testing.expectEqualStrings(".lzma", getCompressionExtension(Algo.lzma));
     try std.testing.expectEqualStrings(".xz", getCompressionExtension(Algo.xz));
-    try std.testing.expectEqualStrings(".tar.gz", getCompressionExtension(Algo.tar_gz));
+    try std.testing.expectEqualStrings(".tar.gz", getCompressionExtension(Algo.tarGz));
     try std.testing.expectEqualStrings(".zip", getCompressionExtension(Algo.zip));
     try std.testing.expectEqualStrings(".br", getCompressionExtension(Algo.brotli));
     try std.testing.expectEqualStrings("", getCompressionExtension(Algo.none));
@@ -1529,7 +1426,7 @@ test "safeFloatDiv" {
 
 test "calculateBytesPerSecond" {
     try std.testing.expectEqual(@as(f64, 0.0), calculateBytesPerSecond(100, 0));
-    try std.testing.expectEqual(@as(f64, 100.0), calculateBytesPerSecond(100, @intCast(Constants.TimeConstants.ms_per_second)));
+    try std.testing.expectEqual(@as(f64, 100.0), calculateBytesPerSecond(100, @intCast(Constants.TimeConstants.msPerSecond)));
 }
 
 /// LZMA hash function
@@ -1547,7 +1444,7 @@ test "durationSinceNs" {
     // Simple test - just verify duration is non-negative without sleep
     const duration = durationSinceNs(start);
     // Duration should be very small (microseconds to milliseconds) since we just started
-    try std.testing.expect(duration < Constants.TimeConstants.ns_per_second); // Less than 1 second
+    try std.testing.expect(duration < Constants.TimeConstants.nsPerSecond); // Less than 1 second
 }
 
 test "writeTelemetryMetricName sanitizes and prefixes" {
@@ -1584,9 +1481,9 @@ test "writePrometheusLabelValue escapes unsafe bytes" {
 
 /// Truncates a string to at most `max_len` bytes, appending `suffix` if truncated.
 /// Returns a newly-allocated slice that the caller must free.
-pub fn truncateString(allocator: std.mem.Allocator, s: []const u8, max_len: usize, suffix: []const u8) ![]u8 {
-    if (s.len <= max_len) return allocator.dupe(u8, s);
-    const available = if (max_len > suffix.len) max_len - suffix.len else 0;
+pub fn truncateString(allocator: std.mem.Allocator, s: []const u8, maxLen: usize, suffix: []const u8) ![]u8 {
+    if (s.len <= maxLen) return allocator.dupe(u8, s);
+    const available = if (maxLen > suffix.len) maxLen - suffix.len else 0;
     const result = try allocator.alloc(u8, available + suffix.len);
     @memcpy(result[0..available], s[0..available]);
     @memcpy(result[available..], suffix);
@@ -1594,12 +1491,12 @@ pub fn truncateString(allocator: std.mem.Allocator, s: []const u8, max_len: usiz
 }
 
 /// Truncates a string to at most `max_len` bytes writing to writer, appending `suffix` if truncated.
-pub fn writeTruncated(writer: anytype, s: []const u8, max_len: usize, suffix: []const u8) !void {
-    if (s.len <= max_len) {
+pub fn writeTruncated(writer: anytype, s: []const u8, maxLen: usize, suffix: []const u8) !void {
+    if (s.len <= maxLen) {
         try writer.writeAll(s);
         return;
     }
-    const available = if (max_len > suffix.len) max_len - suffix.len else 0;
+    const available = if (maxLen > suffix.len) maxLen - suffix.len else 0;
     try writer.writeAll(s[0..available]);
     try writer.writeAll(suffix);
 }
@@ -1647,18 +1544,18 @@ pub fn writeSnakeCase(writer: anytype, s: []const u8) !void {
 /// Converts a string to camelCase: first word lowercase, subsequent words capitalized.
 /// Writes to the provided writer.
 pub fn writeCamelCase(writer: anytype, s: []const u8) !void {
-    var capitalize_next = false;
+    var capitalizeNext = false;
     var first = true;
     for (s) |c| {
         if (c == '_' or c == '-' or c == ' ') {
-            capitalize_next = true;
+            capitalizeNext = true;
         } else if (first) {
             try writer.writeByte(std.ascii.toLower(c));
             first = false;
-            capitalize_next = false;
-        } else if (capitalize_next) {
+            capitalizeNext = false;
+        } else if (capitalizeNext) {
             try writer.writeByte(std.ascii.toUpper(c));
-            capitalize_next = false;
+            capitalizeNext = false;
             first = false;
         } else {
             try writer.writeByte(c);
@@ -1685,23 +1582,23 @@ pub fn writeJsonObject(writer: anytype, pairs: []const [2][]const u8) !void {
 
 /// Pads a string to `width` characters on the right with `pad_char`.
 /// If the string is longer than width, it is written as-is.
-pub fn writePaddedRight(writer: anytype, s: []const u8, width: usize, pad_char: u8) !void {
+pub fn writePaddedRight(writer: anytype, s: []const u8, width: usize, padChar: u8) !void {
     try writer.writeAll(s);
     if (s.len < width) {
-        const pad_len = width - s.len;
-        for (0..pad_len) |_| {
-            try writer.writeByte(pad_char);
+        const padLen = width - s.len;
+        for (0..padLen) |_| {
+            try writer.writeByte(padChar);
         }
     }
 }
 
 /// Pads a string to `width` characters on the left with `pad_char`.
 /// If the string is longer than width, it is written as-is.
-pub fn writePaddedLeft(writer: anytype, s: []const u8, width: usize, pad_char: u8) !void {
+pub fn writePaddedLeft(writer: anytype, s: []const u8, width: usize, padChar: u8) !void {
     if (s.len < width) {
-        const pad_len = width - s.len;
-        for (0..pad_len) |_| {
-            try writer.writeByte(pad_char);
+        const padLen = width - s.len;
+        for (0..padLen) |_| {
+            try writer.writeByte(padChar);
         }
     }
     try writer.writeAll(s);
@@ -1711,9 +1608,9 @@ pub fn writePaddedLeft(writer: anytype, s: []const u8, width: usize, pad_char: u
 /// Uses simple structural checks: has @, has dot after @, no spaces.
 pub fn isEmailLike(s: []const u8) bool {
     if (s.len < 5) return false;
-    const at_pos = std.mem.indexOf(u8, s, "@") orelse return false;
-    if (at_pos == 0 or at_pos >= s.len - 2) return false;
-    const domain = s[at_pos + 1 ..];
+    const atPos = std.mem.indexOf(u8, s, "@") orelse return false;
+    if (atPos == 0 or atPos >= s.len - 2) return false;
+    const domain = s[atPos + 1 ..];
     if (std.mem.indexOf(u8, domain, ".") == null) return false;
     for (s) |c| {
         if (std.ascii.isWhitespace(c)) return false;
@@ -1751,11 +1648,11 @@ pub fn isIpv4Like(s: []const u8) bool {
 pub fn isJwtLike(s: []const u8) bool {
     if (s.len < 20) return false;
     if (!std.mem.startsWith(u8, s, "ey")) return false;
-    var dot_count: u8 = 0;
+    var dotCount: u8 = 0;
     for (s) |c| {
-        if (c == '.') dot_count += 1;
+        if (c == '.') dotCount += 1;
     }
-    return dot_count == 2;
+    return dotCount == 2;
 }
 
 /// Validates a credit card number using the Luhn algorithm.
@@ -1814,28 +1711,28 @@ pub fn writeSyslogPriority(writer: anytype, facility: u8, severity: u8) !void {
 /// Maps: fatal->0 (Emergency), critical->2 (Critical), err->3 (Error),
 /// warning->4 (Warning), notice->5 (Notice), info->6 (Informational),
 /// debug/trace->7 (Debug)
-pub fn syslogSeverityFromPriority(level_priority: u8) u8 {
-    return if (level_priority >= 55) 0 // Emergency (fatal)
-    else if (level_priority >= 50) 2 // Critical
-    else if (level_priority >= 40) 3 // Error
-    else if (level_priority >= 30) 4 // Warning
-    else if (level_priority >= 22) 5 // Notice
-    else if (level_priority >= 20) 6 // Informational
+pub fn syslogSeverityFromPriority(levelPriority: u8) u8 {
+    return if (levelPriority >= 55) 0 // Emergency (fatal)
+    else if (levelPriority >= 50) 2 // Critical
+    else if (levelPriority >= 40) 3 // Error
+    else if (levelPriority >= 30) 4 // Warning
+    else if (levelPriority >= 22) 5 // Notice
+    else if (levelPriority >= 20) 6 // Informational
     else 7; // Debug
 }
 
 /// Computes the chained cryptographic hash (SHA-256) of a log record,
 /// linking it to the previous record hash.
-pub fn computeChainHash(last_hash: ?[32]u8, newly_written: []const u8) [32]u8 {
+pub fn computeChainHash(lastHash: ?[32]u8, newlyWritten: []const u8) [32]u8 {
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-    if (last_hash) |lh| {
+    if (lastHash) |lh| {
         hasher.update(&lh);
     } else {
         // Use a default seed/IV for the first hash in the chain
-        const iv = [_]u8{0} ** 32;
+        const iv: [32]u8 = @splat(0);
         hasher.update(&iv);
     }
-    hasher.update(newly_written);
+    hasher.update(newlyWritten);
     var out: [32]u8 = undefined;
     hasher.final(&out);
     return out;

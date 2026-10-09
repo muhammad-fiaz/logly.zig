@@ -13,23 +13,23 @@ Sinks are destinations where log messages are written. Logly.zig supports multip
 
 ## Console Sink
 
-A console sink is automatically added when you initialize the logger, unless `auto_sink` is disabled in the config.
+A console sink is automatically added when you initialize the logger, unless `autoSink` is disabled in the config.
 
 ```zig
 // Add a console sink manually (both methods are equivalent)
-_ = try logger.addSink(.{});
-_ = try logger.add(.{});  // Short alias
+ _ = try logger.addSink(.{});
+ _ = try logger.add(.{});  // Short alias
 ```
 
 > [!NOTE]
-> When you manually add a console sink via `logger.add(.{})`, the `auto_sink` flag is automatically disabled to prevent duplicate console output. The automatic console sink created during `Logger.init()` will not be added if you explicitly add one first.
+> When you manually add a console sink via `logger.add(.{})`, the `autoSink` flag is automatically disabled to prevent duplicate console output. The automatic console sink created during `Logger.init()` will not be added if you explicitly add one first.
 
 ## File Sink
 
 File sinks write logs to a file. You can configure rotation, retention, and specific log levels for each sink.
 
 ```zig
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.log",
 });
 ```
@@ -45,17 +45,17 @@ Supported placeholders:
 
 ```zig
 // Create a log file in a date-stamped directory
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/{date}/app.log", // e.g., logs/2025-12-08/app.log
 });
 
 // Create a unique log file with full timestamp
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/session-{YYYY}-{MM}-{DD}_{HH}-{mm}-{ss}.log",
 });
 
 // Use custom separators
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/{YYYY}/{MM}/{DD}/app.log",
 });
 ```
@@ -70,14 +70,14 @@ TCP sinks provide reliable, connection-oriented logging. If the connection is lo
 
 ```zig
 // TCP Sink with standard text format
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "tcp://localhost:8080",
 });
 
 // TCP Sink with JSON format (recommended for aggregators)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "tcp://localhost:8080",
-    .json = true,
+    .format = .json,
 });
 ```
 
@@ -87,9 +87,9 @@ UDP sinks provide "fire-and-forget" logging. They are faster and have less overh
 
 ```zig
 // UDP Sink
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "udp://localhost:9090",
-    .json = true,
+    .format = .json,
 });
 ```
 
@@ -98,23 +98,23 @@ _ = try logger.addSink(.{
 You can enable compression for network sinks to reduce bandwidth usage. This uses the DEFLATE algorithm to compress log batches before sending.
 
 ```zig
-var sink_config = logly.SinkConfig.network("tcp://localhost:8080");
-sink_config.compression = .{
+var sinkConfig = logly.SinkConfig.network("tcp://localhost:8080");
+sinkConfig.compression = .{
     .enabled = true,
     .algorithm = .deflate,
     .level = .best_compression,
 };
-_ = try logger.addSink(sink_config);
+ _ = try logger.addSink(sinkConfig);
 ```
 
 ### Distributed Context
 
 Network sinks are ideal for distributed environments. When used with `DistributedConfig`, logs sent over the network automatically include:
-- `service_name`
+- `serviceName`
 - `region`
 - `environment`
-- `trace_id`
-- `span_id`
+- `traceId`
+- `spanId`
 
 This makes integration with aggregators (ELK, Splunk, Datadog) seamless as correlation IDs are already present in the JSON payload.
 
@@ -122,23 +122,23 @@ This makes integration with aggregators (ELK, Splunk, Datadog) seamless as corre
 
 You can enable logging to the system event log (Windows Event Log or Syslog).
 
-On Windows, when `event_log` is enabled the sink will send entries to the Windows Event Viewer using the native `ReportEvent` API. Log level → event type mapping:
+On Windows, when `eventLog` is enabled the sink will send entries to the Windows Event Viewer using the native `ReportEvent` API. Log level → event type mapping:
 
-- Error / Critical / Fail / Fatal → `EVENTLOG_ERROR_TYPE` (`Constants.EventLogConstants.error_type`)
-- Warning → `EVENTLOG_WARNING_TYPE` (`Constants.EventLogConstants.warning_type`)
-- Notice / Info / Success → `EVENTLOG_INFORMATION_TYPE` (`Constants.EventLogConstants.information_type`)
+- Error / Critical / Fail / Fatal → `eventlogErrorType` (`Constants.EventLogConstants.errorType`)
+- Warning → `eventlogWarningType` (`Constants.EventLogConstants.warningType`)
+- Notice / Info / Success → `eventlogInformationType` (`Constants.EventLogConstants.informationType`)
 
 These values are centralized in `Constants.EventLogConstants` and are reused by the sink implementation for consistency.
 
 Example (enable event log):
 ```zig
-_ = try logger.addSink(.{
-    .event_log = true,
+ _ = try logger.addSink(.{
+    .eventLog = true,
     .level = .err, // Typically used for critical errors
 });
 ```
 
-On POSIX systems `event_log` maps to Syslog using the standard facility and severity mappings. See the Constants API (`EventLogConstants`, `SyslogConstants`) for canonical values and mappings.
+On POSIX systems `eventLog` maps to Syslog using the standard facility and severity mappings. See the Constants API (`EventLogConstants`, `SyslogConstants`) for canonical values and mappings.
 
 ## Multiple Sinks
 
@@ -146,17 +146,17 @@ You can add as many sinks as you need.
 
 ```zig
 // Console
-_ = try logger.add(.{});
+ _ = try logger.add(.{});
 
 // Application logs
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/app.log",
     .rotation = "daily",
     .retention = 7,
 });
 
 // Error-only file
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/errors.log",
     .level = .err, // Only ERROR and above
 });
@@ -175,7 +175,7 @@ const count = logger.count();  // or logger.getSinkCount()
 logger.remove(sink_id);  // or logger.removeSink(sink_id)
 
 // Remove all sinks
-_ = logger.clear();  // or logger.removeAll() or logger.removeAllSinks()
+ _ = logger.clear();  // or logger.removeAll() or logger.removeAllSinks()
 ```
 
 ## Sink Configuration
@@ -185,24 +185,24 @@ _ = logger.clear();  // or logger.removeAll() or logger.removeAllSinks()
 | `path` | `?[]const u8` | `null` | Path to the log file (null for console) |
 | `name` | `?[]const u8` | `null` | Sink identifier for metrics/debugging |
 | `rotation` | `?[]const u8` | `null` | Rotation interval ("minutely", "hourly", "daily", "weekly", "monthly", "yearly") |
-| `size_limit` | `?u64` | `null` | Max file size in bytes for rotation |
-| `size_limit_str` | `?[]const u8` | `null` | Max file size as string (e.g. "10MB", "1GB") |
+| `sizeLimit` | `?u64` | `null` | Max file size in bytes for rotation |
+| `sizeLimitStr` | `?[]const u8` | `null` | Max file size as string (e.g. "10MB", "1GB") |
 | `retention` | `?usize` | `null` | Number of rotated files to keep |
 | `level` | `?Level` | `null` | Minimum log level for this sink (overrides global) |
-| `max_level` | `?Level` | `null` | Maximum log level (creates level range filter) |
-| `async_write` | `bool` | `true` | Enable async writing (buffered) |
-| `buffer_size` | `usize` | `8192` | Buffer size for async writing |
+| `maxLevel` | `?Level` | `null` | Maximum log level (creates level range filter) |
+| `asyncWrite` | `bool` | `true` | Enable async writing (buffered) |
+| `bufferSize` | `usize` | `8192` | Buffer size for async writing |
 | `json` | `bool` | `false` | Force JSON output for this sink |
-| `pretty_json` | `bool` | `false` | Pretty print JSON output |
+| `prettyJson` | `bool` | `false` | Pretty print JSON output |
 | `color` | `?bool` | `null` | Enable/disable colors (null = auto-detect) |
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
-| `include_timestamp` | `bool` | `true` | Include timestamp in output |
-| `include_level` | `bool` | `true` | Include log level in output |
-| `include_source` | `bool` | `false` | Include source location |
-| `include_trace_id` | `bool` | `false` | Include trace IDs (distributed tracing) |
-| `event_log` | `bool` | `false` | Enable system event log (Windows Event Log/Syslog) |
+| `includeTimestamp` | `bool` | `true` | Include timestamp in output |
+| `includeLevel` | `bool` | `true` | Include log level in output |
+| `includeSource` | `bool` | `false` | Include source location |
+| `includeTraceId` | `bool` | `false` | Include trace IDs (distributed tracing) |
+| `eventLog` | `bool` | `false` | Enable system event log (Windows Event Log/Syslog) |
 | `compression` | `?CompressionConfig` | `null` | Network compression settings |
-| `write_mode` | `WriteMode` | `.append` | File write mode: `.append`, `.overwrite`, `.append_rotate` |
+| `writeMode` | `WriteMode` | `.append` | File write mode: `.append`, `.overwrite`, `.appendRotate` |
 
 ## Color Control
 
@@ -212,12 +212,12 @@ Each sink can have its own color setting. Colors apply to the **entire log line*
 
 ```zig
 // Console with colors (entire line colored)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .color = true,
 });
 
 // File without colors (recommended for files)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .color = false,
 });
@@ -228,7 +228,7 @@ _ = try logger.addSink(.{
 On Windows, enable ANSI color support at application startup:
 
 ```zig
-_ = logly.Terminal.enableAnsiColors(); // No-op on Linux/macOS
+ _ = logly.Terminal.enableAnsiColors(); // No-op on Linux/macOS
 ```
 
 ### Auto-Detection
@@ -241,7 +241,7 @@ When `color` is `null` (default):
 
 ```zig
 var config = logly.Config.default();
-config.global_color_display = false; // Disable colors globally
+config.globalColorDisplay = false; // Disable colors globally
 logger.configure(config);
 ```
 
@@ -278,14 +278,14 @@ Create sinks that only accept a specific range of levels:
 
 ```zig
 // Only INFO and SUCCESS (no warnings/errors)
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/info.log",
     .level = .info,
-    .max_level = .success,
+    .maxLevel = .success,
 });
 
 // Only ERROR, FAIL, CRITICAL
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/errors.log",
     .level = .err,
 });
@@ -297,17 +297,17 @@ Configure JSON output per sink:
 
 ```zig
 // Pretty JSON for development
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/dev.json",
-    .json = true,
-    .pretty_json = true,
+    .format = .json,
+    .prettyJson = true,
 });
 
 // Compact JSON for production
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/prod.json",
-    .json = true,
-    .include_trace_id = true,
+    .format = .json,
+    .includeTraceId = true,
 });
 ```
 
@@ -316,12 +316,12 @@ _ = try logger.addSink(.{
 For high-volume logging:
 
 ```zig
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/high-volume.log",
-    .async_write = true,
-    .buffer_size = 65536, // 64KB buffer
+    .asyncWrite = true,
+    .bufferSize = 65536, // 64KB buffer
     .rotation = "hourly",
-    .size_limit_str = "500MB",
+    .sizeLimitStr = "500MB",
     .retention = 24,
 });
 
@@ -332,7 +332,7 @@ To achieve extreme microsecond-level write performance, you can enable virtual m
 ```zig
 var mmap_sink = logly.SinkConfig.file("logs/perf.log");
 mmap_sink.mmap = true; // [!code hl] // Enable zero-copy mmap writes!
-_ = try logger.addSink(mmap_sink);
+ _ = try logger.addSink(mmap_sink);
 ```
 
 ## Cryptographic Tamper-Evident Chaining (v0.2.0)
@@ -341,8 +341,8 @@ For high-security audit log systems (PCI-DSS/GDPR compliance), you can protect f
 
 ```zig
 var secure_sink = logly.SinkConfig.file("logs/secure_audit.log");
-secure_sink.tamper_evident = true; // [!code hl] // Enable cryptographic chain!
-_ = try logger.addSink(secure_sink);
+secure_sink.tamperEvident = true; // [!code hl] // Enable cryptographic chain!
+ _ = try logger.addSink(secure_sink);
 ```
 
 ## See Also

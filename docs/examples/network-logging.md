@@ -40,10 +40,10 @@ pub fn main() !void {
     // 1. TCP Sink with Standard Format & Colors
     // Sends plain text logs to a TCP server.
     // We force enable colors so they show up on the remote viewer.
-    var tcp_sink = logly.SinkConfig.network("tcp://127.0.0.1:9000");
-    tcp_sink.name = "tcp-standard";
-    tcp_sink.color = true; // Force ANSI colors
-    const tcp_idx = try logger.addSink(tcp_sink);
+    var tcpSink = logly.SinkConfig.network("tcp://127.0.0.1:9000");
+    tcpSink.name = "tcp-standard";
+    tcpSink.color = true; // Force ANSI colors
+    const tcp_idx = try logger.addSink(tcpSink);
 
     // Apply a custom theme to the TCP sink
     var theme = logly.Formatter.Theme{};
@@ -55,10 +55,10 @@ pub fn main() !void {
     // 2. UDP Sink with JSON Format
     // Sends structured JSON logs to a UDP server.
     // Ideal for log aggregators like Logstash, Fluentd, or Graylog.
-    var udp_json_sink = logly.SinkConfig.network("udp://127.0.0.1:9001");
-    udp_json_sink.name = "udp-json";
-    udp_json_sink.json = true;
-    _ = try logger.addSink(udp_json_sink);
+    var udpJsonSink = logly.SinkConfig.network("udp://127.0.0.1:9001");
+    udpJsonSink.name = "udp-json";
+    udpJsonSink.format = .json;
+     _ = try logger.addSink(udpJsonSink);
 
     // 3. Register Custom Levels
     try logger.addCustomLevel("AUDIT", 35, "34"); // Blue

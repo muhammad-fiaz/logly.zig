@@ -26,7 +26,7 @@ Logly's telemetry module integrates with:
 - **utils.zig**: ID generation, time utilities, sampling, JSON escaping
 - **async.zig**: Non-blocking span export with ring buffer
 - **network.zig**: TCP/UDP/Syslog transport for remote exporters
-- **thread_pool.zig**: Parallel span processing for high throughput
+- **threadPool.zig**: Parallel span processing for high throughput
 
 ## Key Features
 
@@ -39,8 +39,8 @@ Logly's telemetry module integrates with:
 | **Metric Name Controls** | Prefix and sanitize exported metric names |
 | **Export Modes** | Sync, async buffer, batch, and network export |
 | **Custom Providers** | Build your own exporter with callback interface |
-| **Event Batching** | Buffer and flush events periodically via `batch_size` and `flush_interval_ms` |
-| **Sampling Strategies** | always_on, always_off, trace_id_ratio, parent_based |
+| **Event Batching** | Buffer and flush events periodically via `batchSize` and `flushIntervalMs` |
+| **Sampling Strategies** | alwaysOn, alwaysOff, traceIdRatio, parentBased |
 | **Thread Safety** | Mutex-protected concurrent span/metric access |
 
 ## Getting Started
@@ -58,8 +58,8 @@ pub fn main() !void {
 
     // Configure telemetry with Jaeger
     var config = logly.TelemetryConfig.jaeger();
-    config.service_name = "my-service";
-    config.service_version = "1.0.0";
+    config.serviceName = "my-service";
+    config.serviceVersion = "1.0.0";
     config.environment = "production";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -105,8 +105,8 @@ metric names while keeping the recorded name readable in application code.
 var config = logly.TelemetryConfig.development()
     .withPrometheusMetrics("telemetry_metrics.prom")
     .withMetricPrefix("api.v1");
-config.metric_prefix_separator = ":";
-config.sanitize_metric_names = true;
+config.metricPrefixSeparator = ":";
+config.sanitizeMetricNames = true;
 
 var telemetry = try logly.Telemetry.init(allocator, config);
 defer telemetry.deinit();
@@ -116,7 +116,7 @@ try telemetry.exportMetrics();
 // Prometheus output: api_v1:http_requests_total 42
 ```
 
-Set `sanitize_metric_names = false` or call
+Set `sanitizeMetricNames = false` or call
 `withMetricNameSanitization(false)` for custom exporters that require raw names.
 
 ## Supported Providers
@@ -127,14 +127,14 @@ Set `sanitize_metric_names = false` or call
 |----------|------------------|------------------|
 | **Jaeger** | `TelemetryConfig.jaeger()` | `http://localhost:6831` |
 | **Zipkin** | `TelemetryConfig.zipkin()` | `http://localhost:9411/api/v2/spans` |
-| **Datadog** | `TelemetryConfig.datadog(api_key)` | `http://localhost:8126/v0.3/traces` |
+| **Datadog** | `TelemetryConfig.datadog(apiKey)` | `http://localhost:8126/v0.3/traces` |
 | **Google Cloud** | `TelemetryConfig.googleCloud(project, key)` | `https://cloudtrace.googleapis.com/v2` |
 | **Google Analytics 4** | `TelemetryConfig.googleAnalytics(id, secret)` | `https://www.google-analytics.com/mp/collect` |
 | **Google Tag Manager** | `TelemetryConfig.googleTagManager(url, key)` | Custom GTM endpoint |
 | **AWS X-Ray** | `TelemetryConfig.awsXray(region)` | `http://localhost:2000` |
-| **Azure** | `TelemetryConfig.azure(connection_string)` | Application Insights endpoint |
+| **Azure** | `TelemetryConfig.azure(connectionString)` | Application Insights endpoint |
 | **OTEL Collector** | `TelemetryConfig.otelCollector(endpoint)` | Custom endpoint |
-| **Honeycomb** | `TelemetryConfig.honeycomb(api_key)` | `https://api.honeycomb.io/1/batch/dataset` |
+| **Honeycomb** | `TelemetryConfig.honeycomb(apiKey)` | `https://api.honeycomb.io/1/batch/dataset` |
 | **File** | `TelemetryConfig.file(path)` | Local JSONL file |
 
 ### Custom Provider
@@ -153,9 +153,9 @@ fn myCustomExporter() anyerror!void {
 }
 
 var config = logly.TelemetryConfig.custom(&myCustomExporter);
-config.service_name = "custom-service";
-config.batch_size = 100;
-config.batch_timeout_ms = 5000;
+config.serviceName = "custom-service";
+config.batchSize = 100;
+config.batchTimeoutMs = 5000;
 ```
 
 ## W3C Standards
@@ -251,12 +251,12 @@ try telemetry.exportMetrics();
 
 ```zig
 var config = logly.TelemetryConfig.development();
-config.metric_format = .prometheus; // or .json
-config.metrics_file_path = "telemetry_metrics.prom";
+config.metricFormat = .prometheus; // or .json
+config.metricsFilePath = "telemetry_metrics.prom";
 
 // Event batching
-config.batch_size = 50;              // Export after 50 events
-config.flush_interval_ms = 5000;     // Or export every 5 seconds
+config.batchSize = 50;              // Export after 50 events
+config.flushIntervalMs = 5000;     // Or export every 5 seconds
 ```
 
 ### Metric Kinds
@@ -274,17 +274,17 @@ Control which traces are recorded:
 
 ```zig
 // Always sample (development)
-config.sampling_strategy = .always_on;
+config.samplingStrategy = .alwaysOn;
 
 // Never sample (disabled)
-config.sampling_strategy = .always_off;
+config.samplingStrategy = .alwaysOff;
 
 // Sample percentage (production)
-config.sampling_strategy = .trace_id_ratio;
-config.sampling_rate = 0.1; // 10% of traces
+config.samplingStrategy = .traceIdRatio;
+config.samplingRate = 0.1; // 10% of traces
 
 // Follow parent's decision (distributed)
-config.sampling_strategy = .parent_based;
+config.samplingStrategy = .parentBased;
 ```
 
 ## Callbacks
@@ -296,26 +296,26 @@ var config = logly.TelemetryConfig.file("spans.jsonl");
 
 // Output path is relative to the current working directory.
 
-config.on_span_start = struct {
-    fn callback(span_id: []const u8, name: []const u8) void {
+config.onSpanStart = struct {
+    fn callback(spanId: []const u8, name: []const u8) void {
         std.debug.print("Span started: {s}\n", .{name});
     }
 }.callback;
 
-config.on_span_end = struct {
-    fn callback(span_id: []const u8, duration_ns: u64) void {
-        const ms = @as(f64, @floatFromInt(duration_ns)) / 1_000_000.0;
+config.onSpanEnd = struct {
+    fn callback(spanId: []const u8, durationNs: u64) void {
+        const ms = @as(f64, @floatFromInt(durationNs)) / 1_000_000.0;
         std.debug.print("Span ended: {d:.2}ms\n", .{ms});
     }
 }.callback;
 
-config.on_metric_recorded = struct {
+config.onMetricRecorded = struct {
     fn callback(name: []const u8, value: f64) void {
         std.debug.print("Metric: {s} = {d}\n", .{name, value});
     }
 }.callback;
 
-config.on_error = struct {
+config.onError = struct {
     fn callback(msg: []const u8) void {
         std.debug.print("Error: {s}\n", .{msg});
     }
@@ -366,8 +366,8 @@ const resource = telemetry.getResource();
 
 // Update at runtime
 telemetry.setResource(.{
-    .service_name = "updated-service",
-    .service_version = "2.0.0",
+    .serviceName = "updated-service",
+    .serviceVersion = "2.0.0",
     .environment = "staging",
     .datacenter = "us-west-2",
 });
@@ -399,8 +399,8 @@ defer span.deinit();
 
 ## Best Practices
 
-1. **Always set service identity**: Configure `service_name`, `service_version`, and `environment`
-2. **Use sampling in production**: Set `sampling_rate` to 0.01-0.1 for high-throughput services
+1. **Always set service identity**: Configure `serviceName`, `serviceVersion`, and `environment`
+2. **Use sampling in production**: Set `samplingRate` to 0.01-0.1 for high-throughput services
 3. **Propagate context**: Use W3C traceparent/baggage headers for cross-service tracing
 4. **Handle span cleanup**: Always use `defer span.deinit()` to avoid memory leaks
 5. **Export regularly**: Call `exportSpans()` periodically or at request boundaries

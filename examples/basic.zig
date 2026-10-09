@@ -11,16 +11,16 @@ pub fn main() !void {
     _ = logly.Terminal.enableAnsiColors();
 
     // Create logger (auto-sink enabled by default)
-    const config_init = logly.Config.default();
-    const logger = try logly.Logger.initWithConfig(allocator, config_init);
+    const configInit = logly.Config.default();
+    const logger = try logly.Logger.initWithConfig(allocator, configInit);
     defer logger.deinit();
 
     // Configure to show filename and line number (clickable in terminals)
     var config = logly.Config.default();
-    config.show_filename = true;
-    config.show_lineno = true;
-    config.capture_stack_trace = true; // Enable stack trace capture
-    config.symbolize_stack_trace = true; // Enable symbolization
+    config.showFilename = true;
+    config.showLineno = true;
+    config.captureStackTrace = true; // Enable stack trace capture
+    config.symbolizeStackTrace = true; // Enable symbolization
     logger.configure(config);
 
     // Log at different levels - entire line is colored!
@@ -36,9 +36,14 @@ pub fn main() !void {
     try logger.notice("Notice Message", @src());
     try logger.fatal("Fatal error encountered!", @src());
 
+    // Flush console sink before switching output streams so logger
+    // output (stdout) stays ordered relative to section headers (stderr).
+    try logger.flush();
+
     // Without @src(), file/line won't be displayed
-    std.debug.print("\n--- Logs without @src() (no file:line) ---\n", .{});
+    std.debug.print("\nLogs without @src() (no file:line)\n", .{});
     try logger.info("This log has no source location", null);
+    try logger.flush();
 
     std.debug.print("\nBasic logging example completed!\n", .{});
 }

@@ -1,29 +1,7 @@
-//! Log Filter Module
+//! Log record filtering.
 //!
-//! Provides conditional processing of log records based on configurable rules.
-//! Filters can be combined to create complex filtering logic.
-//!
-//! Filter Types:
-//! - Level-based: Minimum/maximum level, level ranges
-//! - Content-based: Message contains/matches patterns
-//! - Module-based: Allow/deny specific modules
-//! - Custom: User-defined predicate functions
-//!
-//! Combinators:
-//! - AND: All rules must match
-//! - OR: Any rule must match
-//! - NOT: Invert rule result
-//!
-//! Use Cases:
-//! - Development: Show all logs
-//! - Production: Errors and warnings only
-//! - Debugging: Focus on specific modules
-//! - Security: Filter sensitive information
-//!
-//! Performance:
-//! - O(n) where n is number of rules
-//! - Short-circuit evaluation for OR/AND
-//! - Cached regex patterns
+//! Decides whether a record is logged based on level, content, module,
+//! and custom rules. Combine rules with AND/OR/NOT logic.
 
 const std = @import("std");
 const Config = @import("config.zig").Config;
@@ -32,89 +10,90 @@ const Record = @import("record.zig").Record;
 const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
+const Color = @import("color.zig");
 
 /// Rate bucket for tracking message rates per module.
 pub const RateBucket = struct {
     tokens: f64,
-    last_refill_ms: i64,
+    lastRefillMs: i64,
 };
 
 /// Filter for conditionally processing log records.
 pub const Filter = struct {
     /// Filter statistics for monitoring and diagnostics.
     pub const FilterStats = struct {
-        total_records_evaluated: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        records_allowed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        records_denied: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        rules_added: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        evaluation_errors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        totalRecordsEvaluated: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        recordsAllowed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        recordsDenied: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        rulesAdded: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        evaluationErrors: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         /// Calculate allow rate (0.0 - 1.0)
         pub fn allowRate(self: *const FilterStats) f64 {
             return Utils.calculateRate(
-                Utils.atomicLoadU64(&self.records_allowed),
-                Utils.atomicLoadU64(&self.total_records_evaluated),
+                Utils.atomicLoadU64(&self.recordsAllowed),
+                Utils.atomicLoadU64(&self.totalRecordsEvaluated),
             );
         }
 
         /// Calculate deny rate (0.0 - 1.0)
         pub fn denyRate(self: *const FilterStats) f64 {
             return Utils.calculateRate(
-                Utils.atomicLoadU64(&self.records_denied),
-                Utils.atomicLoadU64(&self.total_records_evaluated),
+                Utils.atomicLoadU64(&self.recordsDenied),
+                Utils.atomicLoadU64(&self.totalRecordsEvaluated),
             );
         }
 
         /// Calculate error rate (0.0 - 1.0)
         pub fn errorRate(self: *const FilterStats) f64 {
             return Utils.calculateErrorRate(
-                Utils.atomicLoadU64(&self.evaluation_errors),
-                Utils.atomicLoadU64(&self.total_records_evaluated),
+                Utils.atomicLoadU64(&self.evaluationErrors),
+                Utils.atomicLoadU64(&self.totalRecordsEvaluated),
             );
         }
 
         /// Returns true if any records have been denied.
         pub fn hasDenied(self: *const FilterStats) bool {
-            return self.records_denied.load(.monotonic) > 0;
+            return self.recordsDenied.load(.monotonic) > 0;
         }
 
         /// Returns true if any evaluation errors occurred.
         pub fn hasEvaluationErrors(self: *const FilterStats) bool {
-            return self.evaluation_errors.load(.monotonic) > 0;
+            return self.evaluationErrors.load(.monotonic) > 0;
         }
 
         /// Returns total records evaluated as u64.
         pub fn getTotal(self: *const FilterStats) u64 {
-            return Utils.atomicLoadU64(&self.total_records_evaluated);
+            return Utils.atomicLoadU64(&self.totalRecordsEvaluated);
         }
 
         /// Returns allowed records count as u64.
         pub fn getAllowed(self: *const FilterStats) u64 {
-            return Utils.atomicLoadU64(&self.records_allowed);
+            return Utils.atomicLoadU64(&self.recordsAllowed);
         }
 
         /// Returns denied records count as u64.
         pub fn getDenied(self: *const FilterStats) u64 {
-            return Utils.atomicLoadU64(&self.records_denied);
+            return Utils.atomicLoadU64(&self.recordsDenied);
         }
 
         /// Returns rules added count as u64.
         pub fn getRulesAdded(self: *const FilterStats) u64 {
-            return Utils.atomicLoadU64(&self.rules_added);
+            return Utils.atomicLoadU64(&self.rulesAdded);
         }
 
         /// Calculate throughput records per second.
-        pub fn throughput(self: *const FilterStats, elapsed_ms: i64) f64 {
-            return Utils.calculateRecordsPerSecond(self.getTotal(), elapsed_ms);
+        pub fn throughput(self: *const FilterStats, elapsedMs: i64) f64 {
+            return Utils.calculateRecordsPerSecond(self.getTotal(), elapsedMs);
         }
 
         /// Reset all statistics to zero.
         pub fn reset(self: *FilterStats) void {
-            self.total_records_evaluated.store(0, .monotonic);
-            self.records_allowed.store(0, .monotonic);
-            self.records_denied.store(0, .monotonic);
-            self.rules_added.store(0, .monotonic);
-            self.evaluation_errors.store(0, .monotonic);
+            self.totalRecordsEvaluated.store(0, .monotonic);
+            self.recordsAllowed.store(0, .monotonic);
+            self.recordsDenied.store(0, .monotonic);
+            self.rulesAdded.store(0, .monotonic);
+            self.evaluationErrors.store(0, .monotonic);
         }
     };
 
@@ -127,34 +106,31 @@ pub const Filter = struct {
         /// Record is allowed only if NO rules match (NOR).
         none,
         /// Invert the result of 'all' (NAND).
-        not_all,
+        notAll,
     };
 
     allocator: std.mem.Allocator,
+    io: std.Io = Utils.defaultIo(),
     rules: std.ArrayList(FilterRule),
     stats: FilterStats = .{},
     mutex: std.Io.Mutex = std.Io.Mutex.init,
     mode: Mode = .all,
     enabled: bool = true,
-    rate_buckets: std.StringHashMap(RateBucket) = undefined,
+    rateBuckets: std.StringHashMap(RateBucket) = undefined,
     rng: ?std.Random.DefaultPrng = null,
-    every_n_counter: u64 = 0,
+    everyNCounter: u64 = 0,
 
     /// Callback invoked when a record passes filtering.
-    /// Parameters: (record: *const Record, rules_checked: u32)
-    on_record_allowed: ?*const fn (*const Record, u32) void = null,
+    onRecordAllowed: ?*const fn (*const Record, u32) void = null,
 
     /// Callback invoked when a record is denied by filter.
-    /// Parameters: (record: *const Record, blocking_rule_index: u32)
-    on_record_denied: ?*const fn (*const Record, u32) void = null,
+    onRecordDenied: ?*const fn (*const Record, u32) void = null,
 
     /// Callback invoked when filter is created.
-    /// Parameters: (stats: *const FilterStats)
-    on_filter_created: ?*const fn (*const FilterStats) void = null,
+    onFilterCreated: ?*const fn (*const FilterStats) void = null,
 
     /// Callback invoked when a rule is added.
-    /// Parameters: (rule_type: u32, total_rules: u32)
-    on_rule_added: ?*const fn (u32, u32) void = null,
+    onRuleAdded: ?*const fn (u32, u32) void = null,
 
     /// A single filter rule that determines whether a record should pass.
     ///
@@ -162,7 +138,7 @@ pub const Filter = struct {
     /// based on level, module, message content, or custom criteria.
     pub const FilterRule = struct {
         /// The type of rule to apply (level, module, message, etc.).
-        rule_type: RuleType,
+        ruleType: RuleType,
         /// Pattern to match against (for module/message rules).
         pattern: ?[]const u8 = null,
         /// Log level for level-based rules.
@@ -170,73 +146,73 @@ pub const Filter = struct {
         /// Action to take when rule matches (allow or deny).
         action: Action = .allow,
         /// Specific key for context-based filtering.
-        context_key: ?[]const u8 = null,
+        contextKey: ?[]const u8 = null,
         /// User-defined predicate function for complex filtering.
         predicate: ?*const fn (*const Record) bool = null,
         /// Time-window start hour (0-23).
-        time_start: ?u8 = null,
+        timeStart: ?u8 = null,
         /// Time-window end hour (0-23).
-        time_end: ?u8 = null,
+        timeEnd: ?u8 = null,
         /// Rate limit (messages per second).
-        rate_limit: ?u32 = null,
+        rateLimit: ?u32 = null,
         /// Sampling probability.
         probability: ?f64 = null,
         /// Sampling every N.
-        every_n: ?u32 = null,
+        everyN: ?u32 = null,
 
         /// Types of filter rules available.
         pub const RuleType = enum {
             /// Only allow records at or above minimum level.
-            level_min,
+            levelMin,
             /// Only allow records at or below maximum level.
-            level_max,
+            levelMax,
             /// Only allow records at exact level.
-            level_exact,
+            levelExact,
             /// Match records from specific module name.
-            module_match,
+            moduleMatch,
             /// Match records from modules starting with prefix.
-            module_prefix,
+            modulePrefix,
             /// Match records using regex for module name.
-            module_regex,
+            moduleRegex,
             /// Match records containing specified text.
-            message_contains,
+            messageContains,
             /// Match records using regex pattern.
-            message_regex,
+            messageRegex,
             /// Match records by source file name.
-            source_file_match,
+            sourceFileMatch,
             /// Match records by source file regex.
-            source_file_regex,
+            sourceFileRegex,
             /// Match records by function name.
-            function_match,
+            functionMatch,
             /// Match records by function regex.
-            function_regex,
+            functionRegex,
             /// Match records by trace ID.
-            trace_id_match,
+            traceIdMatch,
             /// Match records by span ID.
-            span_id_match,
+            spanIdMatch,
             /// Match records having specific context key.
-            context_has_key,
+            contextHasKey,
             /// Match records with specific context value.
-            context_value_match,
+            contextValueMatch,
             /// Match records with nested context path (e.g. "user.id").
-            context_path_match,
+            contextPathMatch,
 
             /// Match records by thread ID.
-            thread_id_match,
+            threadIdMatch,
             /// Match records that contain error information.
-            has_error,
+            hasError,
             /// Custom predicate-based filtering.
             custom,
             /// Time-window filter.
-            time_window,
+            timeWindow,
             /// Rate-based filter (token bucket).
-            rate_limit,
+            rateLimit,
             /// Glob pattern match for module names.
-            glob_match,
+            globMatch,
             /// Sampling probability.
-            sampling_probability,
+            samplingProbability,
             /// Sampling every N.
-            sampling_every_n,
+            samplingEveryN,
         };
 
         /// Action to take when a filter rule matches.
@@ -249,23 +225,19 @@ pub const Filter = struct {
     };
 
     /// Initializes a new Filter instance.
-    ///
-    /// Arguments:
-    ///   - `allocator`: Memory allocator for internal storage.
-    ///
-    /// Return Value:
-    ///   - A new `Filter` instance.
-    ///
-    /// Complexity: O(1)
     pub fn init(allocator: std.mem.Allocator) Filter {
-        return .{
-            .allocator = allocator,
-            .rules = .empty,
-            .rate_buckets = std.StringHashMap(RateBucket).init(allocator),
-        };
+        return initWithIo(allocator, Utils.defaultIo());
     }
 
-    pub const create = init;
+    /// Initializes a new Filter instance with explicit I/O.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) Filter {
+        return .{
+            .allocator = allocator,
+            .io = io_handle,
+            .rules = .empty,
+            .rateBuckets = std.StringHashMap(RateBucket).init(allocator),
+        };
+    }
 
     /// Sets the logical mode used when combining filter rules.
     pub fn setMode(self: *Filter, mode: Mode) void {
@@ -277,9 +249,6 @@ pub const Filter = struct {
         return self.mode == mode;
     }
 
-    /// Alias for setMode.
-    pub const withMode = setMode;
-
     /// Releases all resources associated with the filter.
     ///
     /// Frees all rules and character patterns.
@@ -290,75 +259,73 @@ pub const Filter = struct {
             if (rule.pattern) |p| {
                 self.allocator.free(p);
             }
-            if (rule.context_key) |k| {
+            if (rule.contextKey) |k| {
                 self.allocator.free(k);
             }
         }
         self.rules.deinit(self.allocator);
 
-        var it = self.rate_buckets.iterator();
+        var it = self.rateBuckets.iterator();
         while (it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
         }
-        self.rate_buckets.deinit();
+        self.rateBuckets.deinit();
     }
-
-    pub const destroy = deinit;
 
     /// Adds a new filter rule.
     pub fn addRule(self: *Filter, rule: FilterRule) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // Deep copy patterns and keys if present
-        var new_rule = rule;
+        var newRule = rule;
         if (rule.pattern) |p| {
-            new_rule.pattern = try self.allocator.dupe(u8, p);
+            newRule.pattern = try self.allocator.dupe(u8, p);
         }
-        if (rule.context_key) |k| {
-            new_rule.context_key = try self.allocator.dupe(u8, k);
+        if (rule.contextKey) |k| {
+            newRule.contextKey = try self.allocator.dupe(u8, k);
         }
 
-        try self.rules.append(self.allocator, new_rule);
-        _ = self.stats.rules_added.fetchAdd(1, .monotonic);
+        try self.rules.append(self.allocator, newRule);
+        _ = self.stats.rulesAdded.fetchAdd(1, .monotonic);
 
-        if (self.on_rule_added) |cb| {
-            cb(@intFromEnum(rule.rule_type), @intCast(self.rules.items.len));
+        if (self.onRuleAdded) |cb| {
+            cb(@backingInt(rule.ruleType), @intCast(self.rules.items.len));
         }
     }
 
     /// Sets the callback for record allowed events.
     pub fn setAllowedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
-        self.on_record_allowed = callback;
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.onRecordAllowed = callback;
     }
 
     /// Sets the callback for record denied events.
     pub fn setDeniedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
-        self.on_record_denied = callback;
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.onRecordDenied = callback;
     }
 
     /// Sets the callback for filter creation.
     pub fn setCreatedCallback(self: *Filter, callback: *const fn (*const FilterStats) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
-        self.on_filter_created = callback;
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.onFilterCreated = callback;
     }
 
     /// Sets the callback for rule addition.
     pub fn setRuleAddedCallback(self: *Filter, callback: *const fn (u32, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
-        self.on_rule_added = callback;
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        self.onRuleAdded = callback;
     }
 
     /// Returns filter statistics.
     pub fn getStats(self: *Filter) FilterStats {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.stats;
     }
@@ -367,13 +334,10 @@ pub const Filter = struct {
     ///
     /// Records with a level below the minimum will be filtered out.
     ///
-    /// Arguments:
-    ///   - `level`: The minimum level to allow.
-    ///
     /// Complexity: O(1) (Amortized append)
     pub fn addMinLevel(self: *Filter, level: Level) !void {
         try self.rules.append(self.allocator, .{
-            .rule_type = .level_min,
+            .ruleType = .levelMin,
             .level = level,
             .action = .allow,
         });
@@ -383,13 +347,10 @@ pub const Filter = struct {
     ///
     /// Records with a level above the maximum will be filtered out.
     ///
-    /// Arguments:
-    ///   - `level`: The maximum level to allow.
-    ///
     /// Complexity: O(1) (Amortized append)
     pub fn addMaxLevel(self: *Filter, level: Level) !void {
         try self.rules.append(self.allocator, .{
-            .rule_type = .level_max,
+            .ruleType = .levelMax,
             .level = level,
             .action = .allow,
         });
@@ -399,15 +360,12 @@ pub const Filter = struct {
     ///
     /// Only records from modules matching the prefix will be allowed.
     ///
-    /// Arguments:
-    ///   - `prefix`: The module prefix to match (copied internally).
-    ///
     /// Complexity: O(M) where M is prefix length.
     pub fn addModulePrefix(self: *Filter, prefix: []const u8) !void {
-        const owned_prefix = try self.allocator.dupe(u8, prefix);
+        const ownedPrefix = try self.allocator.dupe(u8, prefix);
         try self.rules.append(self.allocator, .{
-            .rule_type = .module_prefix,
-            .pattern = owned_prefix,
+            .ruleType = .modulePrefix,
+            .pattern = ownedPrefix,
             .action = .allow,
         });
     }
@@ -416,55 +374,74 @@ pub const Filter = struct {
     ///
     /// Records containing the specified substring will be filtered according to `action`.
     ///
-    /// Arguments:
-    ///   - `substring`: The substring to search for (copied internally).
-    ///   - `action`: Whether to allow or deny matching records.
-    ///
     /// Complexity: O(S) where S is substring length.
     pub fn addMessageFilter(self: *Filter, substring: []const u8, action: FilterRule.Action) !void {
-        const owned_substring = try self.allocator.dupe(u8, substring);
+        const ownedSubstring = try self.allocator.dupe(u8, substring);
         try self.rules.append(self.allocator, .{
-            .rule_type = .message_contains,
-            .pattern = owned_substring,
+            .ruleType = .messageContains,
+            .pattern = ownedSubstring,
             .action = action,
         });
     }
 
     /// Evaluates whether a record should be processed based on configured rules.
     ///
-    /// Algorithm:
-    ///   - Iterates through all rules.
-    ///   - If any rule blocks the record, returns false immediately.
-    ///   - For `allow` rules, condition must match to proceed (implicit AND logic for some types).
-    ///   - Note: Logic here implements a mix of "allow-list" and "block-list" behavior depending on rule types.
-    ///
-    /// Arguments:
-    ///   - `record`: The log record to evaluate.
-    ///
-    /// Return Value:
-    ///   - `true` if the record should be processed, `false` otherwise.
-    ///
     /// Complexity: O(N * M) where N is rules and M is message/module length.
     pub fn shouldLog(self: *const Filter, record: *const Record) bool {
         if (!self.enabled) return true;
         if (self.rules.items.len == 0) return true;
 
-        _ = @constCast(&self.stats.total_records_evaluated).fetchAdd(1, .monotonic);
+        _ = @constCast(&self.stats.totalRecordsEvaluated).fetchAdd(1, .monotonic);
 
         const result = switch (self.mode) {
             .all => self.evaluateAll(record),
             .any => self.evaluateAny(record),
             .none => !self.evaluateAny(record),
-            .not_all => !self.evaluateAll(record),
+            .notAll => !self.evaluateAll(record),
         };
 
         if (result) {
-            _ = @constCast(&self.stats.records_allowed).fetchAdd(1, .monotonic);
+            _ = @constCast(&self.stats.recordsAllowed).fetchAdd(1, .monotonic);
         } else {
-            _ = @constCast(&self.stats.records_denied).fetchAdd(1, .monotonic);
+            _ = @constCast(&self.stats.recordsDenied).fetchAdd(1, .monotonic);
         }
 
         return result;
+    }
+
+    /// Cheap pre-filter evaluated before redaction and record allocation.
+    ///
+    /// Returns true only when the full evaluation is certain to deny the
+    /// record. Only applies in `.all` mode to rules that need nothing more
+    /// than level, module, and message. Any other mode or rule type
+    /// abstains (returns false) and the full filter still runs later.
+    /// Lock-free like the rest of the data plane: configure rules before
+    /// logging, do not mutate them concurrently with logging.
+    pub fn preFilterRejects(
+        self: *const Filter,
+        level: Level,
+        module: ?[]const u8,
+        message: []const u8,
+    ) bool {
+        if (!self.enabled) return false;
+        if (self.rules.items.len == 0) return false;
+        if (self.mode != .all) return false;
+
+        for (self.rules.items) |rule| {
+            const matches: ?bool = switch (rule.ruleType) {
+                .levelMin => if (rule.level) |l| level.priority() >= l.priority() else null,
+                .levelMax => if (rule.level) |l| level.priority() <= l.priority() else null,
+                .levelExact => if (rule.level) |l| level == l else null,
+                .moduleMatch => if (rule.pattern) |p| if (module) |m| std.mem.eql(u8, m, p) else false else null,
+                .modulePrefix => if (rule.pattern) |p| if (module) |m| std.mem.startsWith(u8, m, p) else false else null,
+                .messageContains => if (rule.pattern) |p| std.mem.indexOf(u8, message, p) != null else null,
+                else => null,
+            };
+            const m = matches orelse continue;
+            const passed = if (rule.action == .allow) m else !m;
+            if (!passed) return true;
+        }
+        return false;
     }
 
     fn evaluateAll(self: *const Filter, record: *const Record) bool {
@@ -473,11 +450,11 @@ pub const Filter = struct {
             const passed = if (rule.action == .allow) matches else !matches;
 
             if (!passed) {
-                if (self.on_record_denied) |cb| cb(record, @intCast(i));
+                if (self.onRecordDenied) |cb| cb(record, @intCast(i));
                 return false;
             }
         }
-        if (self.on_record_allowed) |cb| cb(record, @intCast(self.rules.items.len));
+        if (self.onRecordAllowed) |cb| cb(record, @intCast(self.rules.items.len));
         return true;
     }
 
@@ -487,76 +464,76 @@ pub const Filter = struct {
             const passed = if (rule.action == .allow) matches else !matches;
 
             if (passed) {
-                if (self.on_record_allowed) |cb| cb(record, @intCast(i + 1));
+                if (self.onRecordAllowed) |cb| cb(record, @intCast(i + 1));
                 return true;
             }
         }
-        if (self.on_record_denied) |cb| cb(record, 0);
+        if (self.onRecordDenied) |cb| cb(record, 0);
         return false;
     }
 
     fn checkRule(self: *const Filter, rule: FilterRule, record: *const Record) bool {
-        return switch (rule.rule_type) {
-            .level_min => if (rule.level) |l| record.level.priority() >= l.priority() else true,
-            .level_max => if (rule.level) |l| record.level.priority() <= l.priority() else true,
-            .level_exact => if (rule.level) |l| record.level == l else true,
+        return switch (rule.ruleType) {
+            .levelMin => if (rule.level) |l| record.level.priority() >= l.priority() else true,
+            .levelMax => if (rule.level) |l| record.level.priority() <= l.priority() else true,
+            .levelExact => if (rule.level) |l| record.level == l else true,
 
-            .module_match => if (rule.pattern) |p| if (record.module) |m| std.mem.eql(u8, m, p) else false else true,
-            .module_prefix => if (rule.pattern) |p| if (record.module) |m| std.mem.startsWith(u8, m, p) else false else true,
-            .module_regex => if (rule.pattern) |p| (if (record.module) |m| Utils.findRegexPattern(m, p) != null else false) else true,
+            .moduleMatch => if (rule.pattern) |p| if (record.module) |m| std.mem.eql(u8, m, p) else false else true,
+            .modulePrefix => if (rule.pattern) |p| if (record.module) |m| std.mem.startsWith(u8, m, p) else false else true,
+            .moduleRegex => if (rule.pattern) |p| (if (record.module) |m| Utils.findRegexPattern(m, p) != null else false) else true,
 
-            .message_contains => if (rule.pattern) |p| std.mem.indexOf(u8, record.message, p) != null else true,
-            .message_regex => if (rule.pattern) |p| Utils.findRegexPattern(record.message, p) != null else true,
+            .messageContains => if (rule.pattern) |p| std.mem.indexOf(u8, record.message, p) != null else true,
+            .messageRegex => if (rule.pattern) |p| Utils.findRegexPattern(record.message, p) != null else true,
 
-            .source_file_match => if (rule.pattern) |p| if (record.filename) |f| std.mem.eql(u8, f, p) else false else true,
-            .source_file_regex => if (rule.pattern) |p| (if (record.filename) |f| Utils.findRegexPattern(f, p) != null else false) else true,
+            .sourceFileMatch => if (rule.pattern) |p| if (record.filename) |f| std.mem.eql(u8, f, p) else false else true,
+            .sourceFileRegex => if (rule.pattern) |p| (if (record.filename) |f| Utils.findRegexPattern(f, p) != null else false) else true,
 
-            .function_match => if (rule.pattern) |p| if (record.function) |f| std.mem.eql(u8, f, p) else false else true,
-            .function_regex => if (rule.pattern) |p| (if (record.function) |f| Utils.findRegexPattern(f, p) != null else false) else true,
+            .functionMatch => if (rule.pattern) |p| if (record.function) |f| std.mem.eql(u8, f, p) else false else true,
+            .functionRegex => if (rule.pattern) |p| (if (record.function) |f| Utils.findRegexPattern(f, p) != null else false) else true,
 
-            .trace_id_match => if (rule.pattern) |p| if (record.trace_id) |tid| std.mem.eql(u8, tid, p) else false else true,
-            .span_id_match => if (rule.pattern) |p| if (record.span_id) |sid| std.mem.eql(u8, sid, p) else false else true,
+            .traceIdMatch => if (rule.pattern) |p| if (record.traceId) |tid| std.mem.eql(u8, tid, p) else false else true,
+            .spanIdMatch => if (rule.pattern) |p| if (record.spanId) |sid| std.mem.eql(u8, sid, p) else false else true,
 
-            .thread_id_match => if (rule.pattern) |p| if (record.thread_id) |tid| blk: {
+            .threadIdMatch => if (rule.pattern) |p| if (record.threadId) |tid| blk: {
                 var buf: [Constants.BufferSizes.tiny]u8 = undefined;
-                const tid_str = std.fmt.bufPrint(&buf, "{d}", .{tid}) catch "";
-                break :blk std.mem.eql(u8, tid_str, p);
+                const tidStr = std.fmt.bufPrint(&buf, "{d}", .{tid}) catch "";
+                break :blk std.mem.eql(u8, tidStr, p);
             } else false else true,
 
-            .context_has_key => if (rule.context_key) |k| record.context.contains(k) else false,
-            .context_value_match => if (rule.context_key) |k| if (rule.pattern) |p| if (record.context.get(k)) |v| blk: {
+            .contextHasKey => if (rule.contextKey) |k| record.context.contains(k) else false,
+            .contextValueMatch => if (rule.contextKey) |k| if (rule.pattern) |p| if (record.context.get(k)) |v| blk: {
                 var buf: [Constants.BufferSizes.small]u8 = undefined;
-                const v_str = switch (v) {
+                const vStr = switch (v) {
                     .string => |s| s,
                     .integer => |i| std.fmt.bufPrint(&buf, "{d}", .{i}) catch "",
                     .float => |f| std.fmt.bufPrint(&buf, "{d}", .{f}) catch "",
                     .bool => |b| if (b) "true" else "false",
                     else => "",
                 };
-                if (Utils.findRegexPattern(v_str, p) != null) break :blk true;
+                if (Utils.findRegexPattern(vStr, p) != null) break :blk true;
                 break :blk false;
             } else false else false else false,
 
-            .context_path_match => if (rule.context_key) |k| if (rule.pattern) |p| if (getNestedContextValue(&record.context, k)) |v| blk: {
+            .contextPathMatch => if (rule.contextKey) |k| if (rule.pattern) |p| if (getNestedContextValue(&record.context, k)) |v| blk: {
                 var buf: [Constants.BufferSizes.small]u8 = undefined;
-                const v_str = switch (v) {
+                const vStr = switch (v) {
                     .string => |s| s,
                     .integer => |i| std.fmt.bufPrint(&buf, "{d}", .{i}) catch "",
                     .float => |f| std.fmt.bufPrint(&buf, "{d}", .{f}) catch "",
                     .bool => |b| if (b) "true" else "false",
                     else => "",
                 };
-                if (Utils.findRegexPattern(v_str, p) != null) break :blk true;
+                if (Utils.findRegexPattern(vStr, p) != null) break :blk true;
                 break :blk false;
             } else false else false else false,
 
-            .has_error => record.error_info != null,
+            .hasError => record.errorInfo != null,
 
             .custom => if (rule.predicate) |pred| pred(record) else true,
 
-            .time_window => if (rule.time_start) |start| if (rule.time_end) |end| blk: {
-                const local_time = Utils.fromMilliTimestampLocal(record.timestamp);
-                const hour = @as(u8, @intCast(local_time.hour));
+            .timeWindow => if (rule.timeStart) |start| if (rule.timeEnd) |end| blk: {
+                const localTime = Utils.fromMilliTimestampLocal(record.timestamp);
+                const hour = @as(u8, @intCast(localTime.hour));
                 if (start <= end) {
                     break :blk (hour >= start and hour < end);
                 } else {
@@ -564,33 +541,33 @@ pub const Filter = struct {
                 }
             } else false else false,
 
-            .rate_limit => if (rule.rate_limit) |limit| blk: {
-                const mutable_self = @constCast(self);
-                mutable_self.mutex.lockUncancelable(Utils.io());
-                defer mutable_self.mutex.unlock(Utils.io());
+            .rateLimit => if (rule.rateLimit) |limit| blk: {
+                const mutableSelf = @constCast(self);
+                mutableSelf.mutex.lockUncancelable(mutableSelf.io);
+                defer mutableSelf.mutex.unlock(mutableSelf.io);
 
-                const module_name = record.module orelse "unknown";
+                const moduleName = record.module orelse "unknown";
                 const now = Utils.currentMillis();
 
-                const gpr = mutable_self.rate_buckets.getOrPut(module_name) catch {
+                const gpr = mutableSelf.rateBuckets.getOrPut(moduleName) catch {
                     break :blk false;
                 };
                 if (!gpr.found_existing) {
-                    const owned_key = mutable_self.allocator.dupe(u8, module_name) catch {
+                    const ownedKey = mutableSelf.allocator.dupe(u8, moduleName) catch {
                         break :blk false;
                     };
-                    gpr.key_ptr.* = owned_key;
+                    gpr.key_ptr.* = ownedKey;
                     gpr.value_ptr.* = .{
                         .tokens = @floatFromInt(limit),
-                        .last_refill_ms = now,
+                        .lastRefillMs = now,
                     };
                 }
 
                 const bucket = gpr.value_ptr;
-                const elapsed = now - bucket.last_refill_ms;
-                const refill_interval = @as(f64, @floatFromInt(elapsed)) / 1000.0;
-                bucket.tokens = @min(@as(f64, @floatFromInt(limit)), bucket.tokens + refill_interval * @as(f64, @floatFromInt(limit)));
-                bucket.last_refill_ms = now;
+                const elapsed = now - bucket.lastRefillMs;
+                const refillInterval = @as(f64, @floatFromInt(elapsed)) / 1000.0;
+                bucket.tokens = @min(@as(f64, @floatFromInt(limit)), bucket.tokens + refillInterval * @as(f64, @floatFromInt(limit)));
+                bucket.lastRefillMs = now;
 
                 if (bucket.tokens >= 1.0) {
                     bucket.tokens -= 1.0;
@@ -600,36 +577,45 @@ pub const Filter = struct {
                 }
             } else false,
 
-            .glob_match => if (rule.pattern) |p| if (record.module) |m| matchGlob(m, p) else false else true,
+            .globMatch => if (rule.pattern) |p| if (record.module) |m| matchGlob(m, p) else false else true,
 
-            .sampling_probability => if (rule.probability) |prob| blk: {
-                const mutable_self = @constCast(self);
-                mutable_self.mutex.lockUncancelable(Utils.io());
-                defer mutable_self.mutex.unlock(Utils.io());
+            .samplingProbability => if (rule.probability) |prob| blk: {
+                const mutableSelf = @constCast(self);
+                mutableSelf.mutex.lockUncancelable(mutableSelf.io);
+                defer mutableSelf.mutex.unlock(mutableSelf.io);
 
-                if (mutable_self.rng == null) {
-                    mutable_self.rng = std.Random.DefaultPrng.init(@as(u64, @intCast(Utils.currentMillis())));
+                if (mutableSelf.rng == null) {
+                    mutableSelf.rng = std.Random.DefaultPrng.init(@as(u64, @intCast(Utils.currentMillis())));
                 }
-                break :blk mutable_self.rng.?.random().float(f64) < prob;
+                break :blk mutableSelf.rng.?.random().float(f64) < prob;
             } else true,
 
-            .sampling_every_n => if (rule.every_n) |n| blk: {
+            .samplingEveryN => if (rule.everyN) |n| blk: {
                 if (n == 0) break :blk true;
-                const mutable_self = @constCast(self);
-                mutable_self.mutex.lockUncancelable(Utils.io());
-                defer mutable_self.mutex.unlock(Utils.io());
+                const mutableSelf = @constCast(self);
+                mutableSelf.mutex.lockUncancelable(mutableSelf.io);
+                defer mutableSelf.mutex.unlock(mutableSelf.io);
 
-                mutable_self.every_n_counter += 1;
-                break :blk (mutable_self.every_n_counter % n) == 0;
+                mutableSelf.everyNCounter += 1;
+                break :blk (mutableSelf.everyNCounter % n) == 0;
             } else true,
         };
     }
 
     /// Clears all filter rules.
+    ///
+    /// Takes the filter lock: rules must not be mutated concurrently with
+    /// evaluation. Frees both pattern and context-key allocations (deinit
+    /// parity — previously context keys leaked here).
     pub fn clear(self: *Filter) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         for (self.rules.items) |rule| {
             if (rule.pattern) |p| {
                 self.allocator.free(p);
+            }
+            if (rule.contextKey) |k| {
+                self.allocator.free(k);
             }
         }
         self.rules.clearRetainingCapacity();
@@ -637,20 +623,20 @@ pub const Filter = struct {
 
     /// Adds a filter for custom levels by priority.
     /// Only records with custom level priority >= min_priority will pass.
-    pub fn addMinPriority(self: *Filter, min_priority: u8) !void {
+    pub fn addMinPriority(self: *Filter, minPriority: u8) !void {
         try self.rules.append(self.allocator, .{
-            .rule_type = .level_min,
-            .level = Level.fromPriority(min_priority) orelse .info,
+            .ruleType = .levelMin,
+            .level = Level.fromPriority(minPriority) orelse .info,
             .action = .allow,
         });
     }
 
     /// Adds a filter for custom levels by priority range.
-    pub fn addPriorityRange(self: *Filter, min_priority: u8, max_priority: u8) !void {
-        try self.addMinPriority(min_priority);
+    pub fn addPriorityRange(self: *Filter, minPriority: u8, maxPriority: u8) !void {
+        try self.addMinPriority(minPriority);
         try self.rules.append(self.allocator, .{
-            .rule_type = .level_max,
-            .level = Level.fromPriority(max_priority) orelse .critical,
+            .ruleType = .levelMax,
+            .level = Level.fromPriority(maxPriority) orelse .critical,
             .action = .allow,
         });
     }
@@ -658,7 +644,7 @@ pub const Filter = struct {
     /// Explicitly allow a module.
     pub fn allowModule(self: *Filter, module: []const u8) !void {
         try self.addRule(.{
-            .rule_type = .module_match,
+            .ruleType = .moduleMatch,
             .pattern = module,
             .action = .allow,
         });
@@ -667,7 +653,7 @@ pub const Filter = struct {
     /// Explicitly deny a module.
     pub fn denyModule(self: *Filter, module: []const u8) !void {
         try self.addRule(.{
-            .rule_type = .module_match,
+            .ruleType = .moduleMatch,
             .pattern = module,
             .action = .deny,
         });
@@ -676,7 +662,7 @@ pub const Filter = struct {
     /// Allow modules starting with prefix.
     pub fn allowPrefix(self: *Filter, prefix: []const u8) !void {
         try self.addRule(.{
-            .rule_type = .module_prefix,
+            .ruleType = .modulePrefix,
             .pattern = prefix,
             .action = .allow,
         });
@@ -685,7 +671,7 @@ pub const Filter = struct {
     /// Deny modules starting with prefix.
     pub fn denyPrefix(self: *Filter, prefix: []const u8) !void {
         try self.addRule(.{
-            .rule_type = .module_prefix,
+            .ruleType = .modulePrefix,
             .pattern = prefix,
             .action = .deny,
         });
@@ -694,7 +680,7 @@ pub const Filter = struct {
     /// Allow messages matching regex.
     pub fn allowRegex(self: *Filter, regex: []const u8) !void {
         try self.addRule(.{
-            .rule_type = .message_regex,
+            .ruleType = .messageRegex,
             .pattern = regex,
             .action = .allow,
         });
@@ -703,7 +689,7 @@ pub const Filter = struct {
     /// Deny messages matching regex.
     pub fn denyRegex(self: *Filter, regex: []const u8) !void {
         try self.addRule(.{
-            .rule_type = .message_regex,
+            .ruleType = .messageRegex,
             .pattern = regex,
             .action = .deny,
         });
@@ -712,7 +698,7 @@ pub const Filter = struct {
     /// Add a custom predicate rule.
     pub fn addCustom(self: *Filter, predicate: *const fn (*const Record) bool, action: FilterRule.Action) !void {
         try self.addRule(.{
-            .rule_type = .custom,
+            .ruleType = .custom,
             .predicate = predicate,
             .action = action,
         });
@@ -721,8 +707,8 @@ pub const Filter = struct {
     /// Add a context value match rule.
     pub fn addContextMatch(self: *Filter, key: []const u8, pattern: []const u8, action: FilterRule.Action) !void {
         try self.addRule(.{
-            .rule_type = .context_value_match,
-            .context_key = key,
+            .ruleType = .contextValueMatch,
+            .contextKey = key,
             .pattern = pattern,
             .action = action,
         });
@@ -731,8 +717,8 @@ pub const Filter = struct {
     /// Add a nested context path match rule.
     pub fn addContextPathMatch(self: *Filter, key: []const u8, pattern: []const u8, action: FilterRule.Action) !void {
         try self.addRule(.{
-            .rule_type = .context_path_match,
-            .context_key = key,
+            .ruleType = .contextPathMatch,
+            .contextKey = key,
             .pattern = pattern,
             .action = action,
         });
@@ -741,54 +727,15 @@ pub const Filter = struct {
     /// Only allow records with errors.
     pub fn addErrorOnly(self: *Filter) !void {
         try self.addRule(.{
-            .rule_type = .has_error,
+            .ruleType = .hasError,
             .action = .allow,
         });
     }
-
-    /// Alias for addRule
-    pub const add = addRule;
-
-    /// Alias for shouldLog
-    pub const check = shouldLog;
-    pub const test_ = shouldLog;
-    pub const evaluate = shouldLog;
-
-    /// Alias for clear
-    pub const reset = clear;
-    pub const removeAll = clear;
-
-    /// Alias for addMinLevel
-    pub const minLevel = addMinLevel;
-    pub const min = addMinLevel;
-
-    /// Alias for addMaxLevel
-    pub const maxLevel = addMaxLevel;
-    pub const max = addMaxLevel;
-
-    /// Alias for addModulePrefix
-    pub const moduleFilter = addModulePrefix;
-    pub const addPrefix = addModulePrefix;
-
-    /// Alias for addMessageFilter
-    pub const messageFilter = addMessageFilter;
-
-    /// Aliases for convenience
-    pub const allow = allowModule;
-    pub const deny = denyModule;
-    pub const keep = allowModule;
-    pub const drop = denyModule;
-    pub const include = allowModule;
-    pub const exclude = denyModule;
 
     /// Returns the number of filter rules.
     pub fn count(self: *const Filter) usize {
         return self.rules.items.len;
     }
-
-    /// Alias for count
-    pub const ruleCount = count;
-    pub const length = count;
 
     /// Returns true if the filter has any rules.
     pub fn hasRules(self: *const Filter) bool {
@@ -818,29 +765,29 @@ pub const Filter = struct {
                 .none => {},
                 .probability => |prob| {
                     try filter.addRule(.{
-                        .rule_type = .sampling_probability,
+                        .ruleType = .samplingProbability,
                         .probability = prob,
                         .action = .allow,
                     });
                 },
-                .rate_limit => |rl| {
+                .rateLimit => |rl| {
                     try filter.addRule(.{
-                        .rule_type = .rate_limit,
-                        .rate_limit = rl.max_records,
+                        .ruleType = .rateLimit,
+                        .rateLimit = rl.maxRecords,
                         .action = .allow,
                     });
                 },
-                .every_n => |n| {
+                .everyN => |n| {
                     try filter.addRule(.{
-                        .rule_type = .sampling_every_n,
-                        .every_n = n,
+                        .ruleType = .samplingEveryN,
+                        .everyN = n,
                         .action = .allow,
                     });
                 },
                 .adaptive => |ad| {
                     try filter.addRule(.{
-                        .rule_type = .rate_limit,
-                        .rate_limit = ad.target_rate,
+                        .ruleType = .rateLimit,
+                        .rateLimit = ad.targetRate,
                         .action = .allow,
                     });
                 },
@@ -851,7 +798,7 @@ pub const Filter = struct {
             if (config.redaction.patterns) |patterns| {
                 for (patterns) |pattern| {
                     try filter.addRule(.{
-                        .rule_type = .message_regex,
+                        .ruleType = .messageRegex,
                         .pattern = pattern,
                         .action = .deny,
                     });
@@ -862,42 +809,162 @@ pub const Filter = struct {
         return filter;
     }
 
-    pub fn addTimeWindowRule(self: *Filter, start_hour: u8, end_hour: u8, action: FilterRule.Action) !void {
+    /// Applies `action` only between `startHour` and `endHour` (0-23).
+    pub fn addTimeWindowRule(self: *Filter, startHour: u8, endHour: u8, action: FilterRule.Action) !void {
         try self.addRule(.{
-            .rule_type = .time_window,
-            .time_start = start_hour,
-            .time_end = end_hour,
+            .ruleType = .timeWindow,
+            .timeStart = startHour,
+            .timeEnd = endHour,
             .action = action,
         });
     }
 
-    pub fn addRateRule(self: *Filter, rate_per_second: u32, action: FilterRule.Action) !void {
+    /// Limits the logger to `ratePerSecond` records per second.
+    pub fn addRateRule(self: *Filter, ratePerSecond: u32, action: FilterRule.Action) !void {
         try self.addRule(.{
-            .rule_type = .rate_limit,
-            .rate_limit = rate_per_second,
+            .ruleType = .rateLimit,
+            .rateLimit = ratePerSecond,
             .action = action,
         });
     }
 
-    pub const addRateLimitRule = addRateRule;
-
+    /// Matches module names against a glob `pattern`.
     pub fn addGlobModule(self: *Filter, pattern: []const u8, action: FilterRule.Action) !void {
         try self.addRule(.{
-            .rule_type = .glob_match,
+            .ruleType = .globMatch,
             .pattern = pattern,
             .action = action,
         });
     }
 
-    pub const addGlobMatchRule = addGlobModule;
-
+    /// Outcome of a filter evaluation, with a reason on rejection.
     pub const FilterResult = struct {
         allowed: bool,
         reason: []const u8,
     };
 
+    /// Static denial reason for a rule type (shared by batch and hot paths).
+    fn denyReasonFor(ruleType: FilterRule.RuleType) []const u8 {
+        return switch (ruleType) {
+            .levelMin => "denied: below minimum level",
+            .levelMax => "denied: above maximum level",
+            .levelExact => "denied: level mismatch",
+            .moduleMatch => "denied: module match",
+            .modulePrefix => "denied: module prefix",
+            .moduleRegex => "denied: module regex",
+            .messageContains => "denied: message contains",
+            .messageRegex => "denied: message regex",
+            .sourceFileMatch => "denied: source file match",
+            .sourceFileRegex => "denied: source file regex",
+            .functionMatch => "denied: function match",
+            .functionRegex => "denied: function regex",
+            .traceIdMatch => "denied: trace id mismatch",
+            .spanIdMatch => "denied: span id mismatch",
+            .threadIdMatch => "denied: thread id mismatch",
+            .contextHasKey => "denied: context has key",
+            .contextValueMatch => "denied: context value mismatch",
+            .contextPathMatch => "denied: context path mismatch",
+            .hasError => "denied: does not have error",
+            .custom => "denied: custom rule",
+            .timeWindow => "denied: outside time window",
+            .rateLimit => "denied: rate limit exceeded",
+            .globMatch => "denied: glob mismatch",
+            .samplingProbability => "denied: sampling probability drop",
+            .samplingEveryN => "denied: sampling every_n drop",
+        };
+    }
+
+    /// Evaluates a record, returning the decision plus a static reason string.
+    ///
+    /// The hot-path equivalent of filterBatch for a single record, without
+    /// allocation. Reasons are static literals valid for the program lifetime.
+    /// Fires onRecordAllowed/onRecordDenied exactly as evaluateAll and
+    /// evaluateAny do, so switching callers over changes no observable stats.
+    pub fn shouldLogWithReason(self: *const Filter, record: *const Record) FilterResult {
+        if (!self.enabled) return .{ .allowed = true, .reason = "allowed: filter disabled" };
+        if (self.rules.items.len == 0) return .{ .allowed = true, .reason = "allowed by default" };
+
+        _ = @constCast(&self.stats.totalRecordsEvaluated).fetchAdd(1, .monotonic);
+
+        const result: FilterResult = switch (self.mode) {
+            .all => blk: {
+                for (self.rules.items, 0..) |rule, i| {
+                    const matches = self.checkRule(rule, record);
+                    const passed = if (rule.action == .allow) matches else !matches;
+                    if (!passed) {
+                        if (self.onRecordDenied) |cb| cb(record, @intCast(i));
+                        break :blk .{ .allowed = false, .reason = denyReasonFor(rule.ruleType) };
+                    }
+                }
+                if (self.onRecordAllowed) |cb| cb(record, @intCast(self.rules.items.len));
+                break :blk .{ .allowed = true, .reason = "allowed by all rules" };
+            },
+            .any => blk: {
+                for (self.rules.items, 0..) |rule, i| {
+                    const matches = self.checkRule(rule, record);
+                    const passed = if (rule.action == .allow) matches else !matches;
+                    if (passed) {
+                        if (self.onRecordAllowed) |cb| cb(record, @intCast(i + 1));
+                        break :blk .{ .allowed = true, .reason = "allowed: rule matched" };
+                    }
+                }
+                if (self.onRecordDenied) |cb| cb(record, 0);
+                break :blk .{ .allowed = false, .reason = "denied: no rules matched" };
+            },
+            .none => blk: {
+                // Matches shouldLog(.none) = !evaluateAny: inner any-style
+                // callbacks fire, then the decision is negated.
+                var innerPassed = false;
+                for (self.rules.items, 0..) |rule, i| {
+                    const matches = self.checkRule(rule, record);
+                    const passed = if (rule.action == .allow) matches else !matches;
+                    if (passed) {
+                        if (self.onRecordAllowed) |cb| cb(record, @intCast(i + 1));
+                        innerPassed = true;
+                        break;
+                    }
+                }
+                if (!innerPassed) {
+                    if (self.onRecordDenied) |cb| cb(record, 0);
+                    break :blk .{ .allowed = true, .reason = "allowed: no rules matched" };
+                }
+                break :blk .{ .allowed = false, .reason = "denied: rule matched in none mode" };
+            },
+            .notAll => blk: {
+                // Matches shouldLog(.notAll) = !evaluateAll: inner all-style
+                // callbacks fire, then the decision is negated.
+                var failed = false;
+                for (self.rules.items, 0..) |rule, i| {
+                    const matches = self.checkRule(rule, record);
+                    const passed = if (rule.action == .allow) matches else !matches;
+                    if (!passed) {
+                        if (self.onRecordDenied) |cb| cb(record, @intCast(i));
+                        failed = true;
+                        break;
+                    }
+                }
+                if (!failed) {
+                    if (self.onRecordAllowed) |cb| cb(record, @intCast(self.rules.items.len));
+                    break :blk .{ .allowed = false, .reason = "denied: all rules matched in not_all mode" };
+                }
+                break :blk .{ .allowed = true, .reason = "allowed: rule failed in not_all mode" };
+            },
+        };
+
+        if (result.allowed) {
+            _ = @constCast(&self.stats.recordsAllowed).fetchAdd(1, .monotonic);
+        } else {
+            _ = @constCast(&self.stats.recordsDenied).fetchAdd(1, .monotonic);
+        }
+
+        return result;
+    }
+
+    /// Evaluates many records, writing one boolean per record into `results`.
     pub fn filterBatch(self: *const Filter, records: []const *const Record, results: []FilterResult) void {
-        std.debug.assert(records.len == results.len);
+        // Hard guard, not just an assert: asserts vanish in ReleaseFast,
+        // where a length mismatch would become an out-of-bounds access.
+        if (records.len != results.len) return;
         for (records, 0..) |record, i| {
             var allowed = true;
             var reason: []const u8 = "allowed by default";
@@ -905,39 +972,39 @@ pub const Filter = struct {
             if (self.enabled and self.rules.items.len > 0) {
                 switch (self.mode) {
                     .all => {
-                        for (self.rules.items, 0..) |rule, rule_idx| {
+                        for (self.rules.items, 0..) |rule, ruleIdx| {
                             const matches = self.checkRule(rule, record);
                             const passed = if (rule.action == .allow) matches else !matches;
                             if (!passed) {
                                 allowed = false;
-                                reason = switch (rule.rule_type) {
-                                    .level_min => "denied: below minimum level",
-                                    .level_max => "denied: above maximum level",
-                                    .level_exact => "denied: level mismatch",
-                                    .module_match => "denied: module match",
-                                    .module_prefix => "denied: module prefix",
-                                    .module_regex => "denied: module regex",
-                                    .message_contains => "denied: message contains",
-                                    .message_regex => "denied: message regex",
-                                    .source_file_match => "denied: source file match",
-                                    .source_file_regex => "denied: source file regex",
-                                    .function_match => "denied: function match",
-                                    .function_regex => "denied: function regex",
-                                    .trace_id_match => "denied: trace id mismatch",
-                                    .span_id_match => "denied: span id mismatch",
-                                    .thread_id_match => "denied: thread id mismatch",
-                                    .context_has_key => "denied: context has key",
-                                    .context_value_match => "denied: context value mismatch",
-                                    .context_path_match => "denied: context path mismatch",
-                                    .has_error => "denied: does not have error",
+                                reason = switch (rule.ruleType) {
+                                    .levelMin => "denied: below minimum level",
+                                    .levelMax => "denied: above maximum level",
+                                    .levelExact => "denied: level mismatch",
+                                    .moduleMatch => "denied: module match",
+                                    .modulePrefix => "denied: module prefix",
+                                    .moduleRegex => "denied: module regex",
+                                    .messageContains => "denied: message contains",
+                                    .messageRegex => "denied: message regex",
+                                    .sourceFileMatch => "denied: source file match",
+                                    .sourceFileRegex => "denied: source file regex",
+                                    .functionMatch => "denied: function match",
+                                    .functionRegex => "denied: function regex",
+                                    .traceIdMatch => "denied: trace id mismatch",
+                                    .spanIdMatch => "denied: span id mismatch",
+                                    .threadIdMatch => "denied: thread id mismatch",
+                                    .contextHasKey => "denied: context has key",
+                                    .contextValueMatch => "denied: context value mismatch",
+                                    .contextPathMatch => "denied: context path mismatch",
+                                    .hasError => "denied: does not have error",
                                     .custom => "denied: custom rule",
-                                    .time_window => "denied: outside time window",
-                                    .rate_limit => "denied: rate limit exceeded",
-                                    .glob_match => "denied: glob mismatch",
-                                    .sampling_probability => "denied: sampling probability drop",
-                                    .sampling_every_n => "denied: sampling every_n drop",
+                                    .timeWindow => "denied: outside time window",
+                                    .rateLimit => "denied: rate limit exceeded",
+                                    .globMatch => "denied: glob mismatch",
+                                    .samplingProbability => "denied: sampling probability drop",
+                                    .samplingEveryN => "denied: sampling every_n drop",
                                 };
-                                _ = rule_idx;
+                                _ = ruleIdx;
                                 break;
                             }
                         }
@@ -971,7 +1038,7 @@ pub const Filter = struct {
                             }
                         }
                     },
-                    .not_all => {
+                    .notAll => {
                         allowed = false;
                         reason = "denied: all rules matched in not_all mode";
                         for (self.rules.items) |rule| {
@@ -992,9 +1059,8 @@ pub const Filter = struct {
 
     /// Batch filter evaluation - returns array of booleans for each record.
     /// More efficient for processing multiple records at once.
-    /// Performance: O(n * m) where n = records, m = rules.
     pub fn shouldLogBatch(self: *Filter, records: []const *const Record, results: []bool) void {
-        std.debug.assert(records.len == results.len);
+        if (records.len != results.len) return;
         for (records, 0..) |record, i| {
             results[i] = self.shouldLog(record);
         }
@@ -1110,10 +1176,10 @@ pub const FilterPresets = struct {
     }
 
     /// Creates a filtered sink configuration.
-    pub fn createFilteredSink(file_path: []const u8, min_level: Level) SinkConfig {
+    pub fn createFilteredSink(filePath: []const u8, minLevel: Level) SinkConfig {
         return SinkConfig{
-            .path = file_path,
-            .level = min_level,
+            .path = filePath,
+            .level = minLevel,
             .color = false,
         };
     }
@@ -1125,6 +1191,7 @@ pub const CompositeFilter = struct {
     filters: std.ArrayList(*const Filter),
     mode: Filter.Mode = .all,
 
+    /// Creates an empty composite filter.
     pub fn init(allocator: std.mem.Allocator) CompositeFilter {
         return .{
             .allocator = allocator,
@@ -1132,6 +1199,7 @@ pub const CompositeFilter = struct {
         };
     }
 
+    /// Releases the composite filter and its rules.
     pub fn deinit(self: *CompositeFilter) void {
         self.filters.deinit(self.allocator);
     }
@@ -1161,7 +1229,7 @@ pub const CompositeFilter = struct {
                 }
                 return true;
             },
-            .not_all => {
+            .notAll => {
                 for (self.filters.items) |filter| {
                     if (!filter.shouldLog(record)) return true;
                 }
@@ -1175,33 +1243,33 @@ pub fn matchGlob(str: []const u8, pattern: []const u8) bool {
     if (pattern.len == 0) return str.len == 0;
     if (std.mem.eql(u8, pattern, "*")) return true;
 
-    var s_idx: usize = 0;
-    var p_idx: usize = 0;
-    var star_idx: ?usize = null;
-    var match_idx: usize = 0;
+    var sIdx: usize = 0;
+    var pIdx: usize = 0;
+    var starIdx: ?usize = null;
+    var matchIdx: usize = 0;
 
-    while (s_idx < str.len) {
-        if (p_idx < pattern.len and (pattern[p_idx] == '?' or pattern[p_idx] == str[s_idx])) {
-            s_idx += 1;
-            p_idx += 1;
-        } else if (p_idx < pattern.len and pattern[p_idx] == '*') {
-            star_idx = p_idx;
-            match_idx = s_idx;
-            p_idx += 1;
-        } else if (star_idx) |star| {
-            p_idx = star + 1;
-            match_idx += 1;
-            s_idx = match_idx;
+    while (sIdx < str.len) {
+        if (pIdx < pattern.len and (pattern[pIdx] == '?' or pattern[pIdx] == str[sIdx])) {
+            sIdx += 1;
+            pIdx += 1;
+        } else if (pIdx < pattern.len and pattern[pIdx] == '*') {
+            starIdx = pIdx;
+            matchIdx = sIdx;
+            pIdx += 1;
+        } else if (starIdx) |star| {
+            pIdx = star + 1;
+            matchIdx += 1;
+            sIdx = matchIdx;
         } else {
             return false;
         }
     }
 
-    while (p_idx < pattern.len and pattern[p_idx] == '*') {
-        p_idx += 1;
+    while (pIdx < pattern.len and pattern[pIdx] == '*') {
+        pIdx += 1;
     }
 
-    return p_idx == pattern.len;
+    return pIdx == pattern.len;
 }
 
 test "filter basic" {
@@ -1210,14 +1278,14 @@ test "filter basic" {
 
     try filter.addMinLevel(.warning);
 
-    var record_info = Record.init(std.testing.allocator, .info, "test");
-    defer record_info.deinit();
+    var recordInfo = Record.init(std.testing.allocator, .info, "test");
+    defer recordInfo.deinit();
 
-    var record_err = Record.init(std.testing.allocator, .err, "test");
-    defer record_err.deinit();
+    var recordErr = Record.init(std.testing.allocator, .err, "test");
+    defer recordErr.deinit();
 
-    try std.testing.expect(!filter.shouldLog(&record_info));
-    try std.testing.expect(filter.shouldLog(&record_err));
+    try std.testing.expect(!filter.shouldLog(&recordInfo));
+    try std.testing.expect(filter.shouldLog(&recordErr));
 }
 
 test "filter max level" {
@@ -1227,26 +1295,26 @@ test "filter max level" {
     try filter.addMinLevel(.info);
     try filter.addMaxLevel(.warning);
 
-    var record_debug = Record.init(std.testing.allocator, .debug, "test");
-    defer record_debug.deinit();
+    var recordDebug = Record.init(std.testing.allocator, .debug, "test");
+    defer recordDebug.deinit();
 
-    var record_info = Record.init(std.testing.allocator, .info, "test");
-    defer record_info.deinit();
+    var recordInfo = Record.init(std.testing.allocator, .info, "test");
+    defer recordInfo.deinit();
 
-    var record_warning = Record.init(std.testing.allocator, .warning, "test");
-    defer record_warning.deinit();
+    var recordWarning = Record.init(std.testing.allocator, .warning, "test");
+    defer recordWarning.deinit();
 
-    var record_err = Record.init(std.testing.allocator, .err, "test");
-    defer record_err.deinit();
+    var recordErr = Record.init(std.testing.allocator, .err, "test");
+    defer recordErr.deinit();
 
     // debug < info (min), should not pass
-    try std.testing.expect(!filter.shouldLog(&record_debug));
+    try std.testing.expect(!filter.shouldLog(&recordDebug));
     // info == info (min), should pass
-    try std.testing.expect(filter.shouldLog(&record_info));
+    try std.testing.expect(filter.shouldLog(&recordInfo));
     // warning == warning (max), should pass
-    try std.testing.expect(filter.shouldLog(&record_warning));
+    try std.testing.expect(filter.shouldLog(&recordWarning));
     // err > warning (max), should not pass
-    try std.testing.expect(!filter.shouldLog(&record_err));
+    try std.testing.expect(!filter.shouldLog(&recordErr));
 }
 
 test "filter module prefix" {
@@ -1255,23 +1323,23 @@ test "filter module prefix" {
 
     try filter.addModulePrefix("database");
 
-    var record_no_module = Record.init(std.testing.allocator, .info, "test");
-    defer record_no_module.deinit();
+    var recordNoModule = Record.init(std.testing.allocator, .info, "test");
+    defer recordNoModule.deinit();
 
-    var record_db = Record.init(std.testing.allocator, .info, "test");
-    defer record_db.deinit();
-    record_db.module = "database.query";
+    var recordDb = Record.init(std.testing.allocator, .info, "test");
+    defer recordDb.deinit();
+    recordDb.module = "database.query";
 
-    var record_http = Record.init(std.testing.allocator, .info, "test");
-    defer record_http.deinit();
-    record_http.module = "http.server";
+    var recordHttp = Record.init(std.testing.allocator, .info, "test");
+    defer recordHttp.deinit();
+    recordHttp.module = "http.server";
 
     // No module should fail
-    try std.testing.expect(!filter.shouldLog(&record_no_module));
+    try std.testing.expect(!filter.shouldLog(&recordNoModule));
     // database.query starts with "database", should pass
-    try std.testing.expect(filter.shouldLog(&record_db));
+    try std.testing.expect(filter.shouldLog(&recordDb));
     // http.server does not start with "database", should fail
-    try std.testing.expect(!filter.shouldLog(&record_http));
+    try std.testing.expect(!filter.shouldLog(&recordHttp));
 }
 
 test "filter modes any" {
@@ -1282,24 +1350,24 @@ test "filter modes any" {
     try filter.allowModule("auth");
     try filter.addMinLevel(.err);
 
-    var record_auth_info = Record.init(std.testing.allocator, .info, "login");
-    defer record_auth_info.deinit();
-    record_auth_info.module = "auth";
+    var recordAuthInfo = Record.init(std.testing.allocator, .info, "login");
+    defer recordAuthInfo.deinit();
+    recordAuthInfo.module = "auth";
 
-    var record_db_err = Record.init(std.testing.allocator, .err, "db error");
-    defer record_db_err.deinit();
-    record_db_err.module = "database";
+    var recordDbErr = Record.init(std.testing.allocator, .err, "db error");
+    defer recordDbErr.deinit();
+    recordDbErr.module = "database";
 
-    var record_db_info = Record.init(std.testing.allocator, .info, "db info");
-    defer record_db_info.deinit();
-    record_db_info.module = "database";
+    var recordDbInfo = Record.init(std.testing.allocator, .info, "db info");
+    defer recordDbInfo.deinit();
+    recordDbInfo.module = "database";
 
     // auth info matches module allow rule
-    try std.testing.expect(filter.shouldLog(&record_auth_info));
+    try std.testing.expect(filter.shouldLog(&recordAuthInfo));
     // db err matches min level rule
-    try std.testing.expect(filter.shouldLog(&record_db_err));
+    try std.testing.expect(filter.shouldLog(&recordDbErr));
     // db info matches neither
-    try std.testing.expect(!filter.shouldLog(&record_db_info));
+    try std.testing.expect(!filter.shouldLog(&recordDbInfo));
 }
 
 test "filter regex" {
@@ -1308,14 +1376,14 @@ test "filter regex" {
 
     try filter.allowRegex("user_\\d+");
 
-    var record_match = Record.init(std.testing.allocator, .info, "Hello user_123");
-    defer record_match.deinit();
+    var recordMatch = Record.init(std.testing.allocator, .info, "Hello user_123");
+    defer recordMatch.deinit();
 
-    var record_no_match = Record.init(std.testing.allocator, .info, "Hello user_abc");
-    defer record_no_match.deinit();
+    var recordNoMatch = Record.init(std.testing.allocator, .info, "Hello user_abc");
+    defer recordNoMatch.deinit();
 
-    try std.testing.expect(filter.shouldLog(&record_match));
-    try std.testing.expect(!filter.shouldLog(&record_no_match));
+    try std.testing.expect(filter.shouldLog(&recordMatch));
+    try std.testing.expect(!filter.shouldLog(&recordNoMatch));
 }
 
 test "filter context" {
@@ -1324,16 +1392,16 @@ test "filter context" {
 
     try filter.addContextMatch("request_id", "req-*", .allow);
 
-    var record_match = Record.init(std.testing.allocator, .info, "msg");
-    defer record_match.deinit();
-    try record_match.context.put("request_id", .{ .string = "req-123" });
+    var recordMatch = Record.init(std.testing.allocator, .info, "msg");
+    defer recordMatch.deinit();
+    try recordMatch.context.put("request_id", .{ .string = "req-123" });
 
-    var record_no_match = Record.init(std.testing.allocator, .info, "msg");
-    defer record_no_match.deinit();
-    try record_no_match.context.put("request_id", .{ .string = "other-123" });
+    var recordNoMatch = Record.init(std.testing.allocator, .info, "msg");
+    defer recordNoMatch.deinit();
+    try recordNoMatch.context.put("request_id", .{ .string = "other-123" });
 
-    try std.testing.expect(filter.shouldLog(&record_match));
-    try std.testing.expect(!filter.shouldLog(&record_no_match));
+    try std.testing.expect(filter.shouldLog(&recordMatch));
+    try std.testing.expect(!filter.shouldLog(&recordNoMatch));
 }
 
 test "filter message contains" {
@@ -1342,16 +1410,16 @@ test "filter message contains" {
 
     try filter.addMessageFilter("heartbeat", .deny);
 
-    var record_normal = Record.init(std.testing.allocator, .info, "User logged in");
-    defer record_normal.deinit();
+    var recordNormal = Record.init(std.testing.allocator, .info, "User logged in");
+    defer recordNormal.deinit();
 
-    var record_heartbeat = Record.init(std.testing.allocator, .info, "heartbeat check");
-    defer record_heartbeat.deinit();
+    var recordHeartbeat = Record.init(std.testing.allocator, .info, "heartbeat check");
+    defer recordHeartbeat.deinit();
 
     // Normal message should pass
-    try std.testing.expect(filter.shouldLog(&record_normal));
+    try std.testing.expect(filter.shouldLog(&recordNormal));
     // Message containing "heartbeat" should be denied
-    try std.testing.expect(!filter.shouldLog(&record_heartbeat));
+    try std.testing.expect(!filter.shouldLog(&recordHeartbeat));
 }
 
 test "filter with custom level" {
@@ -1362,19 +1430,19 @@ test "filter with custom level" {
     try filter.addMinLevel(.warning);
 
     // Custom level with priority 35 (between warning 30 and err 40)
-    var record_custom = Record.initCustom(std.testing.allocator, .warning, "AUDIT", "35", "Audit event");
-    defer record_custom.deinit();
+    var recordCustom = Record.initCustom(std.testing.allocator, .warning, "AUDIT", Color.Tint.color.ansi4.magenta, "Audit event");
+    defer recordCustom.deinit();
 
     // Custom level uses the base level for filtering, which is .warning (30)
     // Since warning (30) >= warning (30), it should pass
-    try std.testing.expect(filter.shouldLog(&record_custom));
+    try std.testing.expect(filter.shouldLog(&recordCustom));
 
     // Custom level with lower priority (mapped to info which is 20)
-    var record_custom_low = Record.initCustom(std.testing.allocator, .info, "NOTICE", "96", "Notice event");
-    defer record_custom_low.deinit();
+    var recordCustomLow = Record.initCustom(std.testing.allocator, .info, "NOTICE", Color.Tint.color.ansi4.brightCyan, "Notice event");
+    defer recordCustomLow.deinit();
 
     // info (20) < warning (30), should not pass
-    try std.testing.expect(!filter.shouldLog(&record_custom_low));
+    try std.testing.expect(!filter.shouldLog(&recordCustomLow));
 }
 
 test "filter mode helpers" {
@@ -1401,20 +1469,20 @@ test "time window filter" {
     // Quiet hours: 22:00 to 06:00
     try filter.addTimeWindowRule(22, 6, .deny);
 
-    var rec_day = Record.init(std.testing.allocator, .info, "day message");
-    defer rec_day.deinit();
+    var recDay = Record.init(std.testing.allocator, .info, "day message");
+    defer recDay.deinit();
     // 12:00 UTC (noon)
-    rec_day.timestamp = 12 * 60 * 60 * 1000;
+    recDay.timestamp = 12 * 60 * 60 * 1000;
 
-    var rec_night = Record.init(std.testing.allocator, .info, "night message");
-    defer rec_night.deinit();
+    var recNight = Record.init(std.testing.allocator, .info, "night message");
+    defer recNight.deinit();
     // 23:00 UTC (night)
-    rec_night.timestamp = 23 * 60 * 60 * 1000;
+    recNight.timestamp = 23 * 60 * 60 * 1000;
 
     // Inside quiet hours (23:00) should be denied
-    try std.testing.expect(!filter.shouldLog(&rec_night));
+    try std.testing.expect(!filter.shouldLog(&recNight));
     // Outside quiet hours (12:00) should be allowed
-    try std.testing.expect(filter.shouldLog(&rec_day));
+    try std.testing.expect(filter.shouldLog(&recDay));
 }
 
 test "rate limit filter" {
@@ -1451,36 +1519,36 @@ test "composite filter" {
     try composite.addFilter(&f1);
     try composite.addFilter(&f2);
 
-    var rec_auth_warn = Record.init(std.testing.allocator, .warning, "warn");
-    defer rec_auth_warn.deinit();
-    rec_auth_warn.module = "auth";
+    var recAuthWarn = Record.init(std.testing.allocator, .warning, "warn");
+    defer recAuthWarn.deinit();
+    recAuthWarn.module = "auth";
 
-    var rec_auth_info = Record.init(std.testing.allocator, .info, "info");
-    defer rec_auth_info.deinit();
-    rec_auth_info.module = "auth";
+    var recAuthInfo = Record.init(std.testing.allocator, .info, "info");
+    defer recAuthInfo.deinit();
+    recAuthInfo.module = "auth";
 
-    try std.testing.expect(composite.shouldLog(&rec_auth_warn));
-    try std.testing.expect(!composite.shouldLog(&rec_auth_info));
+    try std.testing.expect(composite.shouldLog(&recAuthWarn));
+    try std.testing.expect(!composite.shouldLog(&recAuthInfo));
 }
 
 pub fn getNestedContextValue(context: *const std.StringHashMap(std.json.Value), path: []const u8) ?std.json.Value {
     if (context.get(path)) |v| return v;
 
     var it = std.mem.splitScalar(u8, path, '.');
-    const first_key = it.next() orelse return null;
+    const firstKey = it.next() orelse return null;
 
-    var current_val = context.get(first_key) orelse return null;
+    var currentVal = context.get(firstKey) orelse return null;
 
     while (it.next()) |key| {
-        switch (current_val) {
+        switch (currentVal) {
             .object => |obj| {
-                current_val = obj.get(key) orelse return null;
+                currentVal = obj.get(key) orelse return null;
             },
             else => return null,
         }
     }
 
-    return current_val;
+    return currentVal;
 }
 
 test "nested context path filter" {
@@ -1496,11 +1564,11 @@ test "nested context path filter" {
     try std.testing.expect(!filter.shouldLog(&rec));
 
     // Nested object: user: { id: 42 }
-    var user_obj: std.json.ObjectMap = .empty;
-    defer user_obj.deinit(std.testing.allocator);
-    try user_obj.put(std.testing.allocator, "id", .{ .integer = 42 });
+    var userObj: std.json.ObjectMap = .empty;
+    defer userObj.deinit(std.testing.allocator);
+    try userObj.put(std.testing.allocator, "id", .{ .integer = 42 });
 
-    try rec.context.put("user", .{ .object = user_obj });
+    try rec.context.put("user", .{ .object = userObj });
 
     // Context path matches -> allowed
     try std.testing.expect(filter.shouldLog(&rec));

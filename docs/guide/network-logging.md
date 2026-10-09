@@ -29,12 +29,12 @@ pub fn main() !void {
     defer logger.deinit();
 
     // TCP Sink
-    var tcp_sink = logly.SinkConfig.network("tcp://127.0.0.1:9000");
-    _ = try logger.addSink(tcp_sink);
+    var tcpSink = logly.SinkConfig.network("tcp://127.0.0.1:9000");
+     _ = try logger.addSink(tcpSink);
 
     // UDP Sink
-    var udp_sink = logly.SinkConfig.network("udp://127.0.0.1:9001");
-    _ = try logger.addSink(udp_sink);
+    var udpSink = logly.SinkConfig.network("udp://127.0.0.1:9001");
+     _ = try logger.addSink(udpSink);
 
     try logger.info("This message goes to network sinks!", .{});
 }
@@ -55,8 +55,8 @@ Network sinks are often used with log collectors that expect structured data. Yo
 
 ```zig
 var sink = logly.SinkConfig.network("tcp://logs.example.com:5000");
-sink.json = true; // Send logs as JSON objects
-_ = try logger.addSink(sink);
+sink.format = .json; // Send logs as JSON objects
+ _ = try logger.addSink(sink);
 ```
 
 ### Colors
@@ -66,7 +66,7 @@ By default, network sinks do not send ANSI color codes. If you are streaming log
 ```zig
 var sink = logly.SinkConfig.network("tcp://viewer.example.com:9000");
 sink.color = true; // Force enable ANSI colors
-_ = try logger.addSink(sink);
+ _ = try logger.addSink(sink);
 ```
 
 ## Example: Centralized Logging
@@ -81,7 +81,7 @@ nc -l -k 9000
 **Client (Zig Application):**
 ```zig
 var sink = logly.SinkConfig.network("tcp://localhost:9000");
-_ = try logger.addSink(sink);
+ _ = try logger.addSink(sink);
 try logger.info("Hello from client!", .{});
 ```
 
@@ -112,7 +112,7 @@ try Network.sendSyslogUdp(
 
 ## Reliability
 
-*   **Async Logging**: It is highly recommended to use `async_write = true` (default) for network sinks to avoid blocking your application if the network is slow or the server is unreachable.
+*   **Async Logging**: It is highly recommended to use `asyncWrite = true` (default) for network sinks to avoid blocking your application if the network is slow or the server is unreachable.
 *   **Buffering**: The async writer buffers logs and sends them in batches, improving network efficiency.
 *   **Reconnection**: TCP sinks handle reconnection logic automatically.
 
@@ -124,10 +124,10 @@ Logly `v0.2.0` introduces complete support for connection-oriented, reliable Sys
 
 To send logs to a remote Syslog TCP daemon:
 ```zig
-var syslog_sink = logly.SinkConfig.syslog("tcp://syslog-collector:514");
-syslog_sink.facility = .local0;
-syslog_sink.severity = .info;
-_ = try logger.addSink(syslog_sink);
+var syslogSink = logly.SinkConfig.syslog("tcp://syslog-collector:514");
+syslogSink.facility = .local0;
+syslogSink.severity = .info;
+ _ = try logger.addSink(syslogSink);
 ```
 
 Logly automatically takes care of packet framing (e.g. octet counting or non-transparent framing via newlines) and maintains robust reconnection loops to ensure zero log loss during brief collector downtime.

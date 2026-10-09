@@ -9,16 +9,10 @@ pub fn main() !void {
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
-    // 1. Custom Theme
-    const theme = logly.Formatter.Theme{
-        .info = "35", // Magenta for info
-        .err = "33", // Yellow for error
-    };
-
-    // Apply theme to the first sink (console)
-    if (logger.sinks.items.len > 0) {
-        logger.sinks.items[0].formatter.setTheme(theme);
-    }
+    // 1. Custom per-level colors. Level colors live on the config and apply
+    // to every sink that resolves color.
+    logger.config.levelColors.infoColor = logly.Color.parse("35").?; // magenta
+    logger.config.levelColors.errorColor = logly.Color.parse("33").?; // yellow
 
     try logger.info("This info should be magenta!", @src());
     try logger.err("This error should be yellow!", @src());

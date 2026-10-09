@@ -1,6 +1,8 @@
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -8,7 +10,7 @@ pub fn main() !void {
 
     // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
@@ -16,8 +18,8 @@ pub fn main() !void {
     // Add a file sink with async writing enabled (default)
     _ = try logger.addSink(.{
         .path = "logs/async.log",
-        .async_write = true,
-        .buffer_size = 4096, // 4KB buffer
+        .asyncWrite = true,
+        .bufferSize = 4096, // 4KB buffer
     });
 
     // Add a console sink
@@ -26,13 +28,13 @@ pub fn main() !void {
     try logger.info("Starting async logging test...", @src());
 
     // Log many messages quickly
-    const start = logly.Utils.currentMillis();
+    const start = std.Io.Clock.real.now(io).toMilliseconds();
     for (0..1000) |i| {
         const msg = try std.fmt.allocPrint(allocator, "Async log message #{d}", .{i});
         defer allocator.free(msg);
         try logger.info(msg, @src());
     }
-    const end = logly.Utils.currentMillis();
+    const end = std.Io.Clock.real.now(io).toMilliseconds();
 
     try logger.info("Finished logging 1000 messages", @src());
 

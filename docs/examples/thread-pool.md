@@ -20,17 +20,17 @@ This example demonstrates parallel log processing using Logly's thread pool.
 const logly = @import("logly");
 
 var config = logly.Config.default();
-config.thread_pool = .{
+config.threadPool = .{
     .enabled = true,
-    .thread_count = 8,
-    .queue_size = 2048,
-    .stack_size = 1024 * 1024,
+    .threadCount = 8,
+    .queueSize = 2048,
+    .stackSize = 1024 * 1024,
 };
 
 // Or use helper method
 var config2 = logly.Config.default().withThreadPool(.{
-    .thread_count = 4,
-    .queue_size = 1024,
+    .threadCount = 4,
+    .queueSize = 1024,
 });
 ```
 
@@ -49,34 +49,32 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create thread pool with 4 workers
-    var pool = try logly.ThreadPool.init(allocator, .{
-        .thread_count = 4,
-        .queue_size = 1024,
-        .work_stealing = true,
+    // Create thread pool with 4 workers using explicit config
+    const pool = try logly.ThreadPool.initWithConfig(allocator, .{
+        .threadCount = 4,
+        .queueSize = 1024,
+        .workStealing = true,
     });
     defer pool.deinit();
 
     // Start workers
     try pool.start();
-    defer pool.stop();
 
     // Submit tasks
-    var counter = std.atomic.Value(u32).init(0);
-    
-    for (0..50) |_| {
-        _ = pool.submitCallback(incrementCounter, @ptrCast(&counter));
-    }
+    var counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+    const numTasks: u32 = 100;
 
-    // Submit a batch of tasks
-    var tasks: [50]logly.ThreadPool.Task = undefined;
-    for (&tasks) |*task| {
-        task.* = .{ .callback = .{ .func = incrementCounter, .context = @ptrCast(&counter) } };
-    }
-    _ = pool.submitBatch(&tasks, .normal);
+    const TestTask = struct {
+        fn increment(ctx: *anyopaque, maybeAllocator: ?std.mem.Allocator) void {
+            _ = maybeAllocator;
+            const c: *std.atomic.Value(u32) = @ptrCast(@alignCast(ctx));
+            _ = c.fetchAdd(1, .monotonic);
+        }
+    };
 
-    // Submit high priority task
-    _ = pool.submitHighPriority(incrementCounter, @ptrCast(&counter));
+    for (0..numTasks) |_| {
+        _ = pool.submitCallback(TestTask.increment, @ptrCast(&counter));
+    }
 
     // Wait for completion
     pool.waitAll();
@@ -88,11 +86,6 @@ pub fn main() !void {
     std.debug.print("Tasks completed: {d}\n", .{
         stats.getCompleted(),
     });
-}
-
-fn incrementCounter(ctx: *anyopaque) void {
-    const counter: *std.atomic.Value(u32) = @alignCast(@ptrCast(ctx));
-    _ = counter.fetchAdd(1, .monotonic);
 }
 ```
 
@@ -114,9 +107,9 @@ Tasks completed: 101
 ### Thread Pool Configuration
 
 ```zig
-.thread_count = 4,      // Number of worker threads
-.queue_size = 1024,     // Queue size per thread
-.work_stealing = true,  // Enable work stealing
+.threadCount = 4,      // Number of worker threads
+.queueSize = 1024,     // Queue size per thread
+.workStealing = true,  // Enable work stealing
 .enable_priorities = true, // Priority queues
 ```
 
@@ -149,10 +142,10 @@ const high = logly.ThreadPoolPresets.highThroughput();
 
 ```zig
 var writer = try logly.ParallelSinkWriter.init(allocator, .{
-    .max_concurrent = 4,
+    .maxConcurrent = 4,
 });
 
-try writer.addSink(&file_sink);
+try writer.addSink(&fileSink);
 try writer.addSink(&console_sink);
 
 // Write to all sinks in parallel

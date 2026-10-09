@@ -22,7 +22,7 @@ To enable service identification and distributed features:
 var config = logly.Config.production();
 config.distributed = .{
     .enabled = true,
-    .service_name = "payment-service",
+    .serviceName = "payment-service",
     .environment = "production",
     .region = "us-east-1",
 };
@@ -47,7 +47,7 @@ pub fn main() !void {
     var config = Config.default();
     config.distributed = .{
         .enabled = true,
-        .service_name = "tracing-example",
+        .serviceName = "tracing-example",
     };
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -57,16 +57,16 @@ pub fn main() !void {
     const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
     // Create scoped logger for this request
-    var req_logger = try logger.withTraceparent(incoming);
-    req_logger = req_logger.inModule("http.request");
+    var reqLogger = try logger.withTraceparent(incoming);
+    reqLogger = reqLogger.inModule("http.request");
 
     // Logs automatically include service metadata + trace context
-    try req_logger.info("Processing request", @src());
-    try req_logger.warn("Simulated latency", @src());
+    try reqLogger.info("Processing request", @src());
+    try reqLogger.warn("Simulated latency", @src());
 
     // Child span for nested operation
-    const db_logger = req_logger.child("7a085853722dc6d2").inModule("database");
-    try db_logger.debug("Executing SQL query", @src());
+    const dbLogger = reqLogger.child("7a085853722dc6d2").inModule("database");
+    try dbLogger.debug("Executing SQL query", @src());
 }
 ```
 
@@ -138,8 +138,8 @@ pub fn handleRequest(req: Request, logger: *logly.Logger) !void {
     const traceparent = req.getHeader("traceparent") orelse return error.MissingTraceparent;
 
     // Prefer request-scoped logger over global mutation
-    const req_logger = try logger.withTraceparent(traceparent);
-    try req_logger.info("Request received", @src());
+    const reqLogger = try logger.withTraceparent(traceparent);
+    try reqLogger.info("Request received", @src());
     // ...
 }
 ```
@@ -164,7 +164,7 @@ pub fn callExternalService(logger: *logly.Logger, allocator: std.mem.Allocator) 
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 
 try logger.setTraceContextFromTraceparent(
     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
@@ -187,9 +187,9 @@ Logly's tracing is compatible with OpenTelemetry concepts:
 
 | Logly | OpenTelemetry |
 |-------|---------------|
-| `trace_id` | Trace ID |
-| `span_id` | Span ID |
-| `correlation_id` | Baggage item |
+| `traceId` | Trace ID |
+| `spanId` | Span ID |
+| `correlationId` | Baggage item |
 | Context binding | Attributes |
 
 ## Use Cases

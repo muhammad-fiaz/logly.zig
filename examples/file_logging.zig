@@ -8,7 +8,7 @@ pub fn main() !void {
 
     // Use initWithConfig to disable auto_sink from the start
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
 
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();

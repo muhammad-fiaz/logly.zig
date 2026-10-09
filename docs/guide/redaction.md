@@ -116,13 +116,13 @@ try redactor.addField("password", .full);
 try redactor.addField("secret", .full);
 
 // Partial end - shows first 4 chars only
-try redactor.addField("api_key", .partial_end);
+try redactor.addField("api_key", .partialEnd);
 
 // Partial start - shows last 4 chars only
-try redactor.addField("email", .partial_start);
+try redactor.addField("email", .partialStart);
 
 // Mask middle - shows first 3 and last 3 chars
-try redactor.addField("credit_card", .mask_middle);
+try redactor.addField("credit_card", .maskMiddle);
 
 // Hash - replaces with SHA256 hash prefix
 try redactor.addField("patient_id", .hash);
@@ -133,9 +133,9 @@ try redactor.addField("patient_id", .hash);
 | Type | Input | Output |
 |------|-------|--------|
 | `.full` | `secret123` | `[REDACTED]` |
-| `.partial_start` | `1234567890` | `******7890` |
-| `.partial_end` | `1234567890` | `1234******` |
-| `.mask_middle` | `1234567890` | `123****890` |
+| `.partialStart` | `1234567890` | `******7890` |
+| `.partialEnd` | `1234567890` | `1234******` |
+| `.maskMiddle` | `1234567890` | `123****890` |
 | `.hash` | `sensitive` | `[HASH:a1b2c3d4...]` |
 | `.truncate` | `supersecretvalue` | `supersecre...` |
 
@@ -145,9 +145,9 @@ try redactor.addField("patient_id", .hash);
 var redactor = Redactor.init(allocator);
 defer redactor.deinit();
 
-redactor.config.truncate_length = 8;
-redactor.config.truncate_suffix = "...";
-redactor.config.hash_algorithm = .sha512;
+redactor.config.truncateLength = 8;
+redactor.config.truncateSuffix = "...";
+redactor.config.hashAlgorithm = .sha512;
 
 try redactor.addField("token", .truncate);
 try redactor.addField("user_id", .hash);
@@ -213,12 +213,12 @@ var redactor = Redactor.init(allocator);
 defer redactor.deinit();
 
 try redactor.addField("password", .full);
-try redactor.addField("api_key", .partial_end);
+try redactor.addField("api_key", .partialEnd);
 
 // Check if a field should be redacted
-if (redactor.getFieldRedaction("password")) |redaction_type| {
+if (redactor.getFieldRedaction("password")) |redactionType| {
     const value = "mysecretpassword";
-    const redacted_value = try redaction_type.apply(allocator, value);
+    const redacted_value = try redactionType.apply(allocator, value);
     defer allocator.free(redacted_value);
     // redacted_value is "[REDACTED]"
 }
@@ -244,7 +244,7 @@ Redaction helps with compliance requirements like:
 
 ## Redaction Detail Callback
 
-The `on_redaction_detail` callback provides visibility into every redaction event, giving you both the original and redacted values. This is essential for audit logging and debugging redaction rules.
+The `onRedactionDetail` callback provides visibility into every redaction event, giving you both the original and redacted values. This is essential for audit logging and debugging redaction rules.
 
 ```zig
 fn onRedactDetail(original: []const u8, redacted: []const u8, pattern_name: []const u8) void {
@@ -255,7 +255,7 @@ redactor.setRedactionDetailCallback(onRedactDetail);
 ```
 
 > [!TIP]
-> Use `on_redaction_detail` alongside `audit_redactions = true` in your `RedactionConfig` to build a complete audit trail for compliance scenarios like GDPR or PCI-DSS.
+> Use `onRedactionDetail` alongside `auditRedactions = true` in your `RedactionConfig` to build a complete audit trail for compliance scenarios like GDPR or PCI-DSS.
 
 ## Global Configuration
 
@@ -266,13 +266,13 @@ var config = logly.Config.default();
 config.redaction = .{
     .enabled = true,
     .replacement = "[REDACTED]",
-    .default_type = .full,
-    .mask_char = '*',
-    .partial_start_chars = 4,
-    .partial_end_chars = 4,
-    .case_insensitive = true,
-    .audit_redactions = true,
-    .compliance_preset = .gdpr,
+    .defaultType = .full,
+    .maskChar = '*',
+    .partialStartChars = 4,
+    .partialEndChars = 4,
+    .caseInsensitive = true,
+    .auditRedactions = true,
+    .compliancePreset = .gdpr,
 };
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
@@ -284,15 +284,15 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 |--------|------|---------|-------------|
 | `enabled` | `bool` | `false` | Enable redaction system |
 | `replacement` | `[]const u8` | `"[REDACTED]"` | Default replacement text |
-| `default_type` | `RedactionType` | `.full` | Default redaction type |
-| `enable_regex` | `bool` | `false` | Enable regex patterns |
-| `hash_algorithm` | `HashAlgorithm` | `.sha256` | Hash algorithm for `.hash` type |
-| `partial_start_chars` | `u8` | `4` | Characters to reveal at start |
-| `partial_end_chars` | `u8` | `4` | Characters to reveal at end |
-| `mask_char` | `u8` | `'*'` | Mask character |
-| `case_insensitive` | `bool` | `true` | Case-insensitive field matching |
-| `audit_redactions` | `bool` | `false` | Log when redaction applied |
-| `compliance_preset` | `?CompliancePreset` | `null` | Use compliance preset |
+| `defaultType` | `RedactionType` | `.full` | Default redaction type |
+| `enableRegex` | `bool` | `false` | Enable regex patterns |
+| `hashAlgorithm` | `HashAlgorithm` | `.sha256` | Hash algorithm for `.hash` type |
+| `partialStartChars` | `u8` | `4` | Characters to reveal at start |
+| `partialEndChars` | `u8` | `4` | Characters to reveal at end |
+| `maskChar` | `u8` | `'*'` | Mask character |
+| `caseInsensitive` | `bool` | `true` | Case-insensitive field matching |
+| `auditRedactions` | `bool` | `false` | Log when redaction applied |
+| `compliancePreset` | `?CompliancePreset` | `null` | Use compliance preset |
 
 ### Configuration Presets
 

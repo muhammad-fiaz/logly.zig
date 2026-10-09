@@ -16,35 +16,35 @@ const config = Config.init(allocator)
 Alternatively, you can use the `logger.add()` shortcut with a configuration struct:
 
 ```zig
-try logger.add(.{
+_ = try logger.add(.{
     .path = "app.log",
     .rotation = "daily",
     .retention = 7,
-    .size_limit_str = "10MB", // Optional: also rotate on size
+    .sizeLimitStr = "10MB", // Optional: also rotate on size
 });
 ```
 
 ## Write Modes and Rotation
 
-Rotation works with all write modes. The `write_mode` field controls how the file is opened initially, while rotation handles file lifecycle:
+Rotation works with all write modes. The `writeMode` field controls how the file is opened initially, while rotation handles file lifecycle:
 
 | Write Mode | Initial Behavior | After Rotation |
 |------------|------------------|----------------|
 | `.append` (default) | Append to existing file | New file starts fresh (truncated) |
 | `.overwrite` | Truncate file on startup | New file starts fresh (truncated) |
-| `.append_rotate` | Append with explicit rotation trigger | New file starts fresh (truncated) |
+| `.appendRotate` | Append with explicit rotation trigger | New file starts fresh (truncated) |
 
 ```zig
 // Append mode with daily rotation
 var sink = logly.SinkConfig.file("app.log");
-sink.write_mode = .append;
+sink.writeMode = .append;
 sink.rotation = "daily";
 sink.retention = 7;
 
 // Overwrite mode with size rotation
 var sink = logly.SinkConfig.file("session.log");
-sink.write_mode = .overwrite;
-sink.size_limit = 1024 * 1024; // 1MB
+sink.writeMode = .overwrite;
+sink.sizeLimit = 1024 * 1024; // 1MB
 sink.retention = 3;
 ```
 
@@ -62,15 +62,15 @@ The `RotationConfig` struct provides the following fields:
 | :--- | :--- | :--- |
 | `enabled` | `bool` | Master switch for default rotation logic. |
 | `interval` | `?[]const u8` | Default time interval ("daily", "hourly"). |
-| `size_limit` | `?u64` | Default size limit in bytes. |
-| `retention_count` | `?usize` | Default max number of files to keep. |
-| `max_age_seconds` | `?i64` | Default max age of files in seconds. |
-| `naming_strategy` | `NamingStrategy` | Default naming strategy (`timestamp`, `date`, `iso_datetime`, `index`). |
-| `archive_dir` | `?[]const u8` | Directory to automatically move rotated files into. |
-| `clean_empty_dirs` | `bool` | Whether to delete the archive directory if it becomes empty. |
-| `keep_original` | `bool` | Keep original file after compression (default: false). |
-| `compress_on_retention` | `bool` | Compress files during retention cleanup instead of deleting. |
-| `delete_after_retention_compress` | `bool` | Delete originals after retention compression (default: true). |
+| `sizeLimit` | `?u64` | Default size limit in bytes. |
+| `retentionCount` | `?usize` | Default max number of files to keep. |
+| `maxAgeSeconds` | `?i64` | Default max age of files in seconds. |
+| `namingStrategy` | `NamingStrategy` | Default naming strategy (`timestamp`, `date`, `isoDatetime`, `index`). |
+| `archiveDir` | `?[]const u8` | Directory to automatically move rotated files into. |
+| `cleanEmptyDirs` | `bool` | Whether to delete the archive directory if it becomes empty. |
+| `keepOriginal` | `bool` | Keep original file after compression (default: false). |
+| `compressOnRetention` | `bool` | Compress files during retention cleanup instead of deleting. |
+| `deleteAfterRetentionCompress` | `bool` | Delete originals after retention compression (default: true). |
 
 ### Example
 
@@ -78,10 +78,10 @@ The `RotationConfig` struct provides the following fields:
 const config = Config{
     .rotation = .{
         .enabled = true,
-        .naming_strategy = .iso_datetime,
-        .archive_dir = "logs/archive",
-        .max_age_seconds = 86400 * 30, // 30 days
-        .clean_empty_dirs = true,
+        .namingStrategy = .isoDatetime,
+        .archiveDir = "logs/archive",
+        .maxAgeSeconds = 86400 * 30, // 30 days
+        .cleanEmptyDirs = true,
         .interval = "daily",
     }
 };
@@ -102,7 +102,9 @@ Rotates files when they reach a specific size limit.
 
 ```zig
 // Rotate when file hits 100MB, keep 10 files
-const config = SinkConfig.createSizeRotatingSink("app.log", 100 * 1024 * 1024, 10);
+var config = SinkConfig.file("app.log");
+config.sizeLimit = 100 * 1024 * 1024;
+config.retention = 10;
 ```
 
 ### Rotation Helper APIs
@@ -111,8 +113,8 @@ const config = SinkConfig.createSizeRotatingSink("app.log", 100 * 1024 * 1024, 1
 var rot = try Rotation.init(allocator, "app.log", "hourly", null, 7);
 defer rot.deinit();
 
-if (rot.nextRotationAt()) |epoch_seconds| {
-    std.debug.print("Next rotation at: {d}\n", .{epoch_seconds});
+if (rot.nextRotationAt()) |epochSeconds| {
+    std.debug.print("Next rotation at: {d}\n", .{epochSeconds});
 }
 
 const age = rot.rotationAgeSeconds();
@@ -126,8 +128,8 @@ When using `logger.add(.{...})`, you can use the following fields to control rot
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `rotation` | `?[]const u8` | Time interval ("daily", "hourly"). |
-| `size_limit` | `?u64` | Size limit in bytes. |
-| `size_limit_str` | `?[]const u8` | Size limit as string (e.g., "10MB"). |
+| `sizeLimit` | `?u64` | Size limit in bytes. |
+| `sizeLimitStr` | `?[]const u8` | Size limit as string (e.g., "10MB"). |
 | `retention` | `?usize` | Number of files to keep. |
 | `compression` | `CompressionConfig` | Nested struct to enable compression. |
 
@@ -141,7 +143,7 @@ You can control how rotated files are named using `NamingStrategy`.
 - **Custom**: Define your own pattern like `app-{date}.log`.
 
 ### Custom Formatting
-You can define a custom format string using `naming_format`.
+You can define a custom format string using `namingFormat`.
 
 Supported placeholders:
 - `{base}`: Filename without extension (e.g. "app")
@@ -153,11 +155,11 @@ Supported placeholders:
 
 **Example: `app-2023-12-25.log`**
 ```zig
-try logger.add(.{
+_ = try logger.add(.{
     .path = "app.log",
     .rotation = "daily",
     // Custom: Use dots, slashes, or specific ordering
-    .naming_format = "{base}-{DD}-{MM}-{YYYY}{ext}",
+    .namingFormat = "{base}-{DD}-{MM}-{YYYY}{ext}",
 });
 ```
 
@@ -197,8 +199,8 @@ rot.withCompressOnRetention(true); // Old files are compressed, not deleted
 | Mode | Behavior | Use Case |
 | :--- | :--- | :--- |
 | **Default** | Compress on rotation, delete original | Standard archival |
-| `keep_original = true` | Compress on rotation, keep both files | Redundant backup |
-| `compress_on_retention = true` | Compress during cleanup instead of delete | Archive before purge |
+| `keepOriginal = true` | Compress on rotation, keep both files | Redundant backup |
+| `compressOnRetention = true` | Compress during cleanup instead of delete | Archive before purge |
 | Both enabled | Compress on rotation + compress during retention | Maximum archival |
 
 ### Global Compression Settings
@@ -208,10 +210,10 @@ const config = Config{
     .rotation = .{
         .enabled = true,
         .interval = "daily",
-        .retention_count = 30,
-        .keep_original = false,           // Delete originals after compression
-        .compress_on_retention = true,    // Compress files during retention cleanup
-        .delete_after_retention_compress = true, // Delete after retention compress
+        .retentionCount = 30,
+        .keepOriginal = false,           // Delete originals after compression
+        .compressOnRetention = true,    // Compress files during retention cleanup
+        .deleteAfterRetentionCompress = true, // Delete after retention compress
     },
     .compression = .{
         .enabled = true,
@@ -305,9 +307,9 @@ defer min.deinit();
 
 ```zig
 // Quick sink configuration
-try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
-try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
-try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
+_ = try logger.addSink(RotationPresets.dailySink("logs/app.log", 30));
+_ = try logger.addSink(RotationPresets.hourlySink("logs/access.log", 48));
+_ = try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 1024, 10));
 ```
 
 ## Performance

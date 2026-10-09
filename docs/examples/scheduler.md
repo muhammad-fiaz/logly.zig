@@ -21,7 +21,7 @@ const logly = @import("logly");
 
 var config = logly.Config.default();
 config.scheduler = logly.SchedulerConfig{
-    .max_tasks = 512,
+    .maxTasks = 512,
     .timer_resolution_ms = 10,
     .thread_pool_size = 4,
     .enable_persistence = true,
@@ -30,7 +30,7 @@ config.scheduler = logly.SchedulerConfig{
 
 // Or use helper method
 var config2 = logly.Config.default().withScheduler(.{
-    .max_tasks = 256,
+    .maxTasks = 256,
     .timer_resolution_ms = 50,
 });
 ```
@@ -50,49 +50,63 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create scheduler with centralized config
-    var scheduler = try logly.Scheduler.init(allocator, .{
-        .check_interval_ms = 60000,
-        .auto_start = false,
-    });
+    // 1. Basic Scheduler Setup
+    const scheduler = try logly.Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    // Add daily cleanup task
-    _ = try scheduler.addTask(.{
-        .name = "log_cleanup",
-        .task_type = .cleanup,
-        .schedule = logly.Schedule.daily(2, 30),
-        .config = .{ .cleanup = .{
+    // 2. Add interval-based cleanup task
+    const cleanupIdx = try scheduler.addTask(
+        "log_cleanup",
+        .cleanup,
+        .{ .interval = 3600000 },
+        .{
             .path = "logs",
-            .max_age_days = 30,
-            .pattern = "*.log",
-        }},
-    });
+            .maxAgeSeconds = 7 * 24 * 60 * 60,
+            .filePattern = "*.log",
+        },
+    );
 
-    // Add hourly compression task
-    _ = try scheduler.addTask(.{
-        .name = "log_compression",
-        .task_type = .compression,
-        .schedule = logly.Schedule.everyHours(1),
-        .config = .{ .compression = .{
+    // 3. Add compression task with cron-like preset
+    const compIdx = try scheduler.addTask(
+        "log_compression",
+        .compression,
+        logly.SchedulerPresets.dailyAt(3, 0),
+        .{
             .path = "logs",
-            .min_age_days = 1,
-        }},
-    });
+            .filePattern = "*.log",
+        },
+    );
+    _ = compIdx;
 
-    // Start scheduler
-    try scheduler.start();
-    defer scheduler.stop();
+    // 4. Add one-shot custom task
+    const OneShotTask = struct {
+        fn execute(_: *logly.Scheduler.ScheduledTask) anyerror!void {
+            std.debug.print("Maintenance task executed!\n", .{});
+        }
+    };
+    _ = try scheduler.addCustomTask("oneshot_task", .{ .interval = 1 }, OneShotTask.execute);
 
-    // List tasks
-    const tasks = scheduler.listTasks();
+    // 5. Task management and control
+    scheduler.setTaskEnabled(cleanupIdx, false); // Cancel / disable
+    scheduler.setTaskEnabled(cleanupIdx, true);  // Re-enable
+
+    // 6. Inspect registered tasks
+    const tasks = scheduler.getTasks();
     for (tasks, 0..) |task, i| {
-        std.debug.print("Task {d}: {s} ({s})\n", .{
+        std.debug.print("Task {d}: '{s}' type={s} enabled={s}\n", .{
             i,
             task.name,
-            @tagName(task.task_type),
+            @tagName(task.taskType),
+            if (task.enabled) "yes" else "no",
         });
     }
+
+    // 7. Check statistics
+    const stats = scheduler.getStats();
+    std.debug.print("Tasks executed: {d}, Files cleaned: {d}\n", .{
+        stats.getExecuted(),
+        stats.getFilesCleaned(),
+    });
 }
 ```
 
@@ -131,12 +145,12 @@ Task 1: log_compression (compression)
 ### Task Types
 
 ```zig
-.task_type = .cleanup,      // Remove old logs
-.task_type = .compression,  // Compress logs
-.task_type = .rotation,     // Force rotation
-.task_type = .custom,       // Custom function
-.task_type = .flush,        // Flush buffers
-.task_type = .health_check, // Health check
+.taskType = .cleanup,      // Remove old logs
+.taskType = .compression,  // Compress logs
+.taskType = .rotation,     // Force rotation
+.taskType = .custom,       // Custom function
+.taskType = .flush,        // Flush buffers
+.taskType = .healthCheck, // Health check
 ```
 
 ### Cleanup Configuration
@@ -144,7 +158,7 @@ Task 1: log_compression (compression)
 ```zig
 .config = .{ .cleanup = .{
     .path = "logs",
-    .max_age_days = 30,
+    .maxAgeDays = 30,
     .pattern = "*.log",
     .include_compressed = true,
     .min_files_to_keep = 5,
@@ -157,7 +171,7 @@ Task 1: log_compression (compression)
 .config = .{ .compression = .{
     .path = "logs",
     .pattern = "*.log",
-    .min_age_days = 1,
+    .minAgeDays = 1,
     .delete_originals = true,
 }},
 ```
@@ -168,25 +182,25 @@ Task 1: log_compression (compression)
 // Mode 1: Compress then delete original
 .config = .{
     .path = "logs",
-    .file_pattern = "*.log",
-    .compress_before_delete = true,
-    .skip_already_compressed = true,
+    .filePattern = "*.log",
+    .compressBeforeDelete = true,
+    .skipAlreadyCompressed = true,
 },
 
 // Mode 2: Compress and keep both versions
 .config = .{
     .path = "logs",
-    .file_pattern = "*.log",
-    .compress_and_keep = true,
-    .skip_already_compressed = true,
+    .filePattern = "*.log",
+    .compressAndKeep = true,
+    .skipAlreadyCompressed = true,
 },
 
 // Mode 3: Only compress, never delete
 .config = .{
     .path = "logs",
-    .file_pattern = "*.log",
-    .compress_only = true,
-    .skip_already_compressed = true,
+    .filePattern = "*.log",
+    .compressOnly = true,
+    .skipAlreadyCompressed = true,
 },
 ```
 
@@ -194,17 +208,17 @@ Task 1: log_compression (compression)
 
 ```zig
 // Daily cleanup at 2 AM
-_ = try scheduler.addTask(
+ _ = try scheduler.addTask(
     logly.SchedulerPresets.dailyCleanup("logs"),
 );
 
 // Hourly compression
-_ = try scheduler.addTask(
+ _ = try scheduler.addTask(
     logly.SchedulerPresets.hourlyCompression("logs"),
 );
 
 // Weekly deep clean
-_ = try scheduler.addTask(
+ _ = try scheduler.addTask(
     logly.SchedulerPresets.weeklyDeepClean("logs"),
 );
 ```

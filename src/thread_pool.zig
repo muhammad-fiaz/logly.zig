@@ -1,29 +1,6 @@
-//! Thread Pool Module
+//! Thread pool.
 //!
-//! Provides concurrent execution of logging tasks with configurable
-//! thread count, work stealing, and comprehensive monitoring.
-//!
-//! Features:
-//! - Auto CPU count detection
-//! - Work stealing for load balancing
-//! - Thread affinity support (pin to CPU cores)
-//! - Priority queue support (low, normal, high, critical)
-//! - Batch task submission
-//!
-//! Task Types:
-//! - Function tasks: Simple function pointer execution
-//! - Callback tasks: Function with context pointer
-//!
-//! Configuration:
-//! - thread_count: Number of worker threads (0 = auto-detect)
-//! - queue_size: Work queue capacity per thread
-//! - work_stealing: Enable task stealing between workers
-//!
-//! Performance:
-//! - Lock-free fast path for task submission
-//! - Cache-aware work stealing algorithm
-//! - Minimal context switching overhead
-
+//! Work-stealing pool for parallel log processing.
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Constants = @import("constants.zig");
@@ -36,48 +13,43 @@ const Utils = @import("utils.zig");
 pub const ThreadPool = struct {
     /// Memory allocator for pool operations.
     allocator: std.mem.Allocator,
+    /// Explicit Io handle for thread pool synchronization.
+    io: std.Io = Utils.defaultIo(),
     /// Thread pool configuration.
     config: ThreadPoolConfig,
     /// Worker threads array.
     workers: []Worker,
     /// Work queue for pending tasks.
-    work_queue: WorkQueue,
+    workQueue: WorkQueue,
     /// Thread pool statistics.
     stats: ThreadPoolStats,
     /// Whether the pool is currently running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Whether shutdown has completed.
-    shutdown_complete: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    shutdownComplete: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Next task ID generator.
-    next_task_id: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(1),
+    nextTaskId: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(1),
 
     /// Callback invoked when worker thread starts.
-    /// Parameters: (thread_id: usize)
-    on_thread_start: ?*const fn (usize) void = null,
+    onThreadStart: ?*const fn (usize) void = null,
 
     /// Callback invoked when worker thread stops.
-    /// Parameters: (thread_id: usize, tasks_processed: u64, uptime_ms: u64)
-    on_thread_stop: ?*const fn (usize, u64, u64) void = null,
+    onThreadStop: ?*const fn (usize, u64, u64) void = null,
 
     /// Callback invoked when task is submitted.
-    /// Parameters: (priority: u8, queue_depth: usize)
-    on_task_submitted: ?*const fn (u8, usize) void = null,
+    onTaskSubmitted: ?*const fn (u8, usize) void = null,
 
     /// Callback invoked when task is dequeued.
-    /// Parameters: (priority: u8, wait_time_us: u64)
-    on_task_dequeued: ?*const fn (u8, u64) void = null,
+    onTaskDequeued: ?*const fn (u8, u64) void = null,
 
     /// Callback invoked after task execution.
-    /// Parameters: (execution_time_us: u64, success: bool)
-    on_task_executed: ?*const fn (u64, bool) void = null,
+    onTaskExecuted: ?*const fn (u64, bool) void = null,
 
     /// Callback invoked when work stealing occurs.
-    /// Parameters: (victim_thread: usize, thief_thread: usize)
-    on_work_stolen: ?*const fn (usize, usize) void = null,
+    onWorkStolen: ?*const fn (usize, usize) void = null,
 
     /// Callback invoked when queue reaches capacity.
-    /// Parameters: (queue_size: usize, capacity: usize)
-    on_queue_overflow: ?*const fn (usize, usize) void = null,
+    onQueueOverflow: ?*const fn (usize, usize) void = null,
 
     /// Configuration for the thread pool.
     /// Uses centralized config as base with extended options.
@@ -90,9 +62,9 @@ pub const ThreadPool = struct {
         /// Best for general-purpose workloads.
         pub fn default() ThreadPoolConfig {
             return .{
-                .thread_count = Constants.ThreadDefaults.thread_count,
-                .queue_size = Constants.ThreadDefaults.queue_size,
-                .stack_size = Constants.ThreadDefaults.stack_size,
+                .threadCount = Constants.ThreadDefaults.threadCount,
+                .queueSize = Constants.ThreadDefaults.queueSize,
+                .stackSize = Constants.ThreadDefaults.stackSize,
             };
         }
 
@@ -100,10 +72,10 @@ pub const ThreadPool = struct {
         /// Optimized for sustained high volume workloads.
         pub fn highThroughput() ThreadPoolConfig {
             return .{
-                .thread_count = Constants.ThreadDefaults.thread_count, // Auto-detect
-                .queue_size = Constants.ThreadDefaults.max_tasks,
-                .work_stealing = true,
-                .stack_size = Constants.ThreadDefaults.high_throughput_stack_size,
+                .threadCount = Constants.ThreadDefaults.threadCount, // Auto-detect
+                .queueSize = Constants.ThreadDefaults.maxTasks,
+                .workStealing = true,
+                .stackSize = Constants.ThreadDefaults.highThroughputStackSize,
             };
         }
 
@@ -111,10 +83,10 @@ pub const ThreadPool = struct {
         /// For embedded systems or resource-constrained environments.
         pub fn lowResource() ThreadPoolConfig {
             return .{
-                .thread_count = Constants.ThreadDefaults.low_latency_thread_count,
-                .queue_size = Constants.ThreadDefaults.queue_size_low,
-                .work_stealing = false,
-                .stack_size = Constants.ThreadDefaults.low_resource_stack_size,
+                .threadCount = Constants.ThreadDefaults.lowLatencyThreadCount,
+                .queueSize = Constants.ThreadDefaults.queueSizeLow,
+                .workStealing = false,
+                .stackSize = Constants.ThreadDefaults.lowResourceStackSize,
             };
         }
 
@@ -122,10 +94,10 @@ pub const ThreadPool = struct {
         /// Uses 2x CPU cores for better I/O parallelism.
         pub fn ioBound() ThreadPoolConfig {
             return .{
-                .thread_count = Constants.ThreadDefaults.ioBoundThreadCount(),
-                .queue_size = Constants.ThreadDefaults.io_bound_queue_size,
-                .work_stealing = true,
-                .stack_size = Constants.ThreadDefaults.stack_size,
+                .threadCount = Constants.ThreadDefaults.ioBoundThreadCount(),
+                .queueSize = Constants.ThreadDefaults.ioBoundQueueSize,
+                .workStealing = true,
+                .stackSize = Constants.ThreadDefaults.stackSize,
             };
         }
 
@@ -133,10 +105,10 @@ pub const ThreadPool = struct {
         /// Uses exactly CPU core count.
         pub fn cpuBound() ThreadPoolConfig {
             return .{
-                .thread_count = Constants.ThreadDefaults.cpuBoundThreadCount(),
-                .queue_size = Constants.ThreadDefaults.queue_size,
-                .work_stealing = false, // Less stealing for CPU-bound
-                .stack_size = Constants.ThreadDefaults.stack_size,
+                .threadCount = Constants.ThreadDefaults.cpuBoundThreadCount(),
+                .queueSize = Constants.ThreadDefaults.queueSize,
+                .workStealing = false, // Less stealing for CPU-bound
+                .stackSize = Constants.ThreadDefaults.stackSize,
             };
         }
     };
@@ -144,94 +116,97 @@ pub const ThreadPool = struct {
     /// Statistics for thread pool operations with detailed tracking.
     pub const ThreadPoolStats = struct {
         /// Total tasks submitted to the pool.
-        tasks_submitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksSubmitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Total tasks completed.
-        tasks_completed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksCompleted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         /// Number of tasks stolen via work stealing.
-        tasks_stolen: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        tasks_dropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        total_wait_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        total_exec_time_ns: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        active_threads: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+        tasksStolen: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksDropped: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksCancelled: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        totalWaitTimeNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        totalExecTimeNs: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        activeThreads: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
 
         /// Calculate average wait time in nanoseconds
-        /// Performance: O(1) - atomic loads
         pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64 {
-            const completed = Utils.atomicLoadU64(&self.tasks_completed);
-            const total_wait = Utils.atomicLoadU64(&self.total_wait_time_ns);
-            return if (completed == 0) 0 else total_wait / completed;
+            const completed = Utils.atomicLoadU64(&self.tasksCompleted);
+            const totalWait = Utils.atomicLoadU64(&self.totalWaitTimeNs);
+            return if (completed == 0) 0 else totalWait / completed;
         }
 
         /// Calculate average execution time in nanoseconds
-        /// Performance: O(1) - atomic loads
         pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64 {
-            const completed = Utils.atomicLoadU64(&self.tasks_completed);
-            const total_exec = Utils.atomicLoadU64(&self.total_exec_time_ns);
-            return if (completed == 0) 0 else total_exec / completed;
+            const completed = Utils.atomicLoadU64(&self.tasksCompleted);
+            const totalExec = Utils.atomicLoadU64(&self.totalExecTimeNs);
+            return if (completed == 0) 0 else totalExec / completed;
         }
 
         /// Calculate throughput (tasks per second)
-        /// Performance: O(1) - atomic loads
         pub fn throughput(self: *const ThreadPoolStats) f64 {
-            const completed = Utils.atomicLoadU64(&self.tasks_completed);
-            const exec_time = Utils.atomicLoadU64(&self.total_exec_time_ns);
-            if (exec_time == 0) return 0;
-            const ns_per_sec = @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_second));
-            return @as(f64, @floatFromInt(completed)) / (@as(f64, @floatFromInt(exec_time)) / ns_per_sec);
+            const completed = Utils.atomicLoadU64(&self.tasksCompleted);
+            const execTime = Utils.atomicLoadU64(&self.totalExecTimeNs);
+            if (execTime == 0) return 0;
+            const nsPerSec = @as(f64, @floatFromInt(Constants.TimeConstants.nsPerSecond));
+            return @as(f64, @floatFromInt(completed)) / (@as(f64, @floatFromInt(execTime)) / nsPerSec);
         }
 
         /// Returns total tasks submitted as u64.
         pub fn getSubmitted(self: *const ThreadPoolStats) u64 {
-            return Utils.atomicLoadU64(&self.tasks_submitted);
+            return Utils.atomicLoadU64(&self.tasksSubmitted);
         }
 
         /// Returns total tasks completed as u64.
         pub fn getCompleted(self: *const ThreadPoolStats) u64 {
-            return Utils.atomicLoadU64(&self.tasks_completed);
+            return Utils.atomicLoadU64(&self.tasksCompleted);
         }
 
         /// Returns total tasks dropped as u64.
         pub fn getDropped(self: *const ThreadPoolStats) u64 {
-            return Utils.atomicLoadU64(&self.tasks_dropped);
+            return Utils.atomicLoadU64(&self.tasksDropped);
+        }
+
+        /// Returns total tasks cancelled as u64.
+        pub fn getCancelled(self: *const ThreadPoolStats) u64 {
+            return Utils.atomicLoadU64(&self.tasksCancelled);
         }
 
         /// Returns total tasks stolen as u64.
         pub fn getStolen(self: *const ThreadPoolStats) u64 {
-            return Utils.atomicLoadU64(&self.tasks_stolen);
+            return Utils.atomicLoadU64(&self.tasksStolen);
         }
 
         /// Calculate task completion rate (0.0 - 1.0).
         pub fn completionRate(self: *const ThreadPoolStats) f64 {
-            const submitted = Utils.atomicLoadU64(&self.tasks_submitted);
-            const completed = Utils.atomicLoadU64(&self.tasks_completed);
+            const submitted = Utils.atomicLoadU64(&self.tasksSubmitted);
+            const completed = Utils.atomicLoadU64(&self.tasksCompleted);
             return Utils.calculateErrorRate(completed, submitted);
         }
 
         /// Calculate task drop rate (0.0 - 1.0).
         pub fn dropRate(self: *const ThreadPoolStats) f64 {
-            const submitted = Utils.atomicLoadU64(&self.tasks_submitted);
-            const dropped = Utils.atomicLoadU64(&self.tasks_dropped);
+            const submitted = Utils.atomicLoadU64(&self.tasksSubmitted);
+            const dropped = Utils.atomicLoadU64(&self.tasksDropped);
             return Utils.calculateErrorRate(dropped, submitted);
         }
 
         /// Checks if any tasks were dropped.
         pub fn hasDropped(self: *const ThreadPoolStats) bool {
-            return self.tasks_dropped.load(.monotonic) > 0;
+            return self.tasksDropped.load(.monotonic) > 0;
         }
 
         /// Returns current active thread count.
         pub fn getActiveThreads(self: *const ThreadPoolStats) u32 {
-            return self.active_threads.load(.monotonic);
+            return self.activeThreads.load(.monotonic);
         }
 
         /// Calculate average wait time in milliseconds.
         pub fn avgWaitTimeMs(self: *const ThreadPoolStats) f64 {
-            return @as(f64, @floatFromInt(self.avgWaitTimeNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
+            return @as(f64, @floatFromInt(self.avgWaitTimeNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.nsPerMs));
         }
 
         /// Calculate average execution time in milliseconds.
         pub fn avgExecTimeMs(self: *const ThreadPoolStats) f64 {
-            return @as(f64, @floatFromInt(self.avgExecTimeNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.ns_per_ms));
+            return @as(f64, @floatFromInt(self.avgExecTimeNs())) / @as(f64, @floatFromInt(Constants.TimeConstants.nsPerMs));
         }
     };
 
@@ -249,8 +224,15 @@ pub const ThreadPool = struct {
     pub const WorkItem = struct {
         id: u64 = 0,
         task: Task,
-        submitted_at: i64,
+        submittedAt: i64,
         priority: Priority = .normal,
+        /// Optional cleanup invoked with the task's callback context when
+        /// the item is discarded without executing (clear/cancel). Submit
+        /// functions default this to null; owners of heap contexts must
+        /// provide it or accept the leak on explicit drops. Hooks run under
+        /// the queue lock: they must only free memory and never call back
+        /// into the pool.
+        onDrop: ?*const fn (?*anyopaque) void = null,
 
         /// Priority level for task scheduling.
         pub const Priority = enum(u8) {
@@ -283,6 +265,14 @@ pub const ThreadPool = struct {
             context: *anyopaque,
         };
 
+        /// Returns the context carried by callback tasks (null otherwise).
+        pub fn dropContext(self: Task) ?*anyopaque {
+            return switch (self) {
+                .function => null,
+                .callback => |c| c.context,
+            };
+        }
+
         /// Executes this task variant.
         pub fn execute(self: Task, allocator: ?std.mem.Allocator) void {
             switch (self) {
@@ -295,6 +285,7 @@ pub const ThreadPool = struct {
     /// Work queue implementation using a Ring Deque for efficient FIFO/LIFO access.
     pub const WorkQueue = struct {
         allocator: std.mem.Allocator,
+        io: std.Io = Utils.defaultIo(),
         items: []WorkItem,
         head: usize = 0,
         tail: usize = 0,
@@ -303,11 +294,17 @@ pub const ThreadPool = struct {
         mutex: std.Io.Mutex = .init,
         condition: std.Io.Condition = .init,
 
-        /// Initializes a queue with fixed `capacity`.
+        /// Initializes a queue with fixed `capacity` using default stateless Io.
         pub fn init(allocator: std.mem.Allocator, capacity: usize) !WorkQueue {
+            return WorkQueue.initWithIo(allocator, Utils.defaultIo(), capacity);
+        }
+
+        /// Initializes a queue with fixed `capacity` and explicit Io handle.
+        pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, capacity: usize) !WorkQueue {
             const items = try allocator.alloc(WorkItem, capacity);
             return .{
                 .allocator = allocator,
+                .io = io_handle,
                 .items = items,
                 .capacity = capacity,
             };
@@ -328,8 +325,8 @@ pub const ThreadPool = struct {
         ///
         /// Returns false when queue is at capacity.
         pub fn push(self: *WorkQueue, item: WorkItem) bool {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             if (self.count >= self.capacity) {
                 return false;
@@ -338,14 +335,14 @@ pub const ThreadPool = struct {
             self.items[self.tail] = item;
             self.tail = (self.tail + 1) % self.capacity;
             self.count += 1;
-            self.condition.signal(Utils.io());
+            self.condition.signal(self.io);
             return true;
         }
 
         /// Pops one item from the queue, if available.
         pub fn pop(self: *WorkQueue) ?WorkItem {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             return self.popUnlocked();
         }
@@ -357,58 +354,60 @@ pub const ThreadPool = struct {
             // Fast path: if strict FIFO is ok or just check head
             // Priority support: Scan for highest priority
             // If head is critical/highest, return it.
-            const head_item = self.items[self.head];
-            var best_priority = @intFromEnum(head_item.priority);
+            const headItem = self.items[self.head];
+            var bestPriority = @backingInt(headItem.priority);
 
-            if (best_priority >= @intFromEnum(WorkItem.Priority.critical)) {
+            if (bestPriority >= @backingInt(WorkItem.Priority.critical)) {
                 self.head = (self.head + 1) % self.capacity;
                 self.count -= 1;
-                return head_item;
+                return headItem;
             }
 
             // O(N) scan.
-            var best_idx: usize = 0;
-            var best_offset: usize = 0;
+            var bestIdx: usize = 0;
+            var bestOffset: usize = 0;
 
             var i: usize = 1;
             while (i < self.count) : (i += 1) {
                 const idx = (self.head + i) % self.capacity;
                 const item = self.items[idx];
-                const p = @intFromEnum(item.priority);
-                if (p > best_priority) {
-                    best_priority = p;
-                    best_idx = idx;
-                    best_offset = i;
-                    if (p >= @intFromEnum(WorkItem.Priority.critical)) break;
+                const p = @backingInt(item.priority);
+                if (p > bestPriority) {
+                    bestPriority = p;
+                    bestIdx = idx;
+                    bestOffset = i;
+                    if (p >= @backingInt(WorkItem.Priority.critical)) break;
                 }
             }
 
-            if (best_offset == 0) {
+            if (bestOffset == 0) {
                 self.head = (self.head + 1) % self.capacity;
                 self.count -= 1;
-                return head_item;
+                return headItem;
             } else {
                 // Determine item to return
-                const best_item = self.items[best_idx];
+                const bestItem = self.items[bestIdx];
                 // Move head to empty slot
-                self.items[best_idx] = head_item;
+                self.items[bestIdx] = headItem;
                 self.head = (self.head + 1) % self.capacity;
                 self.count -= 1;
-                return best_item;
+                return bestItem;
             }
         }
 
         /// Waits up to `timeout_ns` for an item, then pops once.
-        pub fn popWait(self: *WorkQueue, timeout_ns: u64) ?WorkItem {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+        pub fn popWait(self: *WorkQueue, timeoutNs: u64) ?WorkItem {
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             // Wait for items if queue is empty
             if (self.count == 0) {
-                const duration = std.Io.Duration.fromNanoseconds(@as(i96, @intCast(timeout_ns)));
-                self.mutex.unlock(Utils.io());
-                Utils.io().sleep(duration, .awake) catch {};
-                self.mutex.lockUncancelable(Utils.io());
+                const clock_dur = std.Io.Clock.Duration{
+                    .raw = std.Io.Duration.fromNanoseconds(@as(i96, @intCast(timeoutNs))),
+                    .clock = .awake,
+                };
+                const timeout = std.Io.Timeout{ .duration = clock_dur };
+                std.Io.Condition.waitTimeout(&self.condition, self.io, &self.mutex, timeout) catch {};
             }
 
             // Pop while still holding the lock (no double-locking)
@@ -417,8 +416,8 @@ pub const ThreadPool = struct {
 
         /// Steals one item from the queue tail.
         pub fn steal(self: *WorkQueue) ?WorkItem {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             if (self.count == 0) return null;
 
@@ -434,22 +433,29 @@ pub const ThreadPool = struct {
 
         /// Returns current queue depth.
         pub fn size(self: *WorkQueue) usize {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
             return self.count;
         }
 
         /// Returns true when the queue is full.
         pub fn isFull(self: *WorkQueue) bool {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
             return self.count >= self.capacity;
         }
 
-        /// Removes all queued items.
+        /// Removes all queued items, invoking per-item drop hooks so
+        /// submitters can reclaim discarded contexts.
         pub fn clear(self: *WorkQueue) void {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
+            var i: usize = 0;
+            while (i < self.count) : (i += 1) {
+                const idx = (self.head + i) % self.capacity;
+                const item = self.items[idx];
+                if (item.onDrop) |hook| hook(item.task.dropContext());
+            }
             self.head = 0;
             self.tail = 0;
             self.count = 0;
@@ -461,21 +467,27 @@ pub const ThreadPool = struct {
 
             var i: usize = 0;
             var found = false;
-            var remove_idx: usize = 0;
+            var removeIdx: usize = 0;
 
             while (i < self.count) : (i += 1) {
                 const idx = (self.head + i) % self.capacity;
                 if (self.items[idx].id == id) {
                     found = true;
-                    remove_idx = idx;
+                    removeIdx = idx;
                     break;
                 }
             }
 
             if (!found) return false;
 
+            // Run the drop hook before shifting so a failing hook cannot
+            // leave the queue half-compacted (hooks must not throw; they
+            // are plain function pointers).
+            const doomed = self.items[removeIdx];
+            if (doomed.onDrop) |hook| hook(doomed.task.dropContext());
+
             // Shift elements to fill the gap.
-            var curr = remove_idx;
+            var curr = removeIdx;
             while (curr != self.head) {
                 const prev = if (curr == 0) self.capacity - 1 else curr - 1;
                 self.items[curr] = self.items[prev];
@@ -492,12 +504,12 @@ pub const ThreadPool = struct {
     pub const Worker = struct {
         id: usize,
         thread: ?std.Thread = null,
-        local_queue: WorkQueue,
+        localQueue: WorkQueue,
         pool: *ThreadPool,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-        tasks_processed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        tasksProcessed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         name: [64]u8 = undefined,
-        name_len: usize = 0,
+        nameLen: usize = 0,
     };
 
     /// Queue depth snapshot split by global and local queues.
@@ -507,55 +519,52 @@ pub const ThreadPool = struct {
         total: usize,
     };
 
-    /// Initializes a new ThreadPool.
-    ///
-    /// Arguments:
-    ///     allocator: Memory allocator.
-    ///
-    /// Returns:
-    ///     A pointer to the new ThreadPool instance.
+    /// Initializes a new ThreadPool with default configuration and stateless Io.
     pub fn init(allocator: std.mem.Allocator) !*ThreadPool {
         return initWithConfig(allocator, .{});
     }
 
-    /// Alias for init().
-    pub const create = init;
-
     /// Initializes a ThreadPool with custom configuration.
-    ///
-    /// Arguments:
-    ///     allocator: Memory allocator.
-    ///     config: Custom thread pool configuration.
-    ///
-    /// Returns:
-    ///     A pointer to the new ThreadPool instance.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool {
+        const io_handle = config.io orelse Utils.defaultIo();
+        return initWithConfigAndIo(allocator, config, io_handle);
+    }
+
+    /// Initializes a ThreadPool with an explicit Io handle and configuration.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: ThreadPoolConfig) !*ThreadPool {
+        return initWithConfigAndIo(allocator, config, io_handle);
+    }
+
+    /// Initializes a ThreadPool with both configuration and explicit Io handle.
+    pub fn initWithConfigAndIo(allocator: std.mem.Allocator, config: ThreadPoolConfig, io_handle: std.Io) !*ThreadPool {
         const self = try allocator.create(ThreadPool);
         errdefer allocator.destroy(self);
 
         // Determine thread count using Constants.ThreadDefaults
-        const num_threads = if (config.thread_count == 0)
-            Constants.ThreadDefaults.recommendedThreadCount()
+        const recommended = Constants.ThreadDefaults.recommendedThreadCount();
+        const numThreads = if (config.threadCount == 0)
+            (if (recommended == 0) 1 else recommended)
         else
-            config.thread_count;
+            config.threadCount;
 
         // Create workers
-        const workers = try allocator.alloc(Worker, num_threads);
+        const workers = try allocator.alloc(Worker, numThreads);
         errdefer allocator.free(workers);
 
         for (workers, 0..) |*worker, i| {
             worker.* = .{
                 .id = i,
-                .local_queue = try WorkQueue.init(allocator, config.queue_size),
+                .localQueue = try WorkQueue.initWithIo(allocator, io_handle, config.queueSize),
                 .pool = self,
             };
         }
 
         self.* = .{
             .allocator = allocator,
+            .io = io_handle,
             .config = config,
             .workers = workers,
-            .work_queue = try WorkQueue.init(allocator, config.queue_size * num_threads),
+            .workQueue = try WorkQueue.initWithIo(allocator, io_handle, config.queueSize * numThreads),
             .stats = .{},
         };
 
@@ -567,22 +576,19 @@ pub const ThreadPool = struct {
         self.shutdown();
 
         for (self.workers) |*worker| {
-            worker.local_queue.deinit();
+            worker.localQueue.deinit();
         }
         self.allocator.free(self.workers);
-        self.work_queue.deinit();
+        self.workQueue.deinit();
         self.allocator.destroy(self);
     }
-
-    /// Alias for deinit().
-    pub const destroy = deinit;
 
     /// Starts the thread pool.
     pub fn start(self: *ThreadPool) !void {
         if (self.running.load(.acquire)) return;
 
         self.running.store(true, .release);
-        self.shutdown_complete.store(false, .release);
+        self.shutdownComplete.store(false, .release);
 
         for (self.workers) |*worker| {
             worker.running.store(true, .release);
@@ -597,10 +603,10 @@ pub const ThreadPool = struct {
         self.running.store(false, .release);
 
         // Signal all workers
-        self.work_queue.condition.broadcast(Utils.io());
+        self.workQueue.condition.broadcast(self.io);
         for (self.workers) |*worker| {
             worker.running.store(false, .release);
-            worker.local_queue.condition.broadcast(Utils.io());
+            worker.localQueue.condition.broadcast(self.io);
         }
 
         // Wait for workers to finish
@@ -611,7 +617,7 @@ pub const ThreadPool = struct {
             }
         }
 
-        self.shutdown_complete.store(true, .release);
+        self.shutdownComplete.store(true, .release);
     }
 
     /// Cancels a task if it hasn't started executing yet.
@@ -619,45 +625,53 @@ pub const ThreadPool = struct {
     pub fn cancel(self: *ThreadPool, handle: TaskHandle) bool {
         if (!handle.isValid()) return false;
 
-        self.work_queue.mutex.lockUncancelable(Utils.io());
-        defer self.work_queue.mutex.unlock(Utils.io());
+        self.workQueue.mutex.lockUncancelable(self.io);
+        defer self.workQueue.mutex.unlock(self.io);
 
-        if (self.work_queue.removeByIdUnlocked(handle.id)) return true;
+        if (self.workQueue.removeByIdUnlocked(handle.id)) {
+            _ = self.stats.tasksCancelled.fetchAdd(1, .monotonic);
+            return true;
+        }
 
         for (self.workers) |*worker| {
-            worker.local_queue.mutex.lockUncancelable(Utils.io());
-            defer worker.local_queue.mutex.unlock(Utils.io());
-            if (worker.local_queue.removeByIdUnlocked(handle.id)) return true;
+            worker.localQueue.mutex.lockUncancelable(self.io);
+            defer worker.localQueue.mutex.unlock(self.io);
+            if (worker.localQueue.removeByIdUnlocked(handle.id)) {
+                _ = self.stats.tasksCancelled.fetchAdd(1, .monotonic);
+                return true;
+            }
         }
         return false;
     }
 
     /// Submits a task for execution.
-    ///
-    /// Arguments:
-    ///     task: The task to execute.
-    ///     priority: Task priority.
-    ///
-    /// Returns:
-    ///     TaskHandle if submitted successfully.
     pub fn submit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) TaskHandle {
+        return self.submitWithDrop(task, priority, null);
+    }
+
+    /// Submits a task with a drop hook invoked if the item is discarded
+    /// without executing (clear/cancel). See WorkItem.onDrop.
+    pub fn submitWithDrop(self: *ThreadPool, task: Task, priority: WorkItem.Priority, onDrop: ?*const fn (?*anyopaque) void) TaskHandle {
         if (!self.running.load(.acquire)) return .{ .id = 0 };
 
-        const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
+        const id: u64 = @intCast(self.nextTaskId.fetchAdd(1, .monotonic));
         const item = WorkItem{
             .id = id,
             .task = task,
-            .submitted_at = Utils.currentMillis(),
+            .submittedAt = Utils.currentMillis(),
             .priority = priority,
+            .onDrop = onDrop,
         };
 
-        if (self.work_queue.push(item)) {
-            _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
-            self.emitTaskSubmitted(priority, self.work_queue.size());
+        if (self.workQueue.push(item)) {
+            _ = self.stats.tasksSubmitted.fetchAdd(1, .monotonic);
+            self.emitTaskSubmitted(priority, self.workQueue.size());
             return .{ .id = id };
         }
 
-        self.emitQueueOverflow(self.work_queue.size(), self.work_queue.capacity);
+        self.emitQueueOverflow(self.workQueue.size(), self.workQueue.capacity);
+        _ = self.stats.tasksDropped.fetchAdd(1, .monotonic);
+        if (onDrop) |hook| hook(task.dropContext());
         return .{ .id = 0 };
     }
 
@@ -674,6 +688,19 @@ pub const ThreadPool = struct {
     /// Submits a callback with context for execution.
     pub fn submitCallback(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool {
         return self.submit(.{ .callback = .{ .func = func, .context = context } }, .normal).isValid();
+    }
+
+    /// Submits a callback with context plus a drop hook for the context.
+    ///
+    /// The hook fires if the item is discarded without executing
+    /// (clear/cancel). Use it whenever `context` owns heap memory.
+    pub fn submitCallbackWithDrop(
+        self: *ThreadPool,
+        func: *const fn (*anyopaque, ?std.mem.Allocator) void,
+        context: *anyopaque,
+        onDrop: *const fn (?*anyopaque) void,
+    ) bool {
+        return self.submitWithDrop(.{ .callback = .{ .func = func, .context = context } }, .normal, onDrop).isValid();
     }
 
     /// Submits a callback and returns a handle.
@@ -711,7 +738,7 @@ pub const ThreadPool = struct {
             if (self.submit(task, priority).isValid()) {
                 submitted += 1;
             } else if (self.running.load(.acquire)) {
-                _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+                _ = self.stats.tasksDropped.fetchAdd(1, .monotonic);
             }
         }
 
@@ -721,23 +748,23 @@ pub const ThreadPool = struct {
     /// Batch submit with bounded retries for transient queue pressure.
     ///
     /// Returns number of tasks eventually submitted.
-    pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, max_attempts: u8, retry_delay_us: u32) usize {
+    pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, maxAttempts: u8, retryDelayUs: u32) usize {
         if (!self.running.load(.acquire)) return 0;
         if (tasks.len == 0) return 0;
 
-        const attempts_limit: u8 = if (max_attempts == 0) 1 else max_attempts;
+        const attemptsLimit: u8 = if (maxAttempts == 0) 1 else maxAttempts;
         var submitted: usize = 0;
 
         for (tasks) |task| {
             var attempts: u8 = 0;
-            while (attempts < attempts_limit) : (attempts += 1) {
+            while (attempts < attemptsLimit) : (attempts += 1) {
                 if (self.submit(task, priority).isValid()) {
                     submitted += 1;
                     break;
                 }
 
-                if (attempts + 1 < attempts_limit and retry_delay_us > 0) {
-                    Utils.sleepNs(@as(u64, retry_delay_us) * Constants.TimeConstants.ns_per_us);
+                if (attempts + 1 < attemptsLimit and retryDelayUs > 0) {
+                    Utils.sleepNs(@as(u64, retryDelayUs) * Constants.TimeConstants.nsPerUs);
                 }
             }
         }
@@ -750,38 +777,38 @@ pub const ThreadPool = struct {
         if (!self.running.load(.acquire)) return .{ .id = 0 };
 
         // Try lock without blocking
-        if (!self.work_queue.mutex.tryLock()) {
+        if (!self.workQueue.mutex.tryLock()) {
             return .{ .id = 0 };
         }
-        var queue_depth: usize = 0;
+        var queueDepth: usize = 0;
         const handle: TaskHandle = blk: {
-            defer self.work_queue.mutex.unlock(Utils.io());
+            defer self.workQueue.mutex.unlock(self.io);
 
-            if (self.work_queue.count >= self.work_queue.capacity) {
-                _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+            if (self.workQueue.count >= self.workQueue.capacity) {
+                _ = self.stats.tasksDropped.fetchAdd(1, .monotonic);
                 break :blk .{ .id = 0 };
             }
 
-            const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
+            const id: u64 = @intCast(self.nextTaskId.fetchAdd(1, .monotonic));
             const item = WorkItem{
                 .id = id,
                 .task = task,
-                .submitted_at = Utils.currentMillis(),
+                .submittedAt = Utils.currentMillis(),
                 .priority = priority,
             };
 
-            self.work_queue.items[self.work_queue.tail] = item;
-            self.work_queue.tail = (self.work_queue.tail + 1) % self.work_queue.capacity;
-            self.work_queue.count += 1;
-            queue_depth = self.work_queue.count;
+            self.workQueue.items[self.workQueue.tail] = item;
+            self.workQueue.tail = (self.workQueue.tail + 1) % self.workQueue.capacity;
+            self.workQueue.count += 1;
+            queueDepth = self.workQueue.count;
 
-            _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
-            self.work_queue.condition.signal(Utils.io());
+            _ = self.stats.tasksSubmitted.fetchAdd(1, .monotonic);
+            self.workQueue.condition.signal(self.io);
             break :blk .{ .id = id };
         };
 
         if (handle.id != 0) {
-            self.emitTaskSubmitted(priority, queue_depth);
+            self.emitTaskSubmitted(priority, queueDepth);
         }
         return handle;
     }
@@ -792,66 +819,66 @@ pub const ThreadPool = struct {
     }
 
     /// Submit to a specific worker's local queue for better cache locality. Returns a handle.
-    pub fn submitToWorkerWithHandle(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) TaskHandle {
+    pub fn submitToWorkerWithHandle(self: *ThreadPool, workerId: usize, task: Task, priority: WorkItem.Priority) TaskHandle {
         if (!self.running.load(.acquire)) return .{ .id = 0 };
-        if (worker_id >= self.workers.len) return .{ .id = 0 };
+        if (workerId >= self.workers.len) return .{ .id = 0 };
 
-        const id: u64 = @intCast(self.next_task_id.fetchAdd(1, .monotonic));
+        const id: u64 = @intCast(self.nextTaskId.fetchAdd(1, .monotonic));
         const item = WorkItem{
             .id = id,
             .task = task,
-            .submitted_at = Utils.currentMillis(),
+            .submittedAt = Utils.currentMillis(),
             .priority = priority,
         };
 
-        if (self.workers[worker_id].local_queue.push(item)) {
-            _ = self.stats.tasks_submitted.fetchAdd(1, .monotonic);
-            self.emitTaskSubmitted(priority, self.workers[worker_id].local_queue.size());
+        if (self.workers[workerId].localQueue.push(item)) {
+            _ = self.stats.tasksSubmitted.fetchAdd(1, .monotonic);
+            self.emitTaskSubmitted(priority, self.workers[workerId].localQueue.size());
             return .{ .id = id };
         }
 
-        self.emitQueueOverflow(self.workers[worker_id].local_queue.size(), self.workers[worker_id].local_queue.capacity);
-        _ = self.stats.tasks_dropped.fetchAdd(1, .monotonic);
+        self.emitQueueOverflow(self.workers[workerId].localQueue.size(), self.workers[workerId].localQueue.capacity);
+        _ = self.stats.tasksDropped.fetchAdd(1, .monotonic);
         return .{ .id = 0 };
     }
 
     /// Submit to a specific worker's local queue for better cache locality.
-    pub fn submitToWorker(self: *ThreadPool, worker_id: usize, task: Task, priority: WorkItem.Priority) bool {
-        return self.submitToWorkerWithHandle(worker_id, task, priority).isValid();
+    pub fn submitToWorker(self: *ThreadPool, workerId: usize, task: Task, priority: WorkItem.Priority) bool {
+        return self.submitToWorkerWithHandle(workerId, task, priority).isValid();
     }
 
     fn workerLoop(worker: *Worker) void {
         const pool = worker.pool;
-        const started_at_ms = Utils.currentMillis();
+        const startedAtMs = Utils.currentMillis();
 
-        const name_str = std.fmt.bufPrint(&worker.name, "{s}-{d}", .{ pool.config.thread_name_prefix, worker.id }) catch pool.config.thread_name_prefix;
-        worker.name_len = name_str.len;
+        const nameStr = std.fmt.bufPrint(&worker.name, "{s}-{d}", .{ pool.config.threadNamePrefix, worker.id }) catch pool.config.threadNamePrefix;
+        worker.nameLen = nameStr.len;
 
-        _ = pool.stats.active_threads.fetchAdd(1, .monotonic);
+        _ = pool.stats.activeThreads.fetchAdd(1, .monotonic);
         pool.emitThreadStart(worker.id);
         defer pool.emitThreadStop(
             worker.id,
-            worker.tasks_processed.load(.monotonic),
-            @as(u64, @intCast(@max(0, Utils.currentMillis() - started_at_ms))),
+            worker.tasksProcessed.load(.monotonic),
+            @as(u64, @intCast(@max(0, Utils.currentMillis() - startedAtMs))),
         );
-        defer _ = pool.stats.active_threads.fetchSub(1, .monotonic);
+        defer _ = pool.stats.activeThreads.fetchSub(1, .monotonic);
 
-        while (worker.running.load(.acquire) or pool.work_queue.size() > 0) {
+        while (worker.running.load(.acquire) or pool.workQueue.size() > 0 or worker.localQueue.size() > 0) {
             // Try local queue first
-            var item = worker.local_queue.pop();
+            var item = worker.localQueue.pop();
 
             // Try global queue with timeout from Constants
             if (item == null) {
-                item = pool.work_queue.popWait(Constants.ThreadDefaults.wait_timeout_ns);
+                item = pool.workQueue.popWait(Constants.ThreadDefaults.waitTimeoutNs);
             }
 
             // Try work stealing
-            if (item == null and pool.config.work_stealing) {
+            if (item == null and pool.config.workStealing and pool.workers.len > 1) {
                 for (pool.workers) |*other| {
                     if (other.id != worker.id) {
-                        if (other.local_queue.steal()) |stolen| {
+                        if (other.localQueue.steal()) |stolen| {
                             item = stolen;
-                            _ = pool.stats.tasks_stolen.fetchAdd(1, .monotonic);
+                            _ = pool.stats.tasksStolen.fetchAdd(1, .monotonic);
                             pool.emitWorkStolen(other.id, worker.id);
                             break;
                         }
@@ -860,19 +887,19 @@ pub const ThreadPool = struct {
             }
 
             if (item) |work| {
-                const start_time = Utils.currentNanos();
-                const wait_time_ms = Utils.currentMillis() - work.submitted_at;
-                const wait_time_ns = @as(u64, @intCast(@max(0, wait_time_ms))) * Constants.TimeConstants.ns_per_ms;
-                pool.emitTaskDequeued(work.priority, wait_time_ns);
+                const startTime = Utils.currentNanos();
+                const waitTimeMs = Utils.currentMillis() - work.submittedAt;
+                const waitTimeNs = @as(u64, @intCast(@max(0, waitTimeMs))) * Constants.TimeConstants.nsPerMs;
+                pool.emitTaskDequeued(work.priority, waitTimeNs);
 
-                work.task.execute(null);
+                work.task.execute(pool.allocator);
 
-                const exec_time = Utils.currentNanos() - start_time;
-                _ = pool.stats.total_wait_time_ns.fetchAdd(@truncate(wait_time_ns), .monotonic);
-                _ = pool.stats.total_exec_time_ns.fetchAdd(@truncate(@as(u64, @intCast(@max(0, exec_time)))), .monotonic);
-                _ = pool.stats.tasks_completed.fetchAdd(1, .monotonic);
-                _ = worker.tasks_processed.fetchAdd(1, .monotonic);
-                pool.emitTaskExecuted(@as(u64, @intCast(@max(0, exec_time))), true);
+                const execTime = Utils.currentNanos() - startTime;
+                _ = pool.stats.totalWaitTimeNs.fetchAdd(@truncate(waitTimeNs), .monotonic);
+                _ = pool.stats.totalExecTimeNs.fetchAdd(@truncate(@as(u64, @intCast(@max(0, execTime)))), .monotonic);
+                _ = pool.stats.tasksCompleted.fetchAdd(1, .monotonic);
+                _ = worker.tasksProcessed.fetchAdd(1, .monotonic);
+                pool.emitTaskExecuted(@as(u64, @intCast(@max(0, execTime))), true);
             }
         }
     }
@@ -884,86 +911,65 @@ pub const ThreadPool = struct {
 
     /// Sets the worker start callback.
     pub fn setThreadStartCallback(self: *ThreadPool, callback: ?*const fn (usize) void) void {
-        self.on_thread_start = callback;
+        self.onThreadStart = callback;
     }
-
-    /// Alias for setThreadStartCallback.
-    pub const onThreadStart = setThreadStartCallback;
 
     /// Sets the worker stop callback.
     pub fn setThreadStopCallback(self: *ThreadPool, callback: ?*const fn (usize, u64, u64) void) void {
-        self.on_thread_stop = callback;
+        self.onThreadStop = callback;
     }
-
-    /// Alias for setThreadStopCallback.
-    pub const onThreadStop = setThreadStopCallback;
 
     /// Sets the task submitted callback.
     pub fn setTaskSubmittedCallback(self: *ThreadPool, callback: ?*const fn (u8, usize) void) void {
-        self.on_task_submitted = callback;
+        self.onTaskSubmitted = callback;
     }
-
-    /// Alias for setTaskSubmittedCallback.
-    pub const onTaskSubmitted = setTaskSubmittedCallback;
 
     /// Sets the task dequeued callback.
     pub fn setTaskDequeuedCallback(self: *ThreadPool, callback: ?*const fn (u8, u64) void) void {
-        self.on_task_dequeued = callback;
+        self.onTaskDequeued = callback;
     }
-
-    /// Alias for setTaskDequeuedCallback.
-    pub const onTaskDequeued = setTaskDequeuedCallback;
 
     /// Sets the task executed callback.
     pub fn setTaskExecutedCallback(self: *ThreadPool, callback: ?*const fn (u64, bool) void) void {
-        self.on_task_executed = callback;
+        self.onTaskExecuted = callback;
     }
-
-    /// Alias for setTaskExecutedCallback.
-    pub const onTaskExecuted = setTaskExecutedCallback;
 
     /// Sets the work stolen callback.
     pub fn setWorkStolenCallback(self: *ThreadPool, callback: ?*const fn (usize, usize) void) void {
-        self.on_work_stolen = callback;
+        self.onWorkStolen = callback;
     }
-
-    /// Alias for setWorkStolenCallback.
-    pub const onWorkStolen = setWorkStolenCallback;
 
     /// Sets the queue overflow callback.
     pub fn setQueueOverflowCallback(self: *ThreadPool, callback: ?*const fn (usize, usize) void) void {
-        self.on_queue_overflow = callback;
+        self.onQueueOverflow = callback;
     }
 
-    /// Alias for setQueueOverflowCallback.
-    pub const onQueueOverflow = setQueueOverflowCallback;
-
-    fn emitThreadStart(self: *ThreadPool, thread_id: usize) void {
-        if (self.on_thread_start) |cb| cb(thread_id);
+    fn emitThreadStart(self: *ThreadPool, threadId: usize) void {
+        if (self.onThreadStart) |cb| cb(threadId);
     }
 
-    fn emitThreadStop(self: *ThreadPool, thread_id: usize, tasks_processed: u64, uptime_ms: u64) void {
-        if (self.on_thread_stop) |cb| cb(thread_id, tasks_processed, uptime_ms);
+    fn emitThreadStop(self: *ThreadPool, threadId: usize, tasksProcessed: u64, uptimeMs: u64) void {
+        if (self.onThreadStop) |cb| cb(threadId, tasksProcessed, uptimeMs);
     }
 
-    fn emitTaskSubmitted(self: *ThreadPool, priority: WorkItem.Priority, queue_depth: usize) void {
-        if (self.on_task_submitted) |cb| cb(@intFromEnum(priority), queue_depth);
+    fn emitTaskSubmitted(self: *ThreadPool, priority: WorkItem.Priority, queueDepth: usize) void {
+        if (self.onTaskSubmitted) |cb| cb(@backingInt(priority), queueDepth);
     }
 
-    fn emitTaskDequeued(self: *ThreadPool, priority: WorkItem.Priority, wait_time_ns: u64) void {
-        if (self.on_task_dequeued) |cb| cb(@intFromEnum(priority), wait_time_ns / Constants.TimeConstants.ns_per_us);
+    fn emitTaskDequeued(self: *ThreadPool, priority: WorkItem.Priority, waitTimeNs: u64) void {
+        if (self.onTaskDequeued) |cb| cb(@backingInt(priority), waitTimeNs / Constants.TimeConstants.nsPerUs);
     }
 
-    fn emitTaskExecuted(self: *ThreadPool, exec_time_ns: u64, success: bool) void {
-        if (self.on_task_executed) |cb| cb(exec_time_ns / Constants.TimeConstants.ns_per_us, success);
+    fn emitTaskExecuted(self: *ThreadPool, execTimeNs: u64, success: bool) void {
+        if (self.onTaskExecuted) |cb| cb(execTimeNs / Constants.TimeConstants.nsPerUs, success);
     }
 
-    fn emitWorkStolen(self: *ThreadPool, victim_thread: usize, thief_thread: usize) void {
-        if (self.on_work_stolen) |cb| cb(victim_thread, thief_thread);
+    fn emitWorkStolen(self: *ThreadPool, victimThread: usize, thiefThread: usize) void {
+        if (self.onWorkStolen) |cb| cb(victimThread, thiefThread);
     }
 
-    fn emitQueueOverflow(self: *ThreadPool, queue_size: usize, capacity: usize) void {
-        if (self.on_queue_overflow) |cb| cb(queue_size, capacity);
+    fn emitQueueOverflow(self: *ThreadPool, queueSize: usize, capacity: usize) void {
+        if (self.onQueueOverflow) |cb| cb(queueSize, capacity);
     }
 
     /// Gets the number of pending tasks.
@@ -973,23 +979,23 @@ pub const ThreadPool = struct {
 
     /// Gets a queue depth snapshot split by global and local queues.
     pub fn pendingTasksByQueue(self: *ThreadPool) QueueDepth {
-        const global_count = self.work_queue.size();
-        var local_count: usize = 0;
+        const globalCount = self.workQueue.size();
+        var localCount: usize = 0;
 
         for (self.workers) |*worker| {
-            local_count += worker.local_queue.size();
+            localCount += worker.localQueue.size();
         }
 
         return .{
-            .global = global_count,
-            .local = local_count,
-            .total = global_count + local_count,
+            .global = globalCount,
+            .local = localCount,
+            .total = globalCount + localCount,
         };
     }
 
     /// Gets total queue capacity across global and per-worker queues.
     pub fn queueCapacity(self: *const ThreadPool) usize {
-        return self.work_queue.capacity + (self.workers.len * self.config.queue_size);
+        return self.workQueue.capacity + (self.workers.len * self.config.queueSize);
     }
 
     /// Gets currently available queue slots.
@@ -1000,9 +1006,9 @@ pub const ThreadPool = struct {
     }
 
     /// Returns true when queue has at least `required_slots` free entries.
-    pub fn canAcceptTasks(self: *ThreadPool, required_slots: usize) bool {
-        if (required_slots == 0) return true;
-        return self.availableQueueCapacity() >= required_slots;
+    pub fn canAcceptTasks(self: *ThreadPool, requiredSlots: usize) bool {
+        if (requiredSlots == 0) return true;
+        return self.availableQueueCapacity() >= requiredSlots;
     }
 
     /// Gets queue utilization ratio in [0.0, 1.0].
@@ -1025,24 +1031,24 @@ pub const ThreadPool = struct {
 
     /// Gets the number of active threads.
     pub fn activeThreads(self: *const ThreadPool) u32 {
-        return self.stats.active_threads.load(.monotonic);
+        return self.stats.activeThreads.load(.monotonic);
     }
 
-    fn hasTimedOut(started_at_ms: i64, timeout_ms: u64) bool {
-        if (timeout_ms == 0) return true;
-        const elapsed = Utils.currentMillis() - started_at_ms;
-        return elapsed >= @as(i64, @intCast(timeout_ms));
+    fn hasTimedOut(startedAtMs: i64, timeoutMs: u64) bool {
+        if (timeoutMs == 0) return true;
+        const elapsed = Utils.currentMillis() - startedAtMs;
+        return elapsed >= @as(i64, @intCast(timeoutMs));
     }
 
     /// Waits for all pending tasks to complete.
     pub fn waitAll(self: *ThreadPool) void {
-        // Wait until all submitted tasks are completed
+        // Wait until all submitted tasks are completed or cancelled
         while (true) {
-            const submitted = self.stats.tasks_submitted.load(.monotonic);
-            const completed = self.stats.tasks_completed.load(.monotonic);
-            const dropped = self.stats.tasks_dropped.load(.monotonic);
+            const submitted = self.stats.tasksSubmitted.load(.monotonic);
+            const completed = self.stats.tasksCompleted.load(.monotonic);
+            const cancelled = self.stats.tasksCancelled.load(.monotonic);
 
-            if (completed + dropped >= submitted) break;
+            if (completed + cancelled >= submitted and self.pendingTasks() == 0) break;
 
             Utils.sleepMs(1);
         }
@@ -1051,17 +1057,17 @@ pub const ThreadPool = struct {
     /// Waits for all pending tasks with timeout.
     ///
     /// Returns true when all tasks completed before timeout.
-    pub fn waitAllTimeout(self: *ThreadPool, timeout_ms: u64) bool {
-        const started_at_ms = Utils.currentMillis();
+    pub fn waitAllTimeout(self: *ThreadPool, timeoutMs: u64) bool {
+        const startedAtMs = Utils.currentMillis();
 
         while (true) {
-            const submitted = self.stats.tasks_submitted.load(.monotonic);
-            const completed = self.stats.tasks_completed.load(.monotonic);
-            const dropped = self.stats.tasks_dropped.load(.monotonic);
+            const submitted = self.stats.tasksSubmitted.load(.monotonic);
+            const completed = self.stats.tasksCompleted.load(.monotonic);
+            const cancelled = self.stats.tasksCancelled.load(.monotonic);
 
-            if (completed + dropped >= submitted) return true;
+            if (completed + cancelled >= submitted and self.pendingTasks() == 0) return true;
 
-            if (hasTimedOut(started_at_ms, timeout_ms)) return false;
+            if (hasTimedOut(startedAtMs, timeoutMs)) return false;
 
             Utils.sleepMs(1);
         }
@@ -1070,75 +1076,25 @@ pub const ThreadPool = struct {
     /// Waits until pending queue depth is below or equal to threshold.
     ///
     /// Returns true when threshold was reached before timeout.
-    pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeout_ms: u64) bool {
-        const started_at_ms = Utils.currentMillis();
+    pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeoutMs: u64) bool {
+        const startedAtMs = Utils.currentMillis();
 
         while (true) {
             if (self.pendingTasks() <= threshold) return true;
 
-            if (hasTimedOut(started_at_ms, timeout_ms)) return false;
+            if (hasTimedOut(startedAtMs, timeoutMs)) return false;
 
             Utils.sleepMs(1);
         }
     }
 
-    /// Alias for waitAll() - waits for all tasks to complete.
-    pub const await = waitAll;
-    pub const join = waitAll;
-
-    /// Alias for submit() - submit a task.
-    pub const push = submit;
-    pub const enqueue = submit;
-
-    /// Alias for submitBatchWithRetry
-    pub const submitBatchRetry = submitBatchWithRetry;
-
-    /// Alias for submitFn() - submit a function.
-    pub const run = submitFn;
-
-    /// Alias for pendingTasks() - get queue depth.
-    pub const queueDepth = pendingTasks;
-    pub const size = pendingTasks;
-
-    /// Alias for pendingTasksByQueue
-    pub const queueBreakdown = pendingTasksByQueue;
-
-    /// Alias for queueCapacity
-    pub const totalQueueCapacity = queueCapacity;
-
-    /// Alias for availableQueueCapacity
-    pub const freeQueueCapacity = availableQueueCapacity;
-    pub const availableCapacity = availableQueueCapacity;
-
-    /// Alias for canAcceptTasks
-    pub const hasCapacityFor = canAcceptTasks;
-
-    /// Alias for queueUtilization
-    pub const queueLoad = queueUtilization;
-
-    /// Alias for isSaturated
-    pub const saturated = isSaturated;
-
-    /// Alias for waitAllTimeout
-    pub const waitForAll = waitAllTimeout;
-
-    /// Alias for waitUntilQueueBelow
-    pub const waitForQueueBelow = waitUntilQueueBelow;
-
-    /// Alias for activeThreads() - get worker count.
-    pub const workerCount = activeThreads;
-
     /// Clears all pending tasks without executing them.
     pub fn clear(self: *ThreadPool) void {
-        self.work_queue.clear();
+        self.workQueue.clear();
         for (self.workers) |*worker| {
-            worker.local_queue.clear();
+            worker.localQueue.clear();
         }
     }
-
-    /// Alias for clear() - discard pending tasks.
-    pub const discard = clear;
-    pub const flush = clear;
 
     /// Returns true if the pool is running.
     pub fn isRunning(self: *const ThreadPool) bool {
@@ -1157,7 +1113,7 @@ pub const ThreadPool = struct {
 
     /// Returns true if the pool is at capacity (queue full).
     pub fn isFull(self: *ThreadPool) bool {
-        return self.work_queue.isFull();
+        return self.workQueue.isFull();
     }
 
     /// Returns the utilization ratio (0.0 - 1.0).
@@ -1172,19 +1128,6 @@ pub const ThreadPool = struct {
     pub fn resetStats(self: *ThreadPool) void {
         self.stats = .{};
     }
-
-    /// Alias for getStats
-    pub const statistics = getStats;
-
-    /// Alias for shutdown
-    pub const stop = shutdown;
-    pub const halt = shutdown;
-
-    /// Alias for start
-    pub const begin = start;
-
-    /// Alias for submit
-    pub const add = submit;
 };
 
 /// Re-export ParallelConfig from global config for convenience.
@@ -1202,22 +1145,22 @@ pub const ParallelSinkWriter = struct {
     stats: ParallelStats = .{},
 
     pub const SinkHandle = struct {
-        write_fn: *const fn (data: []const u8) void,
-        flush_fn: ?*const fn () void = null,
+        writeFn: *const fn (data: []const u8) void,
+        flushFn: ?*const fn () void = null,
         name: []const u8,
         enabled: bool = true,
     };
 
     pub const ParallelStats = struct {
-        writes_submitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        writes_completed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        writes_failed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        writesSubmitted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        writesCompleted: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        writesFailed: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
         retries: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
-        bytes_written: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+        bytesWritten: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
         pub fn successRate(self: *const ParallelStats) f64 {
-            const completed = @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.writes_completed)));
-            const total = @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.writes_submitted)));
+            const completed = @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.writesCompleted)));
+            const total = @as(f64, @floatFromInt(Utils.atomicLoadU64(&self.writesSubmitted)));
             if (total == 0) return 1.0;
             return completed / total;
         }
@@ -1227,9 +1170,6 @@ pub const ParallelSinkWriter = struct {
     pub fn init(allocator: std.mem.Allocator, pool: *ThreadPool) !*ParallelSinkWriter {
         return initWithConfig(allocator, pool, .{});
     }
-
-    /// Alias for init().
-    pub const create = init;
 
     /// Initialize with custom ParallelConfig.
     pub fn initWithConfig(allocator: std.mem.Allocator, pool: *ThreadPool, config: ParallelConfig) !*ParallelSinkWriter {
@@ -1257,20 +1197,17 @@ pub const ParallelSinkWriter = struct {
         self.allocator.destroy(self);
     }
 
-    /// Alias for deinit().
-    pub const destroy = deinit;
-
     /// Add a sink for parallel writing.
     pub fn addSink(self: *ParallelSinkWriter, handle: SinkHandle) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
         try self.sinks.append(self.allocator, handle);
     }
 
     /// Remove a sink by name.
     pub fn removeSink(self: *ParallelSinkWriter, name: []const u8) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         var i: usize = 0;
         while (i < self.sinks.items.len) {
@@ -1284,8 +1221,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Enable or disable a sink by name.
     pub fn setSinkEnabled(self: *ParallelSinkWriter, name: []const u8, enabled: bool) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         for (self.sinks.items) |*sink| {
             if (std.mem.eql(u8, sink.name, name)) {
@@ -1296,8 +1233,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Write to all sinks in parallel.
     pub fn writeParallel(self: *ParallelSinkWriter, data: []const u8) void {
-        _ = self.stats.writes_submitted.fetchAdd(1, .monotonic);
-        _ = self.stats.bytes_written.fetchAdd(@intCast(data.len), .monotonic);
+        _ = self.stats.writesSubmitted.fetchAdd(1, .monotonic);
+        _ = self.stats.bytesWritten.fetchAdd(@intCast(data.len), .monotonic);
 
         if (self.config.buffered) {
             self.bufferWrite(data);
@@ -1308,17 +1245,17 @@ pub const ParallelSinkWriter = struct {
 
     /// Buffer a write for later dispatch.
     fn bufferWrite(self: *ParallelSinkWriter, data: []const u8) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
-        if (self.allocator.dupe(u8, data)) |data_copy| {
-            self.buffer.append(self.allocator, data_copy) catch {
-                self.allocator.free(data_copy);
+        if (self.allocator.dupe(u8, data)) |dataCopy| {
+            self.buffer.append(self.allocator, dataCopy) catch {
+                self.allocator.free(dataCopy);
                 return;
             };
 
             // Flush if buffer is full
-            if (self.buffer.items.len >= self.config.buffer_size) {
+            if (self.buffer.items.len >= self.config.bufferSize) {
                 self.flushBufferUnlocked();
             }
         } else |_| {}
@@ -1326,8 +1263,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Flush the buffer immediately.
     pub fn flushBuffer(self: *ParallelSinkWriter) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
         self.flushBufferUnlocked();
     }
 
@@ -1341,96 +1278,102 @@ pub const ParallelSinkWriter = struct {
 
     /// Dispatch write to all sinks.
     fn dispatchWrite(self: *ParallelSinkWriter, data: []const u8) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
         self.dispatchWriteUnlocked(data);
     }
 
     fn dispatchWriteUnlocked(self: *ParallelSinkWriter, data: []const u8) void {
         const WriteContext = struct {
             allocator: std.mem.Allocator,
-            write_fn: *const fn (data: []const u8) void,
+            writeFn: *const fn (data: []const u8) void,
             data: []const u8,
             stats: *ParallelStats,
-            max_retries: u3,
-            retry_on_failure: bool,
+            maxRetries: u3,
+            retryOnFailure: bool,
         };
 
-        const task_fn = struct {
-            fn run(ctx_ptr: *anyopaque, _: ?std.mem.Allocator) void {
-                const ctx = @as(*WriteContext, @ptrCast(@alignCast(ctx_ptr)));
+        const taskFns = struct {
+            fn run(ctxPtr: *anyopaque, _: ?std.mem.Allocator) void {
+                const ctx = @as(*WriteContext, @ptrCast(@alignCast(ctxPtr)));
                 defer {
                     ctx.allocator.free(ctx.data);
                     ctx.allocator.destroy(ctx);
                 }
-
                 var success = false;
                 var attempts: u32 = 0;
-                const max_attempts: u32 = if (ctx.retry_on_failure) @as(u32, ctx.max_retries) + 1 else 1;
+                const maxAttempts: u32 = if (ctx.retryOnFailure) @as(u32, ctx.maxRetries) + 1 else 1;
 
-                while (attempts < max_attempts and !success) {
+                while (attempts < maxAttempts and !success) {
                     // Execute the write
-                    ctx.write_fn(ctx.data);
+                    ctx.writeFn(ctx.data);
                     success = true; // Assume success if no error
                     attempts += 1;
 
-                    if (!success and ctx.retry_on_failure) {
+                    if (!success and ctx.retryOnFailure) {
                         _ = ctx.stats.retries.fetchAdd(1, .monotonic);
                     }
                 }
 
                 if (success) {
-                    _ = ctx.stats.writes_completed.fetchAdd(1, .monotonic);
+                    _ = ctx.stats.writesCompleted.fetchAdd(1, .monotonic);
                 } else {
-                    _ = ctx.stats.writes_failed.fetchAdd(1, .monotonic);
+                    _ = ctx.stats.writesFailed.fetchAdd(1, .monotonic);
                 }
             }
-        }.run;
+
+            fn drop(ctxPtr: ?*anyopaque) void {
+                const ctx = @as(*WriteContext, @ptrCast(@alignCast(ctxPtr.?)));
+                ctx.allocator.free(ctx.data);
+                ctx.allocator.destroy(ctx);
+            }
+        };
+        const taskFn = taskFns.run;
 
         // Track concurrent writes
-        var active_writes: usize = 0;
+        var activeWrites: usize = 0;
 
         // Submit write task to each enabled sink
         for (self.sinks.items) |sink| {
             if (!sink.enabled) continue;
 
             // Respect max_concurrent limit
-            if (active_writes >= self.config.max_concurrent) {
+            if (activeWrites >= self.config.maxConcurrent) {
                 // Execute synchronously if at limit
-                sink.write_fn(data);
-                _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
+                sink.writeFn(data);
+                _ = self.stats.writesCompleted.fetchAdd(1, .monotonic);
                 continue;
             }
 
             // Create context for this task
             if (self.allocator.create(WriteContext)) |ctx| {
-                if (self.allocator.dupe(u8, data)) |data_copy| {
+                if (self.allocator.dupe(u8, data)) |dataCopy| {
                     ctx.* = .{
                         .allocator = self.allocator,
-                        .write_fn = sink.write_fn,
-                        .data = data_copy,
+                        .writeFn = sink.writeFn,
+                        .data = dataCopy,
                         .stats = &self.stats,
-                        .max_retries = self.config.max_retries,
-                        .retry_on_failure = self.config.retry_on_failure,
+                        .maxRetries = self.config.maxRetries,
+                        .retryOnFailure = self.config.retryOnFailure,
                     };
 
-                    if (!self.pool.submitCallback(task_fn, ctx)) {
+                    if (!self.pool.submitCallbackWithDrop(taskFn, ctx, taskFns.drop)) {
                         // Fallback: execute synchronously if pool is full
-                        sink.write_fn(data);
-                        _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
-                        self.allocator.free(data_copy);
+                        sink.writeFn(data);
+                        _ = self.stats.writesCompleted.fetchAdd(1, .monotonic);
+                        self.allocator.free(dataCopy);
                         self.allocator.destroy(ctx);
                     } else {
-                        active_writes += 1;
+                        activeWrites += 1;
                     }
                 } else |_| {
-                    sink.write_fn(data);
-                    _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
+                    sink.writeFn(data);
+                    _ = self.stats.writesCompleted.fetchAdd(1, .monotonic);
                     self.allocator.destroy(ctx);
                 }
             } else |_| {
-                sink.write_fn(data);
-                _ = self.stats.writes_completed.fetchAdd(1, .monotonic);
+                sink.writeFn(data);
+                _ = self.stats.writesCompleted.fetchAdd(1, .monotonic);
             }
         }
     }
@@ -1439,12 +1382,12 @@ pub const ParallelSinkWriter = struct {
     pub fn flushAll(self: *ParallelSinkWriter) void {
         self.flushBuffer();
 
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         for (self.sinks.items) |sink| {
-            if (sink.flush_fn) |flush_func| {
-                flush_func();
+            if (sink.flushFn) |flushFunc| {
+                flushFunc();
             }
         }
     }
@@ -1461,8 +1404,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Check if any sinks are enabled.
     pub fn hasEnabledSinks(self: *ParallelSinkWriter) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         for (self.sinks.items) |sink| {
             if (sink.enabled) return true;
@@ -1471,10 +1414,6 @@ pub const ParallelSinkWriter = struct {
     }
 
     // Aliases
-    pub const write = writeParallel;
-    pub const flush = flushAll;
-    pub const add = addSink;
-    pub const remove = removeSink;
 };
 
 /// Preset thread pool configurations.
@@ -1482,45 +1421,45 @@ pub const ThreadPoolPresets = struct {
     /// Single-threaded pool (for sequential processing).
     pub fn singleThread() ThreadPool.ThreadPoolConfig {
         return .{
-            .thread_count = 1,
-            .work_stealing = false,
+            .threadCount = 1,
+            .workStealing = false,
         };
     }
 
     /// CPU-bound workload (one thread per core).
     pub fn cpuBound() ThreadPool.ThreadPoolConfig {
         return .{
-            .thread_count = Constants.ThreadDefaults.thread_count, // Auto-detect
-            .work_stealing = true,
+            .threadCount = Constants.ThreadDefaults.threadCount, // Auto-detect
+            .workStealing = true,
         };
     }
 
     /// I/O-bound workload (more threads than cores).
     pub fn ioBound() ThreadPool.ThreadPoolConfig {
-        const cpu_count = Constants.ThreadDefaults.recommendedThreadCount();
+        const cpuCount = Constants.ThreadDefaults.recommendedThreadCount();
         return .{
-            .thread_count = cpu_count * 2,
-            .work_stealing = true,
-            .queue_size = Constants.ThreadDefaults.queue_size * 2,
+            .threadCount = cpuCount * 2,
+            .workStealing = true,
+            .queueSize = Constants.ThreadDefaults.queueSize * 2,
         };
     }
 
     /// High-throughput logging.
     pub fn highThroughput() ThreadPool.ThreadPoolConfig {
-        const cpu_count = Constants.ThreadDefaults.recommendedThreadCount();
+        const cpuCount = Constants.ThreadDefaults.recommendedThreadCount();
         return .{
-            .thread_count = cpu_count,
-            .queue_size = Constants.ThreadDefaults.queue_size * 4,
-            .work_stealing = true,
+            .threadCount = cpuCount,
+            .queueSize = Constants.ThreadDefaults.queueSize * 4,
+            .workStealing = true,
         };
     }
 
     /// Low-latency logging.
     pub fn lowLatency() ThreadPool.ThreadPoolConfig {
         return .{
-            .thread_count = Constants.ThreadDefaults.low_latency_thread_count,
-            .queue_size = Constants.ThreadDefaults.queue_size_low * 2,
-            .work_stealing = false,
+            .threadCount = Constants.ThreadDefaults.lowLatencyThreadCount,
+            .queueSize = Constants.ThreadDefaults.queueSizeLow * 2,
+            .workStealing = false,
         };
     }
 };
@@ -1529,8 +1468,8 @@ test "thread pool basic" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 2,
-        .queue_size = 16,
+        .threadCount = 2,
+        .queueSize = 16,
     });
     defer pool.deinit();
 
@@ -1564,7 +1503,7 @@ test "work queue" {
 
     const item = ThreadPool.WorkItem{
         .task = .{ .function = .{ .func = undefined } },
-        .submitted_at = 0,
+        .submittedAt = 0,
         .priority = .high,
     };
 
@@ -1579,8 +1518,8 @@ test "work queue" {
 test "thread pool stats" {
     var stats = ThreadPool.ThreadPoolStats{};
 
-    _ = stats.tasks_completed.fetchAdd(10, .monotonic);
-    _ = stats.total_exec_time_ns.fetchAdd(100_000_000, .monotonic); // 0.1 second (fits in u32)
+    _ = stats.tasksCompleted.fetchAdd(10, .monotonic);
+    _ = stats.totalExecTimeNs.fetchAdd(100_000_000, .monotonic); // 0.1 second (fits in u32)
 
     try std.testing.expect(stats.throughput() > 99 and stats.throughput() < 101);
 }
@@ -1589,8 +1528,8 @@ test "thread pool batch submit" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 2,
-        .queue_size = 32,
+        .threadCount = 2,
+        .queueSize = 32,
     });
     defer pool.deinit();
 
@@ -1616,15 +1555,15 @@ test "thread pool batch submit" {
     pool.waitAll();
 
     const stats = pool.getStats();
-    try std.testing.expectEqual(@as(Constants.AtomicUnsigned, 5), stats.tasks_submitted.load(.monotonic));
+    try std.testing.expectEqual(@as(Constants.AtomicUnsigned, 5), stats.tasksSubmitted.load(.monotonic));
 }
 
 test "thread pool priority submission" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 1,
-        .queue_size = 16,
+        .threadCount = 1,
+        .queueSize = 16,
     });
     defer pool.deinit();
 
@@ -1652,30 +1591,30 @@ test "thread pool priority submission" {
 test "thread pool presets" {
     // Test preset configurations compile and have sensible values
     const single = ThreadPoolPresets.singleThread();
-    try std.testing.expectEqual(@as(usize, 1), single.thread_count);
-    try std.testing.expect(!single.work_stealing);
+    try std.testing.expectEqual(@as(usize, 1), single.threadCount);
+    try std.testing.expect(!single.workStealing);
 
     const cpu = ThreadPoolPresets.cpuBound();
-    try std.testing.expectEqual(@as(usize, 0), cpu.thread_count); // auto-detect
-    try std.testing.expect(cpu.work_stealing);
+    try std.testing.expectEqual(@as(usize, 0), cpu.threadCount); // auto-detect
+    try std.testing.expect(cpu.workStealing);
 
     const io = ThreadPoolPresets.ioBound();
-    try std.testing.expect(io.thread_count > 0);
-    try std.testing.expect(io.work_stealing);
+    try std.testing.expect(io.threadCount > 0);
+    try std.testing.expect(io.workStealing);
 
     const ht = ThreadPoolPresets.highThroughput();
-    try std.testing.expect(ht.queue_size >= Constants.ThreadDefaults.queue_size * 4);
+    try std.testing.expect(ht.queueSize >= Constants.ThreadDefaults.queueSize * 4);
 
     const ll = ThreadPoolPresets.lowLatency();
-    try std.testing.expectEqual(@as(usize, Constants.ThreadDefaults.low_latency_thread_count), ll.thread_count);
+    try std.testing.expectEqual(@as(usize, Constants.ThreadDefaults.lowLatencyThreadCount), ll.threadCount);
 }
 
 test "thread pool try submit" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 1,
-        .queue_size = 4,
+        .threadCount = 1,
+        .queueSize = 4,
     });
     defer pool.deinit();
 
@@ -1699,8 +1638,8 @@ test "thread pool worker affinity" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 2,
-        .queue_size = 8,
+        .threadCount = 2,
+        .queueSize = 8,
     });
     defer pool.deinit();
 
@@ -1729,8 +1668,8 @@ test "thread pool priority ordering" {
 
     // Use single thread to make ordering deterministic
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 1,
-        .queue_size = 32,
+        .threadCount = 1,
+        .queueSize = 32,
     });
     defer pool.deinit();
 
@@ -1741,33 +1680,34 @@ test "thread pool priority ordering" {
     defer order.deinit(allocator);
     var mutex: std.Io.Mutex = .init;
 
-    const Params = struct { o: *std.ArrayList(u8), m: *std.Io.Mutex, val: u8, a: std.mem.Allocator };
+    const Params = struct { o: *std.ArrayList(u8), m: *std.Io.Mutex, val: u8, a: std.mem.Allocator, io: std.Io };
     const OrderTask = struct {
         fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
             const params: *Params = @ptrCast(@alignCast(ctx));
-            params.m.lockUncancelable(Utils.io());
+            params.m.lockUncancelable(params.io);
             params.o.append(params.a, params.val) catch {};
-            params.m.unlock(Utils.io());
+            params.m.unlock(params.io);
         }
     };
 
-    var p1: Params = .{ .o = &order, .m = &mutex, .val = 1, .a = allocator }; // Normal
-    var p2: Params = .{ .o = &order, .m = &mutex, .val = 2, .a = allocator }; // High
-    var p3: Params = .{ .o = &order, .m = &mutex, .val = 3, .a = allocator }; // Critical
+    var p1: Params = .{ .o = &order, .m = &mutex, .val = 1, .a = allocator, .io = pool.io }; // Normal
+    var p2: Params = .{ .o = &order, .m = &mutex, .val = 2, .a = allocator, .io = pool.io }; // High
+    var p3: Params = .{ .o = &order, .m = &mutex, .val = 3, .a = allocator, .io = pool.io }; // Critical
 
     // Use a primary task to block the single worker thread
-    var block_mutex: std.Io.Mutex = .init;
-    block_mutex.lockUncancelable(Utils.io()); // Worker will block on this
+    var blockMutex: std.Io.Mutex = .init;
+    blockMutex.lockUncancelable(pool.io); // Worker will block on this
 
     const BlockTask = struct {
         fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
             const m: *std.Io.Mutex = @ptrCast(@alignCast(ctx));
-            m.lockUncancelable(Utils.io()); // Wait here
-            m.unlock(Utils.io());
+            const io = Utils.defaultIo();
+            m.lockUncancelable(io); // Wait here
+            m.unlock(io);
         }
     };
 
-    _ = pool.submit(.{ .callback = .{ .func = BlockTask.run, .context = &block_mutex } }, .critical);
+    _ = pool.submit(.{ .callback = .{ .func = BlockTask.run, .context = &blockMutex } }, .critical);
 
     // Give it a moment to pick up the block task
     Utils.sleepMs(10);
@@ -1778,7 +1718,7 @@ test "thread pool priority ordering" {
     _ = pool.submit(.{ .callback = .{ .func = OrderTask.run, .context = &p3 } }, .critical);
 
     // Release the worker
-    block_mutex.unlock(Utils.io());
+    blockMutex.unlock(pool.io);
     pool.waitAll();
 
     // Order should be 3, 2, 1
@@ -1792,8 +1732,8 @@ test "thread pool capacity helpers" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 2,
-        .queue_size = 8,
+        .threadCount = 2,
+        .queueSize = 8,
     });
     defer pool.deinit();
 
@@ -1807,21 +1747,22 @@ test "thread pool wait all timeout" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 1,
-        .queue_size = 16,
+        .threadCount = 1,
+        .queueSize = 16,
     });
     defer pool.deinit();
 
     try pool.start();
 
     var gate = std.Io.Mutex.init;
-    gate.lockUncancelable(Utils.io());
+    gate.lockUncancelable(pool.io);
 
     const BlockTask = struct {
         fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
             const m: *std.Io.Mutex = @ptrCast(@alignCast(ctx));
-            m.lockUncancelable(Utils.io());
-            m.unlock(Utils.io());
+            const io = Utils.defaultIo();
+            m.lockUncancelable(io);
+            m.unlock(io);
         }
     };
 
@@ -1830,7 +1771,7 @@ test "thread pool wait all timeout" {
     Utils.sleepMs(5);
     try std.testing.expect(!pool.waitAllTimeout(10));
 
-    gate.unlock(Utils.io());
+    gate.unlock(pool.io);
     try std.testing.expect(pool.waitAllTimeout(2_000));
 }
 
@@ -1838,8 +1779,8 @@ test "thread pool queue breakdown and capacity helpers" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 2,
-        .queue_size = 8,
+        .threadCount = 2,
+        .queueSize = 8,
     });
     defer pool.deinit();
 
@@ -1859,8 +1800,8 @@ test "thread pool batch retry and queue threshold wait" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 2,
-        .queue_size = 8,
+        .threadCount = 2,
+        .queueSize = 8,
     });
     defer pool.deinit();
 
@@ -1890,37 +1831,37 @@ test "thread pool heavy concurrency stress loop" {
     const allocator = std.testing.allocator;
 
     const pool = try ThreadPool.initWithConfig(allocator, .{
-        .thread_count = 0,
-        .queue_size = 256,
-        .work_stealing = true,
+        .threadCount = 0,
+        .queueSize = 256,
+        .workStealing = true,
     });
     defer pool.deinit();
 
     try pool.start();
 
-    const producer_count = 4;
-    const tasks_per_producer = 3_000;
-    const total_tasks = producer_count * tasks_per_producer;
-    const total_tasks_u64: u64 = @intCast(total_tasks);
+    const producerCount = 4;
+    const tasksPerProducer = 3_000;
+    const totalTasks = producerCount * tasksPerProducer;
+    const totalTasksU64: u64 = @intCast(totalTasks);
 
     var executed = std.atomic.Value(Constants.AtomicUnsigned).init(0);
 
     const TaskCtx = struct {
         counter: *std.atomic.Value(Constants.AtomicUnsigned),
-        spin_iterations: u32,
+        spinIterations: u32,
     };
 
-    var task_ctx = TaskCtx{
+    var taskCtx = TaskCtx{
         .counter = &executed,
-        .spin_iterations = 64,
+        .spinIterations = 64,
     };
 
     const StressTask = struct {
-        fn run(raw_ctx: *anyopaque, _: ?std.mem.Allocator) void {
-            const ctx: *TaskCtx = @ptrCast(@alignCast(raw_ctx));
+        fn run(rawCtx: *anyopaque, _: ?std.mem.Allocator) void {
+            const ctx: *TaskCtx = @ptrCast(@alignCast(rawCtx));
 
             var i: u32 = 0;
-            while (i < ctx.spin_iterations) : (i += 1) {
+            while (i < ctx.spinIterations) : (i += 1) {
                 std.atomic.spinLoopHint();
             }
 
@@ -1930,7 +1871,7 @@ test "thread pool heavy concurrency stress loop" {
 
     const ProducerCtx = struct {
         pool: *ThreadPool,
-        task_ctx: *TaskCtx,
+        taskCtx: *TaskCtx,
         iterations: usize,
     };
 
@@ -1941,43 +1882,43 @@ test "thread pool heavy concurrency stress loop" {
                 const accepted = ctx.pool.submit(.{
                     .callback = .{
                         .func = StressTask.run,
-                        .context = ctx.task_ctx,
+                        .context = ctx.taskCtx,
                     },
                 }, .normal);
 
                 if (accepted.isValid()) {
                     submitted += 1;
                 } else {
-                    Utils.sleepNs(50 * Constants.TimeConstants.ns_per_us);
+                    Utils.sleepNs(50 * Constants.TimeConstants.nsPerUs);
                 }
             }
         }
     };
 
-    var producer_contexts: [producer_count]ProducerCtx = undefined;
-    var producer_threads: [producer_count]std.Thread = undefined;
+    var producerContexts: [producerCount]ProducerCtx = undefined;
+    var producerThreads: [producerCount]std.Thread = undefined;
 
-    for (0..producer_count) |i| {
-        producer_contexts[i] = .{
+    for (0..producerCount) |i| {
+        producerContexts[i] = .{
             .pool = pool,
-            .task_ctx = &task_ctx,
-            .iterations = tasks_per_producer,
+            .taskCtx = &taskCtx,
+            .iterations = tasksPerProducer,
         };
-        producer_threads[i] = try std.Thread.spawn(.{}, Producer.run, .{&producer_contexts[i]});
+        producerThreads[i] = try std.Thread.spawn(.{}, Producer.run, .{&producerContexts[i]});
     }
 
-    for (producer_threads) |thread| {
+    for (producerThreads) |thread| {
         thread.join();
     }
 
     try std.testing.expect(pool.waitAllTimeout(20_000));
 
-    const executed_count = Utils.atomicLoadU64(&executed);
-    try std.testing.expectEqual(total_tasks_u64, executed_count);
+    const executedCount = Utils.atomicLoadU64(&executed);
+    try std.testing.expectEqual(totalTasksU64, executedCount);
 
     const stats = pool.getStats();
-    try std.testing.expectEqual(total_tasks_u64, stats.getSubmitted());
-    try std.testing.expectEqual(total_tasks_u64, stats.getCompleted());
+    try std.testing.expectEqual(totalTasksU64, stats.getSubmitted());
+    try std.testing.expectEqual(totalTasksU64, stats.getCompleted());
 
     try std.testing.expect(pool.queueUtilization() <= 1.0);
     try std.testing.expect(pool.availableQueueCapacity() <= pool.queueCapacity());

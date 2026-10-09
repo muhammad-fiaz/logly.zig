@@ -16,60 +16,60 @@ pub fn main() !void {
     try logger.info("Default time format", @src());
 
     // Example 2: US date format with slashes
-    config.time_format = "MM/DD/YYYY HH:mm:ss";
+    config.timeFormat = "MM/DD/YYYY HH:mm:ss";
     logger.configure(config);
     try logger.info("US date format (MM/DD/YYYY)", @src());
 
     // Example 3: European date format
-    config.time_format = "DD-MM-YYYY HH:mm:ss";
+    config.timeFormat = "DD-MM-YYYY HH:mm:ss";
     logger.configure(config);
     try logger.info("European date format (DD-MM-YYYY)", @src());
 
     // Example 4: Compact with dots
-    config.time_format = "YY.MM.DD HH:mm";
+    config.timeFormat = "YY.MM.DD HH:mm";
     logger.configure(config);
     try logger.info("Compact format (YY.MM.DD)", @src());
 
     // Example 5: Time only with milliseconds
-    config.time_format = "HH:mm:ss.SSS";
+    config.timeFormat = "HH:mm:ss.SSS";
     logger.configure(config);
     try logger.info("Time with milliseconds", @src());
 
     // Example 6: Date only
-    config.time_format = "YYYY-MM-DD";
+    config.timeFormat = "YYYY-MM-DD";
     logger.configure(config);
     try logger.info("Date only", @src());
 
     // Example 7: ISO8601 format
-    config.time_format = logly.Config.TimeFormat.iso8601;
+    config.timeFormat = logly.Config.TimeFormat.iso8601;
     logger.configure(config);
     try logger.info("ISO8601 format", @src());
 
     // Example 8: Unix timestamp
-    config.time_format = logly.Config.TimeFormat.unix;
+    config.timeFormat = logly.Config.TimeFormat.unix;
     logger.configure(config);
     try logger.info("Unix timestamp", @src());
 
     // Example 9: Custom separator and order
-    config.time_format = "DD/MM/YY - HH:mm";
+    config.timeFormat = "DD/MM/YY - HH:mm";
     logger.configure(config);
     try logger.info("Custom separator", @src());
 
     // Example 10: Local timezone with explicit offset token (+HH:MM)
     config.timezone = .local;
-    config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+    config.timeFormat = "YYYY-MM-DD HH:mm:ss ZZZ";
     logger.configure(config);
     try logger.info("Local timezone offset (ZZZ)", @src());
 
     // Example 11: Local timezone with compact offset token (+HHMM)
     config.timezone = .local;
-    config.time_format = "YYYY-MM-DD HH:mm:ss ZZ";
+    config.timeFormat = "YYYY-MM-DD HH:mm:ss ZZ";
     logger.configure(config);
     try logger.info("Local timezone offset compact (ZZ)", @src());
 
     // Example 12: UTC timezone with explicit offset token
     config.timezone = .utc;
-    config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+    config.timeFormat = "YYYY-MM-DD HH:mm:ss ZZZ";
     logger.configure(config);
     try logger.info("UTC timezone offset token", @src());
 }

@@ -81,10 +81,10 @@ The sampling strategy to use.
 pub const Strategy = union(enum) {
     none: void,                  // No sampling, all pass
     probability: f64,            // 0.0 - 1.0
-    rate_limit: RateLimitConfig,
-    every_n: u32,                // 1 in N
+    rateLimit: RateLimitConfig,
+    everyN: u32,                // 1 in N
     adaptive: AdaptiveConfig,
-    token_bucket: TokenBucketConfig, // Token bucket for burst sampling
+    tokenBucket: TokenBucketConfig, // Token bucket for burst sampling
 };
 ```
 
@@ -94,8 +94,8 @@ Configuration for rate limiting.
 
 ```zig
 pub const RateLimitConfig = struct {
-    max_records: u64,    // Maximum records per window
-    window_ms: u64,      // Window size in milliseconds
+    maxRecords: u64,    // Maximum records per window
+    windowMs: u64,      // Window size in milliseconds
 };
 ```
 
@@ -105,9 +105,9 @@ Configuration for adaptive sampling.
 
 ```zig
 pub const AdaptiveConfig = struct {
-    target_rate: u32,           // Target logs per second
+    targetRate: u32,           // Target logs per second
     min_sampling_rate: f64,     // Minimum sampling probability
-    adjustment_interval_ms: u64, // How often to adjust
+    adjustmentIntervalMs: u64, // How often to adjust
 };
 ```
 
@@ -130,7 +130,7 @@ Configuration passed to the sampler.
 ```zig
 pub const SamplerConfig = struct {
     strategy: Strategy = .{ .none = {} },
-    bypass_levels: LevelMask = LevelMask.init(), // Levels that always bypass sampling
+    bypassLevels: LevelMask = LevelMask.init(), // Levels that always bypass sampling
 };
 ```
 
@@ -143,7 +143,7 @@ pub const SamplerStats = struct {
     total_processed: std.atomic.Value(u64),
     total_accepted: std.atomic.Value(u64),
     total_rejected: std.atomic.Value(u64),
-    current_rate: std.atomic.Value(f32),
+    currentRate: std.atomic.Value(f32),
     
     pub fn acceptRate(self: *const SamplerStats) f64;
 };
@@ -156,8 +156,8 @@ Detailed decision payload returned by `shouldSampleWithReason()`.
 ```zig
 pub const SampleDecision = struct {
     accepted: bool,
-    sample_rate: f64,
-    reject_reason: ?SampleRejectReason = null,
+    sampleRate: f64,
+    rejectReason: ?SampleRejectReason = null,
 };
 ```
 
@@ -170,6 +170,14 @@ pub const SampleDecision = struct {
 Initializes a new Sampler instance with the specified strategy.
 
 **Alias:** `create`
+
+#### `initWithConfig(allocator: std.mem.Allocator, config: Config.SamplingConfig) Sampler`
+
+Initializes a new Sampler with full configuration.
+
+#### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Config.SamplingConfig) Sampler`
+
+Initializes a new Sampler with an explicit I/O handle and full configuration.
 
 #### `deinit(self: *Sampler) void`
 
@@ -209,18 +217,18 @@ Updates sampler strategy at runtime and resets strategy-specific counters.
 
 **Alias**: `configure`
 
-#### `setProbability(probability_value: f64) void`
+#### `setProbability(probabilityValue: f64) void`
 
 Sets probability sampling strategy and clamps value into `[0.0, 1.0]`.
 
 **Alias**: `probability`, `setProb`
 
-#### `setRateLimit(max_records: u32, window_ms: u64) void`
+#### `setRateLimit(maxRecords: u32, windowMs: u64) void`
 
 Sets rate-limit strategy with safe normalization:
 
-- `max_records == 0` becomes `1`
-- `window_ms == 0` uses centralized default window
+- `maxRecords == 0` becomes `1`
+- `windowMs == 0` uses centralized default window
 
 **Alias**: `rateLimit`, `configureRateLimit`
 
@@ -244,13 +252,13 @@ Disables filtering strategy (`.none`) so all records are accepted.
 
 #### `remainingWindowQuota() ?u32`
 
-For `.rate_limit` strategy, returns remaining records in current window. Returns `null` for non-rate-limit strategies.
+For `.rateLimit` strategy, returns remaining records in current window. Returns `null` for non-rate-limit strategies.
 
 **Alias**: `quotaLeft`
 
 #### `windowResetInMs() ?u64`
 
-For `.rate_limit` strategy, returns milliseconds until current window reset. Returns `null` for non-rate-limit strategies.
+For `.rateLimit` strategy, returns milliseconds until current window reset. Returns `null` for non-rate-limit strategies.
 
 **Alias**: `resetInMs`
 
@@ -302,11 +310,11 @@ The `SamplerStats` struct provides comprehensive statistics tracking:
 
 ```zig
 pub const SamplerStats = struct {
-    total_records_sampled: std.atomic.Value(Constants.AtomicUnsigned),
-    records_accepted: std.atomic.Value(Constants.AtomicUnsigned),
-    records_rejected: std.atomic.Value(Constants.AtomicUnsigned),
-    rate_limit_exceeded: std.atomic.Value(Constants.AtomicUnsigned),
-    rate_adjustments: std.atomic.Value(Constants.AtomicUnsigned),
+    totalRecordsSampled: std.atomic.Value(Constants.AtomicUnsigned),
+    recordsAccepted: std.atomic.Value(Constants.AtomicUnsigned),
+    recordsRejected: std.atomic.Value(Constants.AtomicUnsigned),
+    rateLimitExceeded: std.atomic.Value(Constants.AtomicUnsigned),
+    rateAdjustments: std.atomic.Value(Constants.AtomicUnsigned),
 
     /// Calculate current accept rate (0.0 - 1.0)
     pub fn getAcceptRate(self: *const SamplerStats) f64;
@@ -401,7 +409,7 @@ pub const SamplerPresets = struct {
     pub fn adaptive1000PerSecond(allocator) Sampler;
     
     /// Creates a sampled sink configuration.
-    pub fn createSampledSink(file_path: []const u8) SinkConfig;
+    pub fn createSampledSink(filePath: []const u8) SinkConfig;
 };
 ```
 
@@ -448,8 +456,8 @@ if (sampler.isEnabled()) {
 |----------|----------|----------|
 | `none` | No sampling needed | Zero |
 | `probability` | Random sampling for debugging | Very low |
-| `rate_limit` | Strict throughput control | Low |
-| `every_n` | Predictable sampling | Very low |
+| `rateLimit` | Strict throughput control | Low |
+| `everyN` | Predictable sampling | Very low |
 | `adaptive` | Dynamic load handling | Low |
 
 ## Performance

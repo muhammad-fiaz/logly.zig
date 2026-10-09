@@ -12,9 +12,7 @@ pub fn main() !void {
     std.debug.print("\n", .{});
     printSeparator("COMPREHENSIVE FILTERING EXAMPLE");
 
-    // =========================================
     // 1. BASIC LEVEL FILTERING
-    // =========================================
     printSection("1. Basic Level Filtering (Min Level: WARNING)");
     {
         const logger = try logly.Logger.init(allocator);
@@ -31,14 +29,12 @@ pub fn main() !void {
         try logger.info("FILTERED: info message", @src());
 
         // These pass through (WARNING and above)
-        try logger.warn("PASS: warning message", @src());
+        try logger.warning("PASS: warning message", @src());
         try logger.err("PASS: error message", @src());
-        try logger.crit("PASS: critical message", @src());
+        try logger.critical("PASS: critical message", @src());
     }
 
-    // =========================================
     // 2. LEVEL RANGE FILTERING (Min + Max)
-    // =========================================
     printSection("2. Level Range Filtering (INFO to WARNING only)");
     {
         const logger = try logly.Logger.init(allocator);
@@ -53,14 +49,12 @@ pub fn main() !void {
         try logger.debug("FILTERED: debug (below min)", @src());
         try logger.info("PASS: info message", @src());
         try logger.success("PASS: success message", @src());
-        try logger.warn("PASS: warning message", @src());
+        try logger.warning("PASS: warning message", @src());
         try logger.err("FILTERED: error (above max)", @src());
-        try logger.crit("FILTERED: critical (above max)", @src());
+        try logger.critical("FILTERED: critical (above max)", @src());
     }
 
-    // =========================================
     // 3. MESSAGE CONTENT FILTERING
-    // =========================================
     printSection("3. Message Content Filtering");
     {
         const logger = try logly.Logger.init(allocator);
@@ -79,41 +73,37 @@ pub fn main() !void {
         try logger.info("PASS: Database query completed", @src());
     }
 
-    // =========================================
     // 4. FILTER PRESETS
-    // =========================================
     printSection("4. Filter Presets");
     {
         std.debug.print("4a. Errors Only Preset:\n", .{});
         const logger1 = try logly.Logger.init(allocator);
         defer logger1.deinit();
 
-        var errors_filter = try logly.FilterPresets.errorsOnly(allocator);
-        defer errors_filter.deinit();
-        logger1.setFilter(&errors_filter);
+        var errorsFilter = try logly.FilterPresets.errorsOnly(allocator);
+        defer errorsFilter.deinit();
+        logger1.setFilter(&errorsFilter);
 
         try logger1.info("FILTERED: info message", @src());
-        try logger1.warn("FILTERED: warning message", @src());
+        try logger1.warning("FILTERED: warning message", @src());
         try logger1.err("PASS: error message", @src());
-        try logger1.crit("PASS: critical message", @src());
+        try logger1.critical("PASS: critical message", @src());
 
         std.debug.print("\n4b. Production Preset (INFO+):\n", .{});
         const logger2 = try logly.Logger.init(allocator);
         defer logger2.deinit();
 
-        var prod_filter = try logly.FilterPresets.production(allocator);
-        defer prod_filter.deinit();
-        logger2.setFilter(&prod_filter);
+        var prodFilter = try logly.FilterPresets.production(allocator);
+        defer prodFilter.deinit();
+        logger2.setFilter(&prodFilter);
 
         try logger2.trace("FILTERED: trace message", @src());
         try logger2.debug("FILTERED: debug message", @src());
         try logger2.info("PASS: info message", @src());
-        try logger2.warn("PASS: warning message", @src());
+        try logger2.warning("PASS: warning message", @src());
     }
 
-    // =========================================
     // 5. JSON OUTPUT WITH FILTERING
-    // =========================================
     printSection("5. JSON Output with Filtering");
     {
         const logger = try logly.Logger.init(allocator);
@@ -121,7 +111,7 @@ pub fn main() !void {
 
         // Clear auto-sink and add JSON sink
         _ = logger.removeAllSinks();
-        _ = try logger.add(.{ .json = true });
+        _ = try logger.addSink(.{ .format = .json });
 
         var filter = logly.Filter.init(allocator);
         defer filter.deinit();
@@ -129,13 +119,11 @@ pub fn main() !void {
         logger.setFilter(&filter);
 
         try logger.info("FILTERED: info in JSON", @src());
-        try logger.warn("PASS: warning in JSON format", @src());
+        try logger.warning("PASS: warning in JSON format", @src());
         try logger.err("PASS: error in JSON format", @src());
     }
 
-    // =========================================
     // 6. PRETTY JSON WITH FILTERING
-    // =========================================
     printSection("6. Pretty JSON with Filtering");
     {
         const logger = try logly.Logger.init(allocator);
@@ -143,20 +131,18 @@ pub fn main() !void {
 
         // Clear auto-sink and add pretty JSON sink
         _ = logger.removeAllSinks();
-        _ = try logger.add(.{ .json = true, .pretty_json = true });
+        _ = try logger.addSink(.{ .format = .json, .prettyJson = true });
 
         var filter = logly.Filter.init(allocator);
         defer filter.deinit();
         try filter.addMinLevel(.err);
         logger.setFilter(&filter);
 
-        try logger.warn("FILTERED: warning in pretty JSON", @src());
+        try logger.warning("FILTERED: warning in pretty JSON", @src());
         try logger.err("PASS: error in pretty JSON", @src());
     }
 
-    // =========================================
     // 7. CUSTOM LOG FORMAT WITH FILTERING
-    // =========================================
     printSection("7. Custom Format with Filtering");
     {
         const logger = try logly.Logger.init(allocator);
@@ -166,11 +152,11 @@ pub fn main() !void {
         _ = logger.removeAllSinks();
 
         var config = logly.Config.default();
-        config.log_format = "[{level}] {time} | {message}";
-        config.time_format = "HH:mm:ss";
+        config.logFormat = "[{level}] {time} | {message}";
+        config.timeFormat = "HH:mm:ss";
         logger.configure(config);
 
-        _ = try logger.add(.{});
+        _ = try logger.addSink(.{});
 
         var filter = logly.Filter.init(allocator);
         defer filter.deinit();
@@ -179,21 +165,19 @@ pub fn main() !void {
 
         try logger.debug("FILTERED: debug with custom format", @src());
         try logger.info("PASS: info with custom format", @src());
-        try logger.warn("PASS: warning with custom format", @src());
+        try logger.warning("PASS: warning with custom format", @src());
     }
 
-    // =========================================
     // 8. CUSTOM LOG LEVELS WITH FILTERING
-    // =========================================
     printSection("8. Custom Log Levels with Filtering");
     {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
 
         // Add custom levels
-        try logger.addCustomLevel("AUDIT", 35, "35;1"); // Between WARNING(30) and ERROR(40)
-        try logger.addCustomLevel("SECURITY", 45, "91"); // Between ERROR(40) and CRITICAL(50)
-        try logger.addCustomLevel("NOTICE", 22, "96"); // Between INFO(20) and SUCCESS(25)
+        try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35;1").?); // Between WARNING(30) and ERROR(40)
+        try logger.addCustomLevel("SECURITY", 45, logly.Color.parse("91").?); // Between ERROR(40) and CRITICAL(50)
+        try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("96").?); // Between INFO(20) and SUCCESS(25)
 
         var filter = logly.Filter.init(allocator);
         defer filter.deinit();
@@ -211,12 +195,10 @@ pub fn main() !void {
 
         // Standard levels
         try logger.info("FILTERED: info message", @src());
-        try logger.warn("PASS: warning message", @src());
+        try logger.warning("PASS: warning message", @src());
     }
 
-    // =========================================
     // 9. PER-SINK FILTERING
-    // =========================================
     printSection("9. Per-Sink Level Filtering");
     {
         const logger = try logly.Logger.init(allocator);
@@ -226,27 +208,25 @@ pub fn main() !void {
         _ = logger.removeAllSinks();
 
         // Console sink - INFO and above
-        _ = try logger.add(.{
+        _ = try logger.addSink(.{
             .level = .info,
         });
 
         // Errors-only sink (simulated with level filter)
-        _ = try logger.add(.{
+        _ = try logger.addSink(.{
             .level = .err,
-            .max_level = .critical,
+            .maxLevel = .critical,
         });
 
         std.debug.print("(First sink: INFO+, Second sink: ERROR to CRITICAL only)\n", .{});
         try logger.debug("FILTERED on both: debug", @src());
         try logger.info("Sink 1 only: info", @src());
-        try logger.warn("Sink 1 only: warning", @src());
+        try logger.warning("Sink 1 only: warning", @src());
         try logger.err("Both sinks: error", @src());
-        try logger.crit("Both sinks: critical", @src());
+        try logger.critical("Both sinks: critical", @src());
     }
 
-    // =========================================
     // 10. PER-SINK MESSAGE FILTERING
-    // =========================================
     printSection("10. Per-Sink Message Filtering");
     {
         const logger = try logly.Logger.init(allocator);
@@ -256,9 +236,9 @@ pub fn main() !void {
         _ = logger.removeAllSinks();
 
         // Console sink that excludes heartbeat messages
-        _ = try logger.add(.{
+        _ = try logger.addSink(.{
             .filter = .{
-                .exclude_messages = &.{ "heartbeat", "ping", "health" },
+                .excludeMessages = &.{ "heartbeat", "ping", "health" },
             },
         });
 
@@ -269,9 +249,7 @@ pub fn main() !void {
         try logger.info("PASS: Database connected", @src());
     }
 
-    // =========================================
     // 11. MULTIPLE SINKS WITH DIFFERENT FILTERS
-    // =========================================
     printSection("11. Multiple Sinks with Different Configs");
     {
         const logger = try logly.Logger.init(allocator);
@@ -285,22 +263,20 @@ pub fn main() !void {
         std.debug.print("(Output interleaved below)\n\n", .{});
 
         // Sink 1: Plain text console
-        _ = try logger.add(.{});
+        _ = try logger.addSink(.{});
 
         // Sink 2: JSON, warnings only
-        _ = try logger.add(.{
-            .json = true,
+        _ = try logger.addSink(.{
+            .format = .json,
             .level = .warning,
         });
 
         try logger.info("Info: appears in plain text only", @src());
-        try logger.warn("Warning: appears in both formats", @src());
+        try logger.warning("Warning: appears in both formats", @src());
         try logger.err("Error: appears in both formats", @src());
     }
 
-    // =========================================
     // 12. FILTERING WITH CONTEXT BINDING
-    // =========================================
     printSection("12. Filtering with Context Binding");
     {
         const logger = try logly.Logger.init(allocator);
@@ -308,7 +284,7 @@ pub fn main() !void {
 
         // Clear auto-sink and add JSON sink
         _ = logger.removeAllSinks();
-        _ = try logger.add(.{ .json = true });
+        _ = try logger.addSink(.{ .format = .json });
 
         // Bind context
         try logger.bind("service", .{ .string = "api-gateway" });
@@ -321,15 +297,13 @@ pub fn main() !void {
 
         try logger.debug("FILTERED: debug with context", @src());
         try logger.info("PASS: info with bound context", @src());
-        try logger.warn("PASS: warning with bound context", @src());
+        try logger.warning("PASS: warning with bound context", @src());
 
         logger.unbind("service");
         logger.unbind("version");
     }
 
-    // =========================================
     // 13. FILTERING WITH DISTRIBUTED TRACING
-    // =========================================
     printSection("13. Filtering with Distributed Tracing");
     {
         const logger = try logly.Logger.init(allocator);
@@ -337,7 +311,7 @@ pub fn main() !void {
 
         // Clear auto-sink and add JSON sink with trace ID
         _ = logger.removeAllSinks();
-        _ = try logger.add(.{ .json = true, .include_trace_id = true });
+        _ = try logger.addSink(.{ .format = .json, .includeTraceId = true });
 
         // Set trace context
         try logger.setTraceContext("trace-abc-123", "span-xyz-789");
@@ -349,15 +323,13 @@ pub fn main() !void {
         logger.setFilter(&filter);
 
         try logger.info("FILTERED: info with trace context", @src());
-        try logger.warn("PASS: warning with trace context", @src());
+        try logger.warning("PASS: warning with trace context", @src());
         try logger.err("PASS: error with trace context", @src());
 
         logger.clearTraceContext();
     }
 
-    // =========================================
     // 14. FILTERING WITH SAMPLING
-    // =========================================
     printSection("14. Filtering Combined with Sampling");
     {
         const logger = try logly.Logger.init(allocator);
@@ -383,18 +355,19 @@ pub fn main() !void {
         }
     }
 
-    // =========================================
     // 15. FILTERING WITH REDACTION
-    // =========================================
     printSection("15. Filtering with Sensitive Data Redaction");
     {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
 
         // Set up redactor
+        // NOTE: `.contains` replaces the matched token only, so the
+        // secret value must be part of the pattern to fully disappear.
         var redactor = logly.Redactor.init(allocator);
         defer redactor.deinit();
-        try redactor.addPattern("password", .contains, "password=", "[REDACTED]");
+        try redactor.addPattern("password_secret", .contains, "password=secret123", "password=[REDACTED]");
+        try redactor.addPattern("password_wrong", .contains, "password=wrongpass", "password=[REDACTED]");
         logger.setRedactor(&redactor);
 
         // Set up filter
@@ -405,12 +378,10 @@ pub fn main() !void {
 
         try logger.debug("FILTERED: debug with password=secret123", @src());
         try logger.info("PASS: User login with password=secret123", @src());
-        try logger.warn("PASS: Auth failed with password=wrongpass", @src());
+        try logger.warning("PASS: Auth failed with password=wrongpass", @src());
     }
 
-    // =========================================
     // 16. FILTERING WITH METRICS
-    // =========================================
     printSection("16. Filtering with Metrics Collection");
     {
         const logger = try logly.Logger.init(allocator);
@@ -426,20 +397,18 @@ pub fn main() !void {
         // Log some messages
         try logger.debug("FILTERED: debug", @src());
         try logger.info("FILTERED: info", @src());
-        try logger.warn("PASS: warning 1", @src());
-        try logger.warn("PASS: warning 2", @src());
+        try logger.warning("PASS: warning 1", @src());
+        try logger.warning("PASS: warning 2", @src());
         try logger.err("PASS: error", @src());
 
         // Get metrics
         if (logger.getMetrics()) |metrics| {
             std.debug.print("\nMetrics (only passed messages counted):\n", .{});
-            std.debug.print("  Total records: {d}\n", .{metrics.total_records});
+            std.debug.print("  Total records: {d}\n", .{metrics.totalRecords});
         }
     }
 
-    // =========================================
     // 17. ALL STANDARD LOG LEVELS
-    // =========================================
     printSection("17. All Standard Log Levels (No Filter)");
     {
         const logger = try logly.Logger.init(allocator);
@@ -455,15 +424,13 @@ pub fn main() !void {
         try logger.debug("Level 2 - DEBUG (priority 10)", @src());
         try logger.info("Level 3 - INFO (priority 20)", @src());
         try logger.success("Level 4 - SUCCESS (priority 25)", @src());
-        try logger.warn("Level 5 - WARNING (priority 30)", @src());
+        try logger.warning("Level 5 - WARNING (priority 30)", @src());
         try logger.err("Level 6 - ERROR (priority 40)", @src());
         try logger.fail("Level 7 - FAIL (priority 45)", @src());
-        try logger.crit("Level 8 - CRITICAL (priority 50)", @src());
+        try logger.critical("Level 8 - CRITICAL (priority 50)", @src());
     }
 
-    // =========================================
     // 18. SOURCE LOCATION DISPLAY
-    // =========================================
     printSection("18. Source Location with Filtering");
     {
         const logger = try logly.Logger.init(allocator);
@@ -473,11 +440,11 @@ pub fn main() !void {
         _ = logger.removeAllSinks();
 
         var config = logly.Config.default();
-        config.show_filename = true;
-        config.show_lineno = true;
+        config.showFilename = true;
+        config.showLineno = true;
         logger.configure(config);
 
-        _ = try logger.add(.{});
+        _ = try logger.addSink(.{});
 
         var filter = logly.Filter.init(allocator);
         defer filter.deinit();
@@ -486,23 +453,19 @@ pub fn main() !void {
 
         try logger.debug("FILTERED: debug with source location", @src());
         try logger.info("PASS: info with file:line displayed", @src());
-        try logger.warn("PASS: warning with source location", @src());
+        try logger.warning("PASS: warning with source location", @src());
     }
 
-    // =========================================
     // COMPLETE
-    // =========================================
     std.debug.print("\n", .{});
     printSeparator("FILTERING EXAMPLE COMPLETE");
     std.debug.print("\n", .{});
 }
 
 fn printSeparator(title: []const u8) void {
-    std.debug.print("============================================================\n", .{});
-    std.debug.print("  {s}\n", .{title});
-    std.debug.print("============================================================\n", .{});
+    std.debug.print("{s}\n", .{title});
 }
 
 fn printSection(title: []const u8) void {
-    std.debug.print("\n--- {s} ---\n\n", .{title});
+    std.debug.print("\n{s}\n\n", .{title});
 }

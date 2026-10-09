@@ -1,10 +1,10 @@
 ---
 title: Advanced Redaction Example
-description: Advanced Logly.zig redaction example covering email, IP, JWT, credit card, and compliance audit redaction.
+description: Email, IP, JWT, and Luhn redaction with presets and compliance audit logging in Logly.zig.
 head:
   - - meta
     - name: keywords
-      content: advanced redaction, email redaction, ip redaction, jwt redaction, credit card redaction, compliance audit
+      content: advanced redaction, email, ip, jwt, luhn, compliance audit, zig logging
   - - meta
     - property: og:title
       content: Advanced Redaction Example | Logly.zig
@@ -12,17 +12,26 @@ head:
 
 # Advanced Redaction
 
-This example demonstrates pattern-based redaction for sensitive data and a compliance audit log output.
-
-## Source
+Pattern redaction for emails, IPv4/IPv6, JWTs, and Luhn-validated cards, plus GDPR/PCI presets and an audit log.
 
 ```zig
-examples/redaction_advanced.zig
+try redactor.addPattern("email", .email, "", "[EMAIL]");
+try redactor.addPattern("ip", .ip, "", "[IP]");
+try redactor.addPattern("jwt", .jwt, "", "[JWT]");
+try redactor.addPattern("card", .luhn, "", "[CARD]");
+
+var gdpr = try logly.RedactionPresets.gdprEmail(allocator);
+defer gdpr.deinit();
 ```
 
-## Running
+Output:
 
-```bash
-zig build run-redaction-advanced
+```text
+Original: Customer paid using 4111 1111 1111 1111 (Visa test card, valid Luhn)
+Redacted: Customer paid using [CREDIT CARD REDACTED] (Visa test card, valid Luhn)
+
+=== REDACTION COMPLIANCE AUDIT LOG ===
+Total values processed: 4
+Values redacted: 4
+Redaction rate: 100.00%
 ```
-

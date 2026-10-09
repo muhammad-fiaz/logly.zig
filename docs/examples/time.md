@@ -29,7 +29,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -42,25 +42,25 @@ pub fn main() !void {
 
     // Example 2: Custom time format
     // Supports standard format specifiers
-    config.time_format = "HH:mm:ss";
+    config.timeFormat = "HH:mm:ss";
     logger.configure(config);
     try logger.info("Short time format", @src());
 
     // Example 3: UTC timezone
     // Switch to UTC time instead of local time
     config.timezone = .utc;
-    config.time_format = logly.Config.TimeFormat.iso8601;
+    config.timeFormat = logly.Config.TimeFormat.iso8601;
     logger.configure(config);
     try logger.info("UTC time", @src());
 
     // Example 4: Local timezone offset in custom format (+HH:MM)
     config.timezone = .local;
-    config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+    config.timeFormat = "YYYY-MM-DD HH:mm:ss ZZZ";
     logger.configure(config);
     try logger.info("Local timezone offset (ZZZ)", @src());
 
     // Example 5: Local timezone compact offset (+HHMM)
-    config.time_format = "YYYY-MM-DD HH:mm:ss ZZ";
+    config.timeFormat = "YYYY-MM-DD HH:mm:ss ZZ";
     logger.configure(config);
     try logger.info("Local timezone compact offset (ZZ)", @src());
 }

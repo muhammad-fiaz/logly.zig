@@ -52,7 +52,7 @@ Logly colors the **entire log line** (timestamp, level tag, and message), not ju
 
 ```zig
 // Enable colors on Windows first
-_ = logly.Terminal.enableAnsiColors();
+ _ = logly.Terminal.enableAnsiColors();
 
 // All methods accept optional @src() for clickable file:line output
 try logger.trace("Detailed trace information", @src());   // Cyan line
@@ -150,8 +150,8 @@ logger.configure(config);
 try logger.setModuleLevel("network", .debug);
 
 // Create a scoped logger
-const net_logger = logger.scoped("network");
-try net_logger.debug("This will be logged", @src());
+const netLogger = logger.scoped("network");
+try netLogger.debug("This will be logged", @src());
 ```
 
 To use module-specific logging, use the `scoped()` method to create a logger instance for that module.

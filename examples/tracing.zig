@@ -7,14 +7,13 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Distributed Tracing Example ===\n\n", .{});
+    std.debug.print("Distributed Tracing Example\n\n", .{});
 
     // 1. Configure Distributed Logger
-    // ----------------------------
     var config = Config.default();
     config.distributed = .{
         .enabled = true,
-        .service_name = "tracing-example",
+        .serviceName = "tracing-example",
         .environment = "demo",
         .region = "local",
     };
@@ -23,24 +22,24 @@ pub fn main() !void {
     const logger = try logly.Logger.initWithConfig(allocator, config);
     defer logger.deinit();
 
-    std.debug.print("--- Distributed Logger Usage (Preferred) ---\n\n", .{});
+    std.debug.print("Distributed Logger Usage (Preferred)\n\n", .{});
 
     // Simulating a request handling scope
     {
-        const trace_id = "trace-uuid-v4-123456";
-        const span_id = "span-001";
+        const traceId = "trace-uuid-v4-123456";
+        const spanId = "span-001";
 
         // Create a lightweight distributed logger for this scope
-        const req_logger = logger.withTrace(trace_id, span_id);
+        const reqLogger = logger.withTrace(traceId, spanId);
 
-        try req_logger.info("Request received", @src());
-        try req_logger.warn("Simulated latency high", @src());
+        try reqLogger.info("Request received", @src());
+        try reqLogger.warning("Simulated latency high", @src());
 
         // Context is automatically attached:
         // { ... "service": "tracing-example", "trace_id": "trace-uuid-v4-123456" ... }
     }
 
-    std.debug.print("\n--- Global Trace Context (Legacy) ---\n\n", .{});
+    std.debug.print("\nGlobal Trace Context (Legacy)\n\n", .{});
 
     // Set trace context for distributed tracing globally
     try logger.setTraceContext("trace-legacy-global", "span-global");
@@ -51,7 +50,7 @@ pub fn main() !void {
 
     try logger.info("Global context message", @src());
 
-    std.debug.print("\n--- Using Child Spans ---\n\n", .{});
+    std.debug.print("\nUsing Child Spans\n\n", .{});
 
     // Create a child span for nested operations
     {

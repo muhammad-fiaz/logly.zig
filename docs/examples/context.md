@@ -26,7 +26,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -47,10 +47,10 @@ pub fn main() !void {
     std.debug.print("\nContext binding example completed!\n", .{});
 }
 
-fn handleRequest(logger: *logly.Logger, request_id: []const u8, user_id: []const u8) !void {
+fn handleRequest(logger: *logly.Logger, requestId: []const u8, userId: []const u8) !void {
     // Add request-specific context
-    try logger.bind("request_id", .{ .string = request_id });
-    try logger.bind("user_id", .{ .string = user_id });
+    try logger.bind("request_id", .{ .string = requestId });
+    try logger.bind("user_id", .{ .string = userId });
 
     try logger.info("Request received", @src());
     try logger.debug("Processing request...", @src());

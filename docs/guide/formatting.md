@@ -79,7 +79,7 @@ const logly = @import("logly");
 
 pub fn main() !void {
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
     
     // ... rest of initialization
 }
@@ -87,7 +87,7 @@ pub fn main() !void {
 
 ## Custom Format Strings
 
-You can customize the log output format using the `log_format` option in `Config` or `SinkConfig`.
+You can customize the log output format using the `logFormat` option in `Config` or `SinkConfig`.
 
 Use `Formatter.validateTemplate(...)` to check brace balance before deploying a custom format string.
 
@@ -103,7 +103,7 @@ Supported tags:
 
 Example:
 ```zig
-config.log_format = "[{time}] [{level}] [TID:{thread}] {message}";
+config.logFormat = "[{time}] [{level}] [TID:{thread}] {message}";
 ```
 
 ## JSON Formatting
@@ -112,7 +112,7 @@ You can enable JSON formatting globally or per-sink.
 
 ```zig
 var config = logly.Config.default();
-config.json = true;
+config.format = .json;
 logger.configure(config);
 ```
 
@@ -147,7 +147,7 @@ try logger.custom("audit", "Security event", @src());
 For development, you might prefer pretty-printed JSON.
 
 ```zig
-config.pretty_json = true;
+config.prettyJson = true;
 ```
 
 ## Customizing Output
@@ -155,11 +155,11 @@ config.pretty_json = true;
 You can control which fields are displayed using the configuration:
 
 ```zig
-config.show_time = true;
-config.show_module = true;
-config.show_function = true;
-config.show_filename = true;
-config.show_lineno = true;
+config.showTime = true;
+config.showModule = true;
+config.showFunction = true;
+config.showFilename = true;
+config.showLineno = true;
 ```
 
 ## Disabling Colors
@@ -173,7 +173,7 @@ config.color = false;
 Or per-sink:
 
 ```zig
-_ = try logger.add(.{  // Short alias for addSink()
+ _ = try logger.add(.{  // Short alias for addSink()
     .path = "app.log",
     .color = false,  // No colors in file
 });
@@ -184,7 +184,7 @@ _ = try logger.add(.{  // Short alias for addSink()
 You can define a custom format string to control the exact layout of your log messages.
 
 ```zig
-config.log_format = "{time} | {level} | {message}";
+config.logFormat = "{time} | {level} | {message}";
 ```
 
 Supported placeholders:
@@ -205,19 +205,19 @@ Logly supports flexible timestamp formats with any separator. You can use predef
 
 ```zig
 // ISO 8601 format
-config.time_format = "ISO8601";
+config.timeFormat = "ISO8601";
 // Output: 2025-12-04T06:39:53.091Z
 
 // RFC 3339 format
-config.time_format = "RFC3339";
+config.timeFormat = "RFC3339";
 // Output: 2025-12-04T06:39:53+00:00
 
 // Unix timestamp (seconds)
-config.time_format = "unix";
+config.timeFormat = "unix";
 // Output: 1764830393
 
 // Unix timestamp (milliseconds)
-config.time_format = "unix_ms";
+config.timeFormat = "unix_ms";
 // Output: 1764830393091
 ```
 
@@ -225,10 +225,10 @@ When `config.timezone = .local`, `ISO8601` and `RFC3339` include your local offs
 
 ```zig
 config.timezone = .local;
-config.time_format = "ISO8601";
+config.timeFormat = "ISO8601";
 // Output example: 2025-12-04T07:39:53.091+01:00
 
-config.time_format = "RFC3339";
+config.timeFormat = "RFC3339";
 // Output example: 2025-12-04T07:39:53+01:00
 ```
 
@@ -258,42 +258,42 @@ Any other characters are output literally (-, /, ., :, space, T, etc.).
 
 ```zig
 // Default format with milliseconds
-config.time_format = "YYYY-MM-DD HH:mm:ss.SSS";
+config.timeFormat = "YYYY-MM-DD HH:mm:ss.SSS";
 // Output: 2025-12-04 06:39:53.091
 
 // US date format with slashes
-config.time_format = "MM/DD/YYYY HH:mm:ss";
+config.timeFormat = "MM/DD/YYYY HH:mm:ss";
 // Output: 12/04/2025 06:39:53
 
 // European date format
-config.time_format = "DD-MM-YYYY HH:mm:ss";
+config.timeFormat = "DD-MM-YYYY HH:mm:ss";
 // Output: 04-12-2025 06:39:53
 
 // Compact date with dots
-config.time_format = "YY.MM.DD HH:mm";
+config.timeFormat = "YY.MM.DD HH:mm";
 // Output: 25.12.04 06:39
 
 // Time only with milliseconds
-config.time_format = "HH:mm:ss.SSS";
+config.timeFormat = "HH:mm:ss.SSS";
 // Output: 06:39:53.091
 
 // Date only
-config.time_format = "YYYY-MM-DD";
+config.timeFormat = "YYYY-MM-DD";
 // Output: 2025-12-04
 
 // 12-hour format
-config.time_format = "MM/DD/YYYY hh:mm:ss";
+config.timeFormat = "MM/DD/YYYY hh:mm:ss";
 // Output: 12/04/2025 06:39:53
 
 // Custom separator and order
-config.time_format = "DD/MM/YY - HH:mm";
+config.timeFormat = "DD/MM/YY - HH:mm";
 // Output: 04/12/25 - 06:39
 
 // Include timezone offsets in custom patterns
-config.time_format = "YYYY-MM-DD HH:mm:ss ZZZ";
+config.timeFormat = "YYYY-MM-DD HH:mm:ss ZZZ";
 // Output (local): 2025-12-04 07:39:53 +01:00
 
-config.time_format = "YYYY-MM-DD HH:mm:ss ZZ";
+config.timeFormat = "YYYY-MM-DD HH:mm:ss ZZ";
 // Output (local): 2025-12-04 07:39:53 +0100
 ```
 
@@ -331,14 +331,14 @@ For high-volume production logging or network sinks, Logly provides a native bin
 
 Enable globally:
 ```zig
-config.msgpack = true;
+config.format = .msgpack;
 ```
 
 Or on specific sinks:
 ```zig
-_ = try logger.add(.{
+ _ = try logger.add(.{
     .path = "logs/binary.mp",
-    .msgpack = true,
+    .format = .msgpack,
 });
 ```
 

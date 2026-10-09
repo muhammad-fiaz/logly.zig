@@ -14,11 +14,11 @@ pub fn main() !void {
 
     // Enable JSON output with colors
     var config = logly.Config.default();
-    config.json = true;
-    config.pretty_json = true;
+    config.format = .json;
+    config.prettyJson = true;
     config.color = true; // Enable colors for JSON output
-    config.capture_stack_trace = true;
-    config.symbolize_stack_trace = true;
+    config.captureStackTrace = true;
+    config.symbolizeStackTrace = true;
     logger.configure(config);
 
     // Bind context that will appear in all logs
@@ -43,6 +43,7 @@ pub fn main() !void {
 
     // Demonstrate stack trace in JSON
     try logger.err("Something went wrong!", @src());
+    try logger.flush();
 
     std.debug.print("\nJSON logging example completed!\n", .{});
 }

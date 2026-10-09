@@ -84,19 +84,19 @@ The line number where the log occurred. Default: `null`.
 
 The column number where the log occurred. Default: `null`.
 
-### `thread_id: ?u64`
+### `threadId: ?u64`
 
 Thread ID for concurrent logging identification. Default: `null`.
 
-### `request_id: ?[]const u8`
+### `requestId: ?[]const u8`
 
 Request ID for HTTP request tracking. Default: `null`.
 
-### `session_id: ?[]const u8`
+### `sessionId: ?[]const u8`
 
 Session ID for user session tracking. Default: `null`.
 
-### `user_id: ?[]const u8`
+### `userId: ?[]const u8`
 
 User ID for audit logging. Default: `null`.
 
@@ -106,41 +106,41 @@ Tags for categorization and filtering. Default: `null`.
 
 ## Tracing Fields
 
-### `trace_id: ?[]const u8`
+### `traceId: ?[]const u8`
 
 Distributed trace ID for request tracking across services. Default: `null`.
 
 ```zig
-record.trace_id = "abc123-def456";
+record.traceId = "abc123-def456";
 ```
 
-### `span_id: ?[]const u8`
+### `spanId: ?[]const u8`
 
 Span ID within a trace for nested operation tracking. Default: `null`.
 
 ```zig
-record.span_id = "span-001";
+record.spanId = "span-001";
 ```
 
-### `correlation_id: ?[]const u8`
+### `correlationId: ?[]const u8`
 
 Correlation ID for linking related logs. Default: `null`.
 
 ```zig
-record.correlation_id = "request-789";
+record.correlationId = "request-789";
 ```
 
-### `parent_span_id: ?[]const u8`
+### `parentSpanId: ?[]const u8`
 
 Parent span ID for hierarchical tracing. Default: `null`.
 
-### `stack_trace: ?*std.builtin.StackTrace`
+### `stackTrace: ?*std.builtin.StackTrace`
 
 Captured stack trace for the log event. Automatically populated for `Error` and `Critical` levels. Default: `null`.
 
 ## Error Fields
 
-### `error_info: ?ErrorInfo`
+### `errorInfo: ?ErrorInfo`
 
 Structured error information. Default: `null`.
 
@@ -148,9 +148,9 @@ Structured error information. Default: `null`.
 pub const ErrorInfo = struct {
     name: []const u8,
     message: []const u8,
-    stack_trace: ?[]const u8 = null,
+    stackTrace: ?[]const u8 = null,
     code: ?i32 = null,
-    error_category: ?ErrorCategory = null,
+    errorCategory: ?ErrorCategory = null,
 };
 
 pub const ErrorCategory = enum {
@@ -164,14 +164,14 @@ pub const ErrorCategory = enum {
 
 ## Timing Fields
 
-### `duration_ns: ?u64`
+### `durationNs: ?u64`
 
 Duration of the operation in nanoseconds. Useful for performance logging. Default: `null`.
 
 ```zig
 const start = logly.Utils.currentNanos();
 // ... operation ...
-record.duration_ns = @as(u64, @intCast(logly.Utils.currentNanos() - start));
+record.durationNs = @as(u64, @intCast(logly.Utils.currentNanos() - start));
 ```
 
 ## Context
@@ -185,7 +185,7 @@ try record.context.put("user_id", .{ .string = "12345" });
 try record.context.put("request_count", .{ .integer = 42 });
 ```
 
-### `invoke_messages: ?[]const InvokeMessage`
+### `invokeMessages: ?[]const InvokeMessage`
 
 Extra messages attached to this record if any triggers matched during evaluation. Default: `null`.
 
@@ -200,7 +200,7 @@ var record = Record.init(allocator, .info, "User logged in");
 defer record.deinit();
 ```
 
-### `initCustom(allocator, level, message, custom_name, custom_color) Record`
+### `initCustom(allocator, level, message, customName, customColor) Record`
 
 Creates a new Record with custom level name and color.
 
@@ -257,8 +257,8 @@ const std_color = standard.levelColor(); // Returns "33" (yellow)
 Generates a unique span ID (16 hex characters).
 
 ```zig
-const span_id = try Record.generateSpanId(allocator);
-defer allocator.free(span_id);
+const spanId = try Record.generateSpanId(allocator);
+defer allocator.free(spanId);
 // span_id: "a1b2c3d4e5f67890"
 ```
 
@@ -268,17 +268,13 @@ defer allocator.free(span_id);
 
 Serializes the record directly into logfmt (`key=value`) string format using the provided writer.
 
-### `toCef(self: *const Record, writer: anytype) !void`
-
-Serializes the record directly into ArcSight CEF (Common Event Format) using the provided writer.
-
 ## Custom Level Fields
 
-### `custom_level_name: ?[]const u8`
+### `customLevelName: ?[]const u8`
 
 Custom name for non-standard levels (e.g., "AUDIT", "ALERT", "NOTICE"). Used by `levelName()`.
 
-### `custom_level_color: ?[]const u8`
+### `customLevelColor: ?[]const u8`
 
 Custom ANSI color code for custom levels (e.g., "35", "31;1", "36;4"). Used by `levelColor()`.
 
@@ -293,11 +289,11 @@ var record = Record.init(allocator, .info, "Request processed");
 defer record.deinit();
 
 // Add tracing info
-record.trace_id = "trace-abc123";
-record.span_id = "span-001";
+record.traceId = "trace-abc123";
+record.spanId = "span-001";
 
 // Add timing
-record.duration_ns = 1500000; // 1.5ms
+record.durationNs = 1500000; // 1.5ms
 
 // Add context
 try record.context.put("user_id", .{ .string = "user123" });
@@ -337,24 +333,24 @@ The Record module provides convenience aliases:
 
 ## Tracing Methods
 
-- `setTraceId(trace_id: []const u8) !void` - Set distributed trace ID
-- `setSpanId(span_id: []const u8) !void` - Set span ID
-- `setParentSpanId(parent_id: []const u8) !void` - Set parent span ID for hierarchical tracing
-- `setCorrelationId(correlation_id: []const u8) !void` - Set correlation ID
+- `setTraceId(traceId: []const u8) !void` - Set distributed trace ID
+- `setSpanId(spanId: []const u8) !void` - Set span ID
+- `setParentSpanId(parentId: []const u8) !void` - Set parent span ID for hierarchical tracing
+- `setCorrelationId(correlationId: []const u8) !void` - Set correlation ID
 
 ## Identification Methods
 
-- `setRequestId(req_id: []const u8) !void` - Set HTTP request ID
-- `setSessionId(sess_id: []const u8) !void` - Set user session ID
+- `setRequestId(reqId: []const u8) !void` - Set HTTP request ID
+- `setSessionId(sessId: []const u8) !void` - Set user session ID
 - `setUserId(uid: []const u8) !void` - Set user ID for audit logging
 
 ## Context Methods
 
 - `addField(key: []const u8, value: json.Value) !void` - Add a context field
 - `addTag(tag: []const u8) !void` - Add a lightweight string tag
-- `setError(name, message, stack_trace, code) !void` - Set error information
-- `setDuration(duration_ns: u64) void` - Set operation duration
-- `setDurationSince(start_time: i128) void` - Set duration from timer start
+- `setError(name, message, stackTrace, code) !void` - Set error information
+- `setDuration(durationNs: u64) void` - Set operation duration
+- `setDurationSince(startTime: i128) void` - Set duration from timer start
 
 ## Query Methods
 

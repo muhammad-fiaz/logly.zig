@@ -29,18 +29,18 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
 
     var config = logly.Config.default();
-    config.json = true;
-    config.pretty_json = true;
+    config.format = .json;
+    config.prettyJson = true;
 
     // Enable extended fields
-    config.include_hostname = true;
-    config.include_pid = true;
+    config.includeHostname = true;
+    config.includePid = true;
 
     logger.configure(config);
 

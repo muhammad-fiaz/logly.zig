@@ -92,42 +92,42 @@ var config9 = logly.Config.default().withBrotliCompression();
 const CompressionConfig = logly.CompressionConfig;
 
 // Preset configurations
-const enable_cfg = CompressionConfig.enable();        // Basic enabled
-const implicit_cfg = CompressionConfig.implicit();    // Auto on rotation
-const explicit_cfg = CompressionConfig.explicit();    // Manual control
-const fast_cfg = CompressionConfig.fast();            // Speed priority
-const balanced_cfg = CompressionConfig.balanced();    // Default balance
-const best_cfg = CompressionConfig.best();            // Ratio priority
+const enableCfg = CompressionConfig.enable();        // Basic enabled
+const implicitCfg = CompressionConfig.implicit();    // Auto on rotation
+const explicitCfg = CompressionConfig.explicit();    // Manual control
+const fastCfg = CompressionConfig.fast();            // Speed priority
+const balancedCfg = CompressionConfig.balanced();    // Default balance
+const bestCfg = CompressionConfig.best();            // Ratio priority
 const for_logs_cfg = CompressionConfig.forLogs();     // Log optimized
-const archive_cfg = CompressionConfig.archive();      // Archival mode
-const keep_cfg = CompressionConfig.keepOriginals();   // Keep original files
-const prod_cfg = CompressionConfig.production();      // Production ready
-const dev_cfg = CompressionConfig.development();      // Development mode
-const disable_cfg = CompressionConfig.disable();      // Disabled
-const bg_cfg = CompressionConfig.backgroundMode();    // Background thread
-const stream_cfg = CompressionConfig.streamingMode(); // Streaming mode
-const zstd_cfg = CompressionConfig.zstd();            // Default zstd
-const zstd_fast_cfg = CompressionConfig.zstdFast();   // Fast zstd
-const zstd_best_cfg = CompressionConfig.zstdBest();   // Best zstd ratio
-const zstd_prod_cfg = CompressionConfig.zstdProduction(); // Production zstd
-const zstd_custom = CompressionConfig.zstdWithLevel(12); // Custom level
+const archiveCfg = CompressionConfig.archive();      // Archival mode
+const keepCfg = CompressionConfig.keepOriginals();   // Keep original files
+const prodCfg = CompressionConfig.production();      // Production ready
+const devCfg = CompressionConfig.development();      // Development mode
+const disableCfg = CompressionConfig.disable();      // Disabled
+const bgCfg = CompressionConfig.backgroundMode();    // Background thread
+const streamCfg = CompressionConfig.streamingMode(); // Streaming mode
+const zstdCfg = CompressionConfig.zstd();            // Default zstd
+const zstdFastCfg = CompressionConfig.zstdFast();   // Fast zstd
+const zstdBestCfg = CompressionConfig.zstdBest();   // Best zstd ratio
+const zstdProdCfg = CompressionConfig.zstdProduction(); // Production zstd
+const zstdCustom = CompressionConfig.zstdWithLevel(12); // Custom level
 
 // v0.1.8+ algorithms
-const lzma_cfg = CompressionConfig.lzma();            // LZMA
-const xz_cfg = CompressionConfig.xz();                // XZ
-const lz4_cfg = CompressionConfig.lz4();              // LZ4
-const zip_cfg = CompressionConfig.zip();              // ZIP
-const targz_cfg = CompressionConfig.tarGz();          // TAR.GZ
+const lzmaCfg = CompressionConfig.lzma();            // LZMA
+const xzCfg = CompressionConfig.xz();                // XZ
+const lz4Cfg = CompressionConfig.lz4();              // LZ4
+const zipCfg = CompressionConfig.zip();              // ZIP
+const targzCfg = CompressionConfig.tarGz();          // TAR.GZ
 const brotli_cfg = CompressionConfig.brotli();        // Brotli
 
 // Size-based trigger (compress when file exceeds 5MB)
-const size_cfg = CompressionConfig.onSize(5 * 1024 * 1024);
+const sizeCfg = CompressionConfig.onSize(5 * 1024 * 1024);
 
 // Use with Config
-var config = logly.Config.default().withCompression(prod_cfg);
+var config = logly.Config.default().withCompression(prodCfg);
 
 // Or use zstd for best performance (v0.1.8+)
-var zstd_config = logly.Config.default().withZstdCompression();
+var zstdConfig = logly.Config.default().withZstdCompression();
 ```
 
 ### Compression Instance Presets
@@ -152,12 +152,12 @@ var comp16 = logly.Compression.zstdBest(allocator);          // Best zstd ratio
 var comp17 = logly.Compression.zstdProduction(allocator);    // Production zstd
 
 // v0.1.8+ factory methods
-var lzma_comp = logly.Compression.lzmaCompression(allocator);
-var xz_comp = logly.Compression.xzCompression(allocator);
-var lz4_comp = logly.Compression.lz4Compression(allocator);
-var zip_comp = logly.Compression.zipCompression(allocator);
-var targz_comp = logly.Compression.tarGzCompression(allocator);
-var brotli_comp = logly.Compression.brotliCompression(allocator);
+var lzmaComp = logly.Compression.lzmaCompression(allocator);
+var xzComp = logly.Compression.xzCompression(allocator);
+var lz4Comp = logly.Compression.lz4Compression(allocator);
+var zipComp = logly.Compression.zipCompression(allocator);
+var targzComp = logly.Compression.tarGzCompression(allocator);
+var brotliComp = logly.Compression.brotliCompression(allocator);
 
 defer comp1.deinit();
 // ... defer for others
@@ -202,7 +202,7 @@ Brotli quality levels range from 0 to 11:
 var comp = logly.Compression.initWithConfig(allocator, .{
     .algorithm = .brotli,
     .level = .custom,
-    .custom_brotli_level = 6, // Balanced level
+    .customBrotliLevel = 6, // Balanced level
 });
 defer comp.deinit();
 ```
@@ -293,8 +293,8 @@ try compressor.compressFile("logs/app.log", null);
 // Result: logs/app.log.zst
 
 // Compress directory
-const files_compressed = try compressor.compressDirectory("logs/archive/");
-std.debug.print("Compressed {d} files\n", .{files_compressed});
+const filesCompressed = try compressor.compressDirectory("logs/archive/");
+std.debug.print("Compressed {d} files\n", .{filesCompressed});
 ```
 
 ### Zstd Dictionary Support
@@ -303,7 +303,7 @@ For highly repetitive logs, Zstd supports compression with a pre-trained diction
 
 ```zig
 var config = logly.Config.default().withZstdCompression();
-config.compression.zstd_dict = my_pre_trained_dict_bytes;
+config.compression.zstdDict = my_pre_trained_dict_bytes;
 
 var compressor = logly.Compression.initWithConfig(allocator, config.compression);
 defer compressor.deinit();
@@ -332,21 +332,21 @@ High-ratio compression ideal for long-term log archival:
 const logly = @import("logly");
 
 // LZMA - highest compression ratio
-var lzma_comp = logly.Compression.lzmaCompression(allocator);
-defer lzma_comp.deinit();
+var lzmaComp = logly.Compression.lzmaCompression(allocator);
+defer lzmaComp.deinit();
 
 const data = "Log data for archival..." ** 1000;
-const compressed = try lzma_comp.compress(data);
+const compressed = try lzmaComp.compress(data);
 defer allocator.free(compressed);
 
 std.debug.print("LZMA: {d} -> {d} bytes\n", .{data.len, compressed.len});
 
 // XZ - standard distribution format
-var xz_comp = logly.Compression.xzCompression(allocator);
-defer xz_comp.deinit();
+var xzComp = logly.Compression.xzCompression(allocator);
+defer xzComp.deinit();
 
-const xz_compressed = try xz_comp.compress(data);
-defer allocator.free(xz_compressed);
+const xzCompressed = try xzComp.compress(data);
+defer allocator.free(xzCompressed);
 ```
 
 ### ZIP Compression
@@ -354,15 +354,15 @@ defer allocator.free(xz_compressed);
 Create standard ZIP archives compatible with all systems:
 
 ```zig
-var zip_comp = logly.Compression.zipCompression(allocator);
-defer zip_comp.deinit();
+var zipComp = logly.Compression.zipCompression(allocator);
+defer zipComp.deinit();
 
 const log_data = "[2026-01-19] INFO: Application started\n" ** 100;
-const zipped = try zip_comp.compress(log_data);
+const zipped = try zipComp.compress(log_data);
 defer allocator.free(zipped);
 
 // Decompress back
-const original = try zip_comp.decompress(zipped);
+const original = try zipComp.decompress(zipped);
 defer allocator.free(original);
 ```
 
@@ -371,15 +371,15 @@ defer allocator.free(original);
 Unix-style tar archive with gzip compression:
 
 ```zig
-var targz_comp = logly.Compression.tarGzCompression(allocator);
-defer targz_comp.deinit();
+var targzComp = logly.Compression.tarGzCompression(allocator);
+defer targzComp.deinit();
 
 const log_content = "Server log entry...\n" ** 500;
-const archived = try targz_comp.compress(log_content);
+const archived = try targzComp.compress(log_content);
 defer allocator.free(archived);
 
 // Extract
-const extracted = try targz_comp.decompress(archived);
+const extracted = try targzComp.decompress(archived);
 defer allocator.free(extracted);
 ```
 
@@ -388,12 +388,12 @@ defer allocator.free(extracted);
 Ultra-fast compression for real-time logging scenarios:
 
 ```zig
-var lz4_comp = logly.Compression.lz4Compression(allocator);
-defer lz4_comp.deinit();
+var lz4Comp = logly.Compression.lz4Compression(allocator);
+defer lz4Comp.deinit();
 
 // LZ4 prioritizes speed over ratio
 const fast_data = "High-throughput log data..." ** 200;
-const fast_compressed = try lz4_comp.compress(fast_data);
+const fast_compressed = try lz4Comp.compress(fast_data);
 defer allocator.free(fast_compressed);
 ```
 
@@ -403,15 +403,15 @@ defer allocator.free(fast_compressed);
 const CompressionConfig = logly.Config.CompressionConfig;
 
 // Use preset configurations
-const lzma_cfg = CompressionConfig.lzma();     // .lzma extension
-const lzma2_cfg = CompressionConfig.lzma2();   // .lzma2 extension
-const xz_cfg = CompressionConfig.xz();         // .xz extension
-const zip_cfg = CompressionConfig.zip();       // .zip extension
-const targz_cfg = CompressionConfig.tarGz();   // .tar.gz extension
-const lz4_cfg = CompressionConfig.lz4();       // .lz4 extension
+const lzmaCfg = CompressionConfig.lzma();     // .lzma extension
+const lzma2Cfg = CompressionConfig.lzma2();   // .lzma2 extension
+const xzCfg = CompressionConfig.xz();         // .xz extension
+const zipCfg = CompressionConfig.zip();       // .zip extension
+const targzCfg = CompressionConfig.tarGz();   // .tar.gz extension
+const lz4Cfg = CompressionConfig.lz4();       // .lz4 extension
 
 // Apply to config
-var config = logly.Config.default().withCompression(lzma_cfg);
+var config = logly.Config.default().withCompression(lzmaCfg);
 ```
 
 ## File Name Customization
@@ -422,12 +422,12 @@ Customize compressed file names, locations, and archive structure:
 
 | Option | Description | Example |
 |--------|-------------|---------|
-| `file_prefix` | Prefix for file names | `"archive_"` â†’ `archive_app.log.gz` |
-| `file_suffix` | Suffix before extension | `"_old"` â†’ `app_old.log.gz` |
-| `archive_root_dir` | Centralized archive location | `"logs/archive"` |
-| `create_date_subdirs` | Create YYYY/MM/DD structure | `logs/archive/2026/01/09/` |
-| `preserve_dir_structure` | Keep original folder structure | Original: `src/logs/` â†’ `archive/src/logs/` |
-| `naming_pattern` | Custom naming with placeholders | `"{base}_{date}{ext}"` |
+| `filePrefix` | Prefix for file names | `"archive_"` â†’ `archive_app.log.gz` |
+| `fileSuffix` | Suffix before extension | `"_old"` â†’ `app_old.log.gz` |
+| `archiveRootDir` | Centralized archive location | `"logs/archive"` |
+| `createDateSubdirs` | Create YYYY/MM/DD structure | `logs/archive/2026/01/09/` |
+| `preserveDirStructure` | Keep original folder structure | Original: `src/logs/` â†’ `archive/src/logs/` |
+| `namingPattern` | Custom naming with placeholders | `"{base}_{date}{ext}"` |
 
 ### Naming Pattern Placeholders
 
@@ -448,14 +448,14 @@ const cfg = logly.Config.CompressionConfig{
     .algorithm = .gzip,
     .level = .best,
     // File name customization
-    .file_prefix = "archived_",
-    .file_suffix = "_v1",
+    .filePrefix = "archived_",
+    .fileSuffix = "_v1",
     // Centralized archive
-    .archive_root_dir = "logs/compressed",
-    .create_date_subdirs = true,
-    .preserve_dir_structure = true,
+    .archiveRootDir = "logs/compressed",
+    .createDateSubdirs = true,
+    .preserveDirStructure = true,
     // Custom naming
-    .naming_pattern = "{base}_{date}{ext}",
+    .namingPattern = "{base}_{date}{ext}",
 };
 
 // Result: logs/compressed/2026/01/09/archived_app_2026-01-09_v1.log.gz
@@ -469,9 +469,9 @@ Store all compressed files in a centralized location:
 var config = logly.Config.default();
 config.compression = .{
     .enabled = true,
-    .archive_root_dir = "logs/archive",      // All compressed files go here
-    .create_date_subdirs = true,              // Organize by date
-    .preserve_dir_structure = false,          // Flatten directory structure
+    .archiveRootDir = "logs/archive",      // All compressed files go here
+    .createDateSubdirs = true,              // Organize by date
+    .preserveDirStructure = false,          // Flatten directory structure
 };
 
 // Input:  logs/app/server.log
@@ -521,8 +521,8 @@ config.compression = .{
     .enabled = true,              // Enable compression
     .algorithm = .deflate,        // Compression algorithm
     .level = .default,            // Compression level
-    .on_rotation = true,          // Compress on log rotation
-    .keep_original = false,       // Delete original after compression
+    .onRotation = true,          // Compress on log rotation
+    .keepOriginal = false,       // Delete original after compression
     .extension = ".gz",           // Compressed file extension
 };
 
@@ -537,7 +537,7 @@ var config2 = logly.Config.default().withCompression(.{ .algorithm = .deflate })
 | `.none` | No compression | Instant | 1.0x | Testing |
 | `.deflate` | Standard DEFLATE (gzip compatible) | ~200 MB/s | 3-5x | General logs |
 | `.zlib` | ZLIB format with headers | ~180 MB/s | 3-5x | Network transport |
-| `.raw_deflate` | Raw DEFLATE without headers | ~220 MB/s | 3-5x | Custom formats |
+| `.rawDeflate` | Raw DEFLATE without headers | ~220 MB/s | 3-5x | Custom formats |
 | `.gzip` | GZIP format (standard compression) | ~190 MB/s | 3-5x | Standard file compatibility |
 
 ## Compression Strategies
@@ -574,7 +574,7 @@ config.compression.strategy = .binary;
 
 Compression can be enabled specifically for network sinks (TCP/UDP) to reduce bandwidth usage. This is particularly useful when shipping logs to a remote aggregator over a slow or metered connection.
 
-When enabled, the sink buffers logs up to `buffer_size` (default 4KB) and then compresses the entire buffer using the configured algorithm (default DEFLATE) before sending it over the network.
+When enabled, the sink buffers logs up to `bufferSize` (default 4KB) and then compresses the entire buffer using the configured algorithm (default DEFLATE) before sending it over the network.
 
 ```zig
 var sink = logly.SinkConfig.network("tcp://logs.example.com:5000");
@@ -583,7 +583,7 @@ sink.compression = .{
     .algorithm = .deflate, // or .gzip, .zlib
     .level = .best_speed,  // Optimize for low latency
 };
-_ = try logger.addSink(sink);
+ _ = try logger.addSink(sink);
 ```
 
 > **Note:** The receiving end must be able to decompress the stream. For TCP, it receives a stream of compressed blocks. For UDP, each packet payload is compressed.
@@ -593,7 +593,7 @@ _ = try logger.addSink(sink);
 Fast compression for highly repetitive data:
 
 ```zig
-config.compression.strategy = .rle_only;
+config.compression.strategy = .rleOnly;
 ```
 
 - Only run-length encoding
@@ -670,11 +670,11 @@ defer in_file.close(io);
 
 // 2. Stream compression
 var in_buffer: [4096]u8 = undefined;
-var out_buffer: [4096]u8 = undefined;
-var input_reader = in_file.reader(io, &in_buffer);
-var output_writer = out_file.writer(io, &out_buffer);
-try compression.compressStream(&input_reader.interface, &output_writer.interface);
-try output_writer.interface.flush();
+var outBuffer: [4096]u8 = undefined;
+var inputReader = in_file.reader(io, &in_buffer);
+var outputWriter = out_file.writer(io, &outBuffer);
+try compression.compressStream(&inputReader.interface, &outputWriter.interface);
+try outputWriter.interface.flush();
 ```
 
 ## Compression Modes
@@ -705,9 +705,9 @@ Compress automatically when log files are rotated:
 var config = logly.Config.default();
 config.compression = .{
     .enabled = true,
-    .mode = .on_rotation,
+    .mode = .onRotation,
     .level = .default,
-    .keep_original = false,
+    .keepOriginal = false,
 };
 ```
 
@@ -717,14 +717,14 @@ Compress when files reach a certain size:
 
 ```zig
 var compression = logly.Compression.initWithConfig(allocator, .{
-    .mode = .on_size_threshold,
-    .size_threshold = 50 * 1024 * 1024, // 50 MB
+    .mode = .onSizeThreshold,
+    .sizeThreshold = 50 * 1024 * 1024, // 50 MB
     .level = .default,
 });
 
 // Check if file should be compressed
 if (compression.shouldCompress("app.log")) {
-    _ = try compression.compressFile("app.log", null);
+     _ = try compression.compressFile("app.log", null);
 }
 ```
 
@@ -735,8 +735,8 @@ Compress data directly to a file stream as it is generated. This is useful for l
 **Note:** This mode requires manual management of the output stream.
 
 ```zig
-var stream_comp = logly.Compression.init(allocator);
-defer stream_comp.deinit();
+var streamComp = logly.Compression.init(allocator);
+defer streamComp.deinit();
 
 // 1. Create the output file (compressed destination)
 const io = logly.Utils.io();
@@ -750,10 +750,10 @@ var input_stream = std.Io.Reader.fixed(data);
 
 // 3. Compress directly to the file
 // The data flows: input_stream -> compressor -> file
-var file_buffer: [4096]u8 = undefined;
-var file_writer = file.writer(io, &file_buffer);
-try stream_comp.compressStream(&input_stream, &file_writer.interface);
-try file_writer.interface.flush();
+var fileBuffer: [4096]u8 = undefined;
+var fileWriter = file.writer(io, &fileBuffer);
+try streamComp.compressStream(&input_stream, &fileWriter.interface);
+try fileWriter.interface.flush();
 
 // 4. Verify file creation
 const stat = try std.Io.Dir.cwd().statFile(io, "data.gz");
@@ -765,15 +765,19 @@ std.debug.print("Created data.gz: {d} bytes\n", .{stat.size});
 Use with the scheduler for timed compression:
 
 ```zig
-var scheduler = try logly.Scheduler.init(allocator, .{});
+var scheduler = try logly.Scheduler.init(allocator);
 defer scheduler.deinit();
 
 // Compress logs every hour
-_ = try scheduler.addTask(.{
-    .name = "compress_old_logs",
-    .schedule = .{ .interval_seconds = 3600 },
-    .callback = compressOldLogs,
-});
+ _ = try scheduler.addTask(
+    "compress_old_logs",
+    .compression,
+    .{ .interval = 3600000 },
+    .{
+        .path = "logs",
+        .filePattern = "*.log",
+    },
+);
 
 try scheduler.start();
 ```
@@ -783,13 +787,13 @@ try scheduler.start();
 Offload compression to background threads using the `ThreadPool` so the main application thread doesn't block:
 
 ```zig
-var pool = try logly.ThreadPool.init(allocator, .{});
+var pool = try logly.ThreadPool.init(allocator);
 try pool.start();
 defer pool.stop();
 
 var compression = logly.Compression.initWithConfig(allocator, .{
     .algorithm = .zstd,
-    .thread_pool = &pool,
+    .threadPool = &pool,
 });
 
 // Compression is dispatched asynchronously to the thread pool
@@ -840,8 +844,8 @@ std.debug.print("Batch compressed {d} files\n", .{count});
 var compression = logly.Compression.init(allocator, .{
     .algorithm = .gzip,
     .compressed_extension = ".gz",
-    .keep_originals = false, // Delete original after compression
-    .max_concurrent = 4,     // Parallel compression
+    .keepOriginals = false, // Delete original after compression
+    .maxConcurrent = 4,     // Parallel compression
 });
 ```
 
@@ -953,7 +957,7 @@ var config = logly.Config.init(allocator);
 config.rotation = .{
     .enabled = true,
     .max_file_size = 10 * 1024 * 1024, // 10 MB
-    .max_files = 10,
+    .maxFiles = 10,
     .compress_rotated = true,
 };
 
@@ -966,11 +970,11 @@ config.rotation = .{
 Automatic scheduled compression:
 
 ```zig
-var scheduler = try logly.Scheduler.init(allocator, .{});
+var scheduler = try logly.Scheduler.init(allocator);
 defer scheduler.deinit();
 
 // Compress logs older than 1 day, every hour
-_ = try scheduler.addTask(
+ _ = try scheduler.addTask(
     logly.SchedulerPresets.hourlyCompression("logs"),
 );
 
@@ -992,7 +996,7 @@ config.compression.strategy = .binary;
 config.compression.strategy = .adaptive;
 
 // For highly repetitive data
-config.compression.strategy = .rle_only;
+config.compression.strategy = .rleOnly;
 ```
 
 ### 2. Match Level to Workload
@@ -1007,17 +1011,17 @@ config.compression.level = .default;
 
 // Long-term archival (maximize space savings)
 config.compression.level = .best;
-config.compression.keep_original = false;
+config.compression.keepOriginal = false;
 ```
 
 ### 3. Set Appropriate Thresholds
 
 ```zig
 // Don't compress small files (overhead not worth it)
-config.compression.size_threshold = 1024 * 1024; // 1 MB minimum
+config.compression.sizeThreshold = 1024 * 1024; // 1 MB minimum
 
 // For rotation-based compression
-config.compression.mode = .on_rotation;
+config.compression.mode = .onRotation;
 ```
 
 ### 4. Monitor Compression Effectiveness
@@ -1045,10 +1049,10 @@ config.compression.parallel = true;
 
 ```zig
 // Larger buffers = better throughput, more memory
-config.compression.buffer_size = 64 * 1024; // 64 KB
+config.compression.bufferSize = 64 * 1024; // 64 KB
 
 // Smaller buffers = less memory, more overhead
-config.compression.buffer_size = 16 * 1024; // 16 KB
+config.compression.bufferSize = 16 * 1024; // 16 KB
 ```
 
 ### 7. Enable Checksums for Critical Data
@@ -1084,7 +1088,7 @@ compression.setCompressionErrorCallback(logError);
 
 ```zig
 // Automatically delete old compressed files
-config.compression.delete_after = 30 * 24 * 3600; // 30 days
+config.compression.deleteAfter = 30 * 24 * 3600; // 30 days
 ```
 
 ## Error Handling
@@ -1122,13 +1126,13 @@ var compression = logly.Compression.initWithConfig(allocator, .{
     .algorithm = .deflate,
     .level = .default,
     .strategy = .text,           // Optimized for logs
-    .mode = .on_rotation,
+    .mode = .onRotation,
     .checksum = true,            // Enable validation
     .background = true,          // Use thread pool
     .streaming = false,
-    .buffer_size = 64 * 1024,
-    .keep_original = false,
-    .delete_after = 30 * 24 * 3600, // Delete after 30 days
+    .bufferSize = 64 * 1024,
+    .keepOriginal = false,
+    .deleteAfter = 30 * 24 * 3600, // Delete after 30 days
     .extension = ".gz",
 });
 ```
@@ -1151,10 +1155,10 @@ fn onCompressionComplete(
     comp_size: u64,
     elapsed: u64,
 ) void {
-    _ = orig;
-    _ = comp;
+     _ = orig;
+     _ = comp;
     const saved = orig_size - comp_size;
-    _ = compression_stats.total_saved.fetchAdd(saved, .monotonic);
+     _ = compression_stats.total_saved.fetchAdd(saved, .monotonic);
     
     const ratio = @as(f64, @floatFromInt(orig_size)) / 
                   @as(f64, @floatFromInt(comp_size));
@@ -1163,7 +1167,7 @@ fn onCompressionComplete(
 }
 
 fn onCompressionError(path: []const u8, err: anyerror) void {
-    _ = compression_stats.errors.fetchAdd(1, .monotonic);
+     _ = compression_stats.errors.fetchAdd(1, .monotonic);
     std.log.err("Compression failed for {s}: {s}", .{path, @errorName(err)});
 }
 
@@ -1177,11 +1181,11 @@ pub fn main() !void {
         .algorithm = .deflate,
         .level = .default,
         .strategy = .text,
-        .mode = .on_rotation,
+        .mode = .onRotation,
         .checksum = true,
         .background = true,
-        .buffer_size = 64 * 1024,
-        .keep_original = false,
+        .bufferSize = 64 * 1024,
+        .keepOriginal = false,
     });
     defer compression.deinit();
 
@@ -1194,7 +1198,7 @@ pub fn main() !void {
     config.compression = .{
         .enabled = true,
         .level = .default,
-        .on_rotation = true,
+        .onRotation = true,
     };
 
     var logger = try logly.Logger.initWithConfig(allocator, config);
@@ -1222,11 +1226,11 @@ pub fn main() !void {
 ## Example: Benchmark Different Strategies
 
 ```zig
-const strategies = [_]logly.Compression.Strategy{
-    .text, .binary, .rle_only, .adaptive,
+const strategies = []logly.Compression.Strategy{
+    .text, .binary, .rleOnly, .adaptive,
 };
 
-const test_data = "2025-01-15 10:30:45 [INFO] User logged in: user123\n" ** 1000;
+const testData = "2025-01-15 10:30:45 [INFO] User logged in: user123\n" ** 1000;
 
 for (strategies) |strategy| {
     var compression = logly.Compression.initWithConfig(allocator, .{
@@ -1236,13 +1240,13 @@ for (strategies) |strategy| {
     defer compression.deinit();
 
     const start = logly.Utils.currentNanos();
-    const compressed = try compression.compress(test_data);
+    const compressed = try compression.compress(testData);
     const elapsed = logly.Utils.currentNanos() - start;
     defer allocator.free(compressed);
 
-    const ratio = @as(f64, @floatFromInt(test_data.len)) / 
+    const ratio = @as(f64, @floatFromInt(testData.len)) / 
                   @as(f64, @floatFromInt(compressed.len));
-    const speed_mbps = (@as(f64, @floatFromInt(test_data.len)) / 
+    const speed_mbps = (@as(f64, @floatFromInt(testData.len)) / 
                        (1024.0 * 1024.0)) / 
                        (@as(f64, @floatFromInt(elapsed)) / 1_000_000_000.0);
 

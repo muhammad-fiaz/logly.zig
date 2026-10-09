@@ -47,25 +47,25 @@ pub const BufferSizes = struct {
     /// Default sink buffer size
     pub const sink: usize = 16384;
     /// Default async queue buffer size
-    pub const async_queue: usize = 8192;
+    pub const asyncQueue: usize = 8192;
     /// Default compression buffer size
     pub const compression: usize = 32768;
     /// Default telemetry buffer size
     pub const telemetry: usize = 4096;
     /// Maximum log message size (1MB)
-    pub const max_message: usize = 1024 * 1024;
+    pub const maxMessage: usize = 1024 * 1024;
     /// Async batch size
-    pub const async_batch: usize = 64;
+    pub const asyncBatch: usize = 64;
     /// Small buffer for thread IDs etc.
     pub const tiny: usize = 32;
     /// Small buffer for context values etc.
     pub const small: usize = 256;
     /// Standard file read buffer
-    pub const file_read: usize = 4096;
+    pub const fileRead: usize = 4096;
     /// Large file read buffer
-    pub const file_read_large: usize = 8192;
+    pub const fileReadLarge: usize = 8192;
     /// Path buffer size
-    pub const path_buffer: usize = 512;
+    pub const pathBuffer: usize = 512;
 };
 ```
 
@@ -76,17 +76,17 @@ Default thread pool settings and helpers.
 ```zig
 pub const ThreadDefaults = struct {
     /// Default number of threads (0 = auto-detect)
-    pub const thread_count: usize = 0;
+    pub const threadCount: usize = 0;
     /// Default queue size per thread
-    pub const queue_size: usize = 1024;
+    pub const queueSize: usize = 1024;
     /// Default stack size for worker threads (1MB)
-    pub const stack_size: usize = 1024 * 1024;
+    pub const stackSize: usize = 1024 * 1024;
     /// Default wait timeout in nanoseconds
-    pub const wait_timeout_ns: u64 = 100 * TimeConstants.ns_per_ms;
+    pub const waitTimeoutNs: u64 = 100 * TimeConstants.nsPerMs;
     /// Maximum concurrent tasks
-    pub const max_tasks: usize = 10000;
+    pub const maxTasks: usize = 10000;
     /// Queue size for low resource environments
-    pub const queue_size_low: usize = 128;
+    pub const queueSizeLow: usize = 128;
 
     /// Returns recommended thread count for current CPU
     pub fn recommendedThreadCount() usize;
@@ -106,11 +106,11 @@ pub const LevelConstants = struct {
     /// Total number of built-in log levels
     pub const count: usize = 10;
     /// Minimum priority value (TRACE)
-    pub const min_priority: u8 = 5;
+    pub const minPriority: u8 = 5;
     /// Maximum priority value (FATAL)
-    pub const max_priority: u8 = 55;
+    pub const maxPriority: u8 = 55;
     /// Default level priority (INFO)
-    pub const default_priority: u8 = 20;
+    pub const defaultPriority: u8 = 20;
 };
 ```
 
@@ -121,29 +121,29 @@ Time conversion and default intervals.
 ```zig
 pub const TimeConstants = struct {
     /// Milliseconds per second
-    pub const ms_per_second: u64 = 1000;
+    pub const msPerSecond: u64 = 1000;
     /// Microseconds per second
-    pub const us_per_second: u64 = 1_000_000;
+    pub const usPerSecond: u64 = 1_000_000;
     /// Nanoseconds per second
-    pub const ns_per_second: u64 = 1_000_000_000;
+    pub const nsPerSecond: u64 = 1_000_000_000;
 
     /// Seconds-based helpers for interval reuse
-    pub const seconds_per_minute: u64 = 60;
-    pub const seconds_per_hour: u64 = seconds_per_minute * 60;
-    pub const seconds_per_day: u64 = seconds_per_hour * 24;
-    pub const seconds_per_week: u64 = seconds_per_day * 7;
-    pub const seconds_per_month: u64 = seconds_per_day * 30;
-    pub const seconds_per_year: u64 = seconds_per_day * 365;
+    pub const secondsPerMinute: u64 = 60;
+    pub const secondsPerHour: u64 = secondsPerMinute * 60;
+    pub const secondsPerDay: u64 = secondsPerHour * 24;
+    pub const secondsPerWeek: u64 = secondsPerDay * 7;
+    pub const secondsPerMonth: u64 = secondsPerDay * 30;
+    pub const secondsPerYear: u64 = secondsPerDay * 365;
 
     /// Derived conversions
-    pub const us_per_ms: u64 = us_per_second / ms_per_second;
-    pub const ns_per_ms: u64 = ns_per_second / ms_per_second;
-    pub const ns_per_us: u64 = ns_per_second / us_per_second;
+    pub const usPerMs: u64 = usPerSecond / msPerSecond;
+    pub const nsPerMs: u64 = nsPerSecond / msPerSecond;
+    pub const nsPerUs: u64 = nsPerSecond / usPerSecond;
 
     /// Default flush interval in milliseconds
-    pub const default_flush_interval_ms: u64 = TimeDefaults.flush_interval_ms;
+    pub const defaultFlushIntervalMs: u64 = TimeDefaults.flushIntervalMs;
     /// Default rotation check interval in milliseconds
-    pub const rotation_check_interval_ms: u64 = seconds_per_minute * ms_per_second;
+    pub const rotationCheckIntervalMs: u64 = secondsPerMinute * msPerSecond;
 };
 ```
 
@@ -154,15 +154,15 @@ Default time intervals and timeouts.
 ```zig
 pub const TimeDefaults = struct {
     /// Default flush interval in milliseconds
-    pub const flush_interval_ms: u64 = 1000;
+    pub const flushIntervalMs: u64 = 1000;
     /// Default async write timeout in milliseconds
-    pub const write_timeout_ms: u64 = 5000;
+    pub const writeTimeoutMs: u64 = 5000;
     /// Default connection timeout in milliseconds
-    pub const connection_timeout_ms: u64 = 10000;
+    pub const connectionTimeoutMs: u64 = 10000;
     /// Default retry delay in milliseconds
-    pub const retry_delay_ms: u64 = 100;
+    pub const retryDelayMs: u64 = 100;
     /// Maximum retry attempts for network operations
-    pub const max_retries: u32 = 3;
+    pub const maxRetries: u32 = 3;
 };
 ```
 
@@ -173,15 +173,15 @@ Default values shared by top-level config and distributed logging configuration.
 ```zig
 pub const ConfigDefaults = struct {
     /// Default stack size for stack trace capturing.
-    pub const stack_size: usize = 1024 * 1024;
+    pub const stackSize: usize = 1024 * 1024;
     /// Default distributed trace header name.
-    pub const distributed_trace_header: []const u8 = "X-Trace-ID";
+    pub const distributedTraceHeader: []const u8 = "X-Trace-ID";
     /// Default distributed span header name.
-    pub const distributed_span_header: []const u8 = "X-Span-ID";
+    pub const distributedSpanHeader: []const u8 = "X-Span-ID";
     /// Default distributed parent span header name.
-    pub const distributed_parent_header: []const u8 = "X-Parent-ID";
+    pub const distributedParentHeader: []const u8 = "X-Parent-ID";
     /// Default distributed baggage header name.
-    pub const distributed_baggage_header: []const u8 = "Correlation-Context";
+    pub const distributedBaggageHeader: []const u8 = "Correlation-Context";
 };
 ```
 
@@ -192,17 +192,17 @@ OpenTelemetry configuration defaults (used by `TelemetryConfig`).
 ```zig
 pub const TelemetryDefaults = struct {
     /// Default batch span export size.
-    pub const batch_size: usize = 256;
+    pub const batchSize: usize = 256;
     /// Default batch export timeout in milliseconds.
-    pub const batch_timeout_ms: u64 = 5000;
+    pub const batchTimeoutMs: u64 = 5000;
     /// Default initial capacity for formatting baggage header values.
-    pub const header_initial_capacity: usize = 256;
+    pub const headerInitialCapacity: usize = 256;
     /// Default sampling rate (1.0 = 100%).
-    pub const sampling_rate: f64 = 1.0;
+    pub const samplingRate: f64 = 1.0;
     /// Default W3C traceparent header name.
-    pub const trace_header: []const u8 = "traceparent";
+    pub const traceHeader: []const u8 = "traceparent";
     /// Default baggage/correlation context header name.
-    pub const baggage_header: []const u8 = "baggage";
+    pub const baggageHeader: []const u8 = "baggage";
 };
 ```
 
@@ -213,9 +213,9 @@ Async configuration constants.
 ```zig
 pub const AsyncConstants = struct {
     /// Sleep duration when blocking on full queue
-    pub const block_sleep_ns: u64 = 1 * TimeConstants.ns_per_ms;
+    pub const blockSleepNs: u64 = 1 * TimeConstants.nsPerMs;
     /// Default batch size for async processing
-    pub const batch_size: usize = BufferSizes.async_batch;
+    pub const batchSize: usize = BufferSizes.asyncBatch;
 };
 ```
 
@@ -226,13 +226,13 @@ Default limits for queues and buffers.
 ```zig
 pub const Limits = struct {
     /// Maximum async queue size
-    pub const max_async_queue_size: usize = 10000;
+    pub const maxAsyncQueueSize: usize = 10000;
     /// Maximum pending log records
-    pub const max_pending_records: usize = 50000;
+    pub const maxPendingRecords: usize = 50000;
     /// Maximum sinks per logger
-    pub const max_sinks: usize = 64;
+    pub const maxSinks: usize = 64;
     /// Maximum custom levels per logger
-    pub const max_custom_levels: usize = 32;
+    pub const maxCustomLevels: usize = 32;
 };
 ```
 
@@ -243,14 +243,14 @@ Metrics-related constants.
 ```zig
 pub const MetricsConstants = struct {
     /// Default histogram bucket boundaries in nanoseconds
-    pub const histogram_boundaries = [_]u64{
+    pub const histogramBoundaries = []u64{
         1_000, 2_000, 5_000, 10_000, 20_000, 50_000, 100_000, 200_000, 500_000,
         1_000_000, 2_000_000, 5_000_000, 10_000_000, 20_000_000, 50_000_000, 100_000_000, 200_000_000, 500_000_000,
         1_000_000_000, std.math.maxInt(u64),
     };
 
     /// Uppercase log level names for metrics display
-    pub const level_names = [_][]const u8{
+    pub const levelNames = [][]const u8{
         "TRACE", "DEBUG", "INFO", "NOTICE", "SUCCESS", "WARNING", "ERROR", "FAIL", "CRITICAL", "FATAL",
     };
 };
@@ -263,11 +263,11 @@ Default file rotation settings.
 ```zig
 pub const RotationConstants = struct {
     /// Default max file size before rotation (10MB)
-    pub const default_max_size: u64 = 10 * 1024 * 1024;
+    pub const defaultMaxSize: u64 = 10 * 1024 * 1024;
     /// Default max number of backup files
-    pub const default_max_files: usize = 5;
+    pub const defaultMaxFiles: usize = 5;
     /// Default compressed file extension
-    pub const compressed_ext: []const u8 = ".gz";
+    pub const compressedExt: []const u8 = ".gz";
 };
 ```
 
@@ -278,13 +278,13 @@ Default network logging settings.
 ```zig
 pub const NetworkConstants = struct {
     /// Default TCP buffer size (8KB)
-    pub const tcp_buffer_size: usize = 8192;
+    pub const tcpBufferSize: usize = 8192;
     /// Default UDP max packet size (64KB)
-    pub const udp_max_packet: usize = 65507;
+    pub const udpMaxPacket: usize = 65507;
     /// Connect timeout (5s)
-    pub const connect_timeout_ms: u64 = 5000;
+    pub const connectTimeoutMs: u64 = 5000;
     /// Send timeout (1s)
-    pub const send_timeout_ms: u64 = 1000;
+    pub const sendTimeoutMs: u64 = 1000;
 };
 ```
 
@@ -295,9 +295,9 @@ Invoke system limits for triggers and messages.
 ```zig
 pub const InvokeConstants = struct {
     /// Maximum number of triggers allowed by default.
-    pub const default_max_rules: usize = 1000;
+    pub const defaultMaxRules: usize = 1000;
     /// Maximum messages per trigger allowed by default.
-    pub const default_max_messages: usize = 10;
+    pub const defaultMaxMessages: usize = 10;
 };
 ```
 
@@ -347,7 +347,7 @@ pub const SyslogConstants = struct {
     };
 
     /// Default syslog UDP port
-    pub const default_port: u16 = 514;
+    pub const defaultPort: u16 = 514;
 };
 ```
 
@@ -358,27 +358,27 @@ Compression algorithm constants.
 ```zig
 pub const CompressionConstants = struct {
     /// Window size for fast compression
-    pub const window_fast: usize = 256;
+    pub const windowFast: usize = 256;
     /// Window size for default compression
-    pub const window_default: usize = 1024;
+    pub const windowDefault: usize = 1024;
     /// Window size for best compression
-    pub const window_best: usize = 4096;
+    pub const windowBest: usize = 4096;
     /// Minimum match length
-    pub const min_match: usize = 3;
+    pub const minMatch: usize = 3;
     /// Maximum match length
-    pub const max_match: usize = 255;
+    pub const maxMatch: usize = 255;
     /// Maximum run length for RLE
-    pub const max_run_length: usize = 127;
+    pub const maxRunLength: usize = 127;
     /// LZMA dictionary size
-    pub const lzma_dict_size: u32 = 65536;
+    pub const lzmaDictSize: u32 = 65536;
     /// LZMA maximum offset
-    pub const lzma_max_offset: usize = 65535;
+    pub const lzmaMaxOffset: usize = 65535;
     /// LZMA hash bits
-    pub const lzma_hash_bits: u5 = 14;
+    pub const lzmaHashBits: u5 = 14;
     /// LZMA maximum match length
-    pub const lzma_max_match: usize = 272;
+    pub const lzmaMaxMatch: usize = 272;
     /// LZMA2 chunk size
-    pub const lzma2_chunk_size: usize = 32768;
+    pub const lzma2ChunkSize: usize = 32768;
 
     /// Magic bytes for various formats
     pub const Magic = struct {
@@ -390,7 +390,7 @@ pub const CompressionConstants = struct {
     };
 
     /// LZMA properties
-    pub const lzma_properties_byte: u8 = (2 * 5 + 0) * 9 + 3;
+    pub const lzmaPropertiesByte: u8 = (2 * 5 + 0) * 9 + 3;
 
     /// RLE Markers
     pub const Rle = struct {
@@ -400,12 +400,12 @@ pub const CompressionConstants = struct {
 
     /// File extensions for different compression algorithms
     pub const ArchivingExtensions = struct {
-        pub const gzip = RotationConstants.compressed_ext;
+        pub const gzip = RotationConstants.compressedExt;
         pub const zstd = ".zst";
         pub const lzma = ".lzma";
         pub const lzma2 = ".lzma2";
         pub const xz = ".xz";
-        pub const tar_gz = ".tar.gz";
+        pub const tarGz = ".tar.gz";
         pub const zip = ".zip";
         pub const lz4 = ".lz4";
         pub const none = "";
@@ -420,9 +420,9 @@ Windows Event Log constants.
 ```zig
 pub const EventLogConstants = struct {
     pub const success: u16 = 0x0000;
-    pub const error_type: u16 = 0x0001;
-    pub const warning_type: u16 = 0x0002;
-    pub const information_type: u16 = 0x0004;
+    pub const errorType: u16 = 0x0001;
+    pub const warningType: u16 = 0x0002;
+    pub const informationType: u16 = 0x0004;
 };
 ```
 
@@ -433,11 +433,11 @@ Scheduler defaults.
 ```zig
 pub const SchedulerDefaults = struct {
     /// Default retry interval in milliseconds
-    pub const retry_interval_ms: u32 = 5000;
+    pub const retryIntervalMs: u32 = 5000;
     /// Default cleanup max age in seconds
-    pub const max_age_seconds: u64 = 7 * TimeConstants.seconds_per_day;
+    pub const maxAgeSeconds: u64 = 7 * TimeConstants.secondsPerDay;
     /// Cron fallback interval in milliseconds
-    pub const cron_fallback_interval_ms: i64 = @as(i64, TimeConstants.seconds_per_minute * TimeConstants.ms_per_second);
+    pub const cronFallbackIntervalMs: i64 = @as(i64, TimeConstants.secondsPerMinute * TimeConstants.msPerSecond);
 };
 ```
 
@@ -448,7 +448,7 @@ Rotation default settings.
 ```zig
 pub const RotationDefaults = struct {
     /// Default retention count
-    pub const retention_count: usize = 10;
+    pub const retentionCount: usize = 10;
 };
 ```
 
@@ -459,7 +459,7 @@ General configuration defaults.
 ```zig
 pub const ConfigDefaults = struct {
     /// Default stack size for stack trace capturing (1MB)
-    pub const stack_size: usize = 1024 * 1024;
+    pub const stackSize: usize = 1024 * 1024;
 };
 ```
 
@@ -470,11 +470,11 @@ Redaction defaults.
 ```zig
 pub const RedactionDefaults = struct {
     /// Default characters to reveal at start
-    pub const partial_start_chars: u8 = 4;
+    pub const partialStartChars: u8 = 4;
     /// Default characters to reveal at end
-    pub const partial_end_chars: u8 = 4;
+    pub const partialEndChars: u8 = 4;
     /// Default mask character
-    pub const mask_char: u8 = '*';
+    pub const maskChar: u8 = '*';
 };
 ```
 
@@ -485,9 +485,9 @@ Rate limiting defaults.
 ```zig
 pub const RateLimitDefaults = struct {
     /// Default max requests per second
-    pub const max_per_second: u32 = 1000;
+    pub const maxPerSecond: u32 = 1000;
     /// Default burst size
-    pub const burst_size: u32 = 100;
+    pub const burstSize: u32 = 100;
 };
 ```
 
@@ -498,13 +498,13 @@ Sampling defaults.
 ```zig
 pub const SamplingDefaults = struct {
     /// Default rate limit window in milliseconds
-    pub const rate_limit_window_ms: u64 = 1000;
+    pub const rateLimitWindowMs: u64 = 1000;
     /// Default adaptive adjustment interval in milliseconds
-    pub const adaptive_adjustment_interval_ms: u64 = 1000;
+    pub const adaptiveAdjustmentIntervalMs: u64 = 1000;
     /// Default minimum adaptive sample rate
-    pub const adaptive_min_rate: f64 = 0.01;
+    pub const adaptiveMinRate: f64 = 0.01;
     /// Default maximum adaptive sample rate
-    pub const adaptive_max_rate: f64 = 1.0;
+    pub const adaptiveMaxRate: f64 = 1.0;
 };
 ```
 
@@ -515,17 +515,17 @@ Parallel sink writing defaults.
 ```zig
 pub const ParallelDefaults = struct {
     /// Default maximum concurrent writes
-    pub const max_concurrent: usize = 8;
+    pub const maxConcurrent: usize = 8;
     /// High throughput maximum concurrent writes
-    pub const high_throughput_max_concurrent: usize = 16;
+    pub const highThroughputMaxConcurrent: usize = 16;
     /// Default buffer size
-    pub const buffer_size: usize = 64;
+    pub const bufferSize: usize = 64;
     /// High throughput buffer size
-    pub const high_throughput_buffer_size: usize = 128;
+    pub const highThroughputBufferSize: usize = 128;
     /// Default maximum retries
-    pub const max_retries: u3 = 3;
+    pub const maxRetries: u3 = 3;
     /// Default write timeout in milliseconds
-    pub const write_timeout_ms: u64 = 5000;
+    pub const writeTimeoutMs: u64 = 5000;
 };
 ```
 
@@ -536,329 +536,34 @@ Sink configuration defaults.
 ```zig
 pub const SinkDefaults = struct {
     /// Default max buffer records
-    pub const max_buffer_records: usize = 1000;
+    pub const maxBufferRecords: usize = 1000;
     /// Default flush interval in milliseconds
-    pub const flush_interval_ms: u64 = 1000;
+    pub const flushIntervalMs: u64 = 1000;
 };
 ```
 
-## Colors Constants (v0.1.8)
+## Colors (tint.zig)
 
-Comprehensive color system with ANSI codes, 256-color, and RGB support.
-
-```zig
-pub const Colors = struct {
-    /// Standard foreground colors (30-37)
-    pub const Fg = struct {
-        pub const black: []const u8 = "30";
-        pub const red: []const u8 = "31";
-        pub const green: []const u8 = "32";
-        pub const yellow: []const u8 = "33";
-        pub const blue: []const u8 = "34";
-        pub const magenta: []const u8 = "35";
-        pub const cyan: []const u8 = "36";
-        pub const white: []const u8 = "37";
-    };
-
-    /// Bright foreground colors (90-97)
-    pub const BrightFg = struct {
-        pub const black: []const u8 = "90";
-        pub const red: []const u8 = "91";
-        pub const green: []const u8 = "92";
-        pub const yellow: []const u8 = "93";
-        pub const blue: []const u8 = "94";
-        pub const magenta: []const u8 = "95";
-        pub const cyan: []const u8 = "96";
-        pub const white: []const u8 = "97";
-    };
-
-    /// Standard background colors (40-47)
-    pub const Bg = struct {
-        pub const black: []const u8 = "40";
-        pub const red: []const u8 = "41";
-        pub const green: []const u8 = "42";
-        pub const yellow: []const u8 = "43";
-        pub const blue: []const u8 = "44";
-        pub const magenta: []const u8 = "45";
-        pub const cyan: []const u8 = "46";
-        pub const white: []const u8 = "47";
-    };
-
-    /// Bright background colors (100-107)
-    pub const BrightBg = struct {
-        pub const black: []const u8 = "100";
-        pub const red: []const u8 = "101";
-        pub const green: []const u8 = "102";
-        pub const yellow: []const u8 = "103";
-        pub const blue: []const u8 = "104";
-        pub const magenta: []const u8 = "105";
-        pub const cyan: []const u8 = "106";
-        pub const white: []const u8 = "107";
-    };
-
-    /// Text style modifiers
-    pub const Style = struct {
-        pub const reset: []const u8 = "0";
-        pub const bold: []const u8 = "1";
-        pub const dim: []const u8 = "2";
-        pub const italic: []const u8 = "3";
-        pub const underline: []const u8 = "4";
-        pub const blink: []const u8 = "5";
-        pub const rapid_blink: []const u8 = "6";
-        pub const reverse: []const u8 = "7";
-        pub const hidden: []const u8 = "8";
-        pub const strikethrough: []const u8 = "9";
-    };
-
-    /// Reset all formatting
-    pub const reset: []const u8 = "0";
-
-    /// Basic foreground colors (30-37)
-    pub const Fg = struct {
-        pub const black: []const u8 = "30";
-        pub const red: []const u8 = "31";
-        pub const green: []const u8 = "32";
-        pub const yellow: []const u8 = "33";
-        pub const blue: []const u8 = "34";
-        pub const magenta: []const u8 = "35";
-        pub const cyan: []const u8 = "36";
-        pub const white: []const u8 = "37";
-        pub const default: []const u8 = "39";
-    };
-
-    /// Bright foreground colors (90-97)
-    pub const BrightFg = struct {
-        pub const black: []const u8 = "90";
-        pub const red: []const u8 = "91";
-        pub const green: []const u8 = "92";
-        pub const yellow: []const u8 = "93";
-        pub const blue: []const u8 = "94";
-        pub const magenta: []const u8 = "95";
-        pub const cyan: []const u8 = "96";
-        pub const white: []const u8 = "97";
-    };
-
-    /// Background colors (40-47)
-    pub const Bg = struct {
-        pub const black: []const u8 = "40";
-        pub const red: []const u8 = "41";
-        pub const green: []const u8 = "42";
-        pub const yellow: []const u8 = "43";
-        pub const blue: []const u8 = "44";
-        pub const magenta: []const u8 = "45";
-        pub const cyan: []const u8 = "46";
-        pub const white: []const u8 = "47";
-        pub const default: []const u8 = "49";
-    };
-
-    /// Bright background colors (100-107)
-    pub const BrightBg = struct {
-        pub const black: []const u8 = "100";
-        pub const red: []const u8 = "101";
-        pub const green: []const u8 = "102";
-        pub const yellow: []const u8 = "103";
-        pub const blue: []const u8 = "104";
-        pub const magenta: []const u8 = "105";
-        pub const cyan: []const u8 = "106";
-        pub const white: []const u8 = "107";
-    };
-
-    /// Text styles
-    pub const Style = struct {
-        pub const bold: []const u8 = "1";
-        pub const dim: []const u8 = "2";
-        pub const italic: []const u8 = "3";
-        pub const underline: []const u8 = "4";
-        pub const blink: []const u8 = "5";
-        pub const rapid_blink: []const u8 = "6";
-        pub const reverse: []const u8 = "7";
-        pub const hidden: []const u8 = "8";
-        pub const strikethrough: []const u8 = "9";
-        pub const double_underline: []const u8 = "21";
-        pub const framed: []const u8 = "51";
-        pub const encircled: []const u8 = "52";
-        pub const overlined: []const u8 = "53";
-    };
-
-    /// Generate 256-color foreground code (0-255)
-    pub fn fg256(color_index: u8) []const u8;
-
-    /// Generate 256-color background code (0-255)
-    pub fn bg256(color_index: u8) []const u8;
-
-    /// Generate RGB foreground color code
-    pub fn fgRgb(r: u8, g: u8, b: u8) []const u8;
-
-    /// Generate RGB background color code
-    pub fn bgRgb(r: u8, g: u8, b: u8) []const u8;
-
-    /// Combine multiple codes
-    pub fn combine(comptime codes: anytype) []const u8;
-
-    /// Predefined log level colors
-    pub const LevelColors = struct {
-        pub const trace: []const u8 = "36";
-        pub const debug: []const u8 = "34";
-        pub const info: []const u8 = "37";
-        pub const notice: []const u8 = "96";
-        pub const success: []const u8 = "32";
-        pub const warning: []const u8 = "33";
-        pub const err: []const u8 = "31";
-        pub const fail: []const u8 = "35";
-        pub const critical: []const u8 = "91";
-        pub const fatal: []const u8 = "97;41";
-    };
-
-    /// Predefined theme presets
-    pub const Themes = struct {
-        /// Default theme with standard colors
-        pub const default_theme = LevelColors;
-
-        /// Bright theme with bold colors
-        pub const bright = struct {
-            pub const trace: []const u8 = "96;1";
-            pub const debug: []const u8 = "94;1";
-            pub const info: []const u8 = "97;1";
-            pub const notice: []const u8 = "96;1";
-            pub const success: []const u8 = "92;1";
-            pub const warning: []const u8 = "93;1";
-            pub const err: []const u8 = "91;1";
-            pub const fail: []const u8 = "95;1";
-            pub const critical: []const u8 = "91;1;4";
-            pub const fatal: []const u8 = "97;41;1";
-        };
-
-        /// Dim theme with subtle colors
-        pub const dim = struct {
-            pub const trace: []const u8 = combine(.{ LevelColors.trace, Style.dim });
-            pub const debug: []const u8 = combine(.{ LevelColors.debug, Style.dim });
-            pub const info: []const u8 = combine(.{ LevelColors.info, Style.dim });
-            pub const notice: []const u8 = combine(.{ LevelColors.notice, Style.dim });
-            pub const success: []const u8 = combine(.{ LevelColors.success, Style.dim });
-            pub const warning: []const u8 = combine(.{ LevelColors.warning, Style.dim });
-            pub const err: []const u8 = combine(.{ LevelColors.err, Style.dim });
-            pub const fail: []const u8 = combine(.{ LevelColors.fail, Style.dim });
-            pub const critical: []const u8 = combine(.{ LevelColors.critical, Style.dim });
-            pub const fatal: []const u8 = combine(.{ LevelColors.fatal, Style.dim });
-        };
-
-        /// Underlined theme for highlighted levels
-        pub const underlined = struct {
-            pub const trace: []const u8 = combine(.{ LevelColors.trace, Style.underline });
-            pub const debug: []const u8 = combine(.{ LevelColors.debug, Style.underline });
-            pub const info: []const u8 = combine(.{ LevelColors.info, Style.underline });
-            pub const notice: []const u8 = combine(.{ LevelColors.notice, Style.underline });
-            pub const success: []const u8 = combine(.{ LevelColors.success, Style.underline });
-            pub const warning: []const u8 = combine(.{ LevelColors.warning, Style.underline });
-            pub const err: []const u8 = combine(.{ LevelColors.err, Style.underline });
-            pub const fail: []const u8 = combine(.{ LevelColors.fail, Style.underline });
-            pub const critical: []const u8 = combine(.{ LevelColors.critical, Style.underline });
-            pub const fatal: []const u8 = combine(.{ LevelColors.fatal, Style.underline });
-        };
-
-        /// Minimal theme with subtle colors
-        pub const minimal = struct {
-            pub const trace: []const u8 = "90";
-            pub const debug: []const u8 = "90";
-            pub const info: []const u8 = "37";
-            pub const notice: []const u8 = "37";
-            pub const success: []const u8 = "32";
-            pub const warning: []const u8 = "33";
-            pub const err: []const u8 = "31";
-            pub const fail: []const u8 = "31";
-            pub const critical: []const u8 = "31;1";
-            pub const fatal: []const u8 = "31;1;4";
-        };
-
-        /// Neon theme with vivid 256-colors
-        pub const neon = struct {
-            pub const trace: []const u8 = "38;5;51";
-            pub const debug: []const u8 = "38;5;33";
-            pub const info: []const u8 = "38;5;255";
-            pub const notice: []const u8 = "38;5;123";
-            pub const success: []const u8 = "38;5;46";
-            pub const warning: []const u8 = "38;5;226";
-            pub const err: []const u8 = "38;5;196";
-            pub const fail: []const u8 = "38;5;201";
-            pub const critical: []const u8 = "38;5;196;1";
-            pub const fatal: []const u8 = "38;5;231;48;5;196;1";
-        };
-
-        /// Pastel theme with soft colors
-        pub const pastel = struct {
-            pub const trace: []const u8 = "38;5;159";
-            pub const debug: []const u8 = "38;5;117";
-            pub const info: []const u8 = "38;5;188";
-            pub const notice: []const u8 = "38;5;153";
-            pub const success: []const u8 = "38;5;157";
-            pub const warning: []const u8 = "38;5;222";
-            pub const err: []const u8 = "38;5;210";
-            pub const fail: []const u8 = "38;5;218";
-            pub const critical: []const u8 = "38;5;203";
-            pub const fatal: []const u8 = "38;5;231;48;5;203";
-        };
-
-        /// Dark theme optimized for dark terminals
-        pub const dark = struct {
-            pub const trace: []const u8 = "38;5;244";
-            pub const debug: []const u8 = "38;5;75";
-            pub const info: []const u8 = "38;5;252";
-            pub const notice: []const u8 = "38;5;81";
-            pub const success: []const u8 = "38;5;114";
-            pub const warning: []const u8 = "38;5;220";
-            pub const err: []const u8 = "38;5;203";
-            pub const fail: []const u8 = "38;5;168";
-            pub const critical: []const u8 = "38;5;196;1";
-            pub const fatal: []const u8 = "38;5;231;48;5;124;1";
-        };
-
-        /// Light theme optimized for light terminals
-        pub const light = struct {
-            pub const trace: []const u8 = "38;5;242";
-            pub const debug: []const u8 = "38;5;24";
-            pub const info: []const u8 = "38;5;235";
-            pub const notice: []const u8 = "38;5;30";
-            pub const success: []const u8 = "38;5;28";
-            pub const warning: []const u8 = "38;5;130";
-            pub const err: []const u8 = "38;5;124";
-            pub const fail: []const u8 = "38;5;127";
-            pub const critical: []const u8 = "38;5;160;1";
-            pub const fatal: []const u8 = "38;5;231;48;5;160;1";
-        };
-    };
-
-
-};
-```
-
-### Using Colors
+Terminal colors are provided by tint.zig via `logly.Color`.
+See the [Colors guide](../guide/colors.md) for full details.
 
 ```zig
-const Colors = logly.Constants.Colors;
+const tint = logly.Color.Tint;
 
-// Basic colors
-const red_text = Colors.Fg.red;           // "31"
-const bright_red = Colors.BrightFg.red;   // "91"
+// Named colors.
+const red = tint.color.ansi4.red;
+const brightRed = tint.color.ansi4.brightRed;
 
-// With background
-const on_red = Colors.Bg.red;             // "41"
-const white_on_red = "97;41";             // Combined
+// 256-color and RGB.
+const orange = tint.color.ansi256.index(208);
+const coral = tint.color.rgb(255, 127, 80);
 
-// With styles
-const bold = Colors.Style.bold;           // "1"
-const underline = Colors.Style.underline; // "4"
-const bold_red = "31;1";                  // Combined
+// Render to an escape sequence.
+const seq = logly.Color.sequence(red, .trueColor);
+// seq.slice() gives "\\x1b[31m".
 
-// 256-color palette
-const orange = Colors.fg256(208);         // "38;5;208"
-const purple_bg = Colors.bg256(141);      // "48;5;141"
-
-// RGB colors
-const coral = Colors.fgRgb(255, 127, 80); // "38;2;255;127;80"
-
-/// Theme colors
-const trace_color = Colors.Themes.default_theme.trace;  // "36"
-const neon_trace = Colors.Themes.neon.trace;      // "38;5;51"
+// Parse names, hex, or SGR params.
+const magenta = logly.Color.parse("magenta").?;
 ```
 
 ## Example Usage
@@ -868,7 +573,7 @@ const Constants = @import("logly").Constants;
 
 // Use platform-appropriate atomic type
 var counter = std.atomic.Value(Constants.AtomicUnsigned).init(0);
-_ = counter.fetchAdd(1, .monotonic);
+ _ = counter.fetchAdd(1, .monotonic);
 
 // Get recommended thread count
 const threads = Constants.ThreadDefaults.recommendedThreadCount();
@@ -877,12 +582,12 @@ const threads = Constants.ThreadDefaults.recommendedThreadCount();
 var buffer: [Constants.BufferSizes.message]u8 = undefined;
 
 // Time conversion
-const ms = timestamp / Constants.TimeConstants.ms_per_second;
+const ms = timestamp / Constants.TimeConstants.msPerSecond;
 
 // Color usage
 const red_text = Constants.Colors.Fg.red;           // "31"
 const orange = Constants.Colors.fg256(208);         // "38;5;208"
-const trace_color = Constants.Colors.Themes.neon.trace;  // "38;5;51"
+const traceColor = Constants.Colors.Themes.neon.trace;  // "38;5;51"
 ```
 
 ## See Also

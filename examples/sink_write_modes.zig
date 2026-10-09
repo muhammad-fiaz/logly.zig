@@ -6,26 +6,26 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Sink Write Mode Example ===\n\n", .{});
+    std.debug.print("Sink Write Mode Example\n\n", .{});
 
     // Example 1: Append Mode (Default)
     std.debug.print("1. Append Mode (Default Behavior)\n", .{});
     std.debug.print("   Logs are appended to existing files\n\n", .{});
 
-    var config_append = logly.Config.default();
-    config_append.logs_root_path = "./logs";
+    var configAppend = logly.Config.default();
+    configAppend.logsRootPath = "./logs";
 
-    const logger_append = try logly.Logger.initWithConfig(allocator, config_append);
-    defer logger_append.deinit();
+    const loggerAppend = try logly.Logger.initWithConfig(allocator, configAppend);
+    defer loggerAppend.deinit();
 
-    var sink_config_append = logly.SinkConfig.file("append_mode.log");
-    sink_config_append.write_mode = .append; // Append mode (default)
+    var sinkConfigAppend = logly.SinkConfig.file("append_mode.log");
+    sinkConfigAppend.writeMode = .append; // Append mode (default)
 
-    _ = try logger_append.addSink(sink_config_append);
+    _ = try loggerAppend.addSink(sinkConfigAppend);
 
-    try logger_append.info("First run - appended to file", @src());
-    try logger_append.info("Second entry - also appended", @src());
-    try logger_append.warning("Previous logs are preserved", @src());
+    try loggerAppend.info("First run - appended to file", @src());
+    try loggerAppend.info("Second entry - also appended", @src());
+    try loggerAppend.warning("Previous logs are preserved", @src());
 
     std.debug.print("   Logs appended to ./logs/append_mode.log\n\n", .{});
 
@@ -33,20 +33,20 @@ pub fn main() !void {
     std.debug.print("2. Overwrite Mode\n", .{});
     std.debug.print("   Logs overwrite existing files on startup\n\n", .{});
 
-    var config_overwrite = logly.Config.default();
-    config_overwrite.logs_root_path = "./logs";
+    var configOverwrite = logly.Config.default();
+    configOverwrite.logsRootPath = "./logs";
 
-    const logger_overwrite = try logly.Logger.initWithConfig(allocator, config_overwrite);
-    defer logger_overwrite.deinit();
+    const loggerOverwrite = try logly.Logger.initWithConfig(allocator, configOverwrite);
+    defer loggerOverwrite.deinit();
 
-    var sink_config_overwrite = logly.SinkConfig.file("overwrite_mode.log");
-    sink_config_overwrite.write_mode = .overwrite; // Overwrite mode
+    var sinkConfigOverwrite = logly.SinkConfig.file("overwrite_mode.log");
+    sinkConfigOverwrite.writeMode = .overwrite; // Overwrite mode
 
-    _ = try logger_overwrite.addSink(sink_config_overwrite);
+    _ = try loggerOverwrite.addSink(sinkConfigOverwrite);
 
-    try logger_overwrite.info("This will be the ONLY content in the file", @src());
-    try logger_overwrite.info("Previous runs are discarded", @src());
-    try logger_overwrite.warning("Starting fresh each time", @src());
+    try loggerOverwrite.info("This will be the ONLY content in the file", @src());
+    try loggerOverwrite.info("Previous runs are discarded", @src());
+    try loggerOverwrite.warning("Starting fresh each time", @src());
 
     std.debug.print("   Logs overwrote ./logs/overwrite_mode.log\n\n", .{});
 
@@ -54,22 +54,22 @@ pub fn main() !void {
     std.debug.print("3. Append Rotate Mode\n", .{});
     std.debug.print("   Appends to file, rotation triggers when configured\n\n", .{});
 
-    var config_rotate = logly.Config.default();
-    config_rotate.logs_root_path = "./logs";
+    var configRotate = logly.Config.default();
+    configRotate.logsRootPath = "./logs";
 
-    const logger_rotate = try logly.Logger.initWithConfig(allocator, config_rotate);
-    defer logger_rotate.deinit();
+    const loggerRotate = try logly.Logger.initWithConfig(allocator, configRotate);
+    defer loggerRotate.deinit();
 
-    var sink_config_rotate = logly.SinkConfig.file("append_rotate.log");
-    sink_config_rotate.write_mode = .append_rotate; // Append with rotation
-    sink_config_rotate.rotation = "daily"; // Daily rotation
-    sink_config_rotate.retention = 7; // Keep 7 days
+    var sinkConfigRotate = logly.SinkConfig.file("append_rotate.log");
+    sinkConfigRotate.writeMode = .appendRotate; // Append with rotation
+    sinkConfigRotate.rotation = "daily"; // Daily rotation
+    sinkConfigRotate.retention = 7; // Keep 7 days
 
-    _ = try logger_rotate.addSink(sink_config_rotate);
+    _ = try loggerRotate.addSink(sinkConfigRotate);
 
-    try logger_rotate.info("Logs append to file", @src());
-    try logger_rotate.info("Rotation triggers daily", @src());
-    try logger_rotate.warning("Old files are archived", @src());
+    try loggerRotate.info("Logs append to file", @src());
+    try loggerRotate.info("Rotation triggers daily", @src());
+    try loggerRotate.warning("Old files are archived", @src());
 
     std.debug.print("   Logs to ./logs/append_rotate.log with daily rotation\n\n", .{});
 
@@ -77,24 +77,24 @@ pub fn main() !void {
     std.debug.print("4. Mixed Write Modes\n", .{});
     std.debug.print("   Different sinks use different write modes\n\n", .{});
 
-    var config_mixed = logly.Config.default();
-    config_mixed.logs_root_path = "./logs";
+    var configMixed = logly.Config.default();
+    configMixed.logsRootPath = "./logs";
 
-    const logger_mixed = try logly.Logger.initWithConfig(allocator, config_mixed);
-    defer logger_mixed.deinit();
+    const loggerMixed = try logly.Logger.initWithConfig(allocator, configMixed);
+    defer loggerMixed.deinit();
 
-    var sink_persistent = logly.SinkConfig.file("persistent.log");
-    sink_persistent.write_mode = .append; // Append - keep all history
+    var sinkPersistent = logly.SinkConfig.file("persistent.log");
+    sinkPersistent.writeMode = .append; // Append - keep all history
 
-    var sink_session = logly.SinkConfig.file("session.log");
-    sink_session.write_mode = .overwrite; // Overwrite - fresh start each run
+    var sinkSession = logly.SinkConfig.file("session.log");
+    sinkSession.writeMode = .overwrite; // Overwrite - fresh start each run
 
-    _ = try logger_mixed.addSink(sink_persistent);
-    _ = try logger_mixed.addSink(sink_session);
+    _ = try loggerMixed.addSink(sinkPersistent);
+    _ = try loggerMixed.addSink(sinkSession);
 
-    try logger_mixed.info("Logged to both persistent.log and session.log", @src());
-    try logger_mixed.info("persistent.log keeps all entries", @src());
-    try logger_mixed.info("session.log shows only current run", @src());
+    try loggerMixed.info("Logged to both persistent.log and session.log", @src());
+    try loggerMixed.info("persistent.log keeps all entries", @src());
+    try loggerMixed.info("session.log shows only current run", @src());
 
     std.debug.print("   persistent.log (append): accumulates logs\n", .{});
     std.debug.print("   session.log (overwrite): shows current session only\n\n", .{});
@@ -103,22 +103,22 @@ pub fn main() !void {
     std.debug.print("5. JSON Output with Write Modes\n", .{});
     std.debug.print("   JSON sinks also respect write_mode\n\n", .{});
 
-    var config_json = logly.Config.default();
-    config_json.logs_root_path = "./logs";
+    var configJson = logly.Config.default();
+    configJson.logsRootPath = "./logs";
 
-    const logger_json = try logly.Logger.initWithConfig(allocator, config_json);
-    defer logger_json.deinit();
+    const loggerJson = try logly.Logger.initWithConfig(allocator, configJson);
+    defer loggerJson.deinit();
 
-    var sink_json = logly.SinkConfig.file("logs.json");
-    sink_json.json = true;
-    sink_json.pretty_json = true;
-    sink_json.write_mode = .append; // Append JSON
+    var sinkJson = logly.SinkConfig.file("logs.json");
+    sinkJson.format = .json;
+    sinkJson.prettyJson = true;
+    sinkJson.writeMode = .append; // Append JSON
 
-    _ = try logger_json.addSink(sink_json);
+    _ = try loggerJson.addSink(sinkJson);
 
-    try logger_json.info("First JSON entry", @src());
-    try logger_json.warning("Second JSON entry", @src());
-    try logger_json.err("Third JSON entry", @src());
+    try loggerJson.info("First JSON entry", @src());
+    try loggerJson.warning("Second JSON entry", @src());
+    try loggerJson.err("Third JSON entry", @src());
 
     std.debug.print("   logs.json contains all entries (array format)\n\n", .{});
 
@@ -126,19 +126,19 @@ pub fn main() !void {
     std.debug.print("6. Legacy overwrite_mode Field\n", .{});
     std.debug.print("   overwrite_mode = true is equivalent to write_mode = .overwrite\n\n", .{});
 
-    var config_legacy = logly.Config.default();
-    config_legacy.logs_root_path = "./logs";
+    var configLegacy = logly.Config.default();
+    configLegacy.logsRootPath = "./logs";
 
-    const logger_legacy = try logly.Logger.initWithConfig(allocator, config_legacy);
-    defer logger_legacy.deinit();
+    const loggerLegacy = try logly.Logger.initWithConfig(allocator, configLegacy);
+    defer loggerLegacy.deinit();
 
-    var sink_legacy = logly.SinkConfig.file("legacy_overwrite.log");
-    sink_legacy.overwrite_mode = true; // Legacy field still works
+    var sinkLegacy = logly.SinkConfig.file("legacy_overwrite.log");
+    sinkLegacy.overwriteMode = true; // Legacy field still works
 
-    _ = try logger_legacy.addSink(sink_legacy);
+    _ = try loggerLegacy.addSink(sinkLegacy);
 
-    try logger_legacy.info("Using legacy overwrite_mode field", @src());
-    try logger_legacy.warning("This also truncates the file", @src());
+    try loggerLegacy.info("Using legacy overwrite_mode field", @src());
+    try loggerLegacy.warning("This also truncates the file", @src());
 
     std.debug.print("   legacy_overwrite.log uses overwrite_mode = true\n\n", .{});
 

@@ -7,20 +7,23 @@ fn logCallback(record: *const logly.Record) !void {
     }
 }
 
-fn signatureCallback(sink_name: []const u8, signature: []const u8) void {
-    std.debug.print("[Signature Callback] Sink '{s}' computed SHA-256 signature: {s}\n", .{ sink_name, signature });
+fn signatureCallback(sinkName: []const u8, signature: []const u8) void {
+    std.debug.print("[Signature Callback] Sink '{s}' computed SHA-256 signature: {s}\n", .{ sinkName, signature });
 }
 
-fn mmapResizeCallback(sink_name: []const u8, old_size: u64, new_size: u64) void {
-    std.debug.print("[Mmap Resize Callback] Sink '{s}' resized virtual map: {d} bytes -> {d} bytes\n", .{ sink_name, old_size, new_size });
+fn mmapResizeCallback(sinkName: []const u8, oldSize: u64, newSize: u64) void {
+    std.debug.print("[Mmap Resize Callback] Sink '{s}' resized virtual map: {d} bytes -> {d} bytes\n", .{ sinkName, oldSize, newSize });
 }
+
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
 
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("=== Logly v0.2.0 Callbacks Example ===\n\n", .{});
+    std.debug.print("Callbacks Example\n\n", .{});
 
     // 1. Basic Logger Callback
     const logger = try logly.Logger.init(allocator);
@@ -32,19 +35,27 @@ pub fn main() !void {
     try logger.err("Error occurred - callback will trigger", @src());
 
     // 2. Cryptographic signature and Mmap Resize Callbacks
-    std.debug.print("\n--- Testing Cryptographic & Memory-Mapped Callbacks ---\n\n", .{});
-    const test_path = "callbacks_demo.log";
-    std.Io.Dir.cwd().deleteFile(logly.Utils.io(), test_path) catch {};
-    defer std.Io.Dir.cwd().deleteFile(logly.Utils.io(), test_path) catch {};
+    std.debug.print("\nTesting Cryptographic & Memory-Mapped Callbacks\n\n", .{});
+    const testPath = "callbacks_demo.log";
+    std.Io.Dir.cwd().deleteFile(io, testPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(io, testPath) catch {};
 
-    var sink_cfg = logly.SinkPresets.file(test_path);
-    sink_cfg.name = "tamper_evident_mmap_sink";
-    sink_cfg.tamper_evident = true;
-    sink_cfg.mmap = true;
-    sink_cfg.async_write = false;
+    var sinkCfg = logly.SinkPresets.file(testPath);
+    sinkCfg.name = "tamper_evident_mmap_sink";
+    sinkCfg.tamperEvident = true;
+    sinkCfg.mmap = true;
+    sinkCfg.asyncWrite = false;
 
-    const sink = try logly.Sink.init(allocator, sink_cfg);
-    defer sink.deinit();
+    var globalConfig = logly.Config.default();
+    globalConfig.autoSink = false;
+
+    // Register through the logger so the sink is owned and cleaned up, then
+    // take the handle back to attach callbacks.
+    const owner = try logly.Logger.initWithConfig(allocator, globalConfig);
+    defer owner.deinit();
+
+    const sink = owner.getSink(try owner.addSink(sinkCfg)) orelse
+        return error.SinkUnavailable;
 
     // Register our new callbacks
     sink.setSignatureCallback(&signatureCallback);
@@ -53,17 +64,14 @@ pub fn main() !void {
     var record1 = logly.Record.init(allocator, .info, "cryptographically chained message #1");
     defer record1.deinit();
 
-    var global_config = logly.Config.default();
-    global_config.auto_sink = false;
-
-    try sink.write(&record1, global_config);
+    try sink.write(&record1, globalConfig);
 
     // Manually trigger mmap resize to show the callback
-    if (sink.mmap_file) |*mmap_f| {
-        const old_cap = mmap_f.capacity;
-        try mmap_f.grow(old_cap + 4096);
-        if (sink.on_mmap_resize) |cb| {
-            cb(sink.config.name orelse "unnamed_sink", old_cap, mmap_f.capacity);
+    if (sink.mmapFile) |*mmapF| {
+        const oldCap = mmapF.capacity;
+        try mmapF.grow(oldCap + 4096);
+        if (sink.onMmapResize) |cb| {
+            cb(sink.config.name orelse "unnamed_sink", oldCap, mmapF.capacity);
         }
     }
 

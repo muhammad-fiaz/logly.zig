@@ -23,16 +23,16 @@ Configure thread pool settings through the logger's `Config`:
 const logly = @import("logly");
 
 var config = logly.Config.default();
-config.thread_pool = .{
+config.threadPool = .{
     .enabled = true,              // Enable thread pool
-    .thread_count = 8,            // Number of worker threads
-    .queue_size = 2048,           // Max queued tasks
-    .stack_size = 1024 * 1024,    // 1MB per thread
-    .work_stealing = true,        // Enable work stealing
+    .threadCount = 8,            // Number of worker threads
+    .queueSize = 2048,           // Max queued tasks
+    .stackSize = 1024 * 1024,    // 1MB per thread
+    .workStealing = true,        // Enable work stealing
 };
 
 // Or use helper method
-var config2 = logly.Config.default().withThreadPool(.{ .thread_count = 4 });
+var config2 = logly.Config.default().withThreadPool(.{ .threadCount = 4 });
 ```
 
 ## Quick Start
@@ -47,9 +47,9 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create thread pool with default settings
-    var pool = try logly.ThreadPool.init(allocator, .{
-        .thread_count = 4,
-        .work_stealing = true,
+    var pool = try logly.ThreadPool.initWithConfig(allocator, .{
+        .threadCount = 4,
+        .workStealing = true,
     });
     defer pool.deinit();
 
@@ -68,20 +68,20 @@ pub fn main() !void {
 
 ```zig
 // Specific number of threads
-.thread_count = 8
+.threadCount = 8
 
 // Auto-detect (0 = CPU cores)
-.thread_count = 0
+.threadCount = 0
 ```
 
 ### Queue Size
 
 ```zig
 // Per-thread queue size
-.queue_size = 1024
+.queueSize = 1024
 
 // Large queue for bursty workloads
-.queue_size = 4096
+.queueSize = 4096
 ```
 
 ### Work Stealing
@@ -89,7 +89,7 @@ pub fn main() !void {
 Enable threads to steal work from other threads' queues:
 
 ```zig
-.work_stealing = true
+.workStealing = true
 ```
 
 This improves load balancing when some threads finish faster than others.
@@ -99,7 +99,7 @@ This improves load balancing when some threads finish faster than others.
 Set a custom prefix for worker threads to make debugging easier:
 
 ```zig
-.thread_name_prefix = "logly-worker"
+.threadNamePrefix = "logly-worker"
 ```
 
 Threads will be named automatically (e.g., `logly-worker-0`, `logly-worker-1`).
@@ -141,7 +141,7 @@ const handle = try pool.submit(.{
     .func = myTaskFunction,
     .context = @ptrCast(&myData),
     .priority = .normal,
-    .submitted_at = std.time.milliTimestamp(),
+    .submittedAt = std.time.milliTimestamp(),
 });
 
 fn myTaskFunction(ctx: *anyopaque) void {
@@ -179,13 +179,13 @@ pub const TaskPriority = enum(u8) {
 
 ```zig
 // Standard priority submission
-_ = pool.submitCallback(myFunction, @ptrCast(&data));
+ _ = pool.submitCallback(myFunction, @ptrCast(&data));
 
 // High priority (processed before normal)
-_ = pool.submitHighPriority(myFunction, @ptrCast(&data));
+ _ = pool.submitHighPriority(myFunction, @ptrCast(&data));
 
 // Critical priority (processed first)
-_ = pool.submitCritical(myFunction, @ptrCast(&data));
+ _ = pool.submitCritical(myFunction, @ptrCast(&data));
 ```
 
 ### Batch Submission
@@ -224,10 +224,10 @@ Submit to a specific worker's local queue for better cache locality:
 
 ```zig
 // Submit to worker 0's local queue
-_ = pool.submitToWorker(0, task, .normal);
+ _ = pool.submitToWorker(0, task, .normal);
 
 // Submit to worker 1's local queue  
-_ = pool.submitToWorker(1, task, .normal);
+ _ = pool.submitToWorker(1, task, .normal);
 ```
 
 This is useful when tasks need to access the same data, as keeping them on the same worker improves CPU cache hit rates.
@@ -243,22 +243,22 @@ defer writer.deinit();
 
 // Or with custom ParallelConfig
 var writer = try logly.ParallelSinkWriter.initWithConfig(allocator, pool, .{
-    .max_concurrent = 4,
-    .retry_on_failure = true,
-    .max_retries = 3,
+    .maxConcurrent = 4,
+    .retryOnFailure = true,
+    .maxRetries = 3,
     .buffered = true,
-    .buffer_size = 64,
+    .bufferSize = 64,
 });
 defer writer.deinit();
 
 // Add sinks
 try writer.addSink(.{
-    .write_fn = &fileWriteFn,
-    .flush_fn = &fileFlushFn,
+    .writeFn = &fileWriteFn,
+    .flushFn = &fileFlushFn,
     .name = "file",
 });
 try writer.addSink(.{
-    .write_fn = &consoleWriteFn,
+    .writeFn = &consoleWriteFn,
     .name = "console",
 });
 
@@ -276,13 +276,13 @@ writer.flushAll();
 
 ```zig
 pub const ParallelConfig = struct {
-    max_concurrent: usize = 8,       // Max parallel writes
-    write_timeout_ms: u64 = 1000,    // Timeout per write
-    retry_on_failure: bool = true,   // Retry failed writes
-    max_retries: u3 = 3,             // Max retry attempts
-    fail_fast: bool = false,         // Stop on first error
+    maxConcurrent: usize = 8,       // Max parallel writes
+    writeTimeoutMs: u64 = 1000,    // Timeout per write
+    retryOnFailure: bool = true,   // Retry failed writes
+    maxRetries: u3 = 3,             // Max retry attempts
+    failFast: bool = false,         // Stop on first error
     buffered: bool = true,           // Buffer before dispatch
-    buffer_size: usize = 64,         // Buffer size
+    bufferSize: usize = 64,         // Buffer size
 };
 ```
 
@@ -375,7 +375,7 @@ std.debug.print("Avg exec time: {d}ns\n", .{
 
 ```zig
 // Use high throughput preset
-var pool = try logly.ThreadPool.init(
+var pool = try logly.ThreadPool.initWithConfig(
     allocator,
     logly.ThreadPoolPresets.highThroughput(),
 );
@@ -386,9 +386,9 @@ var pool = try logly.ThreadPool.init(
 ```zig
 // Write to file, console, and network simultaneously
 var writer = try logly.ParallelSinkWriter.init(allocator, .{
-    .max_concurrent = 3,
+    .maxConcurrent = 3,
 });
-try writer.addSink(&file_sink);
+try writer.addSink(&fileSink);
 try writer.addSink(&console_sink);
 try writer.addSink(&network_sink);
 ```
@@ -427,9 +427,9 @@ Work stealing improves efficiency when:
 - You want better CPU utilization
 
 ```zig
-var pool = try logly.ThreadPool.init(allocator, .{
-    .work_stealing = true, // Enable work stealing
-    .thread_count = 8,
+var pool = try logly.ThreadPool.initWithConfig(allocator, .{
+    .workStealing = true, // Enable work stealing
+    .threadCount = 8,
 });
 ```
 
@@ -445,12 +445,12 @@ var pool = try logly.ThreadPool.init(allocator, .{
 Combine thread pools with async logging:
 
 ```zig
-var async_logger = try logly.AsyncLogger.init(allocator, .{
-    .buffer_size = 8192,
+var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
+    .bufferSize = 8192,
 });
 
-var pool = try logly.ThreadPool.init(allocator, .{
-    .thread_count = 4,
+var pool = try logly.ThreadPool.initWithConfig(allocator, .{
+    .threadCount = 4,
 });
 
 // Use pool for parallel sink writing
@@ -465,20 +465,20 @@ var parallel_writer = try logly.ParallelSinkWriter.init(allocator, .{});
 
 ```zig
 // CPU-bound: Use CPU core count
-.thread_count = std.Thread.getCpuCount() catch 4
+.threadCount = std.Thread.getCpuCount() catch 4
 
 // I/O-bound: Use 2x CPU cores
-.thread_count = (std.Thread.getCpuCount() catch 4) * 2
+.threadCount = (std.Thread.getCpuCount() catch 4) * 2
 ```
 
 ### 2. Size Queues Appropriately
 
 ```zig
 // For bursty workloads, use larger queues
-.queue_size = 4096
+.queueSize = 4096
 
 // For steady workloads, smaller is fine
-.queue_size = 256
+.queueSize = 256
 ```
 
 ### 3. Handle Queue Full
@@ -552,22 +552,22 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Production thread pool config
-    const cpu_count = std.Thread.getCpuCount() catch 4;
+    const cpuCount = std.Thread.getCpuCount() catch 4;
     
-    var pool = try logly.ThreadPool.init(allocator, .{
-        .thread_count = cpu_count,
-        .queue_size = 2048,
-        .work_stealing = true,
+    var pool = try logly.ThreadPool.initWithConfig(allocator, .{
+        .threadCount = cpuCount,
+        .queueSize = 2048,
+        .workStealing = true,
         .enable_priorities = true,
-        .shutdown_timeout_ms = 10000,
+        .shutdownTimeoutMs = 10000,
     });
     defer pool.deinit();
 
     // Parallel sink writer
     var writer = try logly.ParallelSinkWriter.init(allocator, .{
-        .max_concurrent = 4,
-        .retry_on_failure = true,
-        .max_retries = 3,
+        .maxConcurrent = 4,
+        .retryOnFailure = true,
+        .maxRetries = 3,
     });
     defer writer.deinit();
 
@@ -622,7 +622,7 @@ const total = pool.threadCount();
 ```
 
 > [!NOTE]
-> **Thread pool dispatch does not trigger `auto_flush`**: When the thread pool path is used, log records are submitted as tasks to the worker pool. At the point of submission (`dispatchRecord`), no sink write has occurred — the task is only queued. Therefore, even with `auto_flush = true`, no flush happens until the worker thread actually executes the task and writes to sinks. If you need immediate flush after every record, use the sync or async_logger paths instead of the thread pool path.
+> **Thread pool dispatch does not trigger `autoFlush`**: When the thread pool path is used, log records are submitted as tasks to the worker pool. At the point of submission (`dispatchRecord`), no sink write has occurred — the task is only queued. Therefore, even with `autoFlush = true`, no flush happens until the worker thread actually executes the task and writes to sinks. If you need immediate flush after every record, use the sync or asyncLogger paths instead of the thread pool path.
 
 ## See Also
 
@@ -633,7 +633,7 @@ const total = pool.threadCount();
 ## New Methods (v0.0.9)
 
 ```zig
-var pool = try logly.ThreadPool.init(allocator, config);
+var pool = try logly.ThreadPool.initWithConfig(allocator, config);
 defer pool.deinit();
 
 // State methods

@@ -27,7 +27,7 @@ If an attacker attempts to modify `Record 2` (e.g., editing the transaction amou
 
 ## Enabling Tamper-Evident Sinks
 
-To enable cryptographic chaining on a file sink, set `tamper_evident = true` in your sink configuration:
+To enable cryptographic chaining on a file sink, set `tamperEvident = true` in your sink configuration:
 
 ```zig
 const std = @import("std");
@@ -44,10 +44,10 @@ pub fn main() !void {
     // Create a secure file sink configuration
     var secure_sink = logly.SinkConfig.file("logs/secure_audit.log");
     secure_sink.name = "tamper_evident_sink";
-    secure_sink.tamper_evident = true; // [!code hl] // Enable cryptographic signature chaining!
+    secure_sink.tamperEvident = true; // [!code hl] // Enable cryptographic signature chaining!
 
     // Add the sink
-    _ = try logger.addSink(secure_sink);
+     _ = try logger.addSink(secure_sink);
 
     try logger.info("Securing this financial event with SHA-256 chaining.", @src());
     try logger.flush();
@@ -85,7 +85,7 @@ To verify a log file's integrity:
 ## Best Practices & Compliance
 
 > [!CAUTION]
-> Cryptographic chaining detects tampering, but it cannot prevent deletion of the entire file. For complete compliance, combine `tamper_evident` logging with remote syslog forwarding so logs exist in multiple secure locations simultaneously.
+> Cryptographic chaining detects tampering, but it cannot prevent deletion of the entire file. For complete compliance, combine `tamperEvident` logging with remote syslog forwarding so logs exist in multiple secure locations simultaneously.
 
 * **Audit Regularly**: Integrate an automated cron task that checks log files using a validation script to catch discrepancies immediately.
 * **Keep Seeds Secret**: The initialization seed used to start the hash chain should be loaded from a secure environment variable or key vault, never hardcoded in the source code.

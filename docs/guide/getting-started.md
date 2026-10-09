@@ -13,7 +13,7 @@ Get started with Logly.zig in minutes.
 
 ## Prerequisites
 
-- Zig 0.15.0 or Zig 0.16.0 or higher
+- Zig 0.17.0 or higher
 - Basic familiarity with Zig
 
 ## Installation
@@ -22,13 +22,19 @@ Get started with Logly.zig in minutes.
 
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
-**For Zig 0.16.0+ (use `0.1.8` or newer):**
+  **For Zig 0.17.0+ (use `0.2.2` or newer):**
 
-```bash
-zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
-```
+  ```bash
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  ```
 
-**For Zig 0.15.0 (use `0.1.7` or earlier):**
+  **For Zig 0.16.x (use `0.2.1`):**
+
+  ```bash
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
+  ```
+
+  **For Zig 0.15.0 (use `0.1.7` or earlier):**
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
@@ -49,44 +55,34 @@ This command automatically:
 
 If you prefer manual installation, add to your `build.zig.zon`:
 
-**For Zig 0.16.0+ (use `0.1.8` or newer):**
+  **For Zig 0.17.0+ (use `0.2.2` or newer):**
 
-```zig
-.{
-    .name = "my-project",
-    .version = "0.1.0",
-    .dependencies = .{
-        .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz",
-            .hash = "1220...", // Run: zig fetch <url> to get this hash
+    ```zig
+    .{
+        .name = "my-project",
+        .version = "0.1.0",
+        .dependencies = .{
+            .logly = .{
+                .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz",
+                .hash = "1220...", // Run: zig fetch <url> to get this hash
+            },
         },
-    },
-}
-```
+    }
+    ```
 
-**For Zig 0.15.0 (use `0.1.7` or earlier):**
+  To get the hash manually, run:
 
-```zig
-.{
-    .name = "my-project",
-    .version = "0.1.0",
-    .dependencies = .{
-        .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz",
-            .hash = "1220...", // Run: zig fetch <url> to get this hash
-        },
-    },
-}
-```
+  **For Zig 0.17.0+:**
+  ```bash
+  zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  ```
 
-To get the hash manually, run:
+  **For Zig 0.16.x:**
+  ```bash
+  zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.1.tar.gz
+  ```
 
-**For Zig 0.16.0+:**
-```bash
-zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.0.tar.gz
-```
-
-**For Zig 0.15.0:**
+  **For Zig 0.15.0:**
 ```bash
 zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.1.7.tar.gz
 ```
@@ -184,7 +180,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -259,11 +255,11 @@ try logger.custom("NOTICE", "Custom notice message");
 ```zig
 // Global color disable
 var config = logly.Config.default();
-config.global_color_display = false;
+config.globalColorDisplay = false;
 logger.configure(config);
 
 // Per-sink color disable
-_ = try logger.addSink(.{
+ _ = try logger.addSink(.{
     .path = "logs/app.log",
     .color = false,  // No colors in file
 });
@@ -293,7 +289,7 @@ zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.
 
 Make sure to call `Terminal.enableAnsiColors()` before logging:
 ```zig
-_ = logly.Terminal.enableAnsiColors();
+ _ = logly.Terminal.enableAnsiColors();
 ```
 
 ### Module Not Found

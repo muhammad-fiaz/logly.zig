@@ -70,23 +70,19 @@ The configuration file is a simple, standard JSON structure that mirrors Logly's
 ```json
 {
   "level": "debug",
-  "global_console_display": true,
-  "global_file_storage": true,
   "color": true,
-  "json": false,
-  "auto_flush": true,
-  "msgpack": false
+  "format": "json",
+  "prettyJson": false
 }
 ```
 
 ### Supported JSON Keys
 
-* **`level`**: String representing the log level. Case-insensitive (`"trace"`, `"debug"`, `"info"`, etc.).
-* **`global_console_display`**: Boolean to enable/disable writing to the console.
-* **`global_file_storage`**: Boolean to enable/disable file writing.
+* **`level`**: String representing the log level. Case-insensitive (`"trace"`, `"debug"`, `"info"`, etc.). Unknown names are rejected.
 * **`color`**: Enable/disable colored CLI output.
-* **`json`**: Toggle structured JSON formatting.
-* **`msgpack`**: Enable MessagePack binary formatting for storage efficiency.
+* **`format`**: Output format name (`"text"`, `"json"`, `"ndjson"`, `"logfmt"`, `"syslog"`, `"syslog3164"`, `"msgpack"`). Unknown names are rejected.
+* **`prettyJson`**: Pretty print JSON document output.
+* **`tamperEvident`**, **`appName`**, **`appVersion`**, **`environment`**: As in `Config`.
 
 ---
 

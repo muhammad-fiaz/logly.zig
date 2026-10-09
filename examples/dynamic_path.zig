@@ -13,7 +13,6 @@ pub fn main() !void {
     // We use a test directory to avoid cluttering
     _ = try logger.addSink(.{
         .path = "logs_dynamic/{date}/test-{HH}-{mm}-{ss}.log",
-        .json = false,
     });
 
     try logger.info("This log should be in a date-stamped folder", null);

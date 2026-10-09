@@ -1,10 +1,6 @@
-//! Global Crash & Panic Interception Subsystem
+//! Crash and panic handling.
 //!
-//! Provides portable, zero-allocation hooks to catch process-level panics,
-//! POSIX signal aborts, and Windows Vectored Exceptions (VEH). Synchronously
-//! flushes all active sinks before process shutdown to ensure in-flight logs
-//! are fully persisted.
-
+//! Flushes sinks on panic, POSIX signals, or Windows exceptions.
 const std = @import("std");
 const builtin = @import("builtin");
 const Logger = @import("logger.zig").Logger;
@@ -12,62 +8,57 @@ const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
 /// Global reference to the active logger for panic and crash handling.
-pub var active_logger: ?*Logger = null;
+pub var activeLogger: ?*Logger = null;
 
 /// User-defined callback invoked immediately when a panic, Windows VEH exception, or POSIX signal occurs.
-pub var on_crash_callback: ?*const fn (message: []const u8) void = null;
+pub var onCrashCallback: ?*const fn (message: []const u8) void = null;
 
 /// Sets the global crash/panic callback.
 pub fn setCrashCallback(callback: ?*const fn (message: []const u8) void) void {
-    on_crash_callback = callback;
+    onCrashCallback = callback;
 }
 
 // Ergonomic aliases
-pub const onCrash = setCrashCallback;
-pub const setCallback = setCrashCallback;
 
 /// A flag to prevent re-entrant crashes during handler execution.
-var is_handling_crash: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+var isHandlingCrash: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
 /// Windows Exception Record structure definition.
 /// Conforms to Win32 EXCEPTION_RECORD for native crash debugging.
-const EXCEPTION_RECORD = struct {
-    ExceptionCode: u32,
-    ExceptionFlags: u32,
-    ExceptionRecord: ?*EXCEPTION_RECORD,
-    ExceptionAddress: ?*anyopaque,
-    NumberParameters: u32,
-    ExceptionInformation: [15]usize,
+const WinExceptionRecord = struct {
+    exceptionCode: u32,
+    exceptionFlags: u32,
+    nextRecord: ?*WinExceptionRecord,
+    exceptionAddress: ?*anyopaque,
+    numberParameters: u32,
+    exceptionInformation: [15]usize,
 };
 
 /// Windows Exception Pointers structure definition.
 /// Conforms to Win32 EXCEPTION_POINTERS.
-const EXCEPTION_POINTERS = struct {
-    ExceptionRecord: *EXCEPTION_RECORD,
-    ContextRecord: ?*anyopaque,
+const WinExceptionPointers = struct {
+    exceptionRecord: *WinExceptionRecord,
+    contextRecord: ?*anyopaque,
 };
 
 /// Pointer type for Windows EXCEPTION_POINTERS.
-const PEXCEPTION_POINTERS = *EXCEPTION_POINTERS;
+const PWinExceptionPointers = *WinExceptionPointers;
 /// Standard Windows i32 type for API returns.
-const LONG = i32;
+const WinLong = i32;
 /// Function signature type for Windows Vectored Exception Handlers.
-const PVECTORED_EXCEPTION_HANDLER = *const fn (PEXCEPTION_POINTERS) callconv(.winapi) LONG;
+const PVectoredExceptionHandler = *const fn (PWinExceptionPointers) callconv(.winapi) WinLong;
 
 /// Win32 API to register exception handlers.
 extern "kernel32" fn AddVectoredExceptionHandler(
     FirstHandler: u32,
-    VectoredHandler: PVECTORED_EXCEPTION_HANDLER,
+    VectoredHandler: PVectoredExceptionHandler,
 ) callconv(.winapi) ?*anyopaque;
 
 /// Registers a logger to receive panic dumps and standard OS crashes.
 ///
 /// Bypasses standard async logging queues during failures to ensure sync logging.
-///
-/// Arguments:
-///     logger: The active Logger instance.
-pub fn registerLogger(logger: *Logger) void {
-    active_logger = logger;
+pub fn register(logger: *Logger) void {
+    activeLogger = logger;
 
     // Register standard OS crash traps
     if (builtin.os.tag == .windows) {
@@ -94,107 +85,92 @@ pub fn registerLogger(logger: *Logger) void {
 }
 
 /// Unregisters the active logger.
-pub fn unregisterLogger() void {
-    active_logger = null;
+pub fn unregister() void {
+    activeLogger = null;
 }
 
 /// Helper function to translate Windows exception codes into standard human-readable tags.
-///
-/// Arguments:
-///     code: Windows NTSTATUS exception code.
-///
-/// Returns:
-///     Human-readable name or UNKNOWN_WINDOWS_EXCEPTION.
 fn getWindowsExceptionName(code: u32) []const u8 {
-    for (Constants.CrashConstants.windows_exceptions) |ex| {
+    for (Constants.CrashConstants.windowsExceptions) |ex| {
         if (ex.code == code) return ex.name;
     }
-    return Constants.CrashConstants.unknown_windows_exception;
+    return Constants.CrashConstants.unknownWindowsException;
 }
 
 /// Custom Windows Vectored Exception Handler to intercept CPU crashes.
-///
-/// Arguments:
-///     info: Windows exception pointer block.
-///
-/// Returns:
-///     win32 LONG code (0 to continue search, -1 to execute handler).
-fn windowsExceptionHandler(info: PEXCEPTION_POINTERS) callconv(.winapi) LONG {
-    const code = info.ExceptionRecord.ExceptionCode;
+fn windowsExceptionHandler(info: PWinExceptionPointers) callconv(.winapi) WinLong {
+    const code = info.exceptionRecord.exceptionCode;
 
     // Filter out non-fatal exceptions (e.g. harmless debugger breaks or status events)
-    var is_fatal = false;
-    for (Constants.CrashConstants.windows_exceptions) |ex| {
+    var isFatal = false;
+    for (Constants.CrashConstants.windowsExceptions) |ex| {
         if (ex.code == code) {
-            is_fatal = ex.is_fatal;
+            isFatal = ex.isFatal;
             break;
         }
     }
 
-    if (!is_fatal) return 0; // EXCEPTION_CONTINUE_SEARCH
+    if (!isFatal) return 0; // EXCEPTION_CONTINUE_SEARCH
 
     // Prevent re-entrant crashes
-    if (is_handling_crash.swap(true, .acquire)) {
+    if (isHandlingCrash.swap(true, .acquire)) {
         return 0; // EXCEPTION_CONTINUE_SEARCH
     }
 
-    var msg_buf: [Constants.BufferSizes.message]u8 = undefined;
-    var final_msg: []const u8 = Constants.CrashConstants.windows_fallback_msg;
+    var msgBuf: [Constants.BufferSizes.message]u8 = undefined;
+    var finalMsg: []const u8 = Constants.CrashConstants.windowsFallbackMsg;
 
-    if (active_logger) |logger| {
+    if (activeLogger) |logger| {
         const name = getWindowsExceptionName(code);
-        final_msg = std.fmt.bufPrint(&msg_buf, Constants.CrashConstants.windows_triggered_fmt, .{ name, code }) catch final_msg;
-        logger.logPanic(final_msg) catch {};
+        finalMsg = std.fmt.bufPrint(&msgBuf, Constants.CrashConstants.windowsTriggeredFmt, .{ name, code }) catch finalMsg;
+        logger.logPanic(finalMsg) catch {};
     } else {
         const name = getWindowsExceptionName(code);
-        final_msg = std.fmt.bufPrint(&msg_buf, Constants.CrashConstants.windows_triggered_fmt, .{ name, code }) catch final_msg;
+        finalMsg = std.fmt.bufPrint(&msgBuf, Constants.CrashConstants.windowsTriggeredFmt, .{ name, code }) catch finalMsg;
     }
 
-    if (on_crash_callback) |cb| {
-        cb(final_msg);
+    if (onCrashCallback) |cb| {
+        cb(finalMsg);
     }
 
     // Standard stderr printing fallback using centralized constants
-    std.debug.print(Constants.CrashConstants.windows_stderr_fmt, .{code});
+    std.debug.print(Constants.CrashConstants.windowsStderrFmt, .{code});
 
     return 0; // EXCEPTION_CONTINUE_SEARCH
 }
 
 /// Custom POSIX Signal Handler to intercept hardware and runtime abort signals.
-///
-/// Arguments:
-///     sig: The POSIX signal received.
 fn posixSignalHandler(sig: std.posix.SIG) callconv(.c) void {
     // Prevent re-entrant crashes
-    if (is_handling_crash.swap(true, .acquire)) {
+    if (isHandlingCrash.swap(true, .acquire)) {
         std.process.abort();
     }
 
-    var msg_buf: [Constants.BufferSizes.message]u8 = undefined;
-    var final_msg: []const u8 = Constants.CrashConstants.posix_fallback_msg;
+    var msgBuf: [Constants.BufferSizes.message]u8 = undefined;
+    var finalMsg: []const u8 = Constants.CrashConstants.posixFallbackMsg;
 
-    const sig_name = switch (sig) {
-        .SEGV => Constants.CrashConstants.posix_sigsegv,
-        .ILL => Constants.CrashConstants.posix_sigill,
-        .FPE => Constants.CrashConstants.posix_sigfpe,
-        .ABRT => Constants.CrashConstants.posix_sigabrt,
-        .BUS => Constants.CrashConstants.posix_sigbus,
-        else => Constants.CrashConstants.posix_unknown_signal,
+    const sigName = switch (sig) {
+        .SEGV => Constants.CrashConstants.posixSigsegv,
+        .ILL => Constants.CrashConstants.posixSigill,
+        .FPE => Constants.CrashConstants.posixSigfpe,
+        .ABRT => Constants.CrashConstants.posixSigabrt,
+        .BUS => Constants.CrashConstants.posixSigbus,
+        else => Constants.CrashConstants.posixUnknownSignal,
     };
 
-    if (active_logger) |logger| {
-        final_msg = std.fmt.bufPrint(&msg_buf, Constants.CrashConstants.posix_received_fmt, .{ sig_name, @intFromEnum(sig) }) catch final_msg;
-        logger.logPanic(final_msg) catch {};
+    if (activeLogger) |logger| {
+        finalMsg = std.fmt.bufPrint(&msgBuf, Constants.CrashConstants.posixReceivedFmt, .{ sigName, @backingInt(sig) }) catch finalMsg;
+        logger.logPanic(finalMsg) catch {};
     } else {
-        final_msg = std.fmt.bufPrint(&msg_buf, Constants.CrashConstants.posix_received_fmt, .{ sig_name, @intFromEnum(sig) }) catch final_msg;
+        finalMsg = std.fmt.bufPrint(&msgBuf, Constants.CrashConstants.posixReceivedFmt, .{ sigName, @backingInt(sig) }) catch finalMsg;
     }
 
-    if (on_crash_callback) |cb| {
-        cb(final_msg);
+    if (onCrashCallback) |cb| {
+        cb(finalMsg);
     }
 
     // Default stderr printing fallback using centralized constants
-    std.debug.print(Constants.CrashConstants.posix_stderr_fmt, .{@intFromEnum(sig)});
+    std.debug.print(Constants.CrashConstants.posixStderrFmt, .{@backingInt(sig)});
 
     // Restore default handler and let it re-raise cleanly for standard OS reporting / core dumps
     const sigaction = std.posix.Sigaction{
@@ -213,50 +189,36 @@ fn posixSignalHandler(sig: std.posix.SIG) callconv(.c) void {
 }
 
 /// Default POSIX signal handler fallback to abort immediately.
-///
-/// Arguments:
-///     sig: Standard POSIX signal.
 fn posixSignalHandlerDfl(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
     std.process.abort();
 }
 
 /// Global panic hook that intercepts process panics.
-///
-/// Arguments:
-///     msg: Panic payload message.
-///     error_return_trace: Trace metadata.
-///     ret_addr: Return instruction address.
-pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
-    var msg_buf: [Constants.BufferSizes.message]u8 = undefined;
-    var final_msg: []const u8 = msg;
+pub fn panic(msg: []const u8, errorReturnTrace: ?*std.builtin.StackTrace, retAddr: ?usize) noreturn {
+    var msgBuf: [Constants.BufferSizes.message]u8 = undefined;
+    var finalMsg: []const u8 = msg;
 
-    if (active_logger) |logger| {
-        const prefix = Constants.CrashConstants.panic_message_prefix;
-        final_msg = std.fmt.bufPrint(&msg_buf, "{s}{s}\n", .{ prefix, msg }) catch msg;
-        logger.logPanic(final_msg) catch {};
+    if (activeLogger) |logger| {
+        const prefix = Constants.CrashConstants.panicMessagePrefix;
+        finalMsg = std.fmt.bufPrint(&msgBuf, "{s}{s}\n", .{ prefix, msg }) catch msg;
+        logger.logPanic(finalMsg) catch {};
     }
 
-    if (on_crash_callback) |cb| {
-        cb(final_msg);
+    if (onCrashCallback) |cb| {
+        cb(finalMsg);
     }
 
     // Default stderr printing fallback using centralized constant
-    const interceptor_prefix = Constants.CrashConstants.panic_interceptor_prefix;
-    std.debug.print("{s}{s}\n", .{ interceptor_prefix, msg });
-    _ = error_return_trace;
-    _ = ret_addr;
+    const interceptorPrefix = Constants.CrashConstants.panicInterceptorPrefix;
+    std.debug.print("{s}{s}\n", .{ interceptorPrefix, msg });
+    _ = errorReturnTrace;
+    _ = retAddr;
 
     std.process.abort();
 }
 
 // Global Aliases for public interface ergonomics
-pub const register = registerLogger;
-pub const unregister = unregisterLogger;
-pub const init = registerLogger;
-pub const deinit = unregisterLogger;
-pub const setup = registerLogger;
-pub const reset = unregisterLogger;
 
 test "panic and crash handler registration" {
     const allocator = std.testing.allocator;
@@ -264,10 +226,10 @@ test "panic and crash handler registration" {
     defer logger.deinit();
 
     register(logger);
-    try std.testing.expect(active_logger == logger);
+    try std.testing.expect(activeLogger == logger);
 
     unregister();
-    try std.testing.expect(active_logger == null);
+    try std.testing.expect(activeLogger == null);
 }
 
 test "windows exception translation" {
@@ -277,23 +239,23 @@ test "windows exception translation" {
     try std.testing.expectEqualStrings("UNKNOWN_WINDOWS_EXCEPTION", getWindowsExceptionName(0x12345678));
 }
 
-var test_crash_called: bool = false;
+var testCrashCalled: bool = false;
 fn mockCrashCallback(msg: []const u8) void {
     _ = msg;
-    test_crash_called = true;
+    testCrashCalled = true;
 }
 
 test "crash callback registration and invocation" {
-    test_crash_called = false;
+    testCrashCalled = false;
     setCrashCallback(&mockCrashCallback);
-    try std.testing.expect(on_crash_callback != null);
+    try std.testing.expect(onCrashCallback != null);
 
     // Invoke mock callback manually
-    if (on_crash_callback) |cb| {
+    if (onCrashCallback) |cb| {
         cb("Test crash callback");
     }
-    try std.testing.expect(test_crash_called);
+    try std.testing.expect(testCrashCalled);
 
     setCrashCallback(null);
-    try std.testing.expect(on_crash_callback == null);
+    try std.testing.expect(onCrashCallback == null);
 }

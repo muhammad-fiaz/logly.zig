@@ -29,7 +29,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Enable ANSI colors on Windows
-    _ = logly.Terminal.enableAnsiColors();
+     _ = logly.Terminal.enableAnsiColors();
 
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
@@ -55,10 +55,10 @@ pub fn main() !void {
     defer file_logger.deinit();
 
     var config = logly.Config.default();
-    config.auto_sink = false;
+    config.autoSink = false;
     file_logger.configure(config);
 
-    _ = try file_logger.addSink(.{
+     _ = try file_logger.addSink(.{
         .path = "logs/audit.log",
     });
 
@@ -73,10 +73,10 @@ pub fn main() !void {
     const json_logger = try logly.Logger.init(allocator);
     defer json_logger.deinit();
 
-    var json_config = logly.Config.default();
-    json_config.json = true;
-    json_config.pretty_json = true;
-    json_logger.configure(json_config);
+    var jsonConfig = logly.Config.default();
+    jsonConfig.format = .json;
+    jsonConfig.prettyJson = true;
+    json_logger.configure(jsonConfig);
 
     try json_logger.addCustomLevel("AUDIT", 25, "35");
     try json_logger.custom("AUDIT", "Custom level in JSON format", @src());
