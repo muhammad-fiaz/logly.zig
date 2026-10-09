@@ -129,6 +129,8 @@ pub const Redactor = struct {
     stats: RedactorStats = .{},
     /// Mutex for thread-safe operations.
     mutex: std.Io.Mutex = std.Io.Mutex.init,
+    /// I/O runtime handle for synchronization.
+    io: std.Io = Utils.defaultIo(),
 
     /// Callback invoked when redaction is applied.
     onRedactionApplied: ?*const fn (u64, u64, u32) void = null,
@@ -235,8 +237,14 @@ pub const Redactor = struct {
 
     /// Initializes a new Redactor instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: RedactionConfig) Redactor {
+        return initWithIo(allocator, Utils.defaultIo(), config);
+    }
+
+    /// Initializes a new Redactor instance with explicit I/O and custom configuration.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: RedactionConfig) Redactor {
         var redactor = Redactor{
             .allocator = allocator,
+            .io = io_handle,
             .config = config,
             .patterns = .empty,
             .fields = std.StringHashMap(RedactionType).init(allocator),
@@ -289,58 +297,58 @@ pub const Redactor = struct {
 
     /// Sets the callback for redaction applied events.
     pub fn setCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRedactionApplied = callback;
     }
 
     /// Sets the callback for redaction applied events.
     pub fn setRedactionAppliedCallback(self: *Redactor, callback: *const fn (u64, u64, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRedactionApplied = callback;
     }
 
     /// Sets the callback for pattern matched events.
     pub fn setPatternMatchedCallback(self: *Redactor, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onPatternMatched = callback;
     }
 
     /// Sets the callback for redaction detail events (shows original and redacted values).
     pub fn setRedactionDetailCallback(self: *Redactor, callback: *const fn ([]const u8, []const u8, []const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRedactionDetail = callback;
     }
 
     /// Sets the callback for redactor initialization.
     pub fn setInitializedCallback(self: *Redactor, callback: *const fn (*const RedactorStats) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRedactorInitialized = callback;
     }
 
     /// Sets the callback for redaction errors.
     pub fn setErrorCallback(self: *Redactor, callback: *const fn ([]const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRedactionError = callback;
     }
 
     /// Returns redactor statistics.
     pub fn getStats(self: *Redactor) RedactorStats {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.stats;
     }
 
     /// Adds a sensitive field for redaction.
     pub fn addField(self: *Redactor, fieldName: []const u8, redactionType: RedactionType) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (self.fields.getPtr(fieldName)) |existing| {
             existing.* = redactionType;
@@ -371,8 +379,8 @@ pub const Redactor = struct {
         pattern: []const u8,
         replacement: []const u8,
     ) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         try self.patterns.append(self.allocator, .{
             .name = try self.allocator.dupe(u8, name),
@@ -398,8 +406,8 @@ pub const Redactor = struct {
     ///
     /// Returns true when a matching field was removed.
     pub fn removeField(self: *Redactor, fieldName: []const u8) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (self.fields.fetchRemove(fieldName)) |entry| {
             self.allocator.free(entry.key);
@@ -431,8 +439,8 @@ pub const Redactor = struct {
     ///
     /// Returns the number of removed patterns.
     pub fn removePatternByName(self: *Redactor, name: []const u8) usize {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         var removed: usize = 0;
         var i = self.patterns.items.len;

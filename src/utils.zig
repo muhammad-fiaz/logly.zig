@@ -5,36 +5,16 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Constants = @import("constants.zig");
 
-/// Default Io for Logly's own I/O.
-///
-/// `init_single_threaded` performs no allocation and rejects the
-/// `async`/`concurrent` Io calls, which is sufficient for the synchronous file
-/// and console writes a logger performs. Transports that need a concurrent or
-/// async Io (network sinks) should install one with `setIo`.
-var threaded = std.Io.Threaded.init_single_threaded;
-
-/// Caller-supplied Io, consulted by `io()` when set.
-var custom_io: ?std.Io = null;
-
-/// Overrides the `std.Io` used for Logly's own I/O.
-///
-/// Logging works with no configuration: the default handle covers the
-/// synchronous file, console, and compression paths. Install a handle here
-/// when using network sinks or any transport that requires `async` or
-/// `concurrent` Io capability, since the default reports
-/// `error.ConcurrencyUnavailable` for those.
-///
-/// Pass `null` to restore the default. The setting is process-wide, so set it
-/// once during startup before constructing loggers.
-pub fn setIo(handle: ?std.Io) void {
-    custom_io = handle;
+/// Stateless default single-threaded Io handle.
+pub fn defaultIo() std.Io {
+    const Holder = struct {
+        var threaded = std.Io.Threaded.init_single_threaded;
+    };
+    return Holder.threaded.io();
 }
 
-/// Returns the Io Logly should use: the caller-supplied handle when one is
-/// installed, otherwise the default.
-pub fn io() std.Io {
-    return custom_io orelse threaded.io();
-}
+/// Pure stateless default I/O accessor.
+pub const io = defaultIo;
 
 /// Adapts an unmanaged `std.ArrayList(u8)` to the Zig 0.16 `std.Io.Writer` interface.
 pub const ArrayListWriter = struct {

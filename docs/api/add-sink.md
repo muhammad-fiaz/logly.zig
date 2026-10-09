@@ -257,16 +257,20 @@ if (logger.getSink(index)) |sink| {
 Sink management helpers: `getSinkCount()`, `removeSink(index)` (alias
 `remove`), `removeAllSinks()` (aliases `removeAll` and `clear`).
 
-## Io handle
+## Explicit Io handle
 
-Logging works with no configuration: Logly uses a default `std.Io` that
-covers the synchronous file and console paths. Network transports need
-`async`/`concurrent` capability, which the default does not provide. Install
-your own handle once at startup:
+Logging works with zero configuration: Logly uses a stateless default `std.Io`
+that covers synchronous file and console paths. When using network transports
+or custom concurrent runtimes that require `async`/`concurrent` capability,
+provide your own `std.Io` handle explicitly through configuration:
 
 ```zig
 var threaded = std.Io.Threaded.init(allocator, .{});
 defer threaded.deinit();
 
-logly.setIo(threaded.io());
+var config = logly.Config.default();
+config.io = threaded.io();
+
+var logger = try logly.Logger.initWithConfig(allocator, config);
+defer logger.deinit();
 ```

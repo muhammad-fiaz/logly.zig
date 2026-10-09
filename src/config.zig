@@ -13,6 +13,9 @@ pub const Config = struct {
     /// Minimum log level. Only logs at this level or higher will be processed.
     level: Level = .info,
 
+    /// Explicit Io handle. When null, uses default stateless Io.
+    io: ?std.Io = null,
+
     /// Global display controls for all sinks.
     globalColorDisplay: bool = true,
     globalConsoleDisplay: bool = true,
@@ -878,6 +881,8 @@ pub const Config = struct {
     pub const ThreadPoolConfig = struct {
         /// Enable thread pool for parallel processing.
         enabled: bool = false,
+        /// Explicit Io handle for pool synchronization. When null, uses default stateless Io.
+        io: ?std.Io = null,
         /// Number of worker threads (0 = auto-detect based on CPU cores).
         threadCount: usize = Constants.ThreadDefaults.threadCount,
         /// Maximum queue size for pending tasks.
@@ -1017,6 +1022,8 @@ pub const Config = struct {
 
     /// Scheduler configuration.
     pub const SchedulerConfig = struct {
+        /// Optional explicit I/O handle. If null, single-threaded standard I/O is used.
+        io: ?std.Io = null,
         /// Enable the scheduler.
         enabled: bool = false,
         /// Default cleanup max age in days.
@@ -2097,6 +2104,8 @@ pub const Config = struct {
         drainTimeoutMs: u64 = Constants.AsyncConstants.drainTimeoutMs,
         /// Shutdown grace period timeout in milliseconds.
         shutdownTimeoutMs: u64 = Constants.AsyncConstants.drainTimeoutMs,
+        /// Explicit I/O handle. When null, inherits from Logger or defaults to stateless I/O.
+        io: ?std.Io = null,
 
         pub const OverflowPolicy = enum {
             dropOldest,
@@ -2653,21 +2662,20 @@ pub const Config = struct {
         return config;
     }
 
-    /// Loads the configuration from a JSON file.
+    /// Loads the configuration from a JSON file with explicit I/O.
     ///
     /// Files larger than 64KB are rejected instead of being silently
     /// truncated into a partial configuration.
-    pub fn loadFromFile(allocator: std.mem.Allocator, filePath: []const u8) !Config {
-        const io = Utils.io();
-        const file = try std.Io.Dir.cwd().openFile(io, filePath, .{});
-        defer file.close(io);
+    pub fn loadFromFileWithIo(allocator: std.mem.Allocator, io_handle: std.Io, filePath: []const u8) !Config {
+        const file = try std.Io.Dir.cwd().openFile(io_handle, filePath, .{});
+        defer file.close(io_handle);
 
         // Read entire file (up to 64KB)
         const buf = try allocator.alloc(u8, 65536);
         defer allocator.free(buf);
 
         var fileBuffer: [4096]u8 = undefined;
-        var reader = file.reader(io, &fileBuffer);
+        var reader = file.reader(io_handle, &fileBuffer);
         const len = try reader.interface.readSliceShort(buf);
         // A full buffer may mean truncation: prove EOF before parsing.
         if (len == buf.len) {
@@ -2678,6 +2686,11 @@ pub const Config = struct {
         const jsonBytes = buf[0..len];
 
         return try loadFromJson(allocator, jsonBytes);
+    }
+
+    /// Loads the configuration from a JSON file.
+    pub fn loadFromFile(allocator: std.mem.Allocator, filePath: []const u8) !Config {
+        return loadFromFileWithIo(allocator, Utils.defaultIo(), filePath);
     }
 };
 
@@ -2691,7 +2704,7 @@ test "config JSON load and parse" {
 
     // Test writing and loading from file using std.Io
     const testFilePath = "test_config_temp.json";
-    const io = Utils.io();
+    const io = Utils.defaultIo();
     const file = try std.Io.Dir.cwd().createFile(io, testFilePath, .{});
     try file.writeStreamingAll(io, jsonStr);
     file.close(io);
@@ -3267,6 +3280,9 @@ test "telemetry metric export helpers" {
 
 /// OpenTelemetry telemetry configuration options.
 pub const TelemetryConfig = struct {
+    /// Optional explicit I/O handle. If null, single-threaded standard I/O is used.
+    io: ?std.Io = null,
+
     /// Enable OpenTelemetry integration.
     enabled: bool = false,
 

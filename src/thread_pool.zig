@@ -13,6 +13,8 @@ const Utils = @import("utils.zig");
 pub const ThreadPool = struct {
     /// Memory allocator for pool operations.
     allocator: std.mem.Allocator,
+    /// Explicit Io handle for thread pool synchronization.
+    io: std.Io = Utils.defaultIo(),
     /// Thread pool configuration.
     config: ThreadPoolConfig,
     /// Worker threads array.
@@ -283,6 +285,7 @@ pub const ThreadPool = struct {
     /// Work queue implementation using a Ring Deque for efficient FIFO/LIFO access.
     pub const WorkQueue = struct {
         allocator: std.mem.Allocator,
+        io: std.Io = Utils.defaultIo(),
         items: []WorkItem,
         head: usize = 0,
         tail: usize = 0,
@@ -291,11 +294,17 @@ pub const ThreadPool = struct {
         mutex: std.Io.Mutex = .init,
         condition: std.Io.Condition = .init,
 
-        /// Initializes a queue with fixed `capacity`.
+        /// Initializes a queue with fixed `capacity` using default stateless Io.
         pub fn init(allocator: std.mem.Allocator, capacity: usize) !WorkQueue {
+            return WorkQueue.initWithIo(allocator, Utils.defaultIo(), capacity);
+        }
+
+        /// Initializes a queue with fixed `capacity` and explicit Io handle.
+        pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, capacity: usize) !WorkQueue {
             const items = try allocator.alloc(WorkItem, capacity);
             return .{
                 .allocator = allocator,
+                .io = io_handle,
                 .items = items,
                 .capacity = capacity,
             };
@@ -316,8 +325,8 @@ pub const ThreadPool = struct {
         ///
         /// Returns false when queue is at capacity.
         pub fn push(self: *WorkQueue, item: WorkItem) bool {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             if (self.count >= self.capacity) {
                 return false;
@@ -326,14 +335,14 @@ pub const ThreadPool = struct {
             self.items[self.tail] = item;
             self.tail = (self.tail + 1) % self.capacity;
             self.count += 1;
-            self.condition.signal(Utils.io());
+            self.condition.signal(self.io);
             return true;
         }
 
         /// Pops one item from the queue, if available.
         pub fn pop(self: *WorkQueue) ?WorkItem {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             return self.popUnlocked();
         }
@@ -388,15 +397,17 @@ pub const ThreadPool = struct {
 
         /// Waits up to `timeout_ns` for an item, then pops once.
         pub fn popWait(self: *WorkQueue, timeoutNs: u64) ?WorkItem {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             // Wait for items if queue is empty
             if (self.count == 0) {
-                const duration = std.Io.Duration.fromNanoseconds(@as(i96, @intCast(timeoutNs)));
-                self.mutex.unlock(Utils.io());
-                Utils.io().sleep(duration, .awake) catch {};
-                self.mutex.lockUncancelable(Utils.io());
+                const clock_dur = std.Io.Clock.Duration{
+                    .raw = std.Io.Duration.fromNanoseconds(@as(i96, @intCast(timeoutNs))),
+                    .clock = .awake,
+                };
+                const timeout = std.Io.Timeout{ .duration = clock_dur };
+                std.Io.Condition.waitTimeout(&self.condition, self.io, &self.mutex, timeout) catch {};
             }
 
             // Pop while still holding the lock (no double-locking)
@@ -405,8 +416,8 @@ pub const ThreadPool = struct {
 
         /// Steals one item from the queue tail.
         pub fn steal(self: *WorkQueue) ?WorkItem {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             if (self.count == 0) return null;
 
@@ -422,23 +433,23 @@ pub const ThreadPool = struct {
 
         /// Returns current queue depth.
         pub fn size(self: *WorkQueue) usize {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
             return self.count;
         }
 
         /// Returns true when the queue is full.
         pub fn isFull(self: *WorkQueue) bool {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
             return self.count >= self.capacity;
         }
 
         /// Removes all queued items, invoking per-item drop hooks so
         /// submitters can reclaim discarded contexts.
         pub fn clear(self: *WorkQueue) void {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
             var i: usize = 0;
             while (i < self.count) : (i += 1) {
                 const idx = (self.head + i) % self.capacity;
@@ -508,19 +519,31 @@ pub const ThreadPool = struct {
         total: usize,
     };
 
-    /// Initializes a new ThreadPool.
+    /// Initializes a new ThreadPool with default configuration and stateless Io.
     pub fn init(allocator: std.mem.Allocator) !*ThreadPool {
         return initWithConfig(allocator, .{});
     }
 
     /// Initializes a ThreadPool with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool {
+        const io_handle = config.io orelse Utils.defaultIo();
+        return initWithConfigAndIo(allocator, config, io_handle);
+    }
+
+    /// Initializes a ThreadPool with an explicit Io handle and configuration.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: ThreadPoolConfig) !*ThreadPool {
+        return initWithConfigAndIo(allocator, config, io_handle);
+    }
+
+    /// Initializes a ThreadPool with both configuration and explicit Io handle.
+    pub fn initWithConfigAndIo(allocator: std.mem.Allocator, config: ThreadPoolConfig, io_handle: std.Io) !*ThreadPool {
         const self = try allocator.create(ThreadPool);
         errdefer allocator.destroy(self);
 
         // Determine thread count using Constants.ThreadDefaults
+        const recommended = Constants.ThreadDefaults.recommendedThreadCount();
         const numThreads = if (config.threadCount == 0)
-            Constants.ThreadDefaults.recommendedThreadCount()
+            (if (recommended == 0) 1 else recommended)
         else
             config.threadCount;
 
@@ -531,16 +554,17 @@ pub const ThreadPool = struct {
         for (workers, 0..) |*worker, i| {
             worker.* = .{
                 .id = i,
-                .localQueue = try WorkQueue.init(allocator, config.queueSize),
+                .localQueue = try WorkQueue.initWithIo(allocator, io_handle, config.queueSize),
                 .pool = self,
             };
         }
 
         self.* = .{
             .allocator = allocator,
+            .io = io_handle,
             .config = config,
             .workers = workers,
-            .workQueue = try WorkQueue.init(allocator, config.queueSize * numThreads),
+            .workQueue = try WorkQueue.initWithIo(allocator, io_handle, config.queueSize * numThreads),
             .stats = .{},
         };
 
@@ -579,10 +603,10 @@ pub const ThreadPool = struct {
         self.running.store(false, .release);
 
         // Signal all workers
-        self.workQueue.condition.broadcast(Utils.io());
+        self.workQueue.condition.broadcast(self.io);
         for (self.workers) |*worker| {
             worker.running.store(false, .release);
-            worker.localQueue.condition.broadcast(Utils.io());
+            worker.localQueue.condition.broadcast(self.io);
         }
 
         // Wait for workers to finish
@@ -601,8 +625,8 @@ pub const ThreadPool = struct {
     pub fn cancel(self: *ThreadPool, handle: TaskHandle) bool {
         if (!handle.isValid()) return false;
 
-        self.workQueue.mutex.lockUncancelable(Utils.io());
-        defer self.workQueue.mutex.unlock(Utils.io());
+        self.workQueue.mutex.lockUncancelable(self.io);
+        defer self.workQueue.mutex.unlock(self.io);
 
         if (self.workQueue.removeByIdUnlocked(handle.id)) {
             _ = self.stats.tasksCancelled.fetchAdd(1, .monotonic);
@@ -610,8 +634,8 @@ pub const ThreadPool = struct {
         }
 
         for (self.workers) |*worker| {
-            worker.localQueue.mutex.lockUncancelable(Utils.io());
-            defer worker.localQueue.mutex.unlock(Utils.io());
+            worker.localQueue.mutex.lockUncancelable(self.io);
+            defer worker.localQueue.mutex.unlock(self.io);
             if (worker.localQueue.removeByIdUnlocked(handle.id)) {
                 _ = self.stats.tasksCancelled.fetchAdd(1, .monotonic);
                 return true;
@@ -758,7 +782,7 @@ pub const ThreadPool = struct {
         }
         var queueDepth: usize = 0;
         const handle: TaskHandle = blk: {
-            defer self.workQueue.mutex.unlock(Utils.io());
+            defer self.workQueue.mutex.unlock(self.io);
 
             if (self.workQueue.count >= self.workQueue.capacity) {
                 _ = self.stats.tasksDropped.fetchAdd(1, .monotonic);
@@ -779,7 +803,7 @@ pub const ThreadPool = struct {
             queueDepth = self.workQueue.count;
 
             _ = self.stats.tasksSubmitted.fetchAdd(1, .monotonic);
-            self.workQueue.condition.signal(Utils.io());
+            self.workQueue.condition.signal(self.io);
             break :blk .{ .id = id };
         };
 
@@ -839,7 +863,7 @@ pub const ThreadPool = struct {
         );
         defer _ = pool.stats.activeThreads.fetchSub(1, .monotonic);
 
-        while (worker.running.load(.acquire) or pool.workQueue.size() > 0) {
+        while (worker.running.load(.acquire) or pool.workQueue.size() > 0 or worker.localQueue.size() > 0) {
             // Try local queue first
             var item = worker.localQueue.pop();
 
@@ -849,7 +873,7 @@ pub const ThreadPool = struct {
             }
 
             // Try work stealing
-            if (item == null and pool.config.workStealing) {
+            if (item == null and pool.config.workStealing and pool.workers.len > 1) {
                 for (pool.workers) |*other| {
                     if (other.id != worker.id) {
                         if (other.localQueue.steal()) |stolen| {
@@ -1175,15 +1199,15 @@ pub const ParallelSinkWriter = struct {
 
     /// Add a sink for parallel writing.
     pub fn addSink(self: *ParallelSinkWriter, handle: SinkHandle) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
         try self.sinks.append(self.allocator, handle);
     }
 
     /// Remove a sink by name.
     pub fn removeSink(self: *ParallelSinkWriter, name: []const u8) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         var i: usize = 0;
         while (i < self.sinks.items.len) {
@@ -1197,8 +1221,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Enable or disable a sink by name.
     pub fn setSinkEnabled(self: *ParallelSinkWriter, name: []const u8, enabled: bool) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         for (self.sinks.items) |*sink| {
             if (std.mem.eql(u8, sink.name, name)) {
@@ -1221,8 +1245,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Buffer a write for later dispatch.
     fn bufferWrite(self: *ParallelSinkWriter, data: []const u8) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         if (self.allocator.dupe(u8, data)) |dataCopy| {
             self.buffer.append(self.allocator, dataCopy) catch {
@@ -1239,8 +1263,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Flush the buffer immediately.
     pub fn flushBuffer(self: *ParallelSinkWriter) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
         self.flushBufferUnlocked();
     }
 
@@ -1254,8 +1278,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Dispatch write to all sinks.
     fn dispatchWrite(self: *ParallelSinkWriter, data: []const u8) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
         self.dispatchWriteUnlocked(data);
     }
 
@@ -1358,8 +1382,8 @@ pub const ParallelSinkWriter = struct {
     pub fn flushAll(self: *ParallelSinkWriter) void {
         self.flushBuffer();
 
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         for (self.sinks.items) |sink| {
             if (sink.flushFn) |flushFunc| {
@@ -1380,8 +1404,8 @@ pub const ParallelSinkWriter = struct {
 
     /// Check if any sinks are enabled.
     pub fn hasEnabledSinks(self: *ParallelSinkWriter) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.pool.io);
+        defer self.mutex.unlock(self.pool.io);
 
         for (self.sinks.items) |sink| {
             if (sink.enabled) return true;
@@ -1656,29 +1680,30 @@ test "thread pool priority ordering" {
     defer order.deinit(allocator);
     var mutex: std.Io.Mutex = .init;
 
-    const Params = struct { o: *std.ArrayList(u8), m: *std.Io.Mutex, val: u8, a: std.mem.Allocator };
+    const Params = struct { o: *std.ArrayList(u8), m: *std.Io.Mutex, val: u8, a: std.mem.Allocator, io: std.Io };
     const OrderTask = struct {
         fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
             const params: *Params = @ptrCast(@alignCast(ctx));
-            params.m.lockUncancelable(Utils.io());
+            params.m.lockUncancelable(params.io);
             params.o.append(params.a, params.val) catch {};
-            params.m.unlock(Utils.io());
+            params.m.unlock(params.io);
         }
     };
 
-    var p1: Params = .{ .o = &order, .m = &mutex, .val = 1, .a = allocator }; // Normal
-    var p2: Params = .{ .o = &order, .m = &mutex, .val = 2, .a = allocator }; // High
-    var p3: Params = .{ .o = &order, .m = &mutex, .val = 3, .a = allocator }; // Critical
+    var p1: Params = .{ .o = &order, .m = &mutex, .val = 1, .a = allocator, .io = pool.io }; // Normal
+    var p2: Params = .{ .o = &order, .m = &mutex, .val = 2, .a = allocator, .io = pool.io }; // High
+    var p3: Params = .{ .o = &order, .m = &mutex, .val = 3, .a = allocator, .io = pool.io }; // Critical
 
     // Use a primary task to block the single worker thread
     var blockMutex: std.Io.Mutex = .init;
-    blockMutex.lockUncancelable(Utils.io()); // Worker will block on this
+    blockMutex.lockUncancelable(pool.io); // Worker will block on this
 
     const BlockTask = struct {
         fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
             const m: *std.Io.Mutex = @ptrCast(@alignCast(ctx));
-            m.lockUncancelable(Utils.io()); // Wait here
-            m.unlock(Utils.io());
+            const io = Utils.defaultIo();
+            m.lockUncancelable(io); // Wait here
+            m.unlock(io);
         }
     };
 
@@ -1693,7 +1718,7 @@ test "thread pool priority ordering" {
     _ = pool.submit(.{ .callback = .{ .func = OrderTask.run, .context = &p3 } }, .critical);
 
     // Release the worker
-    blockMutex.unlock(Utils.io());
+    blockMutex.unlock(pool.io);
     pool.waitAll();
 
     // Order should be 3, 2, 1
@@ -1730,13 +1755,14 @@ test "thread pool wait all timeout" {
     try pool.start();
 
     var gate = std.Io.Mutex.init;
-    gate.lockUncancelable(Utils.io());
+    gate.lockUncancelable(pool.io);
 
     const BlockTask = struct {
         fn run(ctx: *anyopaque, _: ?std.mem.Allocator) void {
             const m: *std.Io.Mutex = @ptrCast(@alignCast(ctx));
-            m.lockUncancelable(Utils.io());
-            m.unlock(Utils.io());
+            const io = Utils.defaultIo();
+            m.lockUncancelable(io);
+            m.unlock(io);
         }
     };
 
@@ -1745,7 +1771,7 @@ test "thread pool wait all timeout" {
     Utils.sleepMs(5);
     try std.testing.expect(!pool.waitAllTimeout(10));
 
-    gate.unlock(Utils.io());
+    gate.unlock(pool.io);
     try std.testing.expect(pool.waitAllTimeout(2_000));
 }
 

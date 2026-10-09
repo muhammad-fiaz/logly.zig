@@ -24,17 +24,8 @@ pub const Constants = @import("constants.zig");
 pub const Utils = @import("utils.zig");
 pub const utils = Utils;
 
-/// Installs the `std.Io` handle used for Logly's own I/O, or `null` to restore
-/// the built-in default.
-///
-/// Logging needs no configuration: the default handle serves the synchronous
-/// file, console, and compression paths. Supply your own handle when using
-/// network sinks, which require `async`/`concurrent` Io capability that the
-/// default does not provide. Call once at startup, before creating loggers.
-pub const setIo = Utils.setIo;
-
-/// Returns the Io Logly currently uses for its own I/O.
-pub const currentIo = Utils.io;
+/// Returns Logly's default stateless single-threaded `std.Io` handle.
+pub const defaultIo = Utils.defaultIo;
 
 pub const Color = @import("color.zig");
 /// Direct access to the tint.zig color engine backing `Color`.
@@ -173,13 +164,18 @@ pub const SinkPresets = struct {
 /// Handles ANSI color detection and enablement across all platforms.
 pub const Terminal = struct {
     /// Enable ANSI color codes for the current terminal.
+    pub fn enableAnsiColors() bool {
+        return enableAnsiColorsWithIo(Utils.defaultIo());
+    }
+
+    /// Enable ANSI color codes for the current terminal with explicit I/O.
     ///
     /// - Windows: Enables Virtual Terminal Processing in the console
     /// - Linux/macOS/Unix: Returns true (ANSI supported natively)
     /// - Bare metal/freestanding: Returns based on color_enabled flag
     ///
     /// Returns true if colors are available, false otherwise.
-    pub fn enableAnsiColors() bool {
+    pub fn enableAnsiColorsWithIo(io_handle: std.Io) bool {
         const builtin = @import("builtin");
 
         // Bare metal / freestanding - no terminal, but allow if explicitly enabled
@@ -189,7 +185,7 @@ pub const Terminal = struct {
 
         // Windows requires explicit enablement
         if (builtin.os.tag == .windows) {
-            return enableWindowsAnsi();
+            return enableWindowsAnsiWithIo(io_handle);
         }
 
         // Unix-like systems (Linux, macOS, BSD, etc.) support ANSI natively
@@ -288,11 +284,15 @@ pub const Terminal = struct {
     }
 
     fn enableWindowsAnsi() bool {
+        return enableWindowsAnsiWithIo(Utils.defaultIo());
+    }
+
+    fn enableWindowsAnsiWithIo(io_handle: std.Io) bool {
         const builtin = @import("builtin");
         if (builtin.os.tag != .windows) return true;
 
-        std.Io.File.stdout().enableAnsiEscapeCodes(Utils.io()) catch return false;
-        std.Io.File.stderr().enableAnsiEscapeCodes(Utils.io()) catch {};
+        std.Io.File.stdout().enableAnsiEscapeCodes(io_handle) catch return false;
+        std.Io.File.stderr().enableAnsiEscapeCodes(io_handle) catch {};
 
         return true;
     }

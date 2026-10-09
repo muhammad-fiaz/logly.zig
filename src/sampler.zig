@@ -145,6 +145,8 @@ pub const Sampler = struct {
     state: SamplerState,
     /// Mutex for thread-safe operations.
     mutex: std.Io.Mutex = std.Io.Mutex.init,
+    /// Explicit I/O handle.
+    io: std.Io = Utils.defaultIo(),
 
     /// Callback invoked when a record passes sampling.
     onSampleAccept: ?*const fn (f64) void = null,
@@ -165,8 +167,14 @@ pub const Sampler = struct {
 
     /// Initializes a new Sampler with full configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: Config.SamplingConfig) Sampler {
+        return initWithIo(allocator, Utils.defaultIo(), config);
+    }
+
+    /// Initializes a new Sampler with explicit I/O handle and full configuration.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Config.SamplingConfig) Sampler {
         var sampler = Sampler{
             .allocator = allocator,
+            .io = io_handle,
             .strategy = config.strategy,
             .bypassLevels = config.bypassLevels,
             .state = SamplerState.init(),
@@ -365,13 +373,13 @@ pub const Sampler = struct {
         var rateExceededInfo: ?RateExceededInfo = null;
         var adjustmentInfo: ?AdjustmentInfo = null;
 
-        self.mutex.lockUncancelable(Utils.io());
+        self.mutex.lockUncancelable(self.io);
         const sampleDecision = self.evaluateSampleDecisionLocked(
             Utils.monotonicMillis(),
             &rateExceededInfo,
             &adjustmentInfo,
         );
-        self.mutex.unlock(Utils.io());
+        self.mutex.unlock(self.io);
 
         return self.applyDecision(sampleDecision, rateExceededInfo, adjustmentInfo);
     }
@@ -469,8 +477,8 @@ pub const Sampler = struct {
 
     /// Updates strategy at runtime and resets strategy-specific counters.
     pub fn setStrategy(self: *Sampler, strategy: Strategy) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         self.strategy = strategy;
         self.resetStateForStrategy();
@@ -514,15 +522,15 @@ pub const Sampler = struct {
             .maxSampleRate = boundedMax,
         } });
 
-        self.mutex.lockUncancelable(Utils.io());
+        self.mutex.lockUncancelable(self.io);
         self.state.currentRate = boundedMax;
-        self.mutex.unlock(Utils.io());
+        self.mutex.unlock(self.io);
     }
 
     /// Reseeds the internal RNG for probability-based sampling.
     pub fn setSeed(self: *Sampler, seed: u64) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.state.rng = std.Random.DefaultPrng.init(seed);
     }
 
@@ -533,8 +541,8 @@ pub const Sampler = struct {
 
     /// Returns remaining quota in current rate-limit window, if applicable.
     pub fn remainingWindowQuota(self: *Sampler) ?u32 {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return switch (self.strategy) {
             .rateLimit => |config| {
@@ -547,8 +555,8 @@ pub const Sampler = struct {
 
     /// Returns milliseconds until rate-limit window reset, if applicable.
     pub fn windowResetInMs(self: *Sampler) ?u64 {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return switch (self.strategy) {
             .rateLimit => |config| {
@@ -572,16 +580,16 @@ pub const Sampler = struct {
 
     /// Resets the sampler state.
     pub fn reset(self: *Sampler) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         self.state = SamplerState.init();
     }
 
     /// Returns the current sampling rate (for adaptive sampling).
     pub fn getCurrentRate(self: *Sampler) f64 {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return switch (self.strategy) {
             .none => 1.0,

@@ -259,6 +259,9 @@ pub const Telemetry = struct {
     onMetricRecorded: ?*const fn ([]const u8, f64) void,
     onError: ?*const fn ([]const u8) void,
 
+    // I/O handle
+    io: std.Io = Utils.defaultIo(),
+
     // Network connection for network export mode
     networkSocket: ?std.Io.net.Socket = null,
     networkAddress: ?std.Io.net.IpAddress = null,
@@ -270,21 +273,29 @@ pub const Telemetry = struct {
 
     /// Initializes OpenTelemetry telemetry system
     pub fn init(allocator: std.mem.Allocator, config: TelemetryConfig) !Telemetry {
+        return initWithIo(allocator, config.io orelse Utils.defaultIo(), config);
+    }
+
+    /// Initializes OpenTelemetry telemetry system with an explicit I/O handle.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: TelemetryConfig) !Telemetry {
+        var cfg = config;
+        cfg.io = io_handle;
         var telemetry = Telemetry{
             .allocator = allocator,
-            .config = config,
-            .enabled = config.enabled,
+            .io = io_handle,
+            .config = cfg,
+            .enabled = cfg.enabled,
             .spans = .empty,
             .completedSpans = .empty,
             .metrics = .empty,
             .logs = .empty,
             .batchBuffer = .empty,
-            .resource = Resource.fromConfig(config),
-            .sampler = TelemetrySampler.init(config),
-            .onSpanStart = config.onSpanStart,
-            .onSpanEnd = config.onSpanEnd,
-            .onMetricRecorded = config.onMetricRecorded,
-            .onError = config.onError,
+            .resource = Resource.fromConfig(cfg),
+            .sampler = TelemetrySampler.init(cfg),
+            .onSpanStart = cfg.onSpanStart,
+            .onSpanEnd = cfg.onSpanEnd,
+            .onMetricRecorded = cfg.onMetricRecorded,
+            .onError = cfg.onError,
         };
 
         // Initialize ArrayLists with proper allocator
@@ -295,9 +306,9 @@ pub const Telemetry = struct {
         telemetry.batchBuffer = std.ArrayList(u8).initCapacity(allocator, Constants.BufferSizes.telemetry) catch .empty;
 
         // Initialize network connection if using network export
-        if (config.enabled and config.exporterEndpoint != null) {
+        if (cfg.enabled and cfg.exporterEndpoint != null) {
             telemetry.initNetworkExport() catch {
-                if (config.onError) |callback| {
+                if (cfg.onError) |callback| {
                     callback("Failed to initialize network export");
                 }
             };
@@ -324,12 +335,12 @@ pub const Telemetry = struct {
     pub fn deinit(self: *Telemetry) void {
         // Close network socket if open
         if (self.networkSocket) |socket| {
-            socket.close(Utils.io());
+            socket.close(self.io);
             self.networkSocket = null;
         }
 
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // Free all active spans
         for (self.spans.items) |*span| {
@@ -368,8 +379,8 @@ pub const Telemetry = struct {
     pub fn startSpan(self: *Telemetry, name: []const u8, opts: SpanOptions) !Span {
         if (!self.enabled) return Span.empty(self.allocator);
 
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // Generate IDs using utils
         const spanId = try utils.generateSpanId(self.allocator);
@@ -412,8 +423,8 @@ pub const Telemetry = struct {
     pub fn endSpan(self: *Telemetry, span: *Span) !void {
         if (!self.enabled or span.isEmpty()) return;
 
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         span.endTime = utils.currentNanos();
 
@@ -477,8 +488,8 @@ pub const Telemetry = struct {
     pub fn recordMetric(self: *Telemetry, name: []const u8, value: f64, opts: MetricOptions) !void {
         if (!self.enabled) return;
 
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // Store metric in ArrayList
         try self.metrics.append(self.allocator, .{
@@ -524,8 +535,8 @@ pub const Telemetry = struct {
     pub fn recordMetricsBatch(self: *Telemetry, metrics: []const MetricInput) !usize {
         if (!self.enabled) return 0;
 
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const batchTimestamp = utils.currentNanos();
         try self.metrics.ensureTotalCapacity(self.allocator, self.metrics.items.len + metrics.len);
@@ -592,8 +603,8 @@ pub const Telemetry = struct {
     /// Adds a log to the internal buffer for batching
     pub fn addLog(self: *Telemetry, timeNs: i64, dataJson: []const u8) !void {
         if (!self.enabled) return;
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         try self.logs.append(self.allocator, .{
             .timeNs = timeNs,
@@ -680,11 +691,11 @@ pub const Telemetry = struct {
             try Network.sendUdp(self.networkSocket.?, self.networkAddress.?, self.batchBuffer.items);
             self.exporterStats.recordNetworkExport();
         } else if (self.config.exporterFilePath) |path| {
-            const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
-            defer file.close(Utils.io());
+            const file = try std.Io.Dir.cwd().createFile(self.io, path, .{ .read = true, .truncate = false });
+            defer file.close(self.io);
             var fileBuffer: [Constants.BufferSizes.telemetry]u8 = undefined;
-            var fileWriter = file.writer(Utils.io(), &fileBuffer);
-            try fileWriter.seekTo(try file.length(Utils.io()));
+            var fileWriter = file.writer(self.io, &fileBuffer);
+            try fileWriter.seekTo(try file.length(self.io));
             try fileWriter.interface.writeAll(self.batchBuffer.items);
             try fileWriter.interface.writeAll("\n");
             try fileWriter.flush();
@@ -1081,12 +1092,12 @@ pub const Telemetry = struct {
     fn exportToFile(self: *Telemetry) !void {
         const path = self.config.exporterFilePath orelse return;
 
-        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
-        defer file.close(Utils.io());
+        const file = try std.Io.Dir.cwd().createFile(self.io, path, .{ .read = true, .truncate = false });
+        defer file.close(self.io);
 
         var fileBuffer: [Constants.BufferSizes.telemetry]u8 = undefined;
-        var fileWriter = file.writer(Utils.io(), &fileBuffer);
-        try fileWriter.seekTo(try file.length(Utils.io()));
+        var fileWriter = file.writer(self.io, &fileBuffer);
+        try fileWriter.seekTo(try file.length(self.io));
         for (self.completedSpans.items) |span| {
             self.batchBuffer.clearRetainingCapacity();
             var batchWriter = Utils.ArrayListWriter.init(&self.batchBuffer, self.allocator);
@@ -1189,8 +1200,8 @@ pub const Telemetry = struct {
     pub fn exportSpans(self: *Telemetry) !void {
         if (!self.enabled) return;
 
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         try self.exportSpansInternal();
     }
@@ -1199,8 +1210,8 @@ pub const Telemetry = struct {
     pub fn exportMetrics(self: *Telemetry) !void {
         if (!self.enabled) return;
 
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (self.metricCount == 0) return;
 
@@ -1231,12 +1242,12 @@ pub const Telemetry = struct {
     fn exportMetricsJson(self: *Telemetry) !void {
         const path = self.config.metricsFilePath orelse self.config.exporterFilePath orelse return;
 
-        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
-        defer file.close(Utils.io());
+        const file = try std.Io.Dir.cwd().createFile(self.io, path, .{ .read = true, .truncate = false });
+        defer file.close(self.io);
 
         var fileBuffer: [Constants.BufferSizes.telemetry]u8 = undefined;
-        var fileWriter = file.writer(Utils.io(), &fileBuffer);
-        try fileWriter.seekTo(try file.length(Utils.io()));
+        var fileWriter = file.writer(self.io, &fileBuffer);
+        try fileWriter.seekTo(try file.length(self.io));
 
         for (self.metrics.items) |metric| {
             self.batchBuffer.clearRetainingCapacity();
@@ -1253,12 +1264,12 @@ pub const Telemetry = struct {
     fn exportMetricsPrometheus(self: *Telemetry) !void {
         const path = self.config.metricsFilePath orelse self.config.exporterFilePath orelse return;
 
-        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{ .read = true, .truncate = false });
-        defer file.close(Utils.io());
+        const file = try std.Io.Dir.cwd().createFile(self.io, path, .{ .read = true, .truncate = false });
+        defer file.close(self.io);
 
         var fileBuffer: [Constants.BufferSizes.telemetry]u8 = undefined;
-        var fileWriter = file.writer(Utils.io(), &fileBuffer);
-        try fileWriter.seekTo(try file.length(Utils.io()));
+        var fileWriter = file.writer(self.io, &fileBuffer);
+        try fileWriter.seekTo(try file.length(self.io));
 
         for (self.metrics.items) |metric| {
             self.batchBuffer.clearRetainingCapacity();
@@ -1334,29 +1345,29 @@ pub const Telemetry = struct {
 
     /// Returns the number of active spans
     pub fn getActiveSpanCount(self: *Telemetry) usize {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.activeSpanCount;
     }
 
     /// Returns the number of completed spans awaiting export
     pub fn getCompletedSpanCount(self: *Telemetry) usize {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.completedSpanCount;
     }
 
     /// Returns the current metric count
     pub fn getMetricCount(self: *Telemetry) usize {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.metricCount;
     }
 
     /// Returns telemetry statistics
     pub fn getStats(self: *Telemetry) TelemetryStats {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return .{
             .totalSpansCreated = self.totalSpansCreated,
             .totalSpansExported = self.totalSpansExported,
@@ -1389,8 +1400,8 @@ pub const Telemetry = struct {
 
     /// Enable/disable telemetry at runtime
     pub fn setEnabled(self: *Telemetry, enabled: bool) void {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.enabled = enabled;
     }
 
@@ -1401,8 +1412,8 @@ pub const Telemetry = struct {
 
     /// Updates telemetry sampling strategy and effective sampling rate.
     pub fn setSampling(self: *Telemetry, strategy: TelemetryConfig.SamplingStrategy, samplingRate: f64) void {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const clampedRate = clampSamplingRate(samplingRate);
 
@@ -1416,8 +1427,8 @@ pub const Telemetry = struct {
 
     /// Returns current telemetry sampling configuration.
     pub fn getSampling(self: *Telemetry) SamplingSnapshot {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return .{
             .strategy = self.config.samplingStrategy,
@@ -1427,8 +1438,8 @@ pub const Telemetry = struct {
 
     /// Sets context propagation header names at runtime.
     pub fn setContextHeaders(self: *Telemetry, traceHeader: []const u8, baggageHeader: []const u8) void {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         self.config.traceHeader = traceHeader;
         self.config.baggageHeader = baggageHeader;
@@ -1436,8 +1447,8 @@ pub const Telemetry = struct {
 
     /// Returns currently configured context propagation headers.
     pub fn getContextHeaders(self: *Telemetry) ContextHeaders {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return .{
             .traceHeader = self.config.traceHeader,
@@ -1447,16 +1458,16 @@ pub const Telemetry = struct {
 
     /// Returns true when spans or metrics are waiting to be exported.
     pub fn hasPendingData(self: *Telemetry) bool {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.completedSpanCount > 0 or self.metricCount > 0;
     }
 
     /// Returns total number of pending spans + metrics.
     pub fn pendingItemCount(self: *Telemetry) usize {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.completedSpanCount + self.metricCount;
     }
@@ -1473,15 +1484,15 @@ pub const Telemetry = struct {
 
     /// Update resource configuration at runtime
     pub fn setResource(self: *Telemetry, resource: Resource) void {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.resource = resource;
     }
 
     /// Reset all statistics counters
     pub fn resetStats(self: *Telemetry) void {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.totalSpansCreated = 0;
         self.totalSpansExported = 0;
         self.totalMetricsRecorded = 0;
@@ -1490,8 +1501,8 @@ pub const Telemetry = struct {
 
     /// Get span by trace_id (for distributed trace continuation)
     pub fn findSpanByTraceId(self: *Telemetry, traceId: []const u8) ?*const Span {
-        self.mutex.lockUncancelable(utils.io());
-        defer self.mutex.unlock(utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         for (self.spans.items) |*span| {
             if (std.mem.eql(u8, span.traceId, traceId)) {
@@ -2004,8 +2015,8 @@ test "File exporter writes spans" {
     const allocator = std.testing.allocator;
     const path = "telemetry_spans_test.jsonl";
 
-    std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), path) catch {};
 
     var config = TelemetryConfig.file(path);
     config.samplingStrategy = .alwaysOn;
@@ -2020,10 +2031,10 @@ test "File exporter writes spans" {
     try telemetry.endSpan(&span);
     try telemetry.exportSpans();
 
-    const file = try std.Io.Dir.cwd().openFile(Utils.io(), path, .{});
-    defer file.close(Utils.io());
+    const file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), path, .{});
+    defer file.close(Utils.defaultIo());
 
-    const stat = try file.stat(Utils.io());
+    const stat = try file.stat(Utils.defaultIo());
     try std.testing.expect(stat.size > 0);
 }
 
@@ -2311,7 +2322,7 @@ test "Span duration helpers" {
     defer span.deinit();
 
     // Small delay
-    Utils.io().sleep(.fromMilliseconds(1), .awake) catch {}; // 1ms
+    telemetry.io.sleep(std.Io.Duration.fromMilliseconds(1), .awake) catch {}; // 1ms
 
     span.end();
 
@@ -2821,8 +2832,8 @@ test "Telemetry metrics export formats" {
     const jsonPath = "telemetry-metrics-test.jsonl";
     const promPath = "telemetry-metrics-test.prom";
 
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), jsonPath) catch {};
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), promPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), jsonPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), promPath) catch {};
 
     var jsonConfig = TelemetryConfig.development();
     jsonConfig.metricFormat = .json;
@@ -2834,9 +2845,9 @@ test "Telemetry metrics export formats" {
     try telemetryJson.recordCounter("requests.total", 2.0);
     try telemetryJson.exportMetrics();
 
-    const jsonFile = try std.Io.Dir.cwd().openFile(Utils.io(), jsonPath, .{});
-    defer jsonFile.close(Utils.io());
-    try std.testing.expect((try jsonFile.length(Utils.io())) > 0);
+    const jsonFile = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), jsonPath, .{});
+    defer jsonFile.close(Utils.defaultIo());
+    try std.testing.expect((try jsonFile.length(Utils.defaultIo())) > 0);
 
     var promConfig = TelemetryConfig.development();
     promConfig.metricFormat = .prometheus;
@@ -2848,16 +2859,16 @@ test "Telemetry metrics export formats" {
     try telemetryProm.recordGauge("cpu.usage", 12.5);
     try telemetryProm.exportMetrics();
 
-    const promFile = try std.Io.Dir.cwd().openFile(Utils.io(), promPath, .{});
-    defer promFile.close(Utils.io());
-    try std.testing.expect((try promFile.length(Utils.io())) > 0);
+    const promFile = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), promPath, .{});
+    defer promFile.close(Utils.defaultIo());
+    try std.testing.expect((try promFile.length(Utils.defaultIo())) > 0);
 }
 
 test "Telemetry metric export applies prefix and sanitization" {
     const allocator = std.testing.allocator;
     const path = "telemetry-metrics-prefixed.prom";
 
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), path) catch {};
 
     var config = TelemetryConfig.development()
         .withPrometheusMetrics(path)
@@ -2870,7 +2881,7 @@ test "Telemetry metric export applies prefix and sanitization" {
     try telemetry.recordCounter("requests.total", 5.0);
     try telemetry.exportMetrics();
 
-    const body = try std.Io.Dir.cwd().readFileAlloc(Utils.io(), path, allocator, .limited(Constants.BufferSizes.fileRead));
+    const body = try std.Io.Dir.cwd().readFileAlloc(Utils.defaultIo(), path, allocator, .limited(Constants.BufferSizes.fileRead));
     defer allocator.free(body);
 
     try std.testing.expect(std.mem.indexOf(u8, body, "api_v1:requests_total") != null);

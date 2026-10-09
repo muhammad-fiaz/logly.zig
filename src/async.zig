@@ -17,6 +17,8 @@ const Utils = @import("utils.zig");
 pub const AsyncLogger = struct {
     /// Memory allocator for async operations.
     allocator: std.mem.Allocator,
+    /// Explicit I/O handle for async operations and worker synchronization.
+    io: std.Io = Utils.defaultIo(),
     /// Async configuration options.
     config: AsyncConfig,
     /// Ring buffer for queuing log messages.
@@ -327,18 +329,19 @@ pub const AsyncLogger = struct {
     }
 
     /// Initializes an AsyncLogger with specific configuration parameters.
-    ///
-    /// - allocator: Managing allocator.
-    /// - config: Operational parameters (buffer size, worker threads, policies).
-    /// - Returns: Initialized logger or error.
-    ///
-    /// Complexity: O(1) mostly, O(N) for buffer allocation.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: AsyncConfig) !*AsyncLogger {
+        const io_handle = config.io orelse Utils.defaultIo();
+        return initWithIo(allocator, io_handle, config);
+    }
+
+    /// Initializes an AsyncLogger with explicit Io handle.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: AsyncConfig) !*AsyncLogger {
         const self = try allocator.create(AsyncLogger);
         errdefer allocator.destroy(self);
 
         self.* = .{
             .allocator = allocator,
+            .io = io_handle,
             .config = config,
             .buffer = try RingBuffer.init(allocator, config.bufferSize),
             .stats = .{},
@@ -385,14 +388,16 @@ pub const AsyncLogger = struct {
     /// Registers a new sink for log output.
     /// Thread-safe.
     pub fn addSink(self: *AsyncLogger, sink: *Sink) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         try self.sinks.append(self.allocator, sink);
     }
 
     /// Convenience wrapper to initialize and add a sink from configuration.
     pub fn addSinkConfig(self: *AsyncLogger, config: SinkConfig) !*Sink {
-        const sink = try Sink.init(self.allocator, config);
+        var sc = config;
+        if (sc.io == null) sc.io = self.io;
+        const sink = try Sink.initWithIo(self.allocator, self.io, sc);
         try self.addSink(sink);
         return sink;
     }
@@ -437,8 +442,8 @@ pub const AsyncLogger = struct {
     fn queueInternal(self: *AsyncLogger, message: []const u8, levelPriority: u8, binary: bool, color: ?Color.Color, vertical: bool, presentable: bool) bool {
         // High-priority records (Critical/Fatal) skip the queue
         if (levelPriority >= Constants.LevelConstants.Priorities.critical) {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
             const entry = BufferEntry{
                 .timestamp = Utils.currentMillis(),
                 .formattedMessage = message,
@@ -464,8 +469,8 @@ pub const AsyncLogger = struct {
         var dropped = false;
 
         {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             const now = Utils.currentNanos();
 
@@ -495,9 +500,13 @@ pub const AsyncLogger = struct {
                     },
                     .block => {
                         // Wait for space (with timeout to prevent deadlock)
-                        self.mutex.unlock(Utils.io());
-                        Utils.sleepNs(Constants.AsyncConstants.blockSleepNs);
-                        self.mutex.lockUncancelable(Utils.io());
+                        const timeout: std.Io.Timeout = .{
+                            .duration = .{
+                                .raw = std.Io.Duration.fromNanoseconds(@intCast(Constants.AsyncConstants.blockSleepNs)),
+                                .clock = .awake,
+                            },
+                        };
+                        std.Io.Condition.waitTimeout(&self.condition, self.io, &self.mutex, timeout) catch {};
                         if (self.buffer.isFull()) {
                             _ = self.stats.recordsDropped.fetchAdd(1, .monotonic);
                             messageToFree = ownedMessage;
@@ -550,7 +559,7 @@ pub const AsyncLogger = struct {
                     }
 
                     // Signal worker regarding new data
-                    self.condition.signal(Utils.io());
+                    self.condition.signal(self.io);
                 } else {
                     // This creates a failsafe if unexpected full state occurs
                     messageToFree = ownedMessage;
@@ -579,7 +588,7 @@ pub const AsyncLogger = struct {
         if (!self.running.load(.acquire)) return;
 
         self.running.store(false, .release);
-        self.condition.broadcast(Utils.io());
+        self.condition.broadcast(self.io);
 
         if (self.workerThread) |thread| {
             thread.join();
@@ -590,8 +599,8 @@ pub const AsyncLogger = struct {
     /// Synchronously processes all pending messages in the buffer.
     /// This is typically called during shutdown or panic.
     pub fn flushSync(self: *AsyncLogger) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         var batch: [Constants.AsyncConstants.batchSize]BufferEntry = undefined;
         const batchLimit = self.effectiveBatchSize();
@@ -629,7 +638,7 @@ pub const AsyncLogger = struct {
 
     /// Signals the worker thread to perform a flush immediately.
     pub fn flush(self: *AsyncLogger) void {
-        self.condition.signal(Utils.io());
+        self.condition.signal(self.io);
     }
 
     /// Main loop for the background worker thread.
@@ -650,7 +659,7 @@ pub const AsyncLogger = struct {
         var lastFlush = Utils.currentMillis();
 
         while (self.running.load(.acquire) or !self.buffer.isEmpty()) {
-            self.mutex.lockUncancelable(Utils.io());
+            self.mutex.lockUncancelable(self.io);
 
             // Wait for entries or timeout
             const now = Utils.currentMillis();
@@ -658,20 +667,28 @@ pub const AsyncLogger = struct {
 
             if (self.buffer.isEmpty()) {
                 if (self.onEmpty) |cb| cb();
-                self.mutex.unlock(Utils.io());
-                Utils.sleepMs(self.config.flushIntervalMs);
-                self.mutex.lockUncancelable(Utils.io());
+                const timeout: std.Io.Timeout = .{
+                    .duration = .{
+                        .raw = std.Io.Duration.fromMilliseconds(@intCast(self.config.flushIntervalMs)),
+                        .clock = .awake,
+                    },
+                };
+                std.Io.Condition.waitTimeout(&self.condition, self.io, &self.mutex, timeout) catch {};
             } else if (self.config.minFlushIntervalMs > 0 and elapsed < @as(i64, @intCast(self.config.minFlushIntervalMs))) {
                 // Enforce minimum flush interval
                 const waitTime = self.config.minFlushIntervalMs - @as(u64, @intCast(elapsed));
-                self.mutex.unlock(Utils.io());
-                Utils.sleepMs(waitTime);
-                self.mutex.lockUncancelable(Utils.io());
+                const timeout: std.Io.Timeout = .{
+                    .duration = .{
+                        .raw = std.Io.Duration.fromMilliseconds(@intCast(waitTime)),
+                        .clock = .awake,
+                    },
+                };
+                std.Io.Condition.waitTimeout(&self.condition, self.io, &self.mutex, timeout) catch {};
             }
 
             // Process batch
             const count = self.buffer.popBatch(batch[0..batchLimit]);
-            self.mutex.unlock(Utils.io());
+            self.mutex.unlock(self.io);
 
             if (count > 0) {
                 const writeStart = Utils.currentNanos();
@@ -760,22 +777,22 @@ pub const AsyncLogger = struct {
 
     /// Gets current queue depth.
     pub fn queueDepth(self: *AsyncLogger) usize {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.buffer.size();
     }
 
     /// Checks if queue is empty.
     pub fn isQueueEmpty(self: *AsyncLogger) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.buffer.isEmpty();
     }
 
     /// Returns available queue slots before reaching capacity.
     pub fn availableCapacity(self: *AsyncLogger) usize {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const currentDepth = self.buffer.size();
         return if (self.buffer.capacity > currentDepth) self.buffer.capacity - currentDepth else 0;
@@ -891,8 +908,8 @@ pub const AsyncLogger = struct {
 
     /// Returns true if the buffer is full.
     pub fn isFull(self: *AsyncLogger) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.buffer.isFull();
     }
 
@@ -905,6 +922,7 @@ pub const AsyncLogger = struct {
 /// Async file writer for high-performance file logging.
 pub const AsyncFileWriter = struct {
     allocator: std.mem.Allocator,
+    io: std.Io = Utils.defaultIo(),
     file: std.Io.File,
     buffer: std.ArrayList(u8),
     config: FileConfig,
@@ -920,20 +938,28 @@ pub const AsyncFileWriter = struct {
         flushIntervalMs: u64 = Constants.SinkDefaults.flushIntervalMs,
         syncOnFlush: bool = false,
         appendMode: bool = true,
+        io: ?std.Io = null,
     };
 
-    /// Opens `path` for buffered background writes.
+    /// Opens `path` for buffered background writes using default Io.
     pub fn init(allocator: std.mem.Allocator, path: []const u8, config: FileConfig) !*AsyncFileWriter {
+        const io_handle = config.io orelse Utils.defaultIo();
+        return initWithIo(allocator, io_handle, path, config);
+    }
+
+    /// Opens `path` for buffered background writes with explicit Io handle.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, path: []const u8, config: FileConfig) !*AsyncFileWriter {
         const self = try allocator.create(AsyncFileWriter);
         errdefer allocator.destroy(self);
 
-        const file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{
+        const file = try std.Io.Dir.cwd().createFile(io_handle, path, .{
             .truncate = !config.appendMode,
         });
-        errdefer file.close(Utils.io());
+        errdefer file.close(io_handle);
 
         self.* = .{
             .allocator = allocator,
+            .io = io_handle,
             .file = file,
             .buffer = .empty,
             .config = config,
@@ -949,14 +975,14 @@ pub const AsyncFileWriter = struct {
         self.stop();
         self.flushSync();
         self.buffer.deinit(self.allocator);
-        self.file.close(Utils.io());
+        self.file.close(self.io);
         self.allocator.destroy(self);
     }
 
     /// Queues `data` verbatim, with no line terminator.
     pub fn write(self: *AsyncFileWriter, data: []const u8) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         try self.buffer.appendSlice(self.allocator, data);
 
@@ -967,8 +993,8 @@ pub const AsyncFileWriter = struct {
 
     /// Queues `data` followed by a newline.
     pub fn writeLine(self: *AsyncFileWriter, data: []const u8) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         try self.buffer.appendSlice(self.allocator, data);
         try self.buffer.append(self.allocator, '\n');
@@ -981,12 +1007,12 @@ pub const AsyncFileWriter = struct {
     fn flushInternal(self: *AsyncFileWriter) !void {
         if (self.buffer.items.len == 0) return;
 
-        const offset = if (self.config.appendMode) try self.file.length(Utils.io()) else 0;
-        try self.file.writePositionalAll(Utils.io(), self.buffer.items, offset);
+        const offset = if (self.config.appendMode) try self.file.length(self.io) else 0;
+        try self.file.writePositionalAll(self.io, self.buffer.items, offset);
         _ = self.totalBytesWritten.fetchAdd(self.buffer.items.len, .monotonic);
 
         if (self.config.syncOnFlush) {
-            try self.file.sync(Utils.io());
+            try self.file.sync(self.io);
         }
 
         self.buffer.clearRetainingCapacity();
@@ -995,8 +1021,8 @@ pub const AsyncFileWriter = struct {
 
     /// Drains the queue on the calling thread.
     pub fn flushSync(self: *AsyncFileWriter) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.flushInternal() catch {};
     }
 

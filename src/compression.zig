@@ -17,6 +17,8 @@ const ThreadPool = @import("thread_pool.zig").ThreadPool;
 pub const Compression = struct {
     /// Memory allocator for compression operations.
     allocator: std.mem.Allocator,
+    /// I/O handle for file operations and synchronization.
+    io: std.Io = Utils.defaultIo(),
     /// Compression configuration options.
     config: CompressionConfig,
     /// Compression statistics for monitoring.
@@ -234,13 +236,19 @@ pub const Compression = struct {
     ///
     /// The default configuration disables compression. Use `initWithConfig` for custom settings.
     pub fn init(allocator: std.mem.Allocator) Compression {
-        return initWithConfig(allocator, .{});
+        return initWithIo(allocator, Utils.defaultIo(), .{});
     }
 
     /// Initializes a Compression instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: CompressionConfig) Compression {
+        return initWithIo(allocator, Utils.defaultIo(), config);
+    }
+
+    /// Initializes a Compression instance with explicit I/O and custom configuration.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: CompressionConfig) Compression {
         return .{
             .allocator = allocator,
+            .io = io_handle,
             .config = config,
             .stats = .{},
         };
@@ -506,36 +514,36 @@ pub const Compression = struct {
 
     /// Sets the callback for compression start events.
     pub fn setCompressionStartCallback(self: *Compression, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onCompressionStart = callback;
     }
 
     /// Sets the callback for compression complete events.
     pub fn setCompressionCompleteCallback(self: *Compression, callback: *const fn ([]const u8, []const u8, u64, u64, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onCompressionComplete = callback;
     }
 
     /// Sets the callback for compression error events.
     pub fn setCompressionErrorCallback(self: *Compression, callback: *const fn ([]const u8, anyerror) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onCompressionError = callback;
     }
 
     /// Sets the callback for decompression complete events.
     pub fn setDecompressionCompleteCallback(self: *Compression, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onDecompressionComplete = callback;
     }
 
     /// Sets the callback for archive deletion events.
     pub fn setArchiveDeletedCallback(self: *Compression, callback: *const fn ([]const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onArchiveDeleted = callback;
     }
 
@@ -560,8 +568,8 @@ pub const Compression = struct {
             _ = self.stats.totalCompressionTimeNs.fetchAdd(@truncate(elapsed), .monotonic);
         }
 
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (self.config.algorithm == .none or data.len == 0) {
             const copy = try alloc.dupe(u8, data);
@@ -1648,8 +1656,8 @@ pub const Compression = struct {
             _ = self.stats.totalDecompressionTimeNs.fetchAdd(@truncate(elapsed), .monotonic);
         }
 
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // Minimum header size: magic(4) + size(4) + checksum(4) = 12
         if (data.len < 12) return error.InvalidData;
@@ -1842,8 +1850,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(N) where N is the file size (I/O bound).
     pub fn compressFile(self: *Compression, inputPath: []const u8, outputPath: ?[]const u8) !CompressionResult {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const outPath = if (outputPath) |p| p else blk: {
             break :blk try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ inputPath, self.config.extension });
@@ -1852,7 +1860,7 @@ pub const Compression = struct {
         defer if (shouldFreePath) self.allocator.free(outPath);
 
         // Get original file size
-        const inputFile = std.Io.Dir.cwd().openFile(Utils.io(), inputPath, .{}) catch |err| {
+        const inputFile = std.Io.Dir.cwd().openFile(self.io, inputPath, .{}) catch |err| {
             _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
             return .{
                 .success = false,
@@ -1862,9 +1870,9 @@ pub const Compression = struct {
                 .errorMessage = @errorName(err),
             };
         };
-        defer inputFile.close(Utils.io());
+        defer inputFile.close(self.io);
 
-        const stat = try inputFile.stat(Utils.io());
+        const stat = try inputFile.stat(self.io);
         const originalSize = stat.size;
 
         // Invoke start callback if registered
@@ -1874,14 +1882,14 @@ pub const Compression = struct {
 
         // Read file content
         var readBuffer: [Constants.BufferSizes.compression]u8 = undefined;
-        var fileReader = inputFile.reader(Utils.io(), &readBuffer);
+        var fileReader = inputFile.reader(self.io, &readBuffer);
         const content = try fileReader.interface.allocRemaining(self.allocator, .unlimited);
         defer self.allocator.free(content);
 
         // Compress content
-        self.mutex.unlock(Utils.io()); // Unlock for nested call
+        self.mutex.unlock(self.io); // Unlock for nested call
         const compressed = self.compress(content) catch |err| {
-            self.mutex.lockUncancelable(Utils.io());
+            self.mutex.lockUncancelable(self.io);
             _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
             return .{
                 .success = false,
@@ -1891,12 +1899,12 @@ pub const Compression = struct {
                 .errorMessage = @errorName(err),
             };
         };
-        self.mutex.lockUncancelable(Utils.io());
+        self.mutex.lockUncancelable(self.io);
         defer self.allocator.free(compressed);
 
         // Create parent directory if needed
         if (std.fs.path.dirname(outPath)) |dirname| {
-            std.Io.Dir.cwd().createDirPath(Utils.io(), dirname) catch |err| {
+            std.Io.Dir.cwd().createDirPath(self.io, dirname) catch |err| {
                 _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
                 return .{
                     .success = false,
@@ -1909,7 +1917,7 @@ pub const Compression = struct {
         }
 
         // Write compressed file
-        const outputFile = std.Io.Dir.cwd().createFile(Utils.io(), outPath, .{}) catch |err| {
+        const outputFile = std.Io.Dir.cwd().createFile(self.io, outPath, .{}) catch |err| {
             _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
             return .{
                 .success = false,
@@ -1919,13 +1927,13 @@ pub const Compression = struct {
                 .errorMessage = @errorName(err),
             };
         };
-        defer outputFile.close(Utils.io());
+        defer outputFile.close(self.io);
 
-        try outputFile.writeStreamingAll(Utils.io(), compressed);
+        try outputFile.writeStreamingAll(self.io, compressed);
 
         // Delete original if configured
         if (!self.config.keepOriginal) {
-            std.Io.Dir.cwd().deleteFile(Utils.io(), inputPath) catch {};
+            std.Io.Dir.cwd().deleteFile(self.io, inputPath) catch {};
         }
 
         _ = self.stats.filesCompressed.fetchAdd(1, .monotonic);
@@ -1950,8 +1958,8 @@ pub const Compression = struct {
     ///
     /// Complexity: O(N) where N is the file size (I/O bound).
     pub fn decompressFile(self: *Compression, inputPath: []const u8, outputPath: ?[]const u8) !bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const outPath = if (outputPath) |p| p else blk: {
             // Remove extension
@@ -1962,25 +1970,25 @@ pub const Compression = struct {
         };
 
         // Read compressed file
-        const inputFile = try std.Io.Dir.cwd().openFile(Utils.io(), inputPath, .{});
-        defer inputFile.close(Utils.io());
+        const inputFile = try std.Io.Dir.cwd().openFile(self.io, inputPath, .{});
+        defer inputFile.close(self.io);
 
         var readBuffer: [Constants.BufferSizes.compression]u8 = undefined;
-        var fileReader = inputFile.reader(Utils.io(), &readBuffer);
+        var fileReader = inputFile.reader(self.io, &readBuffer);
         const content = try fileReader.interface.allocRemaining(self.allocator, .unlimited);
         defer self.allocator.free(content);
 
         // Decompress
-        self.mutex.unlock(Utils.io());
+        self.mutex.unlock(self.io);
         const decompressed = try self.decompress(content);
-        self.mutex.lockUncancelable(Utils.io());
+        self.mutex.lockUncancelable(self.io);
         defer self.allocator.free(decompressed);
 
         // Write decompressed file
-        const outputFile = try std.Io.Dir.cwd().createFile(Utils.io(), outPath, .{});
-        defer outputFile.close(Utils.io());
+        const outputFile = try std.Io.Dir.cwd().createFile(self.io, outPath, .{});
+        defer outputFile.close(self.io);
 
-        try outputFile.writeStreamingAll(Utils.io(), decompressed);
+        try outputFile.writeStreamingAll(self.io, decompressed);
 
         return true;
     }
@@ -1990,13 +1998,13 @@ pub const Compression = struct {
     /// Scans the directory for files that should be compressed (based on `shouldCompress`)
     /// and compresses them individually. Non-recursive.
     pub fn compressDirectory(self: *Compression, dirPath: []const u8) !u64 {
-        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dirPath, .{ .iterate = true }) catch return 0;
-        defer dir.close(Utils.io());
+        var dir = std.Io.Dir.cwd().openDir(self.io, dirPath, .{ .iterate = true }) catch return 0;
+        defer dir.close(self.io);
 
         var iterator = dir.iterate();
         var count: u64 = 0;
 
-        while (try iterator.next(Utils.io())) |entry| {
+        while (try iterator.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
 
             const filePath = try std.fs.path.join(self.allocator, &[_][]const u8{ dirPath, entry.name });
@@ -2029,10 +2037,10 @@ pub const Compression = struct {
         if (std.mem.endsWith(u8, filePath, ".zst")) return false;
 
         if (self.config.mode == .onSizeThreshold) {
-            const file = std.Io.Dir.cwd().openFile(Utils.io(), filePath, .{}) catch return false;
-            defer file.close(Utils.io());
+            const file = std.Io.Dir.cwd().openFile(self.io, filePath, .{}) catch return false;
+            defer file.close(self.io);
 
-            const stat = file.stat(Utils.io()) catch return false;
+            const stat = file.stat(self.io) catch return false;
             return stat.size >= self.config.sizeThreshold;
         }
 
@@ -2048,16 +2056,16 @@ pub const Compression = struct {
 
     /// Resets compression statistics to zero.
     pub fn resetStats(self: *Compression) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.stats.reset();
     }
 
     /// Updates the compression configuration at runtime.
     /// Thread-safe update of operational parameters.
     pub fn configure(self: *Compression, config: CompressionConfig) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.config = config;
     }
 
@@ -2100,13 +2108,13 @@ pub const Compression = struct {
     /// Compresses files matching a pattern in a directory.
     /// Pattern supports simple glob matching (e.g., "*.log").
     pub fn compressPattern(self: *Compression, dirPath: []const u8, pattern: []const u8) !u64 {
-        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dirPath, .{ .iterate = true }) catch return 0;
-        defer dir.close(Utils.io());
+        var dir = std.Io.Dir.cwd().openDir(self.io, dirPath, .{ .iterate = true }) catch return 0;
+        defer dir.close(self.io);
 
         var iterator = dir.iterate();
         var count: u64 = 0;
 
-        while (try iterator.next(Utils.io())) |entry| {
+        while (try iterator.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
 
             if (matchGlob(entry.name, pattern)) {
@@ -2130,8 +2138,8 @@ pub const Compression = struct {
     /// Compresses the N oldest files in a directory.
     /// Useful for rotation-based compression.
     pub fn compressOldest(self: *Compression, dirPath: []const u8, count: usize) !u64 {
-        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dirPath, .{ .iterate = true }) catch return 0;
-        defer dir.close(Utils.io());
+        var dir = std.Io.Dir.cwd().openDir(self.io, dirPath, .{ .iterate = true }) catch return 0;
+        defer dir.close(self.io);
 
         // Collect file info
         var files = std.ArrayList(FileEntry).init(self.allocator);
@@ -2143,7 +2151,7 @@ pub const Compression = struct {
         }
 
         var iterator = dir.iterate();
-        while (try iterator.next(Utils.io())) |entry| {
+        while (try iterator.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
 
             const filePath = try std.fs.path.join(self.allocator, &[_][]const u8{ dirPath, entry.name });
@@ -2151,10 +2159,10 @@ pub const Compression = struct {
 
             if (!self.shouldCompress(filePath)) continue;
 
-            const file = std.Io.Dir.cwd().openFile(Utils.io(), filePath, .{}) catch continue;
-            defer file.close(Utils.io());
+            const file = std.Io.Dir.cwd().openFile(self.io, filePath, .{}) catch continue;
+            defer file.close(self.io);
 
-            const stat = file.stat(Utils.io()) catch continue;
+            const stat = file.stat(self.io) catch continue;
             try files.append(.{
                 .name = try self.allocator.dupe(u8, entry.name),
                 .mtime = stat.mtime,
@@ -2209,13 +2217,13 @@ pub const Compression = struct {
 
     /// Compresses files larger than a given size threshold.
     pub fn compressLargerThan(self: *Compression, dirPath: []const u8, minSize: u64) !u64 {
-        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dirPath, .{ .iterate = true }) catch return 0;
-        defer dir.close(Utils.io());
+        var dir = std.Io.Dir.cwd().openDir(self.io, dirPath, .{ .iterate = true }) catch return 0;
+        defer dir.close(self.io);
 
         var iterator = dir.iterate();
         var count: u64 = 0;
 
-        while (try iterator.next(Utils.io())) |entry| {
+        while (try iterator.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
 
             const filePath = try std.fs.path.join(self.allocator, &[_][]const u8{ dirPath, entry.name });
@@ -2223,10 +2231,10 @@ pub const Compression = struct {
 
             if (!self.shouldCompress(filePath)) continue;
 
-            const file = std.Io.Dir.cwd().openFile(Utils.io(), filePath, .{}) catch continue;
-            defer file.close(Utils.io());
+            const file = std.Io.Dir.cwd().openFile(self.io, filePath, .{}) catch continue;
+            defer file.close(self.io);
 
-            const stat = file.stat(Utils.io()) catch continue;
+            const stat = file.stat(self.io) catch continue;
             if (stat.size < minSize) continue;
 
             const result = self.compressFile(filePath, null) catch continue;
@@ -2543,14 +2551,14 @@ test "file compression with auto-directory creation" {
     const outputFile = "test_output_compression/nested/dirs/output.log.gz";
 
     // Clean up before test
-    std.Io.Dir.cwd().deleteTree(Utils.io(), testDir) catch {};
-    defer std.Io.Dir.cwd().deleteTree(Utils.io(), testDir) catch {};
+    std.Io.Dir.cwd().deleteTree(Utils.defaultIo(), testDir) catch {};
+    defer std.Io.Dir.cwd().deleteTree(Utils.defaultIo(), testDir) catch {};
 
     // Create a dummy source file
-    const file = try std.Io.Dir.cwd().createFile(Utils.io(), testFile, .{});
-    try file.writeStreamingAll(Utils.io(), "Test content for compression");
-    file.close(Utils.io());
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), testFile) catch {};
+    const file = try std.Io.Dir.cwd().createFile(Utils.defaultIo(), testFile, .{});
+    try file.writeStreamingAll(Utils.defaultIo(), "Test content for compression");
+    file.close(Utils.defaultIo());
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), testFile) catch {};
 
     // Compress with deep path that doesn't exist yet
     const result = try comp.compressFile(testFile, outputFile);
@@ -2562,7 +2570,7 @@ test "file compression with auto-directory creation" {
     }
 
     // Verify directory was created
-    const stat = try std.Io.Dir.cwd().statFile(Utils.io(), outputFile, .{});
+    const stat = try std.Io.Dir.cwd().statFile(Utils.defaultIo(), outputFile, .{});
     try std.testing.expect(stat.size > 0);
 }
 
@@ -2574,18 +2582,18 @@ test "directory compression" {
     const testDir = "test_batch_compression";
 
     // Setup test directory
-    std.Io.Dir.cwd().deleteTree(Utils.io(), testDir) catch {};
-    try std.Io.Dir.cwd().createDirPath(Utils.io(), testDir);
-    defer std.Io.Dir.cwd().deleteTree(Utils.io(), testDir) catch {};
+    std.Io.Dir.cwd().deleteTree(Utils.defaultIo(), testDir) catch {};
+    try std.Io.Dir.cwd().createDirPath(Utils.defaultIo(), testDir);
+    defer std.Io.Dir.cwd().deleteTree(Utils.defaultIo(), testDir) catch {};
 
     // Create multiple log files
     const files = [_][]const u8{ "log1.log", "log2.log", "skip.txt" };
     for (files) |fname| {
         const p = try std.fs.path.join(allocator, &[_][]const u8{ testDir, fname });
         defer allocator.free(p);
-        const f = try std.Io.Dir.cwd().createFile(Utils.io(), p, .{});
-        try f.writeStreamingAll(Utils.io(), "Log data content");
-        f.close(Utils.io());
+        const f = try std.Io.Dir.cwd().createFile(Utils.defaultIo(), p, .{});
+        try f.writeStreamingAll(Utils.defaultIo(), "Log data content");
+        f.close(Utils.defaultIo());
     }
 
     // configure to only compress .log files if we were filtering extensions,
@@ -2598,12 +2606,12 @@ test "directory compression" {
     try std.testing.expectEqual(@as(u64, 3), compressedCount);
 
     // Verify .gz files exist
-    var dir = try std.Io.Dir.cwd().openDir(Utils.io(), testDir, .{ .iterate = true });
-    defer dir.close(Utils.io());
+    var dir = try std.Io.Dir.cwd().openDir(Utils.defaultIo(), testDir, .{ .iterate = true });
+    defer dir.close(Utils.defaultIo());
 
     var count: usize = 0;
     var it = dir.iterate();
-    while (try it.next(Utils.io())) |entry| {
+    while (try it.next(Utils.defaultIo())) |entry| {
         if (std.mem.endsWith(u8, entry.name, ".gz")) {
             count += 1;
         }

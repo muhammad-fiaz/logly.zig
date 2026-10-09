@@ -23,9 +23,9 @@ pub const WriteMode = enum {
     appendRotate,
 };
 
-fn writeStreamAll(stream: std.Io.net.Stream, data: []const u8) !void {
+fn writeStreamAll(stream: std.Io.net.Stream, io_handle: std.Io, data: []const u8) !void {
     var buffer: [Constants.BufferSizes.message]u8 = undefined;
-    var writer = stream.writer(Utils.io(), &buffer);
+    var writer = stream.writer(io_handle, &buffer);
     try writer.interface.writeAll(data);
     try writer.interface.flush();
 }
@@ -300,6 +300,9 @@ pub const SinkConfig = struct {
     /// Custom color theme for this sink.
     theme: ?Formatter.Theme = null,
 
+    /// Explicit I/O handle for this sink.
+    io: ?std.Io = null,
+
     /// Compression configuration for sink.
     /// Re-exports centralized config for convenience.
     pub const CompressionConfig = Config.CompressionConfig;
@@ -541,6 +544,8 @@ pub const Sink = struct {
 
     /// Memory allocator for sink operations.
     allocator: std.mem.Allocator,
+    /// Explicit I/O handle for sink operations.
+    io: std.Io = Utils.defaultIo(),
     /// Sink configuration options.
     config: SinkConfig,
     /// File handle for file-based sinks.
@@ -621,11 +626,18 @@ pub const Sink = struct {
 
     /// Initializes a new sink with the provided configuration.
     pub fn init(allocator: std.mem.Allocator, config: SinkConfig) !*Sink {
+        const io_handle = config.io orelse Utils.defaultIo();
+        return initWithIo(allocator, io_handle, config);
+    }
+
+    /// Initializes a new sink with explicit Io handle.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: SinkConfig) !*Sink {
         const sink = try allocator.create(Sink);
         sink.* = .{
             .allocator = allocator,
+            .io = io_handle,
             .config = config,
-            .formatter = Formatter.init(allocator),
+            .formatter = Formatter.initWithIo(allocator, io_handle),
             .buffer = .empty,
             .enabled = config.enabled,
             .jsonFirstEntry = true,
@@ -674,19 +686,19 @@ pub const Sink = struct {
 
                 const dir = std.fs.path.dirname(path);
                 if (dir) |d| {
-                    std.Io.Dir.cwd().createDirPath(Utils.io(), d) catch {
+                    std.Io.Dir.cwd().createDirPath(sink.io, d) catch {
                         // Failed to create directory - continue anyway
                     };
                 }
 
                 // Use overwrite_mode to determine file truncation behavior
-                sink.file = try std.Io.Dir.cwd().createFile(Utils.io(), path, .{
+                sink.file = try std.Io.Dir.cwd().createFile(sink.io, path, .{
                     .read = true,
                     .truncate = config.overwriteMode or (config.writeMode == .overwrite),
                 });
 
                 if (config.mmap) {
-                    sink.mmapFile = try MmapFile.init(allocator, sink.file.?, 1024 * 1024);
+                    sink.mmapFile = try MmapFile.initWithIo(allocator, sink.io, sink.file.?, 1024 * 1024);
                 }
 
                 // Open (or continue) the JSON-array document: fresh files
@@ -702,8 +714,9 @@ pub const Sink = struct {
                 }
 
                 if (config.rotation != null or sizeLimit != null) {
-                    sink.rotation = try Rotation.init(
+                    sink.rotation = try Rotation.initWithIo(
                         allocator,
+                        sink.io,
                         path,
                         config.rotation,
                         sizeLimit,
@@ -822,7 +835,7 @@ pub const Sink = struct {
                     mmapF.write("\n]") catch {};
                 }
             } else if (self.file) |file| {
-                file.writeStreamingAll(Utils.io(), "\n]") catch {};
+                file.writeStreamingAll(self.io, "\n]") catch {};
             }
         }
         if (self.config.mmap) {
@@ -831,9 +844,9 @@ pub const Sink = struct {
             }
             self.mmapFile = null;
         }
-        if (self.file) |f| f.close(Utils.io());
-        if (self.stream) |s| s.close(Utils.io());
-        if (self.udpSocket) |s| s.close(Utils.io());
+        if (self.file) |f| f.close(self.io);
+        if (self.stream) |s| s.close(self.io);
+        if (self.udpSocket) |s| s.close(self.io);
 
         if (self.rotation) |*r| r.deinit();
         if (self.memoryRing) |ring| {
@@ -849,88 +862,88 @@ pub const Sink = struct {
 
     /// Sets the callback for write events.
     pub fn setWriteCallback(self: *Sink, callback: *const fn (u64, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onWrite = callback;
     }
 
     /// Sets the callback for flush events.
     pub fn setFlushCallback(self: *Sink, callback: *const fn (u64, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onFlush = callback;
     }
 
     /// Sets the callback for error events.
     pub fn setErrorCallback(self: *Sink, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onError = callback;
     }
 
     /// Sets the callback for rotation events.
     pub fn setRotationCallback(self: *Sink, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRotation = callback;
     }
 
     /// Sets the callback for state changes.
     pub fn setStateChangeCallback(self: *Sink, callback: *const fn (bool) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onStateChange = callback;
     }
 
     /// Sets the callback for cryptographic signature generation.
     pub fn setSignatureCallback(self: *Sink, callback: *const fn ([]const u8, []const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onSignature = callback;
     }
 
     /// Sets the callback for memory-mapped sink resizes.
     pub fn setMmapResizeCallback(self: *Sink, callback: *const fn ([]const u8, u64, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onMmapResize = callback;
     }
 
     /// Returns sink statistics.
     pub fn getStats(self: *Sink) SinkStats {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.stats;
     }
 
     /// Clears the internal buffer.
     pub fn clearBuffer(self: *Sink) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.buffer.clearRetainingCapacity();
     }
 
     /// Synchronizes buffer to storage (calls flush).
     /// Returns true if sink is enabled.
     pub fn isEnabled(self: *Sink) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.enabled;
     }
 
     /// Returns true if the sink is healthy (errors have not exceeded the unhealthy threshold).
     pub fn isHealthy(self: *Sink) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.consecutiveErrors < Constants.SinkDefaults.unhealthyErrorThreshold;
     }
 
     /// Retrieves in-memory logged messages in chronological order.
     /// The caller owns the returned slice and all the duplicated string elements.
     pub fn getMemoryMessages(self: *Sink, allocator: std.mem.Allocator) ![][]const u8 {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const ring = self.memoryRing orelse return error.NotAMemorySink;
         const count = self.memoryRingCount;
@@ -1009,8 +1022,8 @@ pub const Sink = struct {
     /// Iterates through in-memory logged messages without allocating.
     /// The callback receives each message slice: `callback(message)`.
     pub fn forEachMessage(self: *Sink, callback: anytype) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const ring = self.memoryRing orelse return error.NotAMemorySink;
         const count = self.memoryRingCount;
@@ -1038,8 +1051,8 @@ pub const Sink = struct {
 
     /// Iterates through in-memory logged messages with explicit context: `func(context, message)`.
     pub fn forEachMessageWith(self: *Sink, context: anytype, comptime func: fn (@TypeOf(context), []const u8) void) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const ring = self.memoryRing orelse return error.NotAMemorySink;
         const count = self.memoryRingCount;
@@ -1067,38 +1080,38 @@ pub const Sink = struct {
 
     /// Enables the sink.
     pub fn enable(self: *Sink) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.enabled = true;
         if (self.onStateChange) |cb| cb(true);
     }
 
     /// Disables the sink.
     pub fn disable(self: *Sink) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.enabled = false;
         if (self.onStateChange) |cb| cb(false);
     }
 
     /// Returns true if async writing is enabled for this sink.
     pub fn isAsyncEnabled(self: *Sink) bool {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.config.asyncWrite;
     }
 
     /// Enables async writing for this sink.
     pub fn enableAsync(self: *Sink) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.config.asyncWrite = true;
     }
 
     /// Disables async writing for this sink (forces immediate flush).
     pub fn disableAsync(self: *Sink) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.config.asyncWrite = false;
         // Flush any pending data when disabling async
         self.flush() catch {};
@@ -1107,8 +1120,8 @@ pub const Sink = struct {
     /// Manually flushes the sink buffer.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn flushNow(self: *Sink) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         try self.flush();
     }
 
@@ -1125,8 +1138,8 @@ pub const Sink = struct {
     /// Writes a log record using a specific allocator.
     pub fn writeWithAllocator(self: *Sink, record: *const Record, globalConfig: anytype, scratchAllocator: ?std.mem.Allocator) !void {
         _ = scratchAllocator;
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (!self.enabled) return;
 
@@ -1190,18 +1203,18 @@ pub const Sink = struct {
                     if (!self.jsonArrayOpen) try self.ensureJsonArrayOpen();
                     try self.flush();
                     if (rot.shouldRotate(f)) {
-                        const oldSize = (f.stat(Utils.io()) catch {
+                        const oldSize = (f.stat(self.io) catch {
                             try rot.checkAndRotate(f);
                             return;
                         }).size;
-                        f.writeStreamingAll(Utils.io(), "\n]") catch |err| {
+                        f.writeStreamingAll(self.io, "\n]") catch |err| {
                             try self.handleWriteError(err, 1);
                             return;
                         };
                         const before = rot.stats.totalRotations.load(.monotonic);
                         try rot.checkAndRotate(f);
                         if (rot.stats.totalRotations.load(.monotonic) != before) {
-                            f.writeStreamingAll(Utils.io(), "[\n") catch |err| {
+                            f.writeStreamingAll(self.io, "[\n") catch |err| {
                                 try self.handleWriteError(err, 1);
                                 return;
                             };
@@ -1210,7 +1223,7 @@ pub const Sink = struct {
                         } else {
                             // Rotation did not happen: retract the premature
                             // tail so the document stays valid.
-                            f.setLength(Utils.io(), oldSize) catch |err| {
+                            f.setLength(self.io, oldSize) catch |err| {
                                 try self.handleWriteError(err, 1);
                                 return;
                             };
@@ -1481,7 +1494,7 @@ pub const Sink = struct {
                         }
                     }
                 } else {
-                    file.writeStreamingAll(Utils.io(), bytes) catch |err| {
+                    file.writeStreamingAll(self.io, bytes) catch |err| {
                         try self.handleWriteError(err, 1);
                         return;
                     };
@@ -1509,11 +1522,11 @@ pub const Sink = struct {
             }
             var hdr: [4]u8 = undefined;
             std.mem.writeInt(u32, &hdr, @intCast(bytes.len), .big);
-            writeStreamAll(stream, &hdr) catch |err| {
+            writeStreamAll(stream, self.io, &hdr) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
-            writeStreamAll(stream, bytes) catch |err| {
+            writeStreamAll(stream, self.io, bytes) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1524,7 +1537,7 @@ pub const Sink = struct {
                     try self.handleWriteError(error.DatagramTooLarge, 1);
                     return;
                 }
-                sock.send(Utils.io(), &addr, bytes) catch |err| {
+                sock.send(self.io, &addr, bytes) catch |err| {
                     try self.handleWriteError(err, 1);
                     return;
                 };
@@ -1538,7 +1551,7 @@ pub const Sink = struct {
             self.noteMsgpackWritten(bytes.len);
         } else {
             const stdoutFile = std.Io.File.stdout();
-            stdoutFile.writeStreamingAll(Utils.io(), bytes) catch |err| {
+            stdoutFile.writeStreamingAll(self.io, bytes) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1574,12 +1587,12 @@ pub const Sink = struct {
             return;
         }
         const file = self.file orelse return error.NoFileForArrayDocument;
-        const stat = try file.stat(Utils.io());
+        const stat = try file.stat(self.io);
         if (stat.size == 0) {
-            try file.writeStreamingAll(Utils.io(), "[\n");
+            try file.writeStreamingAll(self.io, "[\n");
         } else if (stat.size >= 2) {
             var rbuf: [8]u8 = undefined;
-            var reader = file.reader(Utils.io(), &rbuf);
+            var reader = file.reader(self.io, &rbuf);
             try reader.seekTo(stat.size - 2);
             var tail: [2]u8 = undefined;
             var got: usize = 0;
@@ -1595,7 +1608,7 @@ pub const Sink = struct {
             // Streaming (not positional) writer: the rewind must move the
             // shared file offset, since later writes go through
             // writeStreamingAll at that offset.
-            var writer = file.writerStreaming(Utils.io(), &wbuf);
+            var writer = file.writerStreaming(self.io, &wbuf);
             try writer.seekTo(stat.size - 2);
             self.jsonFirstEntry = false;
         } else {
@@ -1693,8 +1706,8 @@ pub const Sink = struct {
 
     /// Writes raw data directly to the sink bypassing formatting.
     pub fn writeRaw(self: *Sink, data: []const u8) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (!self.enabled) return;
         if (self.isNullDevice) {
@@ -1733,11 +1746,11 @@ pub const Sink = struct {
                         }
                     }
                 } else {
-                    file.writeStreamingAll(Utils.io(), data) catch |err| {
+                    file.writeStreamingAll(self.io, data) catch |err| {
                         try self.handleWriteError(err, 1);
                         return;
                     };
-                    file.writeStreamingAll(Utils.io(), "\n") catch |err| {
+                    file.writeStreamingAll(self.io, "\n") catch |err| {
                         try self.handleWriteError(err, 1);
                         return;
                     };
@@ -1750,11 +1763,11 @@ pub const Sink = struct {
                 }
             }
         } else if (self.stream) |stream| {
-            writeStreamAll(stream, data) catch |err| {
+            writeStreamAll(stream, self.io, data) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
-            writeStreamAll(stream, "\n") catch |err| {
+            writeStreamAll(stream, self.io, "\n") catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1773,7 +1786,7 @@ pub const Sink = struct {
                     try self.handleWriteError(error.DatagramTooLarge, 1);
                     return;
                 }
-                sock.send(Utils.io(), &addr, data) catch |err| {
+                sock.send(self.io, &addr, data) catch |err| {
                     try self.handleWriteError(err, 1);
                     return;
                 };
@@ -1819,11 +1832,11 @@ pub const Sink = struct {
             if (self.onWrite) |cb| cb(1, bytesWithNewline);
         } else {
             const stdoutFile = std.Io.File.stdout();
-            stdoutFile.writeStreamingAll(Utils.io(), data) catch |err| {
+            stdoutFile.writeStreamingAll(self.io, data) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
-            stdoutFile.writeStreamingAll(Utils.io(), "\n") catch |err| {
+            stdoutFile.writeStreamingAll(self.io, "\n") catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1844,8 +1857,8 @@ pub const Sink = struct {
     /// big-endian u32 length prefix per call, and UDP sends one datagram
     /// per call (oversized payloads rejected, never truncated).
     pub fn writeRawBinary(self: *Sink, data: []const u8) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (!self.enabled) return;
         if (self.isNullDevice) {
@@ -1877,7 +1890,7 @@ pub const Sink = struct {
                         }
                     }
                 } else {
-                    file.writeStreamingAll(Utils.io(), data) catch |err| {
+                    file.writeStreamingAll(self.io, data) catch |err| {
                         try self.handleWriteError(err, 1);
                         return;
                     };
@@ -1915,11 +1928,11 @@ pub const Sink = struct {
             }
             var hdr: [4]u8 = undefined;
             std.mem.writeInt(u32, &hdr, @intCast(data.len), .big);
-            writeStreamAll(stream, &hdr) catch |err| {
+            writeStreamAll(stream, self.io, &hdr) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
-            writeStreamAll(stream, data) catch |err| {
+            writeStreamAll(stream, self.io, data) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1935,7 +1948,7 @@ pub const Sink = struct {
                     try self.handleWriteError(error.DatagramTooLarge, 1);
                     return;
                 }
-                sock.send(Utils.io(), &addr, data) catch |err| {
+                sock.send(self.io, &addr, data) catch |err| {
                     try self.handleWriteError(err, 1);
                     return;
                 };
@@ -1959,7 +1972,7 @@ pub const Sink = struct {
             }
         } else {
             const stdoutFile = std.Io.File.stdout();
-            stdoutFile.writeStreamingAll(Utils.io(), data) catch |err| {
+            stdoutFile.writeStreamingAll(self.io, data) catch |err| {
                 try self.handleWriteError(err, 1);
                 return;
             };
@@ -1973,7 +1986,7 @@ pub const Sink = struct {
     }
 
     fn reconnect(self: *Sink) bool {
-        if (self.stream) |s| s.close(Utils.io());
+        if (self.stream) |s| s.close(self.io);
         self.stream = null;
 
         if (self.config.path) |uri| {
@@ -1985,7 +1998,7 @@ pub const Sink = struct {
                 while (attempt <= maxRetries) : (attempt += 1) {
                     self.stream = Network.connectTcp(self.allocator, uri) catch {
                         if (attempt < maxRetries) {
-                            Utils.io().sleep(retrySleep, .awake) catch {};
+                            self.io.sleep(retrySleep, .awake) catch {};
                         }
                         continue;
                     };
@@ -2126,7 +2139,7 @@ pub const Sink = struct {
                     mmapF.flush();
                 }
             } else {
-                file.writeStreamingAll(Utils.io(), self.buffer.items) catch |err| {
+                file.writeStreamingAll(self.io, self.buffer.items) catch |err| {
                     try self.handleWriteError(err, bufferedRecords);
                     self.buffer.clearRetainingCapacity();
                     self.bufferedRecords = 0;
@@ -2134,10 +2147,10 @@ pub const Sink = struct {
                 };
             }
         } else if (self.stream) |stream| {
-            writeStreamAll(stream, dataToWrite) catch |err| {
+            writeStreamAll(stream, self.io, dataToWrite) catch |err| {
                 if (self.reconnect()) {
                     if (self.stream) |newStream| {
-                        writeStreamAll(newStream, dataToWrite) catch |retryErr| {
+                        writeStreamAll(newStream, self.io, dataToWrite) catch |retryErr| {
                             try self.handleWriteError(retryErr, bufferedRecords);
                             self.buffer.clearRetainingCapacity();
                             self.bufferedRecords = 0;
@@ -2158,7 +2171,7 @@ pub const Sink = struct {
             };
         } else if (self.udpSocket) |sock| {
             if (self.udpAddr) |addr| {
-                sock.send(Utils.io(), &addr, dataToWrite) catch |err| {
+                sock.send(self.io, &addr, dataToWrite) catch |err| {
                     try self.handleWriteError(err, bufferedRecords);
                     self.buffer.clearRetainingCapacity();
                     self.bufferedRecords = 0;
@@ -2179,7 +2192,7 @@ pub const Sink = struct {
         } else {
             // Console
             const stdoutFile = std.Io.File.stdout();
-            stdoutFile.writeStreamingAll(Utils.io(), self.buffer.items) catch |err| {
+            stdoutFile.writeStreamingAll(self.io, self.buffer.items) catch |err| {
                 try self.handleWriteError(err, bufferedRecords);
                 self.buffer.clearRetainingCapacity();
                 self.bufferedRecords = 0;
@@ -2316,7 +2329,7 @@ test "sink flush updates stats" {
     sinkCfg.overwriteMode = true;
 
     const sink = try Sink.init(allocator, sinkCfg);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), logPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), logPath) catch {};
     defer sink.deinit();
 
     var record = Record.init(allocator, .info, "stats check");
@@ -2346,7 +2359,7 @@ test "sink manual flushNow updates stats" {
     sinkCfg.overwriteMode = true;
 
     const sink = try Sink.init(allocator, sinkCfg);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), logPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), logPath) catch {};
     defer sink.deinit();
 
     var record = Record.init(allocator, .info, "manual flush stats check");
@@ -2407,31 +2420,37 @@ test "sink on_error propagate returns error" {
 /// A group of sinks to which logs can be fanned out atomically.
 pub const SinkGroup = struct {
     allocator: std.mem.Allocator,
+    io: std.Io = Utils.defaultIo(),
     sinks: std.ArrayListUnmanaged(*Sink),
     mutex: std.Io.Mutex = std.Io.Mutex.init,
 
     pub fn init(allocator: std.mem.Allocator) SinkGroup {
+        return initWithIo(allocator, Utils.defaultIo());
+    }
+
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) SinkGroup {
         return .{
             .allocator = allocator,
+            .io = io_handle,
             .sinks = .empty,
         };
     }
 
     pub fn deinit(self: *SinkGroup) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.sinks.deinit(self.allocator);
     }
 
     pub fn addSink(self: *SinkGroup, sink: *Sink) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         try self.sinks.append(self.allocator, sink);
     }
 
     pub fn write(self: *SinkGroup, record: *const Record, globalConfig: anytype) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         for (self.sinks.items) |sink| {
             try sink.write(record, globalConfig);
@@ -2439,8 +2458,8 @@ pub const SinkGroup = struct {
     }
 
     pub fn flush(self: *SinkGroup) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         for (self.sinks.items) |sink| {
             try sink.flush();
@@ -2969,7 +2988,7 @@ test "sink json array append continues the document" {
 
     const fileName = try std.fmt.allocPrint(allocator, "test_json_cont_{d}.log", .{Utils.currentMillis()});
     defer allocator.free(fileName);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), fileName) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), fileName) catch {};
 
     var globalConfig = Config.default();
     globalConfig.autoSink = false;
@@ -3004,13 +3023,13 @@ test "sink json array append continues the document" {
         try sink.flush();
     }
 
-    var file = try std.Io.Dir.cwd().openFile(Utils.io(), fileName, .{});
-    defer file.close(Utils.io());
-    const stat = try file.stat(Utils.io());
+    var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), fileName, .{});
+    defer file.close(Utils.defaultIo());
+    const stat = try file.stat(Utils.defaultIo());
     const bytes = try allocator.alloc(u8, stat.size);
     defer allocator.free(bytes);
     var readBuf: [4096]u8 = undefined;
-    var reader = file.reader(Utils.io(), &readBuf);
+    var reader = file.reader(Utils.defaultIo(), &readBuf);
     var total: usize = 0;
     while (total < bytes.len) {
         const n = try reader.interface.readSliceShort(bytes[total..]);
@@ -3034,12 +3053,12 @@ test "sink json array rejects foreign append content" {
 
     const fileName = try std.fmt.allocPrint(allocator, "test_json_foreign_{d}.log", .{Utils.currentMillis()});
     defer allocator.free(fileName);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), fileName) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), fileName) catch {};
 
     {
-        var file = try std.Io.Dir.cwd().createFile(Utils.io(), fileName, .{});
-        defer file.close(Utils.io());
-        try file.writeStreamingAll(Utils.io(), "not a json array document\n");
+        var file = try std.Io.Dir.cwd().createFile(Utils.defaultIo(), fileName, .{});
+        defer file.close(Utils.defaultIo());
+        try file.writeStreamingAll(Utils.defaultIo(), "not a json array document\n");
     }
 
     var sinkCfg = SinkConfig.file(fileName);
@@ -3053,15 +3072,15 @@ test "sink mmap json rotation remaps and frames" {
     const baseName = try std.fmt.allocPrint(allocator, "test_mmap_rot_{d}.log", .{Utils.currentMillis()});
     defer allocator.free(baseName);
     defer {
-        if (std.Io.Dir.cwd().openDir(Utils.io(), ".", .{ .iterate = true })) |*dir| {
-            defer dir.close(Utils.io());
+        if (std.Io.Dir.cwd().openDir(Utils.defaultIo(), ".", .{ .iterate = true })) |*dir| {
+            defer dir.close(Utils.defaultIo());
             var iter = dir.iterate();
-            while (iter.next(Utils.io()) catch null) |entry| {
+            while (iter.next(Utils.defaultIo()) catch null) |entry| {
                 if (entry.kind != .file) continue;
                 if (std.mem.startsWith(u8, entry.name, baseName)) {
                     const full = std.fs.path.join(allocator, &.{ ".", entry.name }) catch continue;
                     defer allocator.free(full);
-                    std.Io.Dir.cwd().deleteFile(Utils.io(), full) catch {};
+                    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), full) catch {};
                 }
             }
         } else |_| {}
@@ -3101,21 +3120,21 @@ test "sink mmap json rotation remaps and frames" {
     // and the marker is in the active file (not stranded in an archive).
     var checked: usize = 0;
     var markerInActive = false;
-    var dir = try std.Io.Dir.cwd().openDir(Utils.io(), ".", .{ .iterate = true });
-    defer dir.close(Utils.io());
+    var dir = try std.Io.Dir.cwd().openDir(Utils.defaultIo(), ".", .{ .iterate = true });
+    defer dir.close(Utils.defaultIo());
     var iter = dir.iterate();
-    while (try iter.next(Utils.io())) |entry| {
+    while (try iter.next(Utils.defaultIo())) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.startsWith(u8, entry.name, baseName)) continue;
         const full = try std.fs.path.join(allocator, &.{ ".", entry.name });
         defer allocator.free(full);
-        var file = try std.Io.Dir.cwd().openFile(Utils.io(), full, .{});
-        defer file.close(Utils.io());
-        const stat = try file.stat(Utils.io());
+        var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), full, .{});
+        defer file.close(Utils.defaultIo());
+        const stat = try file.stat(Utils.defaultIo());
         const bytes = try allocator.alloc(u8, stat.size);
         defer allocator.free(bytes);
         var readBuf: [4096]u8 = undefined;
-        var reader = file.reader(Utils.io(), &readBuf);
+        var reader = file.reader(Utils.defaultIo(), &readBuf);
         var total: usize = 0;
         while (total < bytes.len) {
             const n = try reader.interface.readSliceShort(bytes[total..]);
@@ -3139,7 +3158,7 @@ test "sink msgpack file output" {
     const allocator = std.testing.allocator;
 
     const fileName = "test_msgpack_sink.msgpack";
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), fileName) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), fileName) catch {};
 
     var sinkCfg = SinkConfig.file(fileName);
     sinkCfg.format = .msgpack;
@@ -3165,13 +3184,13 @@ test "sink msgpack file output" {
     try sink.write(&record2, globalConfig);
     try sink.flush();
 
-    var file = try std.Io.Dir.cwd().openFile(Utils.io(), fileName, .{});
-    defer file.close(Utils.io());
-    const stat = try file.stat(Utils.io());
+    var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), fileName, .{});
+    defer file.close(Utils.defaultIo());
+    const stat = try file.stat(Utils.defaultIo());
     const bytes = try allocator.alloc(u8, stat.size);
     defer allocator.free(bytes);
     var readBuf: [4096]u8 = undefined;
-    var reader = file.reader(Utils.io(), &readBuf);
+    var reader = file.reader(Utils.defaultIo(), &readBuf);
     var total: usize = 0;
     while (total < bytes.len) {
         const n = try reader.interface.readSliceShort(bytes[total..]);
@@ -3191,15 +3210,15 @@ test "sink json array rotation keeps documents valid" {
     defer allocator.free(baseName);
     defer {
         // Best-effort cleanup of the active file plus any rotated siblings.
-        if (std.Io.Dir.cwd().openDir(Utils.io(), ".", .{ .iterate = true })) |*dir| {
-            defer dir.close(Utils.io());
+        if (std.Io.Dir.cwd().openDir(Utils.defaultIo(), ".", .{ .iterate = true })) |*dir| {
+            defer dir.close(Utils.defaultIo());
             var iter = dir.iterate();
-            while (iter.next(Utils.io()) catch null) |entry| {
+            while (iter.next(Utils.defaultIo()) catch null) |entry| {
                 if (entry.kind != .file) continue;
                 if (std.mem.startsWith(u8, entry.name, baseName)) {
                     const full = std.fs.path.join(allocator, &.{ ".", entry.name }) catch continue;
                     defer allocator.free(full);
-                    std.Io.Dir.cwd().deleteFile(Utils.io(), full) catch {};
+                    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), full) catch {};
                 }
             }
         } else |_| {}
@@ -3230,21 +3249,21 @@ test "sink json array rotation keeps documents valid" {
 
     // Every JSON-array file on disk (active + rotated) must parse standalone.
     var checked: usize = 0;
-    var dir = try std.Io.Dir.cwd().openDir(Utils.io(), ".", .{ .iterate = true });
-    defer dir.close(Utils.io());
+    var dir = try std.Io.Dir.cwd().openDir(Utils.defaultIo(), ".", .{ .iterate = true });
+    defer dir.close(Utils.defaultIo());
     var iter = dir.iterate();
-    while (try iter.next(Utils.io())) |entry| {
+    while (try iter.next(Utils.defaultIo())) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.startsWith(u8, entry.name, baseName)) continue;
         const full = try std.fs.path.join(allocator, &.{ ".", entry.name });
         defer allocator.free(full);
-        var file = try std.Io.Dir.cwd().openFile(Utils.io(), full, .{});
-        defer file.close(Utils.io());
-        const stat = try file.stat(Utils.io());
+        var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), full, .{});
+        defer file.close(Utils.defaultIo());
+        const stat = try file.stat(Utils.defaultIo());
         const bytes = try allocator.alloc(u8, stat.size);
         defer allocator.free(bytes);
         var readBuf: [4096]u8 = undefined;
-        var reader = file.reader(Utils.io(), &readBuf);
+        var reader = file.reader(Utils.defaultIo(), &readBuf);
         var total: usize = 0;
         while (total < bytes.len) {
             const n = try reader.interface.readSliceShort(bytes[total..]);
@@ -3269,6 +3288,7 @@ pub const MmapFile = struct {
     writePtr: usize = 0,
     capacity: usize = 0,
     allocator: std.mem.Allocator,
+    io: std.Io = Utils.defaultIo(),
     isMapped: bool = false,
 
     // Platform-specific fields
@@ -3304,12 +3324,16 @@ pub const MmapFile = struct {
     } else struct {};
 
     pub fn init(allocator: std.mem.Allocator, file: std.Io.File, initialSize: usize) !MmapFile {
-        const io = Utils.io();
+        return initWithIo(allocator, Utils.defaultIo(), file, initialSize);
+    }
+
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, file: std.Io.File, initialSize: usize) !MmapFile {
         // Pre-allocate / grow file
-        try file.setLength(io, initialSize);
+        try file.setLength(io_handle, initialSize);
 
         var self = MmapFile{
             .allocator = allocator,
+            .io = io_handle,
             .file = file,
             .writePtr = 0,
             .capacity = initialSize,
@@ -3325,15 +3349,13 @@ pub const MmapFile = struct {
     pub fn deinit(self: *MmapFile) void {
         self.unmap();
         // Truncate file to actual bytes written before closing
-        const io = Utils.io();
-        self.file.setLength(io, self.writePtr) catch {};
+        self.file.setLength(self.io, self.writePtr) catch {};
     }
 
     pub fn write(self: *MmapFile, data: []const u8) !void {
         if (!self.isMapped) {
             // Fallback to standard file write
-            const io = Utils.io();
-            try self.file.writeStreamingAll(io, data);
+            try self.file.writeStreamingAll(self.io, data);
             self.writePtr += data.len;
             return;
         }
@@ -3370,7 +3392,7 @@ pub const MmapFile = struct {
         self.flush();
         if (!self.isMapped) return;
         self.unmap();
-        self.file.setLength(Utils.io(), self.writePtr) catch {};
+        self.file.setLength(self.io, self.writePtr) catch {};
     }
 
     /// Maps onto a fresh file handle after rotation (the previous file was
@@ -3379,7 +3401,7 @@ pub const MmapFile = struct {
         self.file = newFile;
         self.writePtr = 0;
         self.capacity = initialSize;
-        try newFile.setLength(Utils.io(), initialSize);
+        try newFile.setLength(self.io, initialSize);
         self.map() catch {
             self.isMapped = false;
         };
@@ -3443,8 +3465,7 @@ pub const MmapFile = struct {
         const alignedCapacity = std.mem.alignForward(usize, newCapacity, std.heap.page_size_min);
         self.unmap();
 
-        const io = Utils.io();
-        try self.file.setLength(io, alignedCapacity);
+        try self.file.setLength(self.io, alignedCapacity);
         self.capacity = alignedCapacity;
 
         try self.map();
@@ -3455,8 +3476,8 @@ test "sink memory-mapped file sink" {
     const allocator = std.testing.allocator;
 
     const testPath = "mmap_test.log";
-    std.Io.Dir.cwd().deleteFile(Utils.io(), testPath) catch {};
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), testPath) catch {};
+    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), testPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), testPath) catch {};
 
     var sinkCfg = SinkConfig.file(testPath);
     sinkCfg.name = "mmap_sink";
@@ -3480,7 +3501,7 @@ test "sink memory-mapped file sink" {
     sink.deinit();
 
     // Verify the file content by reading it back
-    const fileContent = try std.Io.Dir.cwd().readFileAlloc(Utils.io(), testPath, allocator, .limited(Constants.BufferSizes.fileRead));
+    const fileContent = try std.Io.Dir.cwd().readFileAlloc(Utils.defaultIo(), testPath, allocator, .limited(Constants.BufferSizes.fileRead));
     defer allocator.free(fileContent);
 
     try std.testing.expect(std.mem.indexOf(u8, fileContent, "first mmap log message") != null);
@@ -3499,8 +3520,8 @@ fn mockSignatureCallback(sinkName: []const u8, sig: []const u8) void {
 test "sink cryptographic log chaining signature callback" {
     const allocator = std.testing.allocator;
     const testPath = "sig_callback_test.log";
-    std.Io.Dir.cwd().deleteFile(Utils.io(), testPath) catch {};
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), testPath) catch {};
+    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), testPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), testPath) catch {};
 
     var sinkCfg = SinkConfig.file(testPath);
     sinkCfg.name = "chaining_sink";
@@ -3538,8 +3559,8 @@ fn mockMmapResizeCallback(sinkName: []const u8, oldCap: u64, newCap: u64) void {
 test "sink memory-mapped resize callback" {
     const allocator = std.testing.allocator;
     const testPath = "mmap_resize_test.log";
-    std.Io.Dir.cwd().deleteFile(Utils.io(), testPath) catch {};
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), testPath) catch {};
+    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), testPath) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), testPath) catch {};
 
     var sinkCfg = SinkConfig.file(testPath);
     sinkCfg.name = "mmap_resize_sink";

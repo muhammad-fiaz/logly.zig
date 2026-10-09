@@ -110,6 +110,7 @@ pub const Filter = struct {
     };
 
     allocator: std.mem.Allocator,
+    io: std.Io = Utils.defaultIo(),
     rules: std.ArrayList(FilterRule),
     stats: FilterStats = .{},
     mutex: std.Io.Mutex = std.Io.Mutex.init,
@@ -225,8 +226,14 @@ pub const Filter = struct {
 
     /// Initializes a new Filter instance.
     pub fn init(allocator: std.mem.Allocator) Filter {
+        return initWithIo(allocator, Utils.defaultIo());
+    }
+
+    /// Initializes a new Filter instance with explicit I/O.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) Filter {
         return .{
             .allocator = allocator,
+            .io = io_handle,
             .rules = .empty,
             .rateBuckets = std.StringHashMap(RateBucket).init(allocator),
         };
@@ -267,8 +274,8 @@ pub const Filter = struct {
 
     /// Adds a new filter rule.
     pub fn addRule(self: *Filter, rule: FilterRule) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // Deep copy patterns and keys if present
         var newRule = rule;
@@ -289,36 +296,36 @@ pub const Filter = struct {
 
     /// Sets the callback for record allowed events.
     pub fn setAllowedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRecordAllowed = callback;
     }
 
     /// Sets the callback for record denied events.
     pub fn setDeniedCallback(self: *Filter, callback: *const fn (*const Record, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRecordDenied = callback;
     }
 
     /// Sets the callback for filter creation.
     pub fn setCreatedCallback(self: *Filter, callback: *const fn (*const FilterStats) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onFilterCreated = callback;
     }
 
     /// Sets the callback for rule addition.
     pub fn setRuleAddedCallback(self: *Filter, callback: *const fn (u32, u32) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRuleAdded = callback;
     }
 
     /// Returns filter statistics.
     pub fn getStats(self: *Filter) FilterStats {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.stats;
     }
@@ -536,8 +543,8 @@ pub const Filter = struct {
 
             .rateLimit => if (rule.rateLimit) |limit| blk: {
                 const mutableSelf = @constCast(self);
-                mutableSelf.mutex.lockUncancelable(Utils.io());
-                defer mutableSelf.mutex.unlock(Utils.io());
+                mutableSelf.mutex.lockUncancelable(mutableSelf.io);
+                defer mutableSelf.mutex.unlock(mutableSelf.io);
 
                 const moduleName = record.module orelse "unknown";
                 const now = Utils.currentMillis();
@@ -574,8 +581,8 @@ pub const Filter = struct {
 
             .samplingProbability => if (rule.probability) |prob| blk: {
                 const mutableSelf = @constCast(self);
-                mutableSelf.mutex.lockUncancelable(Utils.io());
-                defer mutableSelf.mutex.unlock(Utils.io());
+                mutableSelf.mutex.lockUncancelable(mutableSelf.io);
+                defer mutableSelf.mutex.unlock(mutableSelf.io);
 
                 if (mutableSelf.rng == null) {
                     mutableSelf.rng = std.Random.DefaultPrng.init(@as(u64, @intCast(Utils.currentMillis())));
@@ -586,8 +593,8 @@ pub const Filter = struct {
             .samplingEveryN => if (rule.everyN) |n| blk: {
                 if (n == 0) break :blk true;
                 const mutableSelf = @constCast(self);
-                mutableSelf.mutex.lockUncancelable(Utils.io());
-                defer mutableSelf.mutex.unlock(Utils.io());
+                mutableSelf.mutex.lockUncancelable(mutableSelf.io);
+                defer mutableSelf.mutex.unlock(mutableSelf.io);
 
                 mutableSelf.everyNCounter += 1;
                 break :blk (mutableSelf.everyNCounter % n) == 0;
@@ -601,8 +608,8 @@ pub const Filter = struct {
     /// evaluation. Frees both pattern and context-key allocations (deinit
     /// parity — previously context keys leaked here).
     pub fn clear(self: *Filter) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         for (self.rules.items) |rule| {
             if (rule.pattern) |p| {
                 self.allocator.free(p);

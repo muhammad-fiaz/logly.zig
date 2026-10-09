@@ -186,6 +186,8 @@ pub const Metrics = struct {
 
     /// Mutual exclusion for thread-safe operations.
     mutex: std.Io.Mutex = std.Io.Mutex.init,
+    /// Explicit I/O handle.
+    io: std.Io = Utils.defaultIo(),
     /// Metrics configuration.
     config: MetricsConfig = .{},
 
@@ -277,16 +279,22 @@ pub const Metrics = struct {
 
     /// Initializes a new Metrics instance with default configuration.
     pub fn init(allocator: std.mem.Allocator) Metrics {
-        return initWithConfig(allocator, .{});
+        return initWithIo(allocator, Utils.defaultIo(), .{});
     }
 
     /// Initializes a new Metrics instance with custom configuration.
     pub fn initWithConfig(allocator: std.mem.Allocator, config: MetricsConfig) Metrics {
+        return initWithIo(allocator, Utils.defaultIo(), config);
+    }
+
+    /// Initializes a new Metrics instance with an explicit I/O handle and custom configuration.
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: MetricsConfig) Metrics {
         return .{
             .startTime = Utils.monotonicMillis(),
             .sinkMetrics = .empty,
             .history = .empty,
             .allocator = allocator,
+            .io = io_handle,
             .config = config,
         };
     }
@@ -302,29 +310,29 @@ pub const Metrics = struct {
 
     /// Sets the callback for record logged events.
     pub fn setRecordLoggedCallback(self: *Metrics, callback: *const fn (Level, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onRecordLogged = callback;
     }
 
     /// Sets the callback for metrics snapshot events.
     pub fn setSnapshotCallback(self: *Metrics, callback: *const fn (*const Snapshot) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onMetricsSnapshot = callback;
     }
 
     /// Sets the callback for threshold exceeded events.
     pub fn setThresholdCallback(self: *Metrics, callback: *const fn (MetricType, u64, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onThresholdExceeded = callback;
     }
 
     /// Sets the callback for error detected events.
     pub fn setErrorCallback(self: *Metrics, callback: *const fn (ErrorEvent, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onErrorDetected = callback;
     }
 
@@ -480,8 +488,8 @@ pub const Metrics = struct {
 
     /// Adds a sink to track.
     pub fn addSink(self: *Metrics, name: []const u8) !usize {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const ownedName = try self.allocator.dupe(u8, name);
         try self.sinkMetrics.append(self.allocator, .{ .name = ownedName });
@@ -533,8 +541,8 @@ pub const Metrics = struct {
 
         // Store in history if configured
         if (self.config.historySize > 0) {
-            self.mutex.lockUncancelable(Utils.io());
-            defer self.mutex.unlock(Utils.io());
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             // Remove oldest if at capacity
             if (self.history.items.len >= self.config.historySize) {

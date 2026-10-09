@@ -211,12 +211,26 @@ pub const Rotation = struct {
 
     /// Rotation statistics.
     stats: RotationStats = .{},
+    /// Explicit I/O handle for file operations and synchronization.
+    io: std.Io = Utils.defaultIo(),
     /// Mutex for thread-safe operations.
     mutex: std.Io.Mutex = std.Io.Mutex.init,
 
-    /// Initializes rotation with optional interval, size limit, and retention count.
+    /// Initializes rotation with optional interval, size limit, and retention count using default Io.
     pub fn init(
         allocator: std.mem.Allocator,
+        path: []const u8,
+        intervalStr: ?[]const u8,
+        sizeLimit: ?u64,
+        retention: ?usize,
+    ) !Rotation {
+        return initWithIo(allocator, Utils.defaultIo(), path, intervalStr, sizeLimit, retention);
+    }
+
+    /// Initializes rotation with explicit Io handle.
+    pub fn initWithIo(
+        allocator: std.mem.Allocator,
+        io_handle: std.Io,
         path: []const u8,
         intervalStr: ?[]const u8,
         sizeLimit: ?u64,
@@ -225,6 +239,7 @@ pub const Rotation = struct {
         const interval = if (intervalStr) |s| RotationInterval.fromString(s) else null;
         var r = Rotation{
             .allocator = allocator,
+            .io = io_handle,
             .basePath = try allocator.dupe(u8, path),
             .interval = interval,
             .sizeLimit = sizeLimit,
@@ -421,7 +436,7 @@ pub const Rotation = struct {
         }
 
         if (self.sizeLimit) |limit| {
-            if (filePtr.stat(Utils.io())) |stat| {
+            if (filePtr.stat(self.io)) |stat| {
                 bySize = stat.size >= limit;
             } else |_| {
                 // Ignore stat errors and retry on next check.
@@ -436,8 +451,8 @@ pub const Rotation = struct {
 
     /// Returns why rotation would occur for the current file state.
     pub fn getRotationReason(self: *Rotation, filePtr: *std.Io.File) ?RotationReason {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.computeRotationReason(filePtr, Utils.currentSeconds());
     }
@@ -472,16 +487,16 @@ pub const Rotation = struct {
 
     /// Forces immediate rotation regardless of current interval/size checks.
     pub fn forceRotate(self: *Rotation, filePtr: *std.Io.File) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         try self.performRotation(filePtr);
     }
 
     /// Returns the next rotated path without mutating state.
     pub fn previewNextPath(self: *Rotation) ![]u8 {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.generateRotatedPath();
     }
 
@@ -500,7 +515,7 @@ pub const Rotation = struct {
             if (contentSize) |size| {
                 if (size >= limit) return true;
             } else {
-                if (filePtr.stat(Utils.io())) |stat| {
+                if (filePtr.stat(self.io)) |stat| {
                     if (stat.size >= limit) return true;
                 } else |_| {}
             }
@@ -514,8 +529,8 @@ pub const Rotation = struct {
     /// so when it fires the size stat syscall is skipped. Exact reason
     /// reporting stays in getRotationReason().
     pub fn checkAndRotate(self: *Rotation, filePtr: *std.Io.File) !void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (self.rotationDue(filePtr, Utils.currentSeconds(), null)) {
             // Perform rotation
@@ -551,14 +566,14 @@ pub const Rotation = struct {
         if (self.archiveDir) |_| {
             const dir = std.fs.path.dirname(rotatedPath);
             if (dir) |d| {
-                std.Io.Dir.cwd().createDirPath(Utils.io(), d) catch {};
+                std.Io.Dir.cwd().createDirPath(self.io, d) catch {};
             }
         }
 
         if (self.onRotationStart) |cb| cb(self.basePath, rotatedPath);
 
         // 2. Close current file
-        filePtr.close(Utils.io());
+        filePtr.close(self.io);
 
         // 3. Rename current file to rotated path
         // For index strategy, we might need to shift existing files first
@@ -566,14 +581,14 @@ pub const Rotation = struct {
             try self.shiftIndexFiles();
         }
 
-        std.Io.Dir.cwd().rename(self.basePath, std.Io.Dir.cwd(), rotatedPath, Utils.io()) catch |err| {
+        std.Io.Dir.cwd().rename(self.basePath, std.Io.Dir.cwd(), rotatedPath, self.io) catch |err| {
             // Try to reopen functionality if rename fails
-            filePtr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.basePath, .{ .read = true, .truncate = false }); // Append mode effectively
+            filePtr.* = try std.Io.Dir.cwd().createFile(self.io, self.basePath, .{ .read = true, .truncate = false }); // Append mode effectively
             return err;
         };
 
         // 4. Re-open log file (fresh)
-        filePtr.* = try std.Io.Dir.cwd().createFile(Utils.io(), self.basePath, .{
+        filePtr.* = try std.Io.Dir.cwd().createFile(self.io, self.basePath, .{
             .read = true,
             .truncate = true,
         });
@@ -610,7 +625,7 @@ pub const Rotation = struct {
 
                 // If successful and keep_original is false, remove uncompressed rotated file
                 if (!self.keepOriginal) {
-                    std.Io.Dir.cwd().deleteFile(Utils.io(), rotatedPath) catch {};
+                    std.Io.Dir.cwd().deleteFile(self.io, rotatedPath) catch {};
                 }
 
                 self.allocator.free(finalPath);
@@ -787,10 +802,10 @@ pub const Rotation = struct {
             defer self.allocator.free(currentPath);
 
             // If file exists
-            if (std.Io.Dir.cwd().access(Utils.io(), currentPath, .{})) |_| {
+            if (std.Io.Dir.cwd().access(self.io, currentPath, .{})) |_| {
                 if (i == max) {
                     // Delete overflow
-                    std.Io.Dir.cwd().deleteFile(Utils.io(), currentPath) catch {};
+                    std.Io.Dir.cwd().deleteFile(self.io, currentPath) catch {};
                 } else {
                     // Rename to next
                     const nextName = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ baseName, i + 1 });
@@ -798,7 +813,7 @@ pub const Rotation = struct {
                     const nextPath = try std.fs.path.join(self.allocator, &.{ targetDir, nextName });
                     defer self.allocator.free(nextPath);
 
-                    std.Io.Dir.cwd().rename(currentPath, std.Io.Dir.cwd(), nextPath, Utils.io()) catch {};
+                    std.Io.Dir.cwd().rename(currentPath, std.Io.Dir.cwd(), nextPath, self.io) catch {};
                 }
             } else |_| {}
         }
@@ -808,8 +823,8 @@ pub const Rotation = struct {
         const dirPath = self.archiveDir orelse (std.fs.path.dirname(self.basePath) orelse ".");
         const baseName = std.fs.path.basename(self.basePath);
 
-        var dir = std.Io.Dir.cwd().openDir(Utils.io(), dirPath, .{ .iterate = true }) catch return;
-        defer dir.close(Utils.io());
+        var dir = std.Io.Dir.cwd().openDir(self.io, dirPath, .{ .iterate = true }) catch return;
+        defer dir.close(self.io);
 
         const FileInfo = struct { name: []u8, mtime: i128, isCompressed: bool, size: u64 };
         var files: std.ArrayList(FileInfo) = .empty;
@@ -819,14 +834,14 @@ pub const Rotation = struct {
         }
 
         var iter = dir.iterate();
-        while (try iter.next(Utils.io())) |entry| {
+        while (try iter.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
             // Matches base_name and starts with it
             if (std.mem.startsWith(u8, entry.name, baseName) and !std.mem.eql(u8, entry.name, baseName)) {
                 const fullPath = try std.fs.path.join(self.allocator, &.{ dirPath, entry.name });
                 defer self.allocator.free(fullPath);
 
-                const stat = std.Io.Dir.cwd().statFile(Utils.io(), fullPath, .{}) catch continue;
+                const stat = std.Io.Dir.cwd().statFile(self.io, fullPath, .{}) catch continue;
 
                 // Check if already compressed
                 const isCompressed = Constants.CompressionExtensions.isCompressed(entry.name);
@@ -897,7 +912,7 @@ pub const Rotation = struct {
             // Only attempt to clean if archive_dir is explicitly set to avoid accidents
             if (self.archiveDir) |archivePath| {
                 // Attempt to remove directory. Will fail safely if not empty.
-                std.Io.Dir.cwd().deleteDir(Utils.io(), archivePath) catch {};
+                std.Io.Dir.cwd().deleteDir(self.io, archivePath) catch {};
             }
         }
     }
@@ -926,7 +941,7 @@ pub const Rotation = struct {
 
                 // Delete original after successful compression if configured
                 if (self.deleteAfterRetentionCompress) {
-                    std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {};
+                    std.Io.Dir.cwd().deleteFile(self.io, path) catch {};
                 }
                 return;
             }
@@ -937,7 +952,7 @@ pub const Rotation = struct {
     }
 
     fn deleteFile(self: *Rotation, path: []const u8) !void {
-        std.Io.Dir.cwd().deleteFile(Utils.io(), path) catch {
+        std.Io.Dir.cwd().deleteFile(self.io, path) catch {
             _ = self.stats.rotationErrors.fetchAdd(1, .monotonic);
             return;
         };
@@ -1376,15 +1391,15 @@ test "rotation force rotate helper" {
 
     const fileName = try std.fmt.allocPrint(allocator, "rotation_force_{d}.log", .{Utils.currentMillis()});
     defer allocator.free(fileName);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), fileName) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), fileName) catch {};
 
     const rotatedName = try std.fmt.allocPrint(allocator, "{s}.1", .{fileName});
     defer allocator.free(rotatedName);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), rotatedName) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), rotatedName) catch {};
 
-    var file = try std.Io.Dir.cwd().createFile(Utils.io(), fileName, .{ .read = true, .truncate = true });
-    defer file.close(Utils.io());
-    try file.writeStreamingAll(Utils.io(), "force rotation content");
+    var file = try std.Io.Dir.cwd().createFile(Utils.defaultIo(), fileName, .{ .read = true, .truncate = true });
+    defer file.close(Utils.defaultIo());
+    try file.writeStreamingAll(Utils.defaultIo(), "force rotation content");
 
     var rot = try Rotation.init(allocator, fileName, null, null, 3);
     defer rot.deinit();
@@ -1392,8 +1407,8 @@ test "rotation force rotate helper" {
 
     try rot.forceRotate(&file);
 
-    try std.Io.Dir.cwd().access(Utils.io(), fileName, .{});
-    try std.Io.Dir.cwd().access(Utils.io(), rotatedName, .{});
+    try std.Io.Dir.cwd().access(Utils.defaultIo(), fileName, .{});
+    try std.Io.Dir.cwd().access(Utils.defaultIo(), rotatedName, .{});
     try std.testing.expect(rot.getStats().rotationCount() >= 1);
 }
 
@@ -1434,11 +1449,11 @@ test "rotation reason helpers and preview path" {
 
     const fileName = try std.fmt.allocPrint(allocator, "rotation_reason_{d}.log", .{Utils.currentMillis()});
     defer allocator.free(fileName);
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), fileName) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), fileName) catch {};
 
-    var file = try std.Io.Dir.cwd().createFile(Utils.io(), fileName, .{ .read = true, .truncate = true });
-    defer file.close(Utils.io());
-    try file.writeStreamingAll(Utils.io(), "0123456789");
+    var file = try std.Io.Dir.cwd().createFile(Utils.defaultIo(), fileName, .{ .read = true, .truncate = true });
+    defer file.close(Utils.defaultIo());
+    try file.writeStreamingAll(Utils.defaultIo(), "0123456789");
 
     var rot = try Rotation.init(allocator, fileName, null, 1, 3);
     defer rot.deinit();
@@ -1486,9 +1501,9 @@ test "retention keeps the configured number of archives and prunes overflow" {
     const allocator = std.testing.allocator;
     const base = "test_retention.log";
     const dir = "logs";
-    _ = std.Io.Dir.cwd().deleteFile(Utils.io(), base) catch {};
-    defer std.Io.Dir.cwd().deleteFile(Utils.io(), base) catch {};
-    std.Io.Dir.cwd().createDirPath(Utils.io(), dir) catch {};
+    _ = std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), base) catch {};
+    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), base) catch {};
+    std.Io.Dir.cwd().createDirPath(Utils.defaultIo(), dir) catch {};
 
     const retention: usize = 3;
     var rot = try Rotation.init(allocator, base, null, 1, retention);
@@ -1498,13 +1513,13 @@ test "retention keeps the configured number of archives and prunes overflow" {
     // live file, trips the 1-byte size limit, and shifts the index files.
     var pass: usize = 0;
     while (pass < retention + 2) : (pass += 1) {
-        var f = try std.Io.Dir.cwd().createFile(Utils.io(), base, .{ .truncate = true });
+        var f = try std.Io.Dir.cwd().createFile(Utils.defaultIo(), base, .{ .truncate = true });
         try rot.checkAndRotate(&f);
 
         // Write past the size limit so the next pass sees an oversized file.
         var filler: [64]u8 = @splat('x');
-        try f.writeStreamingAll(Utils.io(), &filler);
-        f.close(Utils.io());
+        try f.writeStreamingAll(Utils.defaultIo(), &filler);
+        f.close(Utils.defaultIo());
     }
 
     // Every index file within the retention window exists.
@@ -1514,12 +1529,12 @@ test "retention keeps the configured number of archives and prunes overflow" {
         const name = try std.fmt.bufPrint(&nameBuf, "{s}.{d}", .{ base, i });
         try std.testing.expectError(
             error.FileNotFound,
-            std.Io.Dir.cwd().access(Utils.io(), name, .{}),
+            std.Io.Dir.cwd().access(Utils.defaultIo(), name, .{}),
         );
     }
 
     // Anything past the window has been pruned.
     var overBuf: [64]u8 = undefined;
     const over = try std.fmt.bufPrint(&overBuf, "{s}.{d}", .{ base, retention + 1 });
-    std.Io.Dir.cwd().deleteFile(Utils.io(), over) catch {};
+    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), over) catch {};
 }

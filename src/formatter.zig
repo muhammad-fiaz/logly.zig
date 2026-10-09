@@ -136,6 +136,8 @@ pub const Formatter = struct {
     stats: FormatterStats = .{},
     /// Mutex for thread-safe operations.
     mutex: std.Io.Mutex = std.Io.Mutex.init,
+    /// I/O handle for synchronization and debug symbol resolution.
+    io: std.Io = Utils.defaultIo(),
 
     /// Cached hostname of the current machine.
     hostname: ?[]const u8 = null,
@@ -342,13 +344,17 @@ pub const Formatter = struct {
     };
 
     /// Initializes a new Formatter and pre-fetches system metadata.
-    ///
-    /// Initializes a new Formatter instance.
+    pub fn init(allocator: std.mem.Allocator) Formatter {
+        return initWithIo(allocator, Utils.defaultIo());
+    }
+
+    /// Initializes a new Formatter instance with explicit I/O.
     ///
     /// Complexity: O(1) + Hostname syscall cost
-    pub fn init(allocator: std.mem.Allocator) Formatter {
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) Formatter {
         var self = Formatter{
             .allocator = allocator,
+            .io = io_handle,
             .pid = fetchPID(),
         };
         self.hostname = fetchHostname(allocator) catch null;
@@ -366,43 +372,43 @@ pub const Formatter = struct {
 
     /// Sets the callback for format completion.
     pub fn setFormatCompleteCallback(self: *Formatter, callback: *const fn (u32, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onFormatComplete = callback;
     }
 
     /// Sets the callback for JSON formatting.
     pub fn setJsonFormatCallback(self: *Formatter, callback: *const fn (*const Record, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onJsonFormat = callback;
     }
 
     /// Sets the callback for custom formatting.
     pub fn setCustomFormatCallback(self: *Formatter, callback: *const fn ([]const u8, u64) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onCustomFormat = callback;
     }
 
     /// Sets the callback for format errors.
     pub fn setErrorCallback(self: *Formatter, callback: *const fn ([]const u8) void) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.onFormatError = callback;
     }
 
     /// Sets a custom color theme.
     pub fn setTheme(self: *Formatter, theme: Theme) void {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.theme = theme;
     }
 
     /// Returns formatter statistics.
     pub fn getStats(self: *Formatter) FormatterStats {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         return self.stats;
     }
@@ -439,8 +445,8 @@ pub const Formatter = struct {
             _ = elapsed;
         }
 
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         // Explicit format selection: exactly one format renders each
         // record. No precedence chain, no competing flags.
@@ -837,7 +843,7 @@ pub const Formatter = struct {
 
                     for (st.instruction_addresses[0..count]) |addr| {
                         if (self.debugInfo) |di| {
-                            if (di.getModuleName(Utils.io(), addr) catch null) |moduleName| {
+                            if (di.getModuleName(self.io, addr) catch null) |moduleName| {
                                 try writer.print("  {s}:0x{x}\n", .{ moduleName, addr });
                             } else {
                                 try writer.print("  0x{x}\n", .{addr});
@@ -1364,7 +1370,7 @@ pub const Formatter = struct {
                     if (!firstAddr) try writer.writeAll(", ");
 
                     if (self.debugInfo) |di| {
-                        if (di.getModuleName(Utils.io(), addr) catch null) |moduleName| {
+                        if (di.getModuleName(self.io, addr) catch null) |moduleName| {
                             try writer.print("\"{s}:0x{x}\"", .{ moduleName, addr });
                         } else {
                             try writer.print("\"{x}\"", .{addr});
@@ -1701,8 +1707,8 @@ pub const Formatter = struct {
 
     /// Takes a snapshot of the Formatter statistics and state.
     pub fn getSnapshot(self: *Formatter, allocator: std.mem.Allocator) !Snapshot {
-        self.mutex.lockUncancelable(Utils.io());
-        defer self.mutex.unlock(Utils.io());
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const hostnameCopy = if (self.hostname) |h| try allocator.dupe(u8, h) else null;
         return Snapshot{

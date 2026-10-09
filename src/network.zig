@@ -127,9 +127,8 @@ pub fn formatSyslog(
     return res.toOwnedSlice();
 }
 
-/// Connects to a TCP host specified by a URI string (e.g., "tcp://127.0.0.1:8080").
-/// Returns a std.Io.net.Stream.
-pub fn connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.Io.net.Stream {
+/// Connects to a TCP host specified by a URI string with explicit I/O.
+pub fn connectTcpWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !std.Io.net.Stream {
     if (!std.mem.startsWith(u8, uri, "tcp://")) return NetworkError.InvalidUri;
     const addressPart = uri[6..];
 
@@ -140,16 +139,27 @@ pub fn connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.Io.net.Str
 
         _ = allocator;
         const hostName = std.Io.net.HostName.init(host) catch return NetworkError.InvalidUri;
-        const stream = hostName.connect(Utils.io(), port, .{ .mode = .stream, .protocol = .tcp }) catch return NetworkError.ConnectionFailed;
+        const stream = hostName.connect(io_handle, port, .{ .mode = .stream, .protocol = .tcp }) catch return NetworkError.ConnectionFailed;
         _ = stats.connectionsMade.fetchAdd(1, .monotonic);
         return stream;
     }
     return NetworkError.InvalidUri;
 }
 
-/// Creates a UDP socket connected to a host specified by a URI string (e.g., "udp://127.0.0.1:514").
-/// Returns a tuple of (socket, address).
-pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { socket: std.Io.net.Socket, address: std.Io.net.IpAddress } {
+/// Connects to a TCP host specified by a URI string (e.g., "tcp://127.0.0.1:8080").
+/// Returns a std.Io.net.Stream.
+pub fn connectTcp(allocator: std.mem.Allocator, uri: []const u8) !std.Io.net.Stream {
+    return connectTcpWithIo(allocator, Utils.defaultIo(), uri);
+}
+
+/// A UDP socket and its target address endpoint.
+pub const UdpEndpoint = struct {
+    socket: std.Io.net.Socket,
+    address: std.Io.net.IpAddress,
+};
+
+/// Creates a UDP socket connected to a host specified by a URI string with explicit I/O.
+pub fn createUdpSocketWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !UdpEndpoint {
     if (!std.mem.startsWith(u8, uri, "udp://")) return NetworkError.InvalidUri;
     const addressPart = uri[6..];
 
@@ -165,7 +175,7 @@ pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { 
                 .ip4 => std.Io.net.IpAddress.parse("0.0.0.0", 0) catch unreachable,
                 .ip6 => std.Io.net.IpAddress.parse("::", 0) catch unreachable,
             };
-            const socket = localAddress.bind(Utils.io(), .{ .mode = .dgram, .protocol = .udp }) catch return NetworkError.SocketCreationError;
+            const socket = localAddress.bind(io_handle, .{ .mode = .dgram, .protocol = .udp }) catch return NetworkError.SocketCreationError;
             _ = stats.connectionsMade.fetchAdd(1, .monotonic);
             return .{ .socket = socket, .address = address };
         }
@@ -173,9 +183,15 @@ pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !struct { 
     return NetworkError.InvalidUri;
 }
 
-/// Sends data via UDP socket.
-pub fn sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: []const u8) !void {
-    socket.send(Utils.io(), &address, data) catch {
+/// Creates a UDP socket connected to a host specified by a URI string (e.g., "udp://127.0.0.1:514").
+/// Returns a tuple of (socket, address).
+pub fn createUdpSocket(allocator: std.mem.Allocator, uri: []const u8) !UdpEndpoint {
+    return createUdpSocketWithIo(allocator, Utils.defaultIo(), uri);
+}
+
+/// Sends data via UDP socket with explicit I/O.
+pub fn sendUdpWithIo(socket: std.Io.net.Socket, io_handle: std.Io, address: std.Io.net.IpAddress, data: []const u8) !void {
+    socket.send(io_handle, &address, data) catch {
         _ = stats.errors.fetchAdd(1, .monotonic);
         return NetworkError.SendFailed;
     };
@@ -183,10 +199,15 @@ pub fn sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: [
     _ = stats.messagesSent.fetchAdd(1, .monotonic);
 }
 
-/// Sends data via a TCP stream.
-pub fn sendTcp(stream: std.Io.net.Stream, data: []const u8) !void {
+/// Sends data via UDP socket.
+pub fn sendUdp(socket: std.Io.net.Socket, address: std.Io.net.IpAddress, data: []const u8) !void {
+    return sendUdpWithIo(socket, Utils.defaultIo(), address, data);
+}
+
+/// Sends data via a TCP stream with explicit I/O.
+pub fn sendTcpWithIo(stream: std.Io.net.Stream, io_handle: std.Io, data: []const u8) !void {
     var buffer: [Constants.BufferSizes.message]u8 = undefined;
-    var writer = stream.writer(Utils.io(), &buffer);
+    var writer = stream.writer(io_handle, &buffer);
     writer.interface.writeAll(data) catch {
         _ = stats.errors.fetchAdd(1, .monotonic);
         return NetworkError.SendFailed;
@@ -197,6 +218,28 @@ pub fn sendTcp(stream: std.Io.net.Stream, data: []const u8) !void {
     };
     _ = stats.bytesSent.fetchAdd(@truncate(data.len), .monotonic);
     _ = stats.messagesSent.fetchAdd(1, .monotonic);
+}
+
+/// Sends data via a TCP stream.
+pub fn sendTcp(stream: std.Io.net.Stream, data: []const u8) !void {
+    return sendTcpWithIo(stream, Utils.defaultIo(), data);
+}
+
+/// Formats a syslog message and sends it via UDP with explicit I/O.
+pub fn sendSyslogUdpWithIo(
+    allocator: std.mem.Allocator,
+    io_handle: std.Io,
+    socket: std.Io.net.Socket,
+    address: std.Io.net.IpAddress,
+    facility: SyslogFacility,
+    severity: SyslogSeverity,
+    hostname: []const u8,
+    appName: []const u8,
+    message: []const u8,
+) !void {
+    const formatted = try formatSyslog(allocator, facility, severity, hostname, appName, message);
+    defer allocator.free(formatted);
+    try sendUdpWithIo(socket, io_handle, address, formatted);
 }
 
 /// Formats a syslog message and sends it via UDP.
@@ -210,9 +253,23 @@ pub fn sendSyslogUdp(
     appName: []const u8,
     message: []const u8,
 ) !void {
+    return sendSyslogUdpWithIo(allocator, Utils.defaultIo(), socket, address, facility, severity, hostname, appName, message);
+}
+
+/// Formats a syslog message and sends it via TCP with explicit I/O.
+pub fn sendSyslogTcpWithIo(
+    allocator: std.mem.Allocator,
+    io_handle: std.Io,
+    stream: std.Io.net.Stream,
+    facility: SyslogFacility,
+    severity: SyslogSeverity,
+    hostname: []const u8,
+    appName: []const u8,
+    message: []const u8,
+) !void {
     const formatted = try formatSyslog(allocator, facility, severity, hostname, appName, message);
     defer allocator.free(formatted);
-    try sendUdp(socket, address, formatted);
+    try sendTcpWithIo(stream, io_handle, formatted);
 }
 
 /// Formats a syslog message and sends it via TCP.
@@ -225,15 +282,12 @@ pub fn sendSyslogTcp(
     appName: []const u8,
     message: []const u8,
 ) !void {
-    const formatted = try formatSyslog(allocator, facility, severity, hostname, appName, message);
-    defer allocator.free(formatted);
-    try sendTcp(stream, formatted);
+    return sendSyslogTcpWithIo(allocator, Utils.defaultIo(), stream, facility, severity, hostname, appName, message);
 }
 
-/// Fetches a JSON response from a URL.
-/// Returns the parsed JSON value (caller must deinit).
-pub fn fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value) {
-    var client = http.Client{ .allocator = allocator, .io = Utils.io() };
+/// Fetches a JSON response from a URL with explicit I/O.
+pub fn fetchJsonWithIo(allocator: std.mem.Allocator, io_handle: std.Io, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value) {
+    var client = http.Client{ .allocator = allocator, .io = io_handle };
     defer client.deinit();
 
     var req = try client.request(.GET, try std.Uri.parse(url), .{
@@ -278,10 +332,17 @@ pub fn fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const
     return std.json.parseFromSlice(std.json.Value, allocator, body.items, .{});
 }
 
+/// Fetches a JSON response from a URL.
+/// Returns the parsed JSON value (caller must deinit).
+pub fn fetchJson(allocator: std.mem.Allocator, url: []const u8, headers: []const http.Header) !std.json.Parsed(std.json.Value) {
+    return fetchJsonWithIo(allocator, Utils.defaultIo(), url, headers);
+}
+
 /// A simple log server that can listen on TCP and UDP ports.
 /// Useful for testing network logging or building simple log collectors.
 pub const LogServer = struct {
     allocator: std.mem.Allocator,
+    io: std.Io = Utils.defaultIo(),
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     tcpThread: ?std.Thread = null,
     udpThread: ?std.Thread = null,
@@ -290,8 +351,13 @@ pub const LogServer = struct {
     messagesReceived: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
 
     pub fn init(allocator: std.mem.Allocator) LogServer {
+        return initWithIo(allocator, Utils.defaultIo());
+    }
+
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) LogServer {
         return .{
             .allocator = allocator,
+            .io = io_handle,
         };
     }
 
@@ -334,30 +400,30 @@ pub const LogServer = struct {
     fn wakeTcpWorker(self: *LogServer) void {
         if (self.tcpThread == null or self.tcpPort == 0) return;
         const hostName = std.Io.net.HostName.init("127.0.0.1") catch return;
-        const stream = hostName.connect(Utils.io(), self.tcpPort, .{ .mode = .stream, .protocol = .tcp }) catch return;
-        stream.close(Utils.io());
+        const stream = hostName.connect(self.io, self.tcpPort, .{ .mode = .stream, .protocol = .tcp }) catch return;
+        stream.close(self.io);
     }
 
     fn wakeUdpWorker(self: *LogServer) void {
         if (self.udpThread == null or self.udpPort == 0) return;
         const address = std.Io.net.IpAddress.parse("127.0.0.1", self.udpPort) catch return;
         const localAddress = std.Io.net.IpAddress.parse("0.0.0.0", 0) catch return;
-        const socket = localAddress.bind(Utils.io(), .{ .mode = .dgram, .protocol = .udp }) catch return;
-        defer socket.close(Utils.io());
-        socket.send(Utils.io(), &address, "") catch {};
+        const socket = localAddress.bind(self.io, .{ .mode = .dgram, .protocol = .udp }) catch return;
+        defer socket.close(self.io);
+        socket.send(self.io, &address, "") catch {};
     }
 
     fn tcpWorker(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) void {
-        const io = Utils.io();
+        const io_handle = self.io;
         const address = std.Io.net.IpAddress.parse("0.0.0.0", port) catch return;
-        var server = address.listen(io, .{ .reuse_address = true }) catch return;
-        defer server.deinit(io);
+        var server = address.listen(io_handle, .{ .reuse_address = true }) catch return;
+        defer server.deinit(io_handle);
 
         while (self.running.load(.monotonic)) {
-            const stream = server.accept(io) catch continue;
+            const stream = server.accept(io_handle) catch continue;
 
             const thread = std.Thread.spawn(.{}, tcpClientHandler, .{ self, stream, callback }) catch {
-                stream.close(io);
+                stream.close(io_handle);
                 continue;
             };
             thread.detach();
@@ -365,10 +431,10 @@ pub const LogServer = struct {
     }
 
     fn tcpClientHandler(self: *LogServer, stream: std.Io.net.Stream, callback: *const fn ([]const u8) void) void {
-        const io = Utils.io();
-        defer stream.close(io);
+        const io_handle = self.io;
+        defer stream.close(io_handle);
         var buf: [Constants.NetworkConstants.tcpBufferSize]u8 = undefined;
-        var reader = stream.reader(io, &buf);
+        var reader = stream.reader(io_handle, &buf);
         while (self.running.load(.monotonic)) {
             const read = reader.interface.readSliceShort(&buf) catch break;
             if (read == 0) break;
@@ -378,14 +444,14 @@ pub const LogServer = struct {
     }
 
     fn udpWorker(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) void {
-        const io = Utils.io();
+        const io_handle = self.io;
         const address = std.Io.net.IpAddress.parse("0.0.0.0", port) catch return;
-        const socket = address.bind(io, .{ .mode = .dgram, .protocol = .udp }) catch return;
-        defer socket.close(io);
+        const socket = address.bind(io_handle, .{ .mode = .dgram, .protocol = .udp }) catch return;
+        defer socket.close(io_handle);
 
         var buf: [Constants.NetworkConstants.udpMaxPacket]u8 = undefined;
         while (self.running.load(.monotonic)) {
-            const message = socket.receive(io, &buf) catch continue;
+            const message = socket.receive(io_handle, &buf) catch continue;
             if (message.data.len == 0) continue;
             _ = self.messagesReceived.fetchAdd(1, .monotonic);
             callback(message.data);
@@ -442,6 +508,7 @@ pub const ConnectionState = enum {
 /// Manages TCP/UDP connections with automatic reconnect, retry budgets, keepalive, and specialized framing.
 pub const NetworkSink = struct {
     allocator: std.mem.Allocator,
+    io: std.Io = Utils.defaultIo(),
     uri: []const u8,
     state: ConnectionState = .disconnected,
     stream: ?std.Io.net.Stream = null,
@@ -455,8 +522,13 @@ pub const NetworkSink = struct {
     consecutiveErrors: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, uri: []const u8) !NetworkSink {
+        return initWithIo(allocator, Utils.defaultIo(), uri);
+    }
+
+    pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, uri: []const u8) !NetworkSink {
         return .{
             .allocator = allocator,
+            .io = io_handle,
             .uri = try allocator.dupe(u8, uri),
         };
     }
@@ -468,11 +540,11 @@ pub const NetworkSink = struct {
 
     pub fn disconnect(self: *NetworkSink) void {
         if (self.stream) |s| {
-            s.close(Utils.io());
+            s.close(self.io);
             self.stream = null;
         }
         if (self.udpSocket) |s| {
-            s.close(Utils.io());
+            s.close(self.io);
             self.udpSocket = null;
         }
         self.state = .disconnected;
@@ -487,7 +559,7 @@ pub const NetworkSink = struct {
 
         while (attempt < self.maxRetries) : (attempt += 1) {
             if (std.mem.startsWith(u8, self.uri, "tcp://")) {
-                if (connectTcp(self.allocator, self.uri)) |s| {
+                if (connectTcpWithIo(self.allocator, self.io, self.uri)) |s| {
                     self.stream = s;
                     self.state = .connected;
                     if (self.keepalive) {
@@ -506,7 +578,7 @@ pub const NetworkSink = struct {
                     }
                 }
             } else if (std.mem.startsWith(u8, self.uri, "udp://")) {
-                if (createUdpSocket(self.allocator, self.uri)) |udp| {
+                if (createUdpSocketWithIo(self.allocator, self.io, self.uri)) |udp| {
                     self.udpSocket = udp.socket;
                     self.udpAddr = udp.address;
                     self.state = .connected;
@@ -568,7 +640,7 @@ pub const NetworkSink = struct {
 
         while (attempt < self.maxRetries) : (attempt += 1) {
             if (self.stream) |s| {
-                sendTcp(s, data) catch |err| {
+                sendTcpWithIo(s, self.io, data) catch |err| {
                     self.consecutiveErrors += 1;
                     if (attempt + 1 == self.maxRetries) {
                         self.state = .failed;
@@ -584,7 +656,7 @@ pub const NetworkSink = struct {
                 return;
             } else if (self.udpSocket) |s| {
                 if (self.udpAddr) |addr| {
-                    sendUdp(s, addr, data) catch |err| {
+                    sendUdpWithIo(s, self.io, addr, data) catch |err| {
                         self.consecutiveErrors += 1;
                         if (attempt + 1 == self.maxRetries) {
                             self.state = .failed;
@@ -642,7 +714,7 @@ test "network send helpers" {
     resetStats();
 
     const udp = try createUdpSocket(allocator, "udp://127.0.0.1:5514");
-    defer udp.socket.close(Utils.io());
+    defer udp.socket.close(Utils.defaultIo());
 
     try sendSyslogUdp(allocator, udp.socket, udp.address, .user, .info, "localhost", "logly", "syslog test");
 
@@ -661,23 +733,23 @@ test "network send helpers" {
     var attempt: u8 = 0;
     while (attempt < 10 and stream == null) : (attempt += 1) {
         stream = connectTcp(allocator, "tcp://127.0.0.1:39090") catch {
-            Utils.io().sleep(.fromMilliseconds(10), .awake) catch {};
+            Utils.defaultIo().sleep(.fromMilliseconds(10), .awake) catch {};
             continue;
         };
     }
 
     try std.testing.expect(stream != null);
-    defer if (stream) |s| s.close(Utils.io());
+    defer if (stream) |s| s.close(Utils.defaultIo());
 
     resetStats();
     try sendTcp(stream.?, "tcp test");
     if (stream) |s| {
-        s.close(Utils.io());
+        s.close(Utils.defaultIo());
         stream = null;
     }
     var waitAttempt: u8 = 0;
     while (waitAttempt < 50 and !TestContext.received.load(.monotonic)) : (waitAttempt += 1) {
-        Utils.io().sleep(.fromMilliseconds(10), .awake) catch {};
+        Utils.defaultIo().sleep(.fromMilliseconds(10), .awake) catch {};
     }
 
     const tcpStats = getStats();
