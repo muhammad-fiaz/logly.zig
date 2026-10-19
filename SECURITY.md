@@ -6,6 +6,7 @@ Security updates are provided for currently supported releases.
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.2.3   | :white_check_mark: |
 | 0.2.2   | :white_check_mark: |
 | 0.2.1   | :white_check_mark: |
 | < 0.2.1 | :x:                |

@@ -171,7 +171,7 @@ Before installing Logly, ensure you have the following:
 | **Terminal** | Any modern terminal | For colored output support |
 
   > Verify your Zig installation by running `zig version` in your terminal.
-  > - For Zig 0.17.0+, use logly.zig version 0.2.2 or newer
+  > - For Zig 0.17.0+, use logly.zig version 0.2.3 or newer
   > - For Zig 0.16.x, use logly.zig version 0.2.1
   > - See Zig releases and downloads at [ziglang.org](https://ziglang.org/)
 
@@ -211,10 +211,10 @@ Logly.Zig supports a wide range of platforms and architectures:
 
 The easiest way to add Logly to your project:
 
-  **For Zig 0.17.0+ (use `0.2.2` or newer):**
+  **For Zig 0.17.0+ (use `0.2.3` or newer):**
 
   ```bash
-  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.3.tar.gz
   ```
 
   **For Zig 0.16.x (use `0.2.1`):**
@@ -243,12 +243,12 @@ This automatically adds the dependency with the correct hash to your `build.zig.
 
 Add to your `build.zig.zon`:
 
-**For Zig 0.17.0+ (use `0.2.2` or newer):**
+**For Zig 0.17.0+ (use `0.2.3` or newer):**
 
     ```zig
     .dependencies = .{
         .logly = .{
-            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz",
+            .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.3.tar.gz",
             .hash = "...", // you needed to add hash here :)
         },
     },
@@ -373,7 +373,7 @@ The recommended default in applications is `std.heap.DebugAllocator`. For high-t
 
 ## Explicit I/O Architecture
 
-Logly 0.2.2 is engineered around the Zig 0.17.0 `std.Io` design:
+Logly 0.2.3 is engineered around the Zig 0.17.0 `std.Io` design:
 
 - **Zero Global Mutable I/O State**: No hidden global I/O state or background mutation.
 - **Default Stateless I/O**: `logly.defaultIo()` provides a stateless default `std.Io` instance for synchronous console and file logging out of the box.

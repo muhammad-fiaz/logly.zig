@@ -37,7 +37,7 @@ pub const Scheduler = struct {
     condition: std.Io.Condition = .init,
     /// Wakeup generation bumped on every schedule mutation so the worker
     /// loop re-evaluates deadlines instead of sleeping through them.
-    wakeGeneration: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    wakeGeneration: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     /// Scheduler statistics (tasks executed, failed, etc.).
     stats: SchedulerStats,
     /// Compression utility for compression tasks.

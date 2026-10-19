@@ -2733,7 +2733,7 @@ test "logger async json presentation wraps at queue time" {
     var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), path, .{});
     defer file.close(Utils.defaultIo());
     const stat = try file.stat(Utils.defaultIo());
-    const bytes = try allocator.alloc(u8, stat.size);
+    const bytes = try allocator.alloc(u8, @intCast(stat.size));
     defer allocator.free(bytes);
     var readBuf: [4096]u8 = undefined;
     var reader = file.reader(Utils.defaultIo(), &readBuf);
@@ -2993,7 +2993,7 @@ fn readWholeFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), path, .{});
     defer file.close(Utils.defaultIo());
     const stat = try file.stat(Utils.defaultIo());
-    const buf = try allocator.alloc(u8, stat.size);
+    const buf = try allocator.alloc(u8, @intCast(stat.size));
     errdefer allocator.free(buf);
     var rbuf: [4096]u8 = undefined;
     var reader = file.reader(Utils.defaultIo(), &rbuf);

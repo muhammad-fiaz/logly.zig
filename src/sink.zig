@@ -3175,7 +3175,7 @@ test "sink json array append continues the document" {
     var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), fileName, .{});
     defer file.close(Utils.defaultIo());
     const stat = try file.stat(Utils.defaultIo());
-    const bytes = try allocator.alloc(u8, stat.size);
+    const bytes = try allocator.alloc(u8, @intCast(stat.size));
     defer allocator.free(bytes);
     var readBuf: [4096]u8 = undefined;
     var reader = file.reader(Utils.defaultIo(), &readBuf);
@@ -3280,7 +3280,7 @@ test "sink mmap json rotation remaps and frames" {
         var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), full, .{});
         defer file.close(Utils.defaultIo());
         const stat = try file.stat(Utils.defaultIo());
-        const bytes = try allocator.alloc(u8, stat.size);
+        const bytes = try allocator.alloc(u8, @intCast(stat.size));
         defer allocator.free(bytes);
         var readBuf: [4096]u8 = undefined;
         var reader = file.reader(Utils.defaultIo(), &readBuf);
@@ -3336,7 +3336,7 @@ test "sink msgpack file output" {
     var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), fileName, .{});
     defer file.close(Utils.defaultIo());
     const stat = try file.stat(Utils.defaultIo());
-    const bytes = try allocator.alloc(u8, stat.size);
+    const bytes = try allocator.alloc(u8, @intCast(stat.size));
     defer allocator.free(bytes);
     var readBuf: [4096]u8 = undefined;
     var reader = file.reader(Utils.defaultIo(), &readBuf);
@@ -3409,7 +3409,7 @@ test "sink json array rotation keeps documents valid" {
         var file = try std.Io.Dir.cwd().openFile(Utils.defaultIo(), full, .{});
         defer file.close(Utils.defaultIo());
         const stat = try file.stat(Utils.defaultIo());
-        const bytes = try allocator.alloc(u8, stat.size);
+        const bytes = try allocator.alloc(u8, @intCast(stat.size));
         defer allocator.free(bytes);
         var readBuf: [4096]u8 = undefined;
         var reader = file.reader(Utils.defaultIo(), &readBuf);

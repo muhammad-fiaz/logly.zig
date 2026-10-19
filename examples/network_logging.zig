@@ -52,7 +52,7 @@ pub fn main() !void {
     const tcpSinkIdx = try logger.addSink(tcpSink);
 
     // Apply a custom theme to the TCP sink to demonstrate color customization
-    var theme = logly.Color.Theme{};
+    var theme = logly.Formatter.Theme{};
     theme.info = logly.Color.parse("36").?; // Cyan
     theme.warning = logly.Color.parse("33").?; // Yellow
     theme.err = logly.Color.parse("31").?; // Red

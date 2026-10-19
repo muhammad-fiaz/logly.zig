@@ -22,10 +22,10 @@ Get started with Logly.zig in minutes.
 
 The easiest way to install Logly-Zig is using the `zig fetch` command:
 
-  **For Zig 0.17.0+ (use `0.2.2` or newer):**
+  **For Zig 0.17.0+ (use `0.2.3` or newer):**
 
   ```bash
-  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.3.tar.gz
   ```
 
   **For Zig 0.16.x (use `0.2.1`):**
@@ -55,7 +55,7 @@ This command automatically:
 
 If you prefer manual installation, add to your `build.zig.zon`:
 
-  **For Zig 0.17.0+ (use `0.2.2` or newer):**
+  **For Zig 0.17.0+ (use `0.2.3` or newer):**
 
     ```zig
     .{
@@ -63,7 +63,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
         .version = "0.1.0",
         .dependencies = .{
             .logly = .{
-                .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz",
+                .url = "https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.3.tar.gz",
                 .hash = "1220...", // Run: zig fetch <url> to get this hash
             },
         },
@@ -74,7 +74,7 @@ If you prefer manual installation, add to your `build.zig.zon`:
 
   **For Zig 0.17.0+:**
   ```bash
-  zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  zig fetch https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.3.tar.gz
   ```
 
   **For Zig 0.16.x:**

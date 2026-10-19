@@ -112,10 +112,10 @@ pub fn main() !void {
 
   The easiest way to add Logly to your project.
 
-  For Zig 0.17.0+ (use `0.2.2` or newer):
+  For Zig 0.17.0+ (use `0.2.3` or newer):
 
   ```bash
-  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.2.tar.gz
+  zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/0.2.3.tar.gz
   ```
 
   For Zig 0.16.x (use `0.2.1`):

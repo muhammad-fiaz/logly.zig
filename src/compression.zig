@@ -769,18 +769,7 @@ pub const Compression = struct {
         const compressionLevel = self.config.getEffectiveZstdLevel();
 
         if (self.config.zstdDict) |dict| {
-            // zstd 0.0.4 exposes the Dictionary struct but not its free
-            // loadDictionary helper, so construct it directly. The id is
-            // parsed from the magic header when present, matching upstream.
-            var dictId: u32 = 0;
-            if (dict.len >= 8 and std.mem.readInt(u32, dict[0..4], .little) == 0xEC30A437) {
-                dictId = std.mem.readInt(u32, dict[4..8], .little);
-            }
-            var dictionary = zstd.Dictionary{
-                .data = try alloc.dupe(u8, dict),
-                .id = dictId,
-                .allocator = alloc,
-            };
+            var dictionary = zstd.loadDictionary(alloc, dict) catch return error.ZstdCompressionFailed;
             defer dictionary.deinit();
 
             var compressor = zstd.Compressor.initWithLevel(alloc, compressionLevel);
@@ -815,15 +804,7 @@ pub const Compression = struct {
 
         var dictionary: ?zstd.Dictionary = null;
         if (self.config.zstdDict) |dict| {
-            var dictId: u32 = 0;
-            if (dict.len >= 8 and std.mem.readInt(u32, dict[0..4], .little) == 0xEC30A437) {
-                dictId = std.mem.readInt(u32, dict[4..8], .little);
-            }
-            dictionary = zstd.Dictionary{
-                .data = try alloc.dupe(u8, dict),
-                .id = dictId,
-                .allocator = alloc,
-            };
+            dictionary = zstd.loadDictionary(alloc, dict) catch return error.ZstdDecompressionFailed;
             decompressor.setDictionary(&dictionary.?);
         }
         defer if (dictionary) |*d| d.deinit();
