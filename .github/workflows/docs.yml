@@ -37,9 +37,7 @@ jobs:
 
       - name: Clean state
         working-directory: ./docs
-        run: |
-          rm -f package-lock.json bun.lockb
-          rm -rf node_modules
+        run: rm -rf node_modules
 
       - name: Install dependencies
         working-directory: ./docs
@@ -84,9 +82,10 @@ jobs:
         if: ${{ steps.deployment.outcome == 'success' }}
         run: |
           page_url="${{ steps.deployment.outputs.page_url }}"
-          echo "Checking site: ${page_url}"
+          page_url="${page_url%/}"
+          echo "Checking site: ${page_url}/"
           # Basic check that site and sitemap are available
-          status=$(curl -s -o /dev/null -w "%{http_code}" "${page_url}")
+          status=$(curl -s -o /dev/null -w "%{http_code}" "${page_url}/")
           if [ "${status}" -ne 200 ]; then
             echo "Site not reachable: HTTP ${status}"
             exit 1
@@ -95,6 +94,11 @@ jobs:
           status=$(curl -s -o /dev/null -w "%{http_code}" "${sitemap_url}")
           if [ "${status}" -ne 200 ]; then
             echo "Sitemap not found at ${sitemap_url} (HTTP ${status})"
+            exit 1
+          fi
+          # Ensure the generated sitemap uses the deployed base path
+          if ! curl -fsSL "${sitemap_url}" | grep -q "<loc>${page_url}/</loc>"; then
+            echo "Sitemap does not contain the canonical base-path home URL: ${page_url}/"
             exit 1
           fi
 

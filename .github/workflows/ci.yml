@@ -1,68 +1,122 @@
 name: CI
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
     branches: [main, dev]
-  workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZIG_VERSION: 0.17.0
 
 jobs:
-  build-and-test:
-    name: Build & Test
-    runs-on: ${{ matrix.os }}
+  verify:
+    name: fmt, native tests, examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Check formatting
+        run: zig fmt --check src/ examples/
+      - name: Test
+        run: zig build test --summary all
+      - name: Examples
+        run: zig build run-all-examples
+
+  test-linux:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
+        include:
+          - { name: x86_64-linux,     target: x86_64-linux-gnu,      optimize: Debug,       qemu: false }
+          - { name: aarch64-linux,    target: aarch64-linux-musl,    optimize: Debug,       qemu: true }
+          - { name: x86-linux,        target: x86-linux-musl,       optimize: Debug,       qemu: true }
+          - { name: x86-linux-safe,   target: x86-linux-musl,       optimize: ReleaseSafe, qemu: true }
+          - { name: arm-linux,        target: arm-linux-musleabihf, optimize: Debug,       qemu: true }
+          - { name: arm-linux-safe,   target: arm-linux-musleabihf, optimize: ReleaseSafe, qemu: true }
+          - { name: thumb-linux,      target: thumb-linux-musleabihf, optimize: Debug,     qemu: true }
+          - { name: riscv32-linux,    target: riscv32-linux-musl,   optimize: Debug,       qemu: true }
     steps:
       - uses: actions/checkout@v7
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0
+          version: ${{ env.ZIG_VERSION }}
+          cache-key: ${{ matrix.target }}-${{ matrix.optimize }}
+      - name: Install QEMU
+        if: matrix.qemu
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user
+          qemu-arm --version
+          qemu-aarch64 --version
+          qemu-riscv32 --version
+      - run: >-
+          zig build test
+          -Dtarget=${{ matrix.target }}
+          -Doptimize=${{ matrix.optimize }}
+          ${{ matrix.qemu && '-fqemu' || '' }} --summary all
 
-      - name: Build
-        run: zig build
-
-      - name: Run tests
-        run: zig build test
-
-  examples:
-    name: Run Examples
-    runs-on: ubuntu-latest
+  test-windows:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: x86-windows,    target: x86-windows,    os: windows-latest }
+          - { name: x86_64-windows, target: x86_64-windows, os: windows-latest }
     steps:
       - uses: actions/checkout@v7
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0
+          version: ${{ env.ZIG_VERSION }}
+          cache-key: ${{ matrix.target }}
+      - run: zig build test -Dtarget=${{ matrix.target }} --summary all
 
-      - name: Run all examples
-        run: zig build run-all-examples
-
-  docs:
-    name: Build Docs
-    runs-on: ubuntu-latest
+  test-macos:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: aarch64-macos, target: aarch64-macos, os: macos-latest }
+          - { name: x86_64-macos, target: x86_64-macos, os: macos-15-intel }
     steps:
       - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          cache-key: ${{ matrix.target }}
+      - run: zig build test -Dtarget=${{ matrix.target }} --summary all
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install deps
-        working-directory: docs
-        run: bun install
-
-      - name: Build docs
-        working-directory: docs
-        run: bun run docs:build
+  build-only:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: x86-macos, target: x86-macos }
+          - { name: arm-linux-gnueabihf, target: arm-linux-gnueabihf }
+          - { name: x86-freestanding, target: x86-freestanding }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          cache-key: ${{ matrix.target }}
+      - run: zig build -Dtarget=${{ matrix.target }}

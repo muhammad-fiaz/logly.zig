@@ -37,4 +37,7 @@ logs/
 *.html
 *.map
 
-# Note: `package-lock.json` is present in this repo intentionally; do not add it here unless you intend to stop tracking it.
+# Bun manages dependencies via bun.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

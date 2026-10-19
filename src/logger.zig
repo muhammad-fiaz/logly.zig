@@ -3339,4 +3339,3 @@ test "runtime config override and conflict resolution" {
     try std.testing.expectEqual(Level.debug, inverted.level.?);
     try std.testing.expectEqual(Level.fatal, inverted.maxLevel.?);
 }
-

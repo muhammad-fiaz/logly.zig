@@ -1237,7 +1237,6 @@ pub const Sink = struct {
         return self.config.color;
     }
 
-
     /// Reconfigures mutable runtime settings on this sink.
     pub fn configure(self: *Sink, config: SinkConfig) void {
         self.mutex.lockUncancelable(self.io);

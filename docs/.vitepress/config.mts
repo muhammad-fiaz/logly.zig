@@ -2,7 +2,10 @@ import { defineConfig } from "vitepress";
 import llmstxt from "vitepress-plugin-llms";
 
 // Site configuration
-export const SITE_URL = "https://muhammad-fiaz.github.io/logly.zig";
+const SITE_ORIGIN = "https://muhammad-fiaz.github.io";
+const BASE_PATH = "/logly.zig/";
+const CLEAN_URLS = false;
+export const SITE_URL = `${SITE_ORIGIN}${BASE_PATH}`.replace(/\/$/, "");
 export const SITE_NAME = "Logly.zig";
 export const SITE_DESCRIPTION =
   "High-performance structured logging library for Zig with async I/O, explicit rotation/thread-pool/scheduler controls, JSON output, ANSI colors, and enterprise features like redaction, metrics, and distributed tracing.";
@@ -22,12 +25,12 @@ export default defineConfig({
   lang: "en-US",
   title: SITE_NAME,
   description: SITE_DESCRIPTION,
-  base: "/logly.zig/",
+  base: BASE_PATH,
   lastUpdated: true,
-  cleanUrls: false,
+  cleanUrls: CLEAN_URLS,
 
   sitemap: {
-    hostname: SITE_URL,
+    hostname: `${SITE_URL}/`,
   },
 
   vite: {
@@ -79,14 +82,14 @@ export default defineConfig({
     // Canonical URL
 
     // Favicons
-    ["link", { rel: "icon", href: "/logly.zig/favicon.ico" }],
+    ["link", { rel: "icon", href: `${BASE_PATH}favicon.ico` }],
     [
       "link",
       {
         rel: "icon",
         type: "image/png",
         sizes: "16x16",
-        href: "/logly.zig/favicon-16x16.png",
+        href: `${BASE_PATH}favicon-16x16.png`,
       },
     ],
     [
@@ -95,7 +98,7 @@ export default defineConfig({
         rel: "icon",
         type: "image/png",
         sizes: "32x32",
-        href: "/logly.zig/favicon-32x32.png",
+        href: `${BASE_PATH}favicon-32x32.png`,
       },
     ],
     [
@@ -103,7 +106,7 @@ export default defineConfig({
       {
         rel: "apple-touch-icon",
         sizes: "180x180",
-        href: "/logly.zig/apple-touch-icon.png",
+        href: `${BASE_PATH}apple-touch-icon.png`,
       },
     ],
     [
@@ -112,7 +115,7 @@ export default defineConfig({
         rel: "icon",
         type: "image/png",
         sizes: "192x192",
-        href: "/logly.zig/android-chrome-192x192.png",
+        href: `${BASE_PATH}android-chrome-192x192.png`,
       },
     ],
     [
@@ -121,10 +124,10 @@ export default defineConfig({
         rel: "icon",
         type: "image/png",
         sizes: "512x512",
-        href: "/logly.zig/android-chrome-512x512.png",
+        href: `${BASE_PATH}android-chrome-512x512.png`,
       },
     ],
-    ["link", { rel: "manifest", href: "/logly.zig/site.webmanifest" }],
+    ["link", { rel: "manifest", href: `${BASE_PATH}site.webmanifest` }],
 
     // Theme color
     ["meta", { name: "theme-color", content: "#f7a41d" }],
@@ -180,7 +183,7 @@ gtag('config', '${GA_ID}');`,
     // Dynamic OG image generation based on page title
     const pageTitle = pageData.title || SITE_NAME;
     const pageDescription = pageData.description || SITE_DESCRIPTION;
-    const canonicalUrl = `${SITE_URL}/${pageData.relativePath.replace(/((^|\/)index)?\.md$/, "$2").replace(/\.md$/, ".html")}`;
+    const canonicalUrl = `${SITE_URL}/${pageData.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, CLEAN_URLS ? "" : ".html")}`;
 
     pageData.frontmatter.head ??= [];
     pageData.frontmatter.head.push(
