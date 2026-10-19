@@ -170,10 +170,15 @@ pub const Rotation = struct {
     maxAgeSeconds: ?i64 = null,
     /// Maximum total size of all rotated files in bytes.
     maxTotalSize: ?u64 = null,
-    /// Custom rotation callback.
+    /// Custom rotation callback. Runs while the rotation lock is held (and,
+    /// when rotation is driven by a Sink, the sink lock as well); callbacks
+    /// must not log or call back into the logger.
     onRotate: ?*const fn (oldPath: []const u8, newPath: []const u8) void = null,
-    /// Timestamp of last rotation.
+    /// Timestamp of last rotation (wall clock, for the public age helpers).
     lastRotation: i64,
+    /// Monotonic timestamp of last rotation: interval decisions must not
+    /// depend on wall-clock jumps (NTP corrections, manual clock changes).
+    lastRotationMonoMs: i64 = 0,
     /// Naming strategy for rotated files.
     naming: NamingStrategy = .timestamp,
     /// Custom naming format string.
@@ -201,10 +206,16 @@ pub const Rotation = struct {
     /// Callback invoked when rotation starts.
     onRotationStart: ?*const fn (oldPath: []const u8, newPath: []const u8) void = null,
     /// Callback invoked when rotation completes successfully.
+    /// Invoked under the rotation lock (see `onRotate` for the reentrancy
+    /// contract).
     onRotationComplete: ?*const fn (oldPath: []const u8, newPath: []const u8, elapsedMs: u64) void = null,
     /// Callback invoked when rotation encounters an error.
+    /// Invoked under the rotation lock (see `onRotate` for the reentrancy
+    /// contract).
     onRotationError: ?*const fn (path: []const u8, err: anyerror) void = null,
     /// Callback invoked when a file is archived.
+    /// Invoked under the rotation lock (see `onRotate` for the reentrancy
+    /// contract).
     onFileArchived: ?*const fn (originalPath: []const u8, archivePath: []const u8) void = null,
     /// Callback invoked during retention cleanup.
     onRetentionCleanup: ?*const fn (path: []const u8) void = null,
@@ -247,6 +258,7 @@ pub const Rotation = struct {
             .maxTotalSize = null,
             .onRotate = null,
             .lastRotation = Utils.currentSeconds(),
+            .lastRotationMonoMs = Utils.monotonicMillis(),
         };
 
         // Smart default naming based on interval
@@ -427,12 +439,17 @@ pub const Rotation = struct {
     /// Computes rotation reason without taking locks.
     /// Both triggers are always evaluated so hybrid setups report the
     /// exact reason via getRotationReason().
-    fn computeRotationReason(self: *Rotation, filePtr: *std.Io.File, now: i64) ?RotationReason {
+    fn computeRotationReason(self: *Rotation, filePtr: *std.Io.File) ?RotationReason {
         var byInterval = false;
         var bySize = false;
 
         if (self.interval) |interval| {
-            byInterval = now - self.lastRotation >= interval.seconds();
+            // Either clock may prove the interval elapsed: wall time catches
+            // forward jumps, monotonic time catches backward ones. A
+            // negative wall delta can never trigger on its own.
+            const intervalMs = @as(i64, @intCast(interval.seconds())) * 1000;
+            byInterval = (Utils.currentSeconds() - self.lastRotation >= interval.seconds()) or
+                (Utils.monotonicMillis() - self.lastRotationMonoMs >= intervalMs);
         }
 
         if (self.sizeLimit) |limit| {
@@ -454,7 +471,7 @@ pub const Rotation = struct {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
 
-        return self.computeRotationReason(filePtr, Utils.currentSeconds());
+        return self.computeRotationReason(filePtr);
     }
 
     /// Returns true when rotation conditions are currently met.
@@ -509,7 +526,11 @@ pub const Rotation = struct {
     /// Pure predicate: no locks, no mutation.
     pub fn rotationDue(self: *Rotation, filePtr: *std.Io.File, now: i64, contentSize: ?u64) bool {
         if (self.interval) |interval| {
-            if (now - self.lastRotation >= interval.seconds()) return true;
+            // Wall time handles forward jumps and caller-supplied clocks;
+            // monotonic time handles backward jumps.
+            const intervalMs = @as(i64, @intCast(interval.seconds())) * 1000;
+            if (now - self.lastRotation >= interval.seconds() or
+                Utils.monotonicMillis() - self.lastRotationMonoMs >= intervalMs) return true;
         }
         if (self.sizeLimit) |limit| {
             if (contentSize) |size| {
@@ -558,9 +579,15 @@ pub const Rotation = struct {
     fn performRotation(self: *Rotation, filePtr: *std.Io.File) !void {
         const startTime = Utils.currentMillis();
 
-        // 1. Generate new filename
-        const rotatedPath = try self.generateRotatedPath();
+        // 1. Generate new filename. Never reuse an existing archive: a rename
+        // onto an existing path replaces it on POSIX and fails on Windows.
+        var rotatedPath = try self.generateRotatedPath();
         defer self.allocator.free(rotatedPath);
+        if (self.pathExists(rotatedPath)) {
+            const unique = try self.uniquePathVariant(rotatedPath);
+            self.allocator.free(rotatedPath);
+            rotatedPath = unique;
+        }
 
         // Ensure archive dir exists if used
         if (self.archiveDir) |_| {
@@ -582,8 +609,15 @@ pub const Rotation = struct {
         }
 
         std.Io.Dir.cwd().rename(self.basePath, std.Io.Dir.cwd(), rotatedPath, self.io) catch |err| {
-            // Try to reopen functionality if rename fails
-            filePtr.* = try std.Io.Dir.cwd().createFile(self.io, self.basePath, .{ .read = true, .truncate = false }); // Append mode effectively
+            // Reopen the original log and resume at its existing end: a fresh
+            // handle starts at offset 0, and the next streaming write would
+            // overwrite the retained content instead of appending.
+            filePtr.* = std.Io.Dir.cwd().createFile(self.io, self.basePath, .{ .read = true, .truncate = false }) catch return err;
+            if (filePtr.stat(self.io)) |st| {
+                var seekBuf: [1]u8 = undefined;
+                var seeker = filePtr.writerStreaming(self.io, &seekBuf);
+                seeker.seekToUnbuffered(st.size) catch {};
+            } else |_| {}
             return err;
         };
 
@@ -594,6 +628,7 @@ pub const Rotation = struct {
         });
 
         self.lastRotation = Utils.currentSeconds();
+        self.lastRotationMonoMs = Utils.monotonicMillis();
         _ = self.stats.totalRotations.fetchAdd(1, .monotonic);
 
         const elapsed = @as(Constants.AtomicUnsigned, @intCast(Utils.currentMillis() - startTime));
@@ -607,21 +642,29 @@ pub const Rotation = struct {
 
         if (self.compression) |compConfig| {
             if (self.compressor) |*comp| {
-                const compressedPath = try uniqueCompressedPath(self.allocator, rotatedPath, compConfig.algorithm);
-                errdefer self.allocator.free(compressedPath);
+                const compressedPath = try self.uniqueCompressedPath(rotatedPath, compConfig.algorithm);
+                defer self.allocator.free(compressedPath);
 
-                // Compress; archive accounting happens only on success so a
-                // failed compression never masquerades as an archived file.
-                _ = comp.compressFile(rotatedPath, compressedPath) catch {
+                // `compressFile` reports expected failures through
+                // `.success = false` as well as through errors; both must be
+                // treated as "keep the uncompressed archive".
+                var compressionFailed = true;
+                if (comp.compressFile(rotatedPath, compressedPath)) |r| {
+                    if (r.outputPath) |p| self.allocator.free(p);
+                    compressionFailed = !r.success;
+                } else |_| {}
+
+                if (compressionFailed) {
                     _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
-                    // On failure, we keep the uncompressed file
-                    self.allocator.free(compressedPath);
+                    // Remove a partial/empty archive and keep the readable
+                    // uncompressed file as the archive of record.
+                    std.Io.Dir.cwd().deleteFile(self.io, compressedPath) catch {};
                     self.allocator.free(finalPath);
                     if (self.retention != null or self.maxAgeSeconds != null) {
                         self.cleanupOldFiles() catch {};
                     }
                     return;
-                };
+                }
 
                 // If successful and keep_original is false, remove uncompressed rotated file
                 if (!self.keepOriginal) {
@@ -654,7 +697,10 @@ pub const Rotation = struct {
 
         switch (self.naming) {
             .timestamp => {
-                nameBuf = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ baseName, now });
+                // Millisecond precision: several rotations can land in the
+                // same second, and `performRotation` adds a suffix on any
+                // remaining collision.
+                nameBuf = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ baseName, nowMs });
             },
             .date => {
                 // Format YYYY-MM-DD
@@ -781,9 +827,37 @@ pub const Rotation = struct {
         }
     }
 
-    fn uniqueCompressedPath(allocator: std.mem.Allocator, base: []const u8, algo: Compression.Algorithm) ![]u8 {
+    fn uniqueCompressedPath(self: *Rotation, base: []const u8, algo: Compression.Algorithm) ![]u8 {
         const ext = Utils.getCompressionExtension(algo);
-        return std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ext });
+        const first = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ base, ext });
+        if (!self.pathExists(first)) return first;
+        self.allocator.free(first);
+
+        var n: usize = 1;
+        while (n < 100_000) : (n += 1) {
+            const candidate = try std.fmt.allocPrint(self.allocator, "{s}.{d}{s}", .{ base, n, ext });
+            if (!self.pathExists(candidate)) return candidate;
+            self.allocator.free(candidate);
+        }
+        return error.CompressionPathCollision;
+    }
+
+    fn pathExists(self: *Rotation, path: []const u8) bool {
+        if (std.Io.Dir.cwd().access(self.io, path, .{})) |_| {
+            return true;
+        } else |_| {
+            return false;
+        }
+    }
+
+    fn uniquePathVariant(self: *Rotation, path: []const u8) ![]u8 {
+        var n: usize = 1;
+        while (n < 100_000) : (n += 1) {
+            const candidate = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ path, n });
+            if (!self.pathExists(candidate)) return candidate;
+            self.allocator.free(candidate);
+        }
+        return error.RotationPathCollision;
     }
 
     fn shiftIndexFiles(self: *Rotation) !void {
@@ -836,8 +910,13 @@ pub const Rotation = struct {
         var iter = dir.iterate();
         while (try iter.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
-            // Matches base_name and starts with it
-            if (std.mem.startsWith(u8, entry.name, baseName) and !std.mem.eql(u8, entry.name, baseName)) {
+            // Only names derived from this base file belong to it: the
+            // separator must follow the base exactly, so `app.log` never
+            // matches `app.logger` or `app.log.backup` from other tooling.
+            const isArchiveName = entry.name.len > baseName.len and
+                std.mem.startsWith(u8, entry.name, baseName) and
+                entry.name[baseName.len] == '.';
+            if (isArchiveName) {
                 const fullPath = try std.fs.path.join(self.allocator, &.{ dirPath, entry.name });
                 defer self.allocator.free(fullPath);
 
@@ -923,18 +1002,23 @@ pub const Rotation = struct {
         if (self.compressOnRetention and !isCompressed) {
             if (self.compressor) |*comp| {
                 const algo = if (self.compression) |c| c.algorithm else .deflate;
-                const compressedPath = try uniqueCompressedPath(self.allocator, path, algo);
+                const compressedPath = try self.uniqueCompressedPath(path, algo);
                 defer self.allocator.free(compressedPath);
 
-                // Compress the file
-                _ = comp.compressFile(path, compressedPath) catch |err| {
+                // Compress the file. Both thrown errors and `.success = false`
+                // keep the original: retention retries next cleanup instead
+                // of trading a failed compression for data loss.
+                const result = comp.compressFile(path, compressedPath) catch |err| {
                     _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
-                    // On failure, fall back to deletion if delete_after_retention_compress is true
-                    if (self.deleteAfterRetentionCompress) {
-                        try self.deleteFile(path);
-                    }
+                    std.Io.Dir.cwd().deleteFile(self.io, compressedPath) catch {};
                     return err;
                 };
+                if (result.outputPath) |p| self.allocator.free(p);
+                if (!result.success) {
+                    _ = self.stats.compressionErrors.fetchAdd(1, .monotonic);
+                    std.Io.Dir.cwd().deleteFile(self.io, compressedPath) catch {};
+                    return error.CompressionFailed;
+                }
 
                 _ = self.stats.filesArchived.fetchAdd(1, .monotonic);
                 if (self.onFileArchived) |cb| cb(path, compressedPath);
@@ -1497,44 +1581,73 @@ test "rotation next rotation at and age helpers" {
     try std.testing.expect(age >= 0);
 }
 
-test "retention keeps the configured number of archives and prunes overflow" {
+test "retention prunes only archives of the base file" {
     const allocator = std.testing.allocator;
-    const base = "test_retention.log";
-    const dir = "logs";
-    _ = std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), base) catch {};
-    defer std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), base) catch {};
-    std.Io.Dir.cwd().createDirPath(Utils.defaultIo(), dir) catch {};
+    const io = Utils.defaultIo();
+    const base = "test_retention_boundary.log";
+    const decoy = "test_retention_boundary.logger";
 
-    const retention: usize = 3;
-    var rot = try Rotation.init(allocator, base, null, 1, retention);
+    std.Io.Dir.cwd().deleteFile(io, base) catch {};
+    std.Io.Dir.cwd().deleteFile(io, decoy) catch {};
+    defer std.Io.Dir.cwd().deleteFile(io, base) catch {};
+    defer std.Io.Dir.cwd().deleteFile(io, decoy) catch {};
+
+    var baseFile = try std.Io.Dir.cwd().createFile(io, base, .{ .read = true, .truncate = true });
+    baseFile.close(io);
+    var decoyFile = try std.Io.Dir.cwd().createFile(io, decoy, .{ .read = true, .truncate = true });
+    decoyFile.close(io);
+
+    var names: [5][64]u8 = undefined;
+    var archiveNames: [5][]const u8 = undefined;
+    var i: usize = 0;
+    while (i < archiveNames.len) : (i += 1) {
+        const name = try std.fmt.bufPrint(&names[i], "{s}.{d}", .{ base, i + 1 });
+        archiveNames[i] = name;
+        var f = try std.Io.Dir.cwd().createFile(io, name, .{ .truncate = true });
+        try f.writeStreamingAll(io, "archive");
+        f.close(io);
+    }
+    defer for (archiveNames) |name| std.Io.Dir.cwd().deleteFile(io, name) catch {};
+
+    var rot = try Rotation.init(allocator, base, null, null, 2);
+    defer rot.deinit();
+    try rot.cleanupOldFiles();
+
+    // The live file and a same-prefix decoy are never retention candidates.
+    try std.Io.Dir.cwd().access(io, base, .{});
+    try std.Io.Dir.cwd().access(io, decoy, .{});
+
+    var remaining: usize = 0;
+    for (archiveNames) |name| {
+        if (std.Io.Dir.cwd().access(io, name, .{})) |_| {
+            remaining += 1;
+        } else |_| {}
+    }
+    try std.testing.expectEqual(@as(usize, 2), remaining);
+}
+
+test "compressed archive path avoids clobbering an existing archive" {
+    const allocator = std.testing.allocator;
+    const io = Utils.defaultIo();
+    const base = try std.fmt.allocPrint(allocator, "rotation_collision_{d}.log", .{Utils.currentMillis()});
+    defer allocator.free(base);
+
+    const first = try std.fmt.allocPrint(allocator, "{s}.deflate", .{base});
+    defer allocator.free(first);
+    defer std.Io.Dir.cwd().deleteFile(io, first) catch {};
+
+    var f = try std.Io.Dir.cwd().createFile(io, first, .{ .truncate = true });
+    try f.writeStreamingAll(io, "existing archive");
+    f.close(io);
+
+    var rot = try Rotation.init(allocator, base, null, null, null);
     defer rot.deinit();
 
-    // Force more rotations than retention allows. Each pass appends to the
-    // live file, trips the 1-byte size limit, and shifts the index files.
-    var pass: usize = 0;
-    while (pass < retention + 2) : (pass += 1) {
-        var f = try std.Io.Dir.cwd().createFile(Utils.defaultIo(), base, .{ .truncate = true });
-        try rot.checkAndRotate(&f);
+    const chosen = try rot.uniqueCompressedPath(base, .deflate);
+    defer allocator.free(chosen);
+    defer std.Io.Dir.cwd().deleteFile(io, chosen) catch {};
 
-        // Write past the size limit so the next pass sees an oversized file.
-        var filler: [64]u8 = @splat('x');
-        try f.writeStreamingAll(Utils.defaultIo(), &filler);
-        f.close(Utils.defaultIo());
-    }
-
-    // Every index file within the retention window exists.
-    var i: usize = 1;
-    while (i <= retention) : (i += 1) {
-        var nameBuf: [64]u8 = undefined;
-        const name = try std.fmt.bufPrint(&nameBuf, "{s}.{d}", .{ base, i });
-        try std.testing.expectError(
-            error.FileNotFound,
-            std.Io.Dir.cwd().access(Utils.defaultIo(), name, .{}),
-        );
-    }
-
-    // Anything past the window has been pruned.
-    var overBuf: [64]u8 = undefined;
-    const over = try std.fmt.bufPrint(&overBuf, "{s}.{d}", .{ base, retention + 1 });
-    std.Io.Dir.cwd().deleteFile(Utils.defaultIo(), over) catch {};
+    try std.testing.expect(!std.mem.eql(u8, chosen, first));
+    try std.testing.expect(std.mem.startsWith(u8, chosen, base));
+    try std.Io.Dir.cwd().access(io, first, .{});
 }

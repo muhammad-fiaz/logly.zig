@@ -253,7 +253,8 @@ pub const Telemetry = struct {
     // Exporter stats (advanced stats with utils helpers)
     exporterStats: ExporterStats = .{},
 
-    // Callbacks (from config)
+    // Callbacks (from config). Invoked while the telemetry lock is held, so
+    // they must not call back into Telemetry (non-reentrant mutex).
     onSpanStart: ?*const fn ([]const u8, []const u8) void,
     onSpanEnd: ?*const fn ([]const u8, u64) void,
     onMetricRecorded: ?*const fn ([]const u8, f64) void,
@@ -384,10 +385,12 @@ pub const Telemetry = struct {
 
         // Generate IDs using utils
         const spanId = try utils.generateSpanId(self.allocator);
+        errdefer self.allocator.free(spanId);
         const traceId = if (opts.traceId) |tid|
             try self.allocator.dupe(u8, tid)
         else
             try utils.generateTraceId(self.allocator);
+        errdefer self.allocator.free(traceId);
 
         // Check sampling decision using utils
         if (!self.sampler.shouldSample(traceId)) {
@@ -396,18 +399,28 @@ pub const Telemetry = struct {
             return Span.empty(self.allocator);
         }
 
-        self.activeSpanCount += 1;
-        self.totalSpansCreated += 1;
+        // Build the span before updating counters so an allocation failure
+        // leaves the Telemetry statistics consistent with what exists.
+        const parentSpanId = if (opts.parentSpanId) |pid|
+            try self.allocator.dupe(u8, pid)
+        else
+            null;
+        errdefer if (parentSpanId) |pid| self.allocator.free(pid);
+        const ownedName = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(ownedName);
 
         const span = Span{
             .allocator = self.allocator,
             .spanId = spanId,
             .traceId = traceId,
-            .parentSpanId = if (opts.parentSpanId) |pid| try self.allocator.dupe(u8, pid) else null,
-            .name = try self.allocator.dupe(u8, name),
+            .parentSpanId = parentSpanId,
+            .name = ownedName,
             .startTime = utils.currentNanos(),
             .kind = opts.kind orelse .internal,
         };
+
+        self.activeSpanCount += 1;
+        self.totalSpansCreated += 1;
 
         // Invoke callback
         if (self.onSpanStart) |callback| {
@@ -492,8 +505,10 @@ pub const Telemetry = struct {
         defer self.mutex.unlock(self.io);
 
         // Store metric in ArrayList
+        const ownedName = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(ownedName);
         try self.metrics.append(self.allocator, .{
-            .name = try self.allocator.dupe(u8, name),
+            .name = ownedName,
             .kind = opts.kind orelse .gauge,
             .value = value,
             .unit = opts.unit,

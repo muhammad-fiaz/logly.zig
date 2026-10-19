@@ -93,8 +93,8 @@ pub const Strategy = union(enum) {
 Configuration for rate limiting.
 
 ```zig
-pub const RateLimitConfig = struct {
-    maxRecords: u64,    // Maximum records per window
+pub const SamplingRateLimitConfig = struct {
+    maxRecords: u32,    // Maximum records per window
     windowMs: u64,      // Window size in milliseconds
 };
 ```
@@ -105,9 +105,10 @@ Configuration for adaptive sampling.
 
 ```zig
 pub const AdaptiveConfig = struct {
-    targetRate: u32,           // Target logs per second
-    min_sampling_rate: f64,     // Minimum sampling probability
-    adjustmentIntervalMs: u64, // How often to adjust
+    targetRate: u32,                    // Target logs per second (0 is normalized to 1)
+    minSampleRate: f64 = 0.01,          // Minimum sampling probability
+    maxSampleRate: f64 = 1.0,           // Maximum sampling probability
+    adjustmentIntervalMs: u64 = 1000,   // How often to adjust (0 is normalized to the default)
 };
 ```
 
@@ -117,9 +118,8 @@ Configuration for token bucket (burst) sampling.
 
 ```zig
 pub const TokenBucketConfig = struct {
-    capacity: u32,          // Maximum tokens (burst capacity)
-    refill_rate: u32,       // Tokens added per second
-    refill_interval_ms: u64, // How often to add tokens
+    burstCapacity: u32,     // Maximum tokens (burst capacity)
+    refillRatePerSec: u32,  // Tokens added per second
 };
 ```
 

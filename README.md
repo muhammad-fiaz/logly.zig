@@ -147,7 +147,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Invoke System** | Attach extra messages to logs when conditions match | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/invoke) |
 | **OpenTelemetry** | Full OTEL support with Jaeger, Zipkin, Datadog, GCP, AWS, Azure, and generic collectors | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Distributed Tracing** | W3C Trace Context propagation with span and trace management | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
-| **Metrics Export** | Export metrics in OTLP, Prometheus, and JSON formats | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
+| **Metrics Export** | Export metrics in Prometheus and JSON formats (the default `.otlp` metric path is a placeholder that does not emit) | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Sampling Strategies** | Multiple sampling strategies for performance optimization | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Baggage Propagation** | W3C Baggage support for correlation context | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 
@@ -968,7 +968,7 @@ try logger.flush();
 
 ### Global Panic Hook (Crash Interception)
 
-A robust crash protection hook that automatically captures standard Zig panics, emits crash dumps synchronously to active sinks (bypassing async worker queues to avoid locks/deadlocks), and flushes log buffers reliably before process exit.
+A robust crash protection hook that automatically captures standard Zig panics, emits crash dumps synchronously to active sinks (bypassing async worker queues), and flushes log buffers before process exit. Crash logging is best-effort: sink locks are still acquired per write, so it is not async-signal-safe and can block if a crash interrupts a thread while it holds a sink lock.
 
 Simply export the panic handler in your root source file (e.g., `main.zig`):
 

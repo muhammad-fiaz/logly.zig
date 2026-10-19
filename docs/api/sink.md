@@ -48,6 +48,7 @@ Configuration for a sink.
 | `eventLog` | `bool` | `false` | Enable system event log output (Windows Event Log on Windows, Syslog on POSIX). See the Windows Event Log mapping below; constants are provided by `Constants.EventLogConstants`. |
 | `tamperEvident` | `bool` | `false` | Enable cryptographic SHA-256 chaining to produce tamper-evident log records. |
 | `mmap` | `bool` | `false` | Enable virtual memory-mapped zero-copy file logging for microsecond-latency writes. |
+| `memoryCapacity` | `usize` | `Constants.SinkDefaults.memoryRingSize` (1024) | Ring-buffer capacity for `isMemory` sinks. `0` is clamped to the default. |
 | `io` | `?std.Io` | `null` | Explicit I/O handle for this sink. If `null`, inherits the logger's configured I/O handle or falls back to `logly.defaultIo()`. |
 
 ### Windows Event Log (Windows only)

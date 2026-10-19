@@ -12,7 +12,7 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 - **Metrics Collection**: Counter, gauge, histogram, and summary metrics with configurable export formats
 - **Metrics Export Paths**: `metricsFilePath` overrides the default file exporter path for JSON/Prometheus metrics
 - **Metric Name Controls**: `metricPrefix`, `metricPrefixSeparator`, and `sanitizeMetricNames` normalize exported metric names for Prometheus-compatible output
-- **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span and metric export
+- **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span export; metrics are exported via file-based JSON/Prometheus writers (the default `.otlp` metric format is a placeholder that emits nothing)
 - **Export Modes**: Synchronous, async buffered, batch, and network export modes
 - **Span Processor Semantics**: `spanProcessorType` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
 - **Note (v0.1.8)**: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor semantics; telemetry now builds cleanly across targets.
@@ -296,7 +296,7 @@ defer child_span.deinit();
 
 ##### `endSpan(span) -> void`
 
-Finalizes and exports a completed span.
+Finalizes and exports a completed span. Takes ownership of the span's allocated buffers and empties the passed span, so its fields (e.g. `traceId`) must not be read afterwards.
 
 **Parameters:**
 
@@ -448,7 +448,7 @@ Flushes and exports all completed spans.
 
 ##### `exportMetrics() -> void`
 
-Flushes and exports all recorded metrics.
+Flushes and exports all recorded metrics. With the default `metricFormat = .otlp` nothing is written (the OTLP metric path is a placeholder that reports success); set `metricFormat` to `.json` or `.prometheus` to emit metrics.
 
 ##### `setEnabled(enabled: bool) -> void`
 

@@ -85,6 +85,10 @@ pub const Record = struct {
     /// Owned strings that need to be freed.
     ownedStrings: std.ArrayList([]const u8),
 
+    /// Lazily created arena for context values this record owns (deep-copied
+    /// by `clone`, or redacted replacements). Freed as a whole in `deinit`.
+    contextArena: ?*std.heap.ArenaAllocator = null,
+
     /// Owned stack trace that needs to be freed.
     ownedStackTrace: ?*std.builtin.StackTrace = null,
 
@@ -191,6 +195,12 @@ pub const Record = struct {
         }
         self.ownedStrings.deinit(self.allocator);
 
+        if (self.contextArena) |arena| {
+            arena.deinit();
+            self.allocator.destroy(arena);
+            self.contextArena = null;
+        }
+
         if (self.ownedStackTrace) |st| {
             self.allocator.free(st.instruction_addresses);
             self.allocator.destroy(st);
@@ -205,31 +215,80 @@ pub const Record = struct {
         }
     }
 
+    /// Returns an allocator whose allocations live until `deinit`.
+    ///
+    /// Used for context values the record itself owns (deep copies made by
+    /// `clone`, redacted replacements). Freed in bulk with the record.
+    pub fn jsonScratchAllocator(self: *Record) !std.mem.Allocator {
+        if (self.contextArena == null) {
+            const arena = try self.allocator.create(std.heap.ArenaAllocator);
+            errdefer self.allocator.destroy(arena);
+            arena.* = std.heap.ArenaAllocator.init(self.allocator);
+            self.contextArena = arena;
+        }
+        return self.contextArena.?.allocator();
+    }
+
+    /// Deep-copies a JSON context value so the copy owns every string and
+    /// container it references. Must be paired with an arena allocator
+    /// whose lifetime matches the record (`jsonScratchAllocator`).
+    fn cloneJsonValue(allocator: std.mem.Allocator, value: std.json.Value) !std.json.Value {
+        return switch (value) {
+            .null, .bool, .integer, .float => value,
+            .number_string => |s| .{ .number_string = try allocator.dupe(u8, s) },
+            .string => |s| .{ .string = try allocator.dupe(u8, s) },
+            .array => |arr| blk: {
+                var list = std.json.Array.init(allocator);
+                try list.ensureTotalCapacity(arr.items.len);
+                for (arr.items) |item| {
+                    list.appendAssumeCapacity(try cloneJsonValue(allocator, item));
+                }
+                break :blk .{ .array = list };
+            },
+            .object => |obj| blk: {
+                var map = try std.json.ObjectMap.init(allocator, &.{}, &.{});
+                try map.ensureUnusedCapacity(allocator, obj.count());
+                var it = obj.iterator();
+                while (it.next()) |entry| {
+                    map.putAssumeCapacity(
+                        try allocator.dupe(u8, entry.key_ptr.*),
+                        try cloneJsonValue(allocator, entry.value_ptr.*),
+                    );
+                }
+                break :blk .{ .object = map };
+            },
+        };
+    }
+
+    /// Duplicates `s` and registers it for freeing in `deinit`.
+    ///
+    /// Capacity is reserved before the allocation, so a failed append can
+    /// never leak the fresh copy.
+    fn ownString(self: *Record, allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
+        try self.ownedStrings.ensureUnusedCapacity(allocator, 1);
+        const owned = try allocator.dupe(u8, s);
+        self.ownedStrings.appendAssumeCapacity(owned);
+        return owned;
+    }
+
     /// Sets the trace ID for distributed tracing.
     pub fn setTraceId(self: *Record, traceId: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, traceId);
-        try self.ownedStrings.append(self.allocator, owned);
-        self.traceId = owned;
+        self.traceId = try self.ownString(self.allocator, traceId);
     }
 
     /// Sets the span ID for distributed tracing.
     pub fn setSpanId(self: *Record, spanId: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, spanId);
-        try self.ownedStrings.append(self.allocator, owned);
-        self.spanId = owned;
+        self.spanId = try self.ownString(self.allocator, spanId);
     }
 
     /// Sets the correlation ID for grouping related logs.
     pub fn setCorrelationId(self: *Record, correlationId: []const u8) !void {
-        const owned = try self.allocator.dupe(u8, correlationId);
-        try self.ownedStrings.append(self.allocator, owned);
-        self.correlationId = owned;
+        self.correlationId = try self.ownString(self.allocator, correlationId);
     }
 
     /// Adds a context field to the record.
     pub fn addField(self: *Record, key: []const u8, value: std.json.Value) !void {
-        const ownedKey = try self.allocator.dupe(u8, key);
-        try self.ownedStrings.append(self.allocator, ownedKey);
+        const ownedKey = try self.ownString(self.allocator, key);
         try self.context.put(ownedKey, value);
     }
 
@@ -253,16 +312,12 @@ pub const Record = struct {
         code: ?i32,
         category: ?ErrorCategory,
     ) !void {
-        const ownedName = try self.allocator.dupe(u8, name);
-        try self.ownedStrings.append(self.allocator, ownedName);
-
-        const ownedMessage = try self.allocator.dupe(u8, message);
-        try self.ownedStrings.append(self.allocator, ownedMessage);
+        const ownedName = try self.ownString(self.allocator, name);
+        const ownedMessage = try self.ownString(self.allocator, message);
 
         var ownedStack: ?[]const u8 = null;
         if (stackTrace) |st| {
-            ownedStack = try self.allocator.dupe(u8, st);
-            try self.ownedStrings.append(self.allocator, ownedStack.?);
+            ownedStack = try self.ownString(self.allocator, st);
         }
 
         self.errorInfo = .{
@@ -276,6 +331,7 @@ pub const Record = struct {
 
     /// Adds a category tag to the record.
     pub fn addTag(self: *Record, tag: []const u8) !void {
+        try self.ownedStrings.ensureUnusedCapacity(self.allocator, 1);
         const owned = try self.allocator.dupe(u8, tag);
         errdefer self.allocator.free(owned);
 
@@ -292,7 +348,7 @@ pub const Record = struct {
         if (oldTags) |ot| {
             self.allocator.free(ot);
         }
-        try self.ownedStrings.append(self.allocator, owned);
+        self.ownedStrings.appendAssumeCapacity(owned);
     }
 
     /// Returns a numeric severity (0-100) derived from level priority.
@@ -415,10 +471,12 @@ pub const Record = struct {
 
     /// Clones the record.
     pub fn clone(self: *const Record, allocator: std.mem.Allocator) !Record {
-        // Deep copy the message
-        const ownedMessage = try allocator.dupe(u8, self.message);
-        var newRecord = Record.init(allocator, self.level, ownedMessage);
-        try newRecord.ownedStrings.append(allocator, ownedMessage);
+        // Deep copy the message. `errdefer` below releases everything that
+        // was registered on the clone if a later allocation fails.
+        var newRecord = Record.init(allocator, self.level, self.message);
+        errdefer newRecord.deinit();
+        const ownedMessage = try newRecord.ownString(allocator, self.message);
+        newRecord.message = ownedMessage;
 
         newRecord.timestamp = self.timestamp;
         newRecord.line = self.line;
@@ -428,24 +486,16 @@ pub const Record = struct {
 
         // Deep copy optional strings
         if (self.module) |m| {
-            const owned = try allocator.dupe(u8, m);
-            try newRecord.ownedStrings.append(allocator, owned);
-            newRecord.module = owned;
+            newRecord.module = try newRecord.ownString(allocator, m);
         }
         if (self.function) |f| {
-            const owned = try allocator.dupe(u8, f);
-            try newRecord.ownedStrings.append(allocator, owned);
-            newRecord.function = owned;
+            newRecord.function = try newRecord.ownString(allocator, f);
         }
         if (self.filename) |f| {
-            const owned = try allocator.dupe(u8, f);
-            try newRecord.ownedStrings.append(allocator, owned);
-            newRecord.filename = owned;
+            newRecord.filename = try newRecord.ownString(allocator, f);
         }
         if (self.customLevelName) |n| {
-            const owned = try allocator.dupe(u8, n);
-            try newRecord.ownedStrings.append(allocator, owned);
-            newRecord.customLevelName = owned;
+            newRecord.customLevelName = try newRecord.ownString(allocator, n);
         }
         if (self.customLevelColor) |c| {
             newRecord.customLevelColor = c;
@@ -463,22 +513,18 @@ pub const Record = struct {
             var list: std.ArrayList([]const u8) = .empty;
             errdefer list.deinit(allocator);
             for (tgs) |tag| {
-                const owned = try allocator.dupe(u8, tag);
+                const owned = try newRecord.ownString(allocator, tag);
                 try list.append(allocator, owned);
-                try newRecord.ownedStrings.append(allocator, owned);
             }
             newRecord.tags = try list.toOwnedSlice(allocator);
         }
 
         if (self.errorInfo) |errI| {
-            const ownedName = try allocator.dupe(u8, errI.name);
-            try newRecord.ownedStrings.append(allocator, ownedName);
-            const ownedMsg = try allocator.dupe(u8, errI.message);
-            try newRecord.ownedStrings.append(allocator, ownedMsg);
+            const ownedName = try newRecord.ownString(allocator, errI.name);
+            const ownedMsg = try newRecord.ownString(allocator, errI.message);
             var ownedStack: ?[]const u8 = null;
             if (errI.stackTrace) |st| {
-                ownedStack = try allocator.dupe(u8, st);
-                try newRecord.ownedStrings.append(allocator, ownedStack.?);
+                ownedStack = try newRecord.ownString(allocator, st);
             }
             newRecord.errorInfo = .{
                 .name = ownedName,
@@ -491,6 +537,7 @@ pub const Record = struct {
 
         if (self.stackTrace) |st| {
             const newSt = try allocator.create(std.builtin.StackTrace);
+            errdefer allocator.destroy(newSt);
             const newAddresses = try allocator.dupe(usize, st.instruction_addresses);
             newSt.* = .{
                 .index = st.index,
@@ -500,9 +547,15 @@ pub const Record = struct {
             newRecord.stackTrace = newSt;
         }
 
-        var it = self.context.iterator();
-        while (it.next()) |entry| {
-            try newRecord.addField(entry.key_ptr.*, entry.value_ptr.*);
+        // Context values are copied deeply: a clone is dispatched to worker
+        // threads and must not borrow strings or containers from a source
+        // record (or call site) that may already be gone.
+        if (self.context.count() > 0) {
+            const arenaAlloc = try newRecord.jsonScratchAllocator();
+            var it = self.context.iterator();
+            while (it.next()) |entry| {
+                try newRecord.addField(entry.key_ptr.*, try cloneJsonValue(arenaAlloc, entry.value_ptr.*));
+            }
         }
 
         return newRecord;
@@ -607,4 +660,24 @@ test "record initCustom stores color" {
     defer record.deinit();
     try std.testing.expectEqualStrings("AUDIT", record.customLevelName.?);
     try std.testing.expectEqual(Color.Tint.color.cyan, record.customLevelColor.?);
+}
+
+test "record clone deep copies nested context values" {
+    var original = Record.init(std.testing.allocator, .info, "original");
+    defer original.deinit();
+
+    var items: std.json.Array = .init(std.testing.allocator);
+    defer items.deinit();
+    try items.append(.{ .string = "first" });
+    try items.append(.{ .bool = true });
+    try original.addField("items", .{ .array = items });
+
+    var copy = try original.clone(std.testing.allocator);
+    defer copy.deinit();
+
+    const copied = copy.context.get("items").?;
+    try std.testing.expect(copied == .array);
+    try std.testing.expectEqual(@as(usize, 2), copied.array.items.len);
+    try std.testing.expectEqualStrings("first", copied.array.items[0].string);
+    try std.testing.expect(copied.array.items[1].bool);
 }

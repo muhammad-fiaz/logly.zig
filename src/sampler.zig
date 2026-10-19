@@ -172,10 +172,23 @@ pub const Sampler = struct {
 
     /// Initializes a new Sampler with explicit I/O handle and full configuration.
     pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Config.SamplingConfig) Sampler {
+        var effectiveStrategy = config.strategy;
+        switch (effectiveStrategy) {
+            .adaptive => |*adaptive| {
+                // Zero would make every record trigger an adjustment against
+                // a zero-length window; normalize to the documented default.
+                if (adaptive.targetRate == 0) adaptive.targetRate = 1;
+                if (adaptive.adjustmentIntervalMs == 0) {
+                    adaptive.adjustmentIntervalMs = Constants.SamplingDefaults.adaptiveAdjustmentIntervalMs;
+                }
+            },
+            else => {},
+        }
+
         var sampler = Sampler{
             .allocator = allocator,
             .io = io_handle,
-            .strategy = config.strategy,
+            .strategy = effectiveStrategy,
             .bypassLevels = config.bypassLevels,
             .state = SamplerState.init(),
         };
@@ -464,7 +477,9 @@ pub const Sampler = struct {
         self.state.lastAdjustment = Utils.monotonicMillis();
         self.state.lastRefill = Utils.monotonicMillis();
         self.state.currentRate = switch (self.strategy) {
-            .adaptive => clampRate(self.state.currentRate),
+            // Start at the configured ceiling, not at 1.0: a max rate below
+            // 1.0 must apply from the very first record.
+            .adaptive => |config| @max(clampRate(config.minSampleRate), clampRate(config.maxSampleRate)),
             .probability => |prob| clampRate(prob),
             .none, .rateLimit, .tokenBucket => 1.0,
             .everyN => |n| if (n == 0) 1.0 else 1.0 / @as(f64, @floatFromInt(n)),
@@ -821,6 +836,22 @@ test "sampler adaptive" {
 
     const rate = sampler.getCurrentRate();
     try std.testing.expect(rate < 1.0);
+}
+
+test "sampler adaptive starts at the configured ceiling" {
+    var sampler = Sampler.init(std.testing.allocator, .{ .adaptive = .{
+        .targetRate = 100,
+        .adjustmentIntervalMs = 0,
+        .minSampleRate = 0.1,
+        .maxSampleRate = 0.25,
+    } });
+    defer sampler.deinit();
+
+    try std.testing.expectEqual(0.25, sampler.getCurrentRate());
+    try std.testing.expectEqual(
+        Constants.SamplingDefaults.adaptiveAdjustmentIntervalMs,
+        sampler.strategy.adaptive.adjustmentIntervalMs,
+    );
 }
 
 test "sampler key-based deterministic sampling" {

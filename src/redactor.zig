@@ -507,40 +507,89 @@ pub const Redactor = struct {
         var result = try alloc.dupe(u8, message);
         errdefer alloc.free(result);
 
+        // A pattern application frees the previous string in place, so the
+        // original text a callback would observe must be copied out before
+        // the match is replaced. Callbacks are deferred until after the
+        // mutex is released: a re-entrant callback (adding a pattern, or
+        // logging through the same redactor) must never deadlock.
+        const PendingMatch = struct {
+            name: []u8,
+            original: []u8,
+            redacted: []u8,
+        };
+        var pending: std.ArrayList(PendingMatch) = .empty;
+        defer {
+            for (pending.items) |p| {
+                alloc.free(p.name);
+                alloc.free(p.original);
+                alloc.free(p.redacted);
+            }
+            pending.deinit(alloc);
+        }
+
         var wasRedacted = false;
-        for (self.patterns.items) |pattern| {
-            if (!patternMatchesMessage(pattern, result)) continue;
+        var onMatched: ?*const fn ([]const u8, []const u8) void = null;
+        var onDetail: ?*const fn ([]const u8, []const u8, []const u8) void = null;
+        var onApplied: ?*const fn (u64, u64, u32) void = null;
 
-            const originalValue = result;
-            result = try self.applyPatternWithAllocator(result, pattern, alloc);
+        self.mutex.lockUncancelable(self.io);
+        {
+            defer self.mutex.unlock(self.io);
 
-            wasRedacted = true;
-            if (mode == .track) {
-                _ = self.stats.patternsMatched.fetchAdd(1, .monotonic);
+            onMatched = self.onPatternMatched;
+            onDetail = self.onRedactionDetail;
+            onApplied = self.onRedactionApplied;
 
-                // Invoke pattern matched callback
-                if (self.onPatternMatched) |callback| {
-                    callback(pattern.name, originalValue);
+            for (self.patterns.items) |pattern| {
+                if (!patternMatchesMessage(pattern, result)) continue;
+
+                var nameCopy: ?[]u8 = null;
+                var originalCopy: ?[]u8 = null;
+                errdefer {
+                    if (nameCopy) |n| alloc.free(n);
+                    if (originalCopy) |o| alloc.free(o);
                 }
 
-                // Invoke redaction detail callback (shows original and redacted values)
-                if (self.onRedactionDetail) |callback| {
-                    callback(pattern.name, originalValue, result);
+                if (mode == .track and (onMatched != null or onDetail != null)) {
+                    nameCopy = try alloc.dupe(u8, pattern.name);
+                    originalCopy = try alloc.dupe(u8, result);
+                }
+
+                result = try self.applyPatternWithAllocator(result, pattern, alloc);
+                wasRedacted = true;
+
+                if (mode == .track) {
+                    _ = self.stats.patternsMatched.fetchAdd(1, .monotonic);
+
+                    if (nameCopy) |n| {
+                        const redactedCopy = try alloc.dupe(u8, result);
+                        errdefer alloc.free(redactedCopy);
+                        try pending.append(alloc, .{
+                            .name = n,
+                            .original = originalCopy.?,
+                            .redacted = redactedCopy,
+                        });
+                        nameCopy = null;
+                        originalCopy = null;
+                    }
                 }
             }
         }
 
-        if (mode == .track and wasRedacted) {
-            _ = self.stats.valuesRedacted.fetchAdd(1, .monotonic);
-
-            // Invoke redaction applied callback
-            if (self.onRedactionApplied) |callback| {
-                callback(@intCast(message.len), @intCast(result.len), 0);
+        if (mode == .track) {
+            for (pending.items) |p| {
+                if (onMatched) |callback| callback(p.name, p.original);
+                if (onDetail) |callback| callback(p.name, p.original, p.redacted);
             }
 
-            // Audit logging if enabled
-            if (self.config.auditRedactions) {
-                // The callback handles audit logging
+            if (wasRedacted) {
+                _ = self.stats.valuesRedacted.fetchAdd(1, .monotonic);
+
+                if (onApplied) |callback| {
+                    callback(@intCast(message.len), @intCast(result.len), 0);
+                }
+
+                // Audit logging, when enabled, is the callback's concern.
             }
         }
 
@@ -548,33 +597,47 @@ pub const Redactor = struct {
     }
 
     /// Redacts a field value based on field rules.
+    ///
+    /// The rule lookup runs under the mutex so concurrent rule updates
+    /// cannot invalidate the field map mid-read. The error callback fires
+    /// after the mutex is released to keep it safe to re-enter.
     pub fn redactField(self: *Redactor, fieldName: []const u8, value: []const u8) ![]u8 {
         _ = self.stats.totalValuesProcessed.fetchAdd(1, .monotonic);
 
+        self.mutex.lockUncancelable(self.io);
+
         // Check if field should be redacted
         const redactionType = self.getFieldRedactionWithConfig(fieldName);
-        if (redactionType) |rtype| {
+        const result = if (redactionType) |rtype| blk: {
             _ = self.stats.fieldsRedacted.fetchAdd(1, .monotonic);
             _ = self.stats.valuesRedacted.fetchAdd(1, .monotonic);
 
             // Apply the redaction with config settings
-            return self.applyRedactionType(rtype, value) catch |err| {
+            break :blk self.applyRedactionType(rtype, value) catch |err| {
+                self.mutex.unlock(self.io);
                 _ = self.stats.redactionErrors.fetchAdd(1, .monotonic);
                 if (self.onRedactionError) |callback| {
                     callback(@errorName(err));
                 }
                 return err;
             };
-        }
-
-        return self.allocator.dupe(u8, value) catch |err| {
-            _ = self.stats.redactionErrors.fetchAdd(1, .monotonic);
-            return err;
+        } else blk: {
+            break :blk self.allocator.dupe(u8, value) catch |err| {
+                self.mutex.unlock(self.io);
+                _ = self.stats.redactionErrors.fetchAdd(1, .monotonic);
+                return err;
+            };
         };
+
+        self.mutex.unlock(self.io);
+        return result;
     }
 
     /// Previews how a field would be redacted without changing counters.
     pub fn previewFieldRedaction(self: *Redactor, fieldName: []const u8, value: []const u8) ![]u8 {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+
         const redactionType = self.getFieldRedactionWithConfig(fieldName);
         if (redactionType) |rtype| {
             return self.applyRedactionType(rtype, value);
@@ -651,7 +714,7 @@ pub const Redactor = struct {
         return std.fmt.allocPrint(allocator, "[HASH:{s}]", .{hexVal});
     }
 
-    fn mapConfigRedactionType(rtype: RedactionConfig.RedactionType) RedactionType {
+    pub fn mapConfigRedactionType(rtype: RedactionConfig.RedactionType) RedactionType {
         return switch (rtype) {
             .full => .full,
             .partialStart => .partialStart,
@@ -1035,6 +1098,9 @@ pub const Redactor = struct {
 
     /// Clears all patterns.
     pub fn clearPatterns(self: *Redactor) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+
         for (self.patterns.items) |pattern| {
             self.allocator.free(pattern.name);
             self.allocator.free(pattern.pattern);
@@ -1045,6 +1111,9 @@ pub const Redactor = struct {
 
     /// Clears all fields.
     pub fn clearFields(self: *Redactor) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+
         var it = self.fields.keyIterator();
         while (it.next()) |key| {
             self.allocator.free(key.*);
@@ -1060,6 +1129,8 @@ pub const Redactor = struct {
 
     /// Resets statistics.
     pub fn resetStats(self: *Redactor) void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         self.stats.reset();
     }
 

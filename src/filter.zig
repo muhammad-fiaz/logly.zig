@@ -771,6 +771,11 @@ pub const Filter = struct {
                     });
                 },
                 .rateLimit => |rl| {
+                    // Filter's rate rule is a per-second token bucket; any
+                    // other window would silently apply a different rate.
+                    if (rl.windowMs != Constants.TimeConstants.msPerSecond) {
+                        return error.UnsupportedSamplingStrategy;
+                    }
                     try filter.addRule(.{
                         .ruleType = .rateLimit,
                         .rateLimit = rl.maxRecords,
@@ -784,28 +789,15 @@ pub const Filter = struct {
                         .action = .allow,
                     });
                 },
-                .adaptive => |ad| {
-                    try filter.addRule(.{
-                        .ruleType = .rateLimit,
-                        .rateLimit = ad.targetRate,
-                        .action = .allow,
-                    });
-                },
+                // Adaptive and token-bucket strategies need the stateful
+                // Sampler (min/max rates, burst capacity); the rule filter
+                // cannot express them without applying the wrong policy.
+                .adaptive, .tokenBucket => return error.UnsupportedSamplingStrategy,
             }
         }
 
-        if (config.redaction.enabled) {
-            if (config.redaction.patterns) |patterns| {
-                for (patterns) |pattern| {
-                    try filter.addRule(.{
-                        .ruleType = .messageRegex,
-                        .pattern = pattern,
-                        .action = .deny,
-                    });
-                }
-            }
-        }
-
+        // Redaction is applied by the redactor before formatting; turning
+        // redaction patterns into deny rules would drop matching records.
         return filter;
     }
 
@@ -1572,4 +1564,57 @@ test "nested context path filter" {
 
     // Context path matches -> allowed
     try std.testing.expect(filter.shouldLog(&rec));
+}
+
+test "filter from config maps only representable sampling strategies" {
+    const allocator = std.testing.allocator;
+
+    const defaultConfig = Config{};
+    var defaultFilter = try Filter.fromConfig(allocator, defaultConfig);
+    defer defaultFilter.deinit();
+    try std.testing.expectEqual(@as(usize, 1), defaultFilter.count());
+
+    var perSecond = Config{};
+    perSecond.sampling = .{
+        .enabled = true,
+        .strategy = .{ .rateLimit = .{ .maxRecords = 50, .windowMs = 1000 } },
+    };
+    var rateFilter = try Filter.fromConfig(allocator, perSecond);
+    defer rateFilter.deinit();
+    try std.testing.expectEqual(@as(usize, 2), rateFilter.count());
+
+    var perMinute = Config{};
+    perMinute.sampling = .{
+        .enabled = true,
+        .strategy = .{ .rateLimit = .{ .maxRecords = 50, .windowMs = 60_000 } },
+    };
+    try std.testing.expectError(error.UnsupportedSamplingStrategy, Filter.fromConfig(allocator, perMinute));
+
+    var adaptive = Config{};
+    adaptive.sampling = .{
+        .enabled = true,
+        .strategy = .{ .adaptive = .{ .targetRate = 100 } },
+    };
+    try std.testing.expectError(error.UnsupportedSamplingStrategy, Filter.fromConfig(allocator, adaptive));
+
+    var bucketed = Config{};
+    bucketed.sampling = .{
+        .enabled = true,
+        .strategy = .{ .tokenBucket = .{ .burstCapacity = 10, .refillRatePerSec = 5 } },
+    };
+    try std.testing.expectError(error.UnsupportedSamplingStrategy, Filter.fromConfig(allocator, bucketed));
+}
+
+test "filter from config does not turn redaction patterns into deny rules" {
+    const allocator = std.testing.allocator;
+    const patterns = [_][]const u8{"password"};
+    var config = Config{};
+    config.redaction = .{
+        .enabled = true,
+        .patterns = &patterns,
+    };
+
+    var filter = try Filter.fromConfig(allocator, config);
+    defer filter.deinit();
+    try std.testing.expectEqual(@as(usize, 1), filter.count());
 }

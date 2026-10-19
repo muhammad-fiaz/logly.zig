@@ -24,7 +24,10 @@ pub const Scheduler = struct {
     /// Explicit I/O handle.
     io: std.Io = Utils.defaultIo(),
     /// List of scheduled tasks.
-    tasks: std.ArrayList(ScheduledTask),
+    ///
+    /// Tasks are heap-allocated so an in-flight execution keeps a stable
+    /// pointer while the list grows, shrinks, or reorders.
+    tasks: std.ArrayList(*ScheduledTask),
     /// Whether the scheduler is currently running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     /// Whether the scheduler is paused.
@@ -38,6 +41,10 @@ pub const Scheduler = struct {
     /// Wakeup generation bumped on every schedule mutation so the worker
     /// loop re-evaluates deadlines instead of sleeping through them.
     wakeGeneration: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
+    /// In-flight scheduled executions (queued in the thread pool or
+    /// currently executing). Includes tasks tombstoned by removeTask, so
+    /// stop() can wait for them without touching task storage.
+    runningExecutions: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     /// Scheduler statistics (tasks executed, failed, etc.).
     stats: SchedulerStats,
     /// Compression utility for compression tasks.
@@ -104,7 +111,13 @@ pub const Scheduler = struct {
         errorCount: u64 = 0,
         retriesRemaining: u32 = 0,
         enabled: bool = true,
-        running: bool = false,
+        /// Whether an execution of this task is in flight. Atomic because
+        /// the thread pool's drop hook clears it without taking the
+        /// scheduler mutex (which it must not, to avoid lock inversion).
+        running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        /// Set by removeTask when the task is detached while executing; its
+        /// storage is released by the completion path instead.
+        removed: bool = false,
         priority: Priority = .normal,
         retryPolicy: RetryPolicy = .{},
         dependsOn: ?[]const u8 = null,
@@ -467,14 +480,37 @@ pub const Scheduler = struct {
             self.compression.deinit();
         }
 
-        for (self.tasks.items) |*task| {
-            self.allocator.free(task.name);
-            if (task.config.path) |p| self.allocator.free(p);
-            if (task.config.filePattern) |p| self.allocator.free(p);
-            if (task.dependsOn) |p| self.allocator.free(p);
+        for (self.tasks.items) |task| {
+            self.destroyTask(task);
         }
         self.tasks.deinit(self.allocator);
         self.allocator.destroy(self);
+    }
+
+    /// Frees heap fields owned by a task.
+    fn freeTaskContents(self: *Scheduler, task: *ScheduledTask) void {
+        self.allocator.free(task.name);
+        if (task.config.path) |p| self.allocator.free(p);
+        if (task.config.filePattern) |p| self.allocator.free(p);
+        if (task.dependsOn) |p| self.allocator.free(p);
+    }
+
+    /// Destroys a task and its owned heap fields.
+    fn destroyTask(self: *Scheduler, task: *ScheduledTask) void {
+        self.freeTaskContents(task);
+        self.allocator.destroy(task);
+    }
+
+    /// Removes a task from the list. Destruction is deferred while the task
+    /// is executing so in-flight workers never touch freed memory; the
+    /// completion path releases the tombstoned storage.
+    fn detachTaskLocked(self: *Scheduler, index: usize) void {
+        const task = self.tasks.orderedRemove(index);
+        if (task.running.load(.acquire)) {
+            task.removed = true;
+        } else {
+            self.destroyTask(task);
+        }
     }
 
     /// Sets health check callback.
@@ -562,7 +598,10 @@ pub const Scheduler = struct {
             } else .{},
         };
 
-        try self.tasks.append(self.allocator, task);
+        const taskPtr = try self.allocator.create(ScheduledTask);
+        errdefer self.allocator.destroy(taskPtr);
+        taskPtr.* = task;
+        try self.tasks.append(self.allocator, taskPtr);
         self.kick();
         return self.tasks.items.len - 1;
     }
@@ -671,6 +710,7 @@ pub const Scheduler = struct {
         defer self.mutex.unlock(self.io);
 
         const ownedName = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(ownedName);
         const now = Utils.currentMillis();
 
         const task = ScheduledTask{
@@ -681,7 +721,10 @@ pub const Scheduler = struct {
             .nextRun = schedule.nextRunTime(now),
         };
 
-        try self.tasks.append(self.allocator, task);
+        const taskPtr = try self.allocator.create(ScheduledTask);
+        errdefer self.allocator.destroy(taskPtr);
+        taskPtr.* = task;
+        try self.tasks.append(self.allocator, taskPtr);
         return self.tasks.items.len - 1;
     }
 
@@ -697,6 +740,21 @@ pub const Scheduler = struct {
         defer self.mutex.unlock(self.io);
 
         const ownedName = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(ownedName);
+
+        // Task storage owns its config strings, exactly like addTask, so
+        // callers may release their originals after this returns.
+        var ownedConfig = config;
+        if (config.path) |p| {
+            ownedConfig.path = try self.allocator.dupe(u8, p);
+        }
+        errdefer if (ownedConfig.path) |p| self.allocator.free(p);
+
+        if (config.filePattern) |p| {
+            ownedConfig.filePattern = try self.allocator.dupe(u8, p);
+        }
+        errdefer if (ownedConfig.filePattern) |p| self.allocator.free(p);
+
         const now = Utils.currentMillis();
 
         const task = ScheduledTask{
@@ -705,7 +763,7 @@ pub const Scheduler = struct {
             .schedule = schedule,
             .callback = callback,
             .nextRun = schedule.nextRunTime(now),
-            .config = config,
+            .config = ownedConfig,
             .retriesRemaining = if (config.maxRetries > 0) config.maxRetries else 3,
             .retryPolicy = if (config.maxRetries > 0) .{
                 .maxRetries = config.maxRetries,
@@ -713,7 +771,10 @@ pub const Scheduler = struct {
             } else .{},
         };
 
-        try self.tasks.append(self.allocator, task);
+        const taskPtr = try self.allocator.create(ScheduledTask);
+        errdefer self.allocator.destroy(taskPtr);
+        taskPtr.* = task;
+        try self.tasks.append(self.allocator, taskPtr);
         return self.tasks.items.len - 1;
     }
 
@@ -732,11 +793,7 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
         if (index < self.tasks.items.len) {
-            const task = self.tasks.orderedRemove(index);
-            self.allocator.free(task.name);
-            if (task.config.path) |p| self.allocator.free(p);
-            if (task.config.filePattern) |p| self.allocator.free(p);
-            if (task.dependsOn) |p| self.allocator.free(p);
+            self.detachTaskLocked(index);
         }
         self.kick();
     }
@@ -763,7 +820,7 @@ pub const Scheduler = struct {
             .name = task.name,
             .taskType = task.taskType,
             .enabled = task.enabled,
-            .running = task.running,
+            .running = task.running.load(.acquire),
             .nextRun = task.nextRun,
             .lastRun = task.lastRun,
             .runCount = task.runCount,
@@ -783,7 +840,7 @@ pub const Scheduler = struct {
                     .name = task.name,
                     .taskType = task.taskType,
                     .enabled = task.enabled,
-                    .running = task.running,
+                    .running = task.running.load(.acquire),
                     .nextRun = task.nextRun,
                     .lastRun = task.lastRun,
                     .runCount = task.runCount,
@@ -807,7 +864,7 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
 
-        for (self.tasks.items) |*task| {
+        for (self.tasks.items) |task| {
             if (std.mem.eql(u8, task.name, name)) {
                 task.enabled = enabled;
                 self.kick();
@@ -827,11 +884,7 @@ pub const Scheduler = struct {
 
         for (self.tasks.items, 0..) |task, i| {
             if (std.mem.eql(u8, task.name, name)) {
-                const removed = self.tasks.orderedRemove(i);
-                self.allocator.free(removed.name);
-                if (removed.config.path) |p| self.allocator.free(p);
-                if (removed.config.filePattern) |p| self.allocator.free(p);
-                if (removed.dependsOn) |p| self.allocator.free(p);
+                self.detachTaskLocked(i);
                 self.kick();
                 return true;
             }
@@ -859,7 +912,7 @@ pub const Scheduler = struct {
 
         var runningTotal: usize = 0;
         for (self.tasks.items) |task| {
-            if (task.running) runningTotal += 1;
+            if (task.running.load(.acquire)) runningTotal += 1;
         }
         return runningTotal;
     }
@@ -994,21 +1047,16 @@ pub const Scheduler = struct {
             self.workerThread = null;
         }
 
-        // Wait for running tasks to complete (with a 5-second graceful shutdown timeout)
-        var waitLoops: u8 = 0;
-        while (waitLoops < 50) : (waitLoops += 1) { // 5 second max wait
-            var anyRunning = false;
-            self.mutex.lockUncancelable(self.io);
-            for (self.tasks.items) |task| {
-                if (task.running) {
-                    anyRunning = true;
-                    break;
-                }
+        // Wait for in-flight executions. The counter also covers tasks that
+        // removeTask detached while running, so a fixed timeout here could
+        // return while a worker still holds a pointer into this scheduler.
+        var waitedMs: u64 = 0;
+        while (self.runningExecutions.load(.acquire) > 0) {
+            if (waitedMs == 5_000) {
+                std.log.warn("Scheduler shutdown is waiting for in-flight task executions to finish", .{});
             }
-            self.mutex.unlock(self.io);
-
-            if (!anyRunning) break;
-            Utils.sleepMs(100);
+            Utils.sleepMs(10);
+            waitedMs += 10;
         }
     }
 
@@ -1018,7 +1066,7 @@ pub const Scheduler = struct {
         defer self.mutex.unlock(self.io);
 
         if (index >= self.tasks.items.len) return;
-        try self.executeTask(&self.tasks.items[index]);
+        try self.executeTask(self.tasks.items[index]);
     }
 
     /// Runs a task immediately by task name.
@@ -1033,7 +1081,7 @@ pub const Scheduler = struct {
     fn dependenciesSatisfiedLocked(self: *Scheduler, task: *const ScheduledTask) bool {
         if (task.dependsOn) |depName| {
             for (self.tasks.items) |t| {
-                if (std.mem.eql(u8, t.name, depName) and t.running) {
+                if (std.mem.eql(u8, t.name, depName) and t.running.load(.acquire)) {
                     return false;
                 }
             }
@@ -1056,7 +1104,7 @@ pub const Scheduler = struct {
     }
 
     fn isTimeReadyLocked(self: *Scheduler, task: *const ScheduledTask, now: i64) bool {
-        if (!task.enabled or task.running or task.nextRun > now) return false;
+        if (!task.enabled or task.running.load(.acquire) or task.nextRun > now) return false;
         return self.dependenciesSatisfiedLocked(task);
     }
 
@@ -1092,7 +1140,7 @@ pub const Scheduler = struct {
         const now = Utils.currentMillis();
         totalCount = @as(u32, @intCast(@min(self.tasks.items.len, std.math.maxInt(u32))));
         for (self.tasks.items) |task| {
-            if (self.isTimeReadyLocked(&task, now)) {
+            if (self.isTimeReadyLocked(task, now)) {
                 readyCount += 1;
             }
         }
@@ -1104,33 +1152,43 @@ pub const Scheduler = struct {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
 
-        for (self.tasks.items, 0..) |*task, i| {
+        for (self.tasks.items) |task| {
             if (self.isTaskReadyLocked(task, now)) {
                 if (self.threadPool) |tp| {
-                    task.running = true;
+                    task.running.store(true, .release);
                     const TaskCtx = struct {
                         scheduler: *Scheduler,
-                        taskIndex: usize,
+                        task: *ScheduledTask,
 
                         fn run(ctxPtr: *anyopaque, _: ?std.mem.Allocator) void {
                             const ctx = @as(*@This(), @ptrCast(@alignCast(ctxPtr)));
-                            defer ctx.scheduler.allocator.destroy(ctx);
+                            const scheduler = ctx.scheduler;
+                            const scheduled = ctx.task;
+                            scheduler.allocator.destroy(ctx);
 
-                            ctx.scheduler.runTaskByIndex(ctx.taskIndex) catch |err| {
-                                ctx.scheduler.handleTaskError(ctx.taskIndex, err);
-                            };
+                            scheduler.executeScheduledTask(scheduled);
                         }
 
                         fn drop(ctxPtr: ?*anyopaque) void {
                             const ctx = @as(*@This(), @ptrCast(@alignCast(ctxPtr.?)));
+                            // The pool discarded the item without running it.
+                            // Do not take the scheduler mutex here: this hook
+                            // runs under the pool's queue lock and the submit
+                            // path holds the scheduler lock in the opposite
+                            // order.
+                            ctx.task.running.store(false, .release);
+                            _ = ctx.scheduler.runningExecutions.fetchSub(1, .release);
                             ctx.scheduler.allocator.destroy(ctx);
                         }
                     };
 
-                    const ctx = self.allocator.create(TaskCtx) catch continue;
+                    const ctx = self.allocator.create(TaskCtx) catch {
+                        task.running.store(false, .release);
+                        continue;
+                    };
                     ctx.* = .{
                         .scheduler = self,
-                        .taskIndex = i,
+                        .task = task,
                     };
 
                     const tpPrio: ThreadPool.WorkItem.Priority = switch (task.priority) {
@@ -1140,33 +1198,56 @@ pub const Scheduler = struct {
                         .critical => .critical,
                     };
 
+                    // Count before submitting: the pool may run the task to
+                    // completion before submit even returns.
+                    _ = self.runningExecutions.fetchAdd(1, .monotonic);
                     if (!tp.submitWithDrop(.{ .callback = .{ .func = TaskCtx.run, .context = ctx } }, tpPrio, TaskCtx.drop).isValid()) {
                         self.allocator.destroy(ctx);
                         self.executeTask(task) catch |err| {
-                            self.handleTaskErrorLocked(i, err);
+                            self.handleTaskErrorLocked(task, err);
                         };
-                        task.running = false;
+                        task.running.store(false, .release);
+                        _ = self.runningExecutions.fetchSub(1, .release);
                     }
                 } else {
+                    _ = self.runningExecutions.fetchAdd(1, .monotonic);
                     self.executeTask(task) catch |err| {
-                        self.handleTaskErrorLocked(i, err);
+                        self.handleTaskErrorLocked(task, err);
                     };
+                    _ = self.runningExecutions.fetchSub(1, .release);
                 }
             }
         }
     }
 
-    fn handleTaskError(self: *Scheduler, index: usize, err: anyerror) void {
+    /// Executes a task submitted to the thread pool and performs the
+    /// completion bookkeeping that `runPending` cannot do (it runs on
+    /// another thread with no scheduler lock held).
+    fn executeScheduledTask(self: *Scheduler, task: *ScheduledTask) void {
+        self.executeTask(task) catch |err| {
+            self.handleTaskError(task, err);
+        };
+
+        self.mutex.lockUncancelable(self.io);
+        task.running.store(false, .release);
+        const removed = task.removed;
+        self.mutex.unlock(self.io);
+
+        // Tombstoned by removeTask while running: release its storage now.
+        // Destroy before the counter decrement so `stop` cannot observe a
+        // zero count while this frame still dereferences the scheduler.
+        if (removed) self.destroyTask(task);
+        _ = self.runningExecutions.fetchSub(1, .release);
+    }
+
+    fn handleTaskError(self: *Scheduler, task: *ScheduledTask, err: anyerror) void {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
 
-        self.handleTaskErrorLocked(index, err);
+        self.handleTaskErrorLocked(task, err);
     }
 
-    fn handleTaskErrorLocked(self: *Scheduler, index: usize, err: anyerror) void {
-        if (index >= self.tasks.items.len) return;
-        const task = &self.tasks.items[index];
-
+    fn handleTaskErrorLocked(self: *Scheduler, task: *ScheduledTask, err: anyerror) void {
         task.errorCount += 1;
         _ = self.stats.tasksFailed.fetchAdd(1, .monotonic);
 
@@ -1183,24 +1264,6 @@ pub const Scheduler = struct {
                 std.log.err("Scheduled task '{s}' failed: {s}", .{ task.name, @errorName(err) });
             }
         }
-    }
-
-    fn runTaskByIndex(self: *Scheduler, index: usize) !void {
-        self.mutex.lockUncancelable(self.io);
-        if (index >= self.tasks.items.len) {
-            self.mutex.unlock(self.io);
-            return;
-        }
-        const task = &self.tasks.items[index];
-        self.mutex.unlock(self.io);
-
-        defer {
-            self.mutex.lockUncancelable(self.io);
-            task.running = false;
-            self.mutex.unlock(self.io);
-        }
-
-        try self.executeTask(task);
     }
 
     fn schedulerLoop(self: *Scheduler) void {
@@ -1634,7 +1697,9 @@ pub const Scheduler = struct {
     }
 
     /// Gets list of all tasks.
-    pub fn getTasks(self: *const Scheduler) []const ScheduledTask {
+    /// Returns the live task list. Entries are stable heap pointers; a task
+    /// removed while executing is detached from this list immediately.
+    pub fn getTasks(self: *const Scheduler) []const *ScheduledTask {
         return self.tasks.items;
     }
 

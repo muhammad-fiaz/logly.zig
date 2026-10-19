@@ -180,6 +180,10 @@ pub const Logger = struct {
     sampler: ?*Sampler = null,
     /// Redactor for sensitive data masking.
     redactor: ?*Redactor = null,
+    /// True when `redactor` was built from `Config.redaction` and is owned
+    /// (and therefore destroyed) by the logger. Redactors installed via
+    /// `setRedactor` stay caller-owned.
+    ownsRedactor: bool = false,
     /// Metrics collector for observability.
     metrics: ?*Metrics = null,
     /// Thread pool for parallel processing.
@@ -250,6 +254,36 @@ pub const Logger = struct {
         return initWithIo(allocator, io_handle, config);
     }
 
+    /// Builds a redactor from `Config.redaction`.
+    ///
+    /// Every rule is copied, so the configuration's slices only need to
+    /// stay valid for the duration of the call. The caller owns the result.
+    fn buildConfiguredRedactor(allocator: std.mem.Allocator, io_handle: std.Io, cfg: Config.RedactionConfig) !*Redactor {
+        const redactor = try allocator.create(Redactor);
+        errdefer allocator.destroy(redactor);
+        redactor.* = Redactor.initWithIo(allocator, io_handle, cfg);
+        errdefer redactor.deinit();
+
+        if (cfg.fields) |fields| {
+            _ = try redactor.addFields(fields, Redactor.mapConfigRedactionType(cfg.defaultType));
+        }
+
+        if (cfg.patterns) |patterns| {
+            var nameBuf: [32]u8 = undefined;
+            for (patterns, 0..) |pattern, i| {
+                const name = std.fmt.bufPrint(&nameBuf, "config_pattern_{d}", .{i}) catch "config_pattern";
+                try redactor.addPattern(
+                    name,
+                    if (cfg.enableRegex) .regex else .contains,
+                    pattern,
+                    cfg.replacement,
+                );
+            }
+        }
+
+        return redactor;
+    }
+
     /// Initializes a Logger with an explicit I/O handle and configuration preset.
     pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Config) !*Logger {
         var cfg = config;
@@ -272,12 +306,20 @@ pub const Logger = struct {
             logger.metrics = m;
         }
 
+        if (cfg.redaction.enabled) {
+            const redactor = try buildConfiguredRedactor(allocator, io_handle, cfg.redaction);
+            logger.redactor = redactor;
+            logger.ownsRedactor = true;
+        }
+
         if (cfg.threadPool.enabled) {
             var tp_cfg = cfg.threadPool;
             if (tp_cfg.io == null) tp_cfg.io = io_handle;
             const tp = try ThreadPool.initWithConfig(allocator, tp_cfg);
-            try tp.start();
+            // Store before starting: if spawn fails, the errdefer above must
+            // deinit the pool rather than leak it.
             logger.threadPool = tp;
+            try tp.start();
         }
 
         if (logger.onLoggerInitialized) |cb| cb(&logger.stats);
@@ -294,6 +336,15 @@ pub const Logger = struct {
 
         if (self.asyncLogger) |al| {
             al.deinit();
+        }
+
+        if (self.ownsRedactor) {
+            if (self.redactor) |redactor| {
+                redactor.deinit();
+                self.allocator.destroy(redactor);
+            }
+            self.redactor = null;
+            self.ownsRedactor = false;
         }
 
         for (self.sinks.items) |sink| {
@@ -384,9 +435,18 @@ pub const Logger = struct {
     ///
     /// Note: The logger does NOT take ownership of the redactor.
     /// The caller is responsible for keeping the redactor alive and deinitializing it.
+    /// A redactor previously built from `Config.redaction` (logger-owned)
+    /// is released when it is replaced.
     pub fn setRedactor(self: *Logger, redactor: *Redactor) void {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
+        if (self.ownsRedactor) {
+            if (self.redactor) |owned| {
+                owned.deinit();
+                self.allocator.destroy(owned);
+            }
+            self.ownsRedactor = false;
+        }
         self.redactor = redactor;
     }
 
@@ -690,24 +750,35 @@ pub const Logger = struct {
     pub const removeAll = removeAllSinks;
 
     /// Enables async logging if an async logger is configured.
+    ///
+    /// Restarts the background worker when a previous `disableAsync` stopped
+    /// it, so records queued after re-enabling are not stranded.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn enableAsync(self: *Logger) void {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
 
         if (self.asyncLogger) |al| {
-            al.running.store(true, .monotonic);
+            // startWorker is a no-op while the worker is already running.
+            al.startWorker() catch {};
         }
     }
 
     /// Disables async logging if an async logger is configured.
+    ///
+    /// Drains queued records and joins the worker, so a later `enableAsync`
+    /// starts from a clean state and `deinit` never races a live worker.
+    /// The logger mutex is released before the join: worker callbacks are
+    /// allowed to log and must not deadlock against this call.
     /// Thread-safe: Uses mutex for concurrent access protection.
     pub fn disableAsync(self: *Logger) void {
         self.mutex.lockUncancelable(self.io);
-        defer self.mutex.unlock(self.io);
+        const al = self.asyncLogger;
+        self.mutex.unlock(self.io);
 
-        if (self.asyncLogger) |al| {
-            al.running.store(false, .monotonic);
+        if (al) |async_logger| {
+            _ = async_logger.drainAndFlush(async_logger.config.shutdownTimeoutMs);
+            async_logger.stop();
         }
     }
 
@@ -1356,7 +1427,7 @@ pub const Logger = struct {
         if (self.context.count() > 0) {
             var it = self.context.iterator();
             while (it.next()) |entry| {
-                try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+                try addContextEntry(&record, self.redactor, entry.key_ptr.*, entry.value_ptr.*);
             }
         }
 
@@ -1365,7 +1436,7 @@ pub const Logger = struct {
             if (ec.count() > 0) {
                 var extraIt = ec.iterator();
                 while (extraIt.next()) |entry| {
-                    try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+                    try addContextEntry(&record, self.redactor, entry.key_ptr.*, entry.value_ptr.*);
                 }
             }
         }
@@ -1411,6 +1482,25 @@ pub const Logger = struct {
 
         // Report successful logging (same non-reentrancy contract as above).
         if (self.onRecordLogged) |cb| cb(level, finalMessage, &record);
+    }
+
+    /// Copies one context entry into `record`, applying field-rule
+    /// redaction to string values. Redacted bytes live in the record's own
+    /// arena, so a record cloned for the thread pool stays valid after the
+    /// source context entry is gone. Redaction failures propagate: the
+    /// caller drops the record rather than forwarding unredacted text.
+    fn addContextEntry(record: *Record, redactor: ?*Redactor, key: []const u8, value: std.json.Value) !void {
+        if (redactor) |r| {
+            if (value == .string and r.hasFieldRule(key)) {
+                const redacted = try r.redactField(key, value.string);
+                defer r.allocator.free(redacted);
+                const arenaAlloc = try record.jsonScratchAllocator();
+                const owned = try arenaAlloc.dupe(u8, redacted);
+                try record.addField(key, .{ .string = owned });
+                return;
+            }
+        }
+        try record.context.put(key, value);
     }
 
     /// Dispatches a record to the appropriate logging backend (async logger, thread pool, or direct sinks).
@@ -1847,10 +1937,11 @@ pub const Logger = struct {
         if (self.traceId) |t| record.traceId = t;
         if (self.spanId) |s| record.spanId = s;
 
-        // Copy context
+        // Copy context (best-effort: entries that fail redaction are
+        // omitted rather than written unredacted).
         var it = self.context.iterator();
         while (it.next()) |entry| {
-            record.context.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
+            addContextEntry(&record, self.redactor, entry.key_ptr.*, entry.value_ptr.*) catch {};
         }
 
         for (self.sinks.items) |sink| {
@@ -1954,7 +2045,7 @@ pub const Logger = struct {
         // Copy context BEFORE filter evaluation (see logInternal).
         var it = self.context.iterator();
         while (it.next()) |entry| {
-            try record.context.put(entry.key_ptr.*, entry.value_ptr.*);
+            try addContextEntry(&record, self.redactor, entry.key_ptr.*, entry.value_ptr.*);
         }
 
         // Apply filter if configured (reports denials like logInternal).
@@ -2595,6 +2686,82 @@ test "logger with auto sink" {
     try std.testing.expect(logger.sinks.items.len == 1);
 }
 
+test "logger builds redactor from Config.redaction and redacts records" {
+    var config = Config.default();
+    config.autoSink = false;
+    config.redaction = .{
+        .enabled = true,
+        .fields = &.{"password"},
+        .patterns = &.{"secret-token"},
+        .replacement = "[MASKED]",
+    };
+
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    try std.testing.expect(logger.redactor != null);
+    try std.testing.expect(logger.ownsRedactor);
+    try std.testing.expect(logger.redactor.?.hasRules());
+
+    const out = try logger.redactor.?.redact("value=secret-token leaked");
+    defer std.testing.allocator.free(out);
+    try std.testing.expect(std.mem.indexOf(u8, out, "[MASKED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "secret-token") == null);
+}
+
+test "logger setRedactor releases the logger-built redactor" {
+    var config = Config.default();
+    config.autoSink = false;
+    config.redaction = .{ .enabled = true, .patterns = &.{"token"} };
+
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    var custom = Redactor.init(std.testing.allocator);
+    defer custom.deinit();
+    logger.setRedactor(&custom);
+
+    // A leaked logger-owned redactor fails the testing allocator check.
+    try std.testing.expect(!logger.ownsRedactor);
+    try std.testing.expect(logger.redactor == &custom);
+}
+
+test "logger redacts bound context values using field rules" {
+    var config = Config.default();
+    config.autoSink = false;
+    config.redaction = .{
+        .enabled = true,
+        .fields = &.{"password"},
+        .replacement = "[REDACTED]",
+    };
+
+    const logger = try Logger.initWithConfig(std.testing.allocator, config);
+    defer logger.deinit();
+
+    try logger.bind("password", .{ .string = "hunter2" });
+
+    const Capture = struct {
+        var buf: [64]u8 = undefined;
+        var len: usize = 0;
+
+        fn onLogged(_: Level, _: []const u8, record: *const Record) void {
+            len = 0;
+            if (record.context.get("password")) |v| {
+                if (v == .string and v.string.len <= buf.len) {
+                    @memcpy(buf[0..v.string.len], v.string);
+                    len = v.string.len;
+                }
+            }
+        }
+    };
+    Capture.len = 0;
+    logger.onRecordLogged = Capture.onLogged;
+
+    try logger.info("login attempt", null);
+
+    try std.testing.expectEqualStrings("[REDACTED]", Capture.buf[0..Capture.len]);
+}
+
 test "distributed logger context" {
     // Verify that DistributedLogger correctly propagates context
     var config = Config.default();
@@ -3207,7 +3374,7 @@ test "logger async sink count and inspection delegates correctly" {
     try std.testing.expect(logger.isSinkEnabled(0));
 }
 
-test "thread pool submitWithDrop records drop and fires hook on overflow" {
+test "thread pool submitWithDrop keeps ownership on overflow and fires hook on clear" {
     const allocator = std.testing.allocator;
     const pool = try ThreadPool.initWithConfig(allocator, .{
         .threadCount = 1,
@@ -3254,14 +3421,21 @@ test "thread pool submitWithDrop records drop and fires hook on overflow" {
     try std.testing.expect(h2.isValid());
     try std.testing.expectEqual(@as(usize, 0), droppedCount);
 
-    // Third task must overflow the 2-slot queue, increment stats and call onDrop
+    // Third task must overflow the 2-slot queue: the rejection records a
+    // drop and returns an invalid handle, but must NOT invoke the drop hook
+    // — ownership of the context stays with the rejected caller.
     const h3 = pool.submitWithDrop(.{ .callback = .{ .func = struct {
         fn run(_: *anyopaque, _: ?std.mem.Allocator) void {}
     }.run, .context = &droppedCount } }, .normal, DropHelper.onDrop);
 
     try std.testing.expect(!h3.isValid());
-    try std.testing.expectEqual(@as(usize, 1), droppedCount);
+    try std.testing.expectEqual(@as(usize, 0), droppedCount);
     try std.testing.expectEqual(@as(u64, 1), pool.getStats().getDropped());
+
+    // Items that were accepted still fire the hook when discarded without
+    // executing (clear/cancel).
+    pool.clear();
+    try std.testing.expectEqual(@as(usize, 2), droppedCount);
 
     gate.unlock(Utils.defaultIo());
 }

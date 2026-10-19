@@ -1780,11 +1780,17 @@ pub const Compression = struct {
                 if (ctx.outputPath) |p| ctx.alloc.free(p);
                 ctx.alloc.destroy(ctx);
             }
-            _ = ctx.comp.compressFile(ctx.inputPath, ctx.outputPath) catch |err| {
+            const result = ctx.comp.compressFile(ctx.inputPath, ctx.outputPath) catch |err| {
                 _ = ctx.comp.stats.compressionErrors.fetchAdd(1, .monotonic);
                 if (ctx.comp.onCompressionError) |cb| cb(ctx.inputPath, err);
                 return;
             };
+            if (result.outputPath) |p| ctx.alloc.free(p);
+            if (!result.success) {
+                _ = ctx.comp.stats.compressionErrors.fetchAdd(1, .monotonic);
+                if (ctx.comp.onCompressionError) |cb| cb(ctx.inputPath, error.CompressionFailed);
+                return;
+            }
             _ = ctx.comp.stats.backgroundTasksCompleted.fetchAdd(1, .monotonic);
         }
 

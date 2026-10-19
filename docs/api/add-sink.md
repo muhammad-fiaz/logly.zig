@@ -79,6 +79,7 @@ _ = try logger.addSink(logly.SinkConfig.memory());
 | `path` | `?[]const u8` | `null` | Destination path or URI. Unset means console. |
 | `name` | `?[]const u8` | `null` | Identifier used in metrics and diagnostics. |
 | `isMemory` | `bool` | `false` | Route records to an in-process ring buffer. |
+| `memoryCapacity` | `usize` | `Constants.SinkDefaults.memoryRingSize` (1024) | Ring-buffer capacity for `isMemory` sinks. `0` is clamped to the default. |
 | `isStderr` | `bool` | `false` | Write to stderr instead of stdout. |
 | `eventLog` | `bool` | `false` | Emit to the platform event log. Binary formats are rejected. |
 | `enabled` | `bool` | `true` | Initial enabled state. |

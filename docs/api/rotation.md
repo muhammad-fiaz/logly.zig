@@ -181,12 +181,14 @@ Sets a maximum total size across all rotated archive files. When the total size 
 pub fn setMaxTotalSize(self: *Rotation, bytes: u64) void
 ```
 
-#### `setOnRotateCallback`
+#### `withOnRotate`
 
-Registers a custom callback invoked each time a rotation successfully completes.
+Registers a custom callback invoked after each successful rotation. The callback receives the old and new paths.
+
+The callback runs while the rotation lock is held (and, when rotation is driven by a `Sink`, the sink lock as well), so it must not log or call back into the logger.
 
 ```zig
-pub fn setOnRotateCallback(self: *Rotation, callback: *const fn ([]const u8) void) void
+pub fn withOnRotate(self: *Rotation, callback: ?*const fn (oldPath: []const u8, newPath: []const u8) void) void
 ```
 
 #### `withArchiveDir`
@@ -292,6 +294,9 @@ pub const RotationConfig = struct {
     sizeLimitStr: ?[]const u8 = null,
     retentionCount: ?usize = null,
     maxAgeSeconds: ?i64 = null,
+    maxTotalSize: ?u64 = null,
+    maxTotalSizeStr: ?[]const u8 = null,
+    onRotate: ?*const fn (oldPath: []const u8, newPath: []const u8) void = null,
     namingStrategy: NamingStrategy = .timestamp,
     namingFormat: ?[]const u8 = null,
     archiveDir: ?[]const u8 = null,
@@ -316,9 +321,11 @@ pub const RotationConfig = struct {
 | `enabled` | `bool` | `false` | Enable rotation |
 | `interval` | `?[]const u8` | `null` | Time-based interval (e.g., "daily") |
 | `sizeLimit` | `?u64` | `null` | Size-based rotation threshold (bytes) |
+| `sizeLimitStr` | `?[]const u8` | `null` | Size threshold as string (e.g. `"10MB"`) |
 | `retentionCount` | `?usize` | `null` | Max files to retain |
 | `maxAgeSeconds` | `?i64` | `null` | Max age for rotated files |
 | `namingStrategy` | `NamingStrategy` | `.timestamp` | File naming strategy |
+| `namingFormat` | `?[]const u8` | `null` | Custom format string when `namingStrategy` is `.custom` |
 | `archiveDir` | `?[]const u8` | `null` | Directory for rotated files |
 | `archiveRootDir` | `?[]const u8` | `null` | Centralized archive root |
 | `createDateSubdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
@@ -330,8 +337,10 @@ pub const RotationConfig = struct {
 | `compressOnRetention` | `bool` | `false` | Compress instead of delete |
 | `deleteAfterRetentionCompress` | `bool` | `true` | Delete after retention compression |
 | `cleanEmptyDirs` | `bool` | `false` | Remove empty directories |
+| `asyncCleanup` | `bool` | `false` | Perform cleanup asynchronously |
 | `maxTotalSize` | `?u64` | `null` | Max combined size of all rotated files |
-| `onRotate` | `?*const fn ([]const u8) void` | `null` | Custom callback invoked after rotation |
+| `maxTotalSizeStr` | `?[]const u8` | `null` | Max combined size as a string (e.g. `"100MB"`) |
+| `onRotate` | `?*const fn (oldPath: []const u8, newPath: []const u8) void` | `null` | Callback invoked after rotation; runs under the rotation lock (and sink lock for sink-driven rotation) and must not log or re-enter the logger |
 
 ### Parsing Helpers
 
@@ -362,7 +371,7 @@ Defines how rotated files are named.
 
 | Value | Example (`app.log`) | Notes |
 | :--- | :--- | :--- |
-| `.timestamp` | `app.log.167882233` | Default for size/hourly rotation. |
+| `.timestamp` | `app.log.1730072345678` | Millisecond Unix timestamp; default for size/hourly rotation. A numeric suffix (`.1`, `.2`, ...) is appended if the name already exists. |
 | `.date` | `app.log.2023-01-01` | Default for daily/weekly/monthly. |
 | `.isoDatetime` | `app.log.2023-01-01T12-00-00` | High precision. |
 | `.index` | `app.log.1`, `app.log.2` | Rolling log style. |
@@ -387,7 +396,7 @@ When using `.custom` (or setting `namingFormat`), you can use:
 | `{ext}` | Extension (including dot) |
 | `{date}` | YYYY-MM-DD |
 | `{time}` | HH-mm-ss |
-| `{timestamp}` | Unix timestamp |
+| `{timestamp}` | Unix timestamp (seconds) |
 | `{iso}` | ISO 8601 Datetime |
 
 **Flexible Date/Time Placeholders:**

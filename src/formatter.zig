@@ -721,7 +721,12 @@ pub const Formatter = struct {
                                 .integer => |in| try writer.print("{d}", .{in}),
                                 .float => |fl| try writer.print("{d}", .{fl}),
                                 .bool => |b| try writer.writeAll(if (b) "true" else "false"),
-                                else => try writer.writeAll("null"),
+                                else => {
+                                    var tmp = std.Io.Writer.Allocating.init(self.allocator);
+                                    defer tmp.deinit();
+                                    try writeJsonValue(&tmp.writer, entry.value_ptr.*);
+                                    try writer.writeAll(tmp.written());
+                                },
                             }
                             first = false;
                         }
@@ -1441,21 +1446,11 @@ pub const Formatter = struct {
                 try writer.writeAll(indent);
                 try writer.writeAll(indent);
                 try writer.writeByte('"');
-                try writer.writeAll(entry.key_ptr.*);
+                try escapeJsonString(writer, entry.key_ptr.*);
                 try writer.writeAll("\"");
                 try writer.writeAll(sep);
 
-                switch (entry.value_ptr.*) {
-                    .string => |s| {
-                        try writer.writeByte('"');
-                        try escapeJsonString(writer, s);
-                        try writer.writeByte('"');
-                    },
-                    .integer => |i| try Utils.writeInt(writer, i), // Utils.writeInt handles signed i64
-                    .float => |f| try writer.print("{d}", .{f}),
-                    .bool => |b| try writer.writeAll(if (b) "true" else "false"),
-                    else => try writer.writeAll("null"),
-                }
+                try writeJsonValue(writer, entry.value_ptr.*);
                 first = false;
             }
             try writer.writeAll(newline);
@@ -1596,7 +1591,12 @@ pub const Formatter = struct {
                 .integer => |i| try writer.print("{d}", .{i}),
                 .float => |f| try writer.print("{d}", .{f}),
                 .bool => |b| try writer.writeAll(if (b) "true" else "false"),
-                else => try writer.writeAll("null"),
+                else => {
+                    var tmp = std.Io.Writer.Allocating.init(self.allocator);
+                    defer tmp.deinit();
+                    try writeJsonValue(&tmp.writer, entry.value_ptr.*);
+                    try writeLogfmtValue(writer, tmp.written());
+                },
             }
         }
     }
@@ -1812,6 +1812,45 @@ fn writePadded(writer: anytype, value: []const u8, spec: []const u8) !void {
                 }
             },
         }
+    }
+}
+
+/// Writes a context value as JSON without silently discarding nested
+/// arrays, objects, or arbitrary-precision numbers.
+fn writeJsonValue(writer: anytype, value: std.json.Value) !void {
+    switch (value) {
+        .null => try writer.writeAll("null"),
+        .bool => |b| try writer.writeAll(if (b) "true" else "false"),
+        .integer => |i| try Utils.writeInt(writer, i),
+        .float => |f| try writer.print("{d}", .{f}),
+        .number_string => |s| try writer.writeAll(s),
+        .string => |s| {
+            try writer.writeByte('"');
+            try Utils.escapeJsonString(writer, s);
+            try writer.writeByte('"');
+        },
+        .array => |arr| {
+            try writer.writeByte('[');
+            for (arr.items, 0..) |item, idx| {
+                if (idx > 0) try writer.writeByte(',');
+                try writeJsonValue(writer, item);
+            }
+            try writer.writeByte(']');
+        },
+        .object => |obj| {
+            try writer.writeByte('{');
+            var it = obj.iterator();
+            var first = true;
+            while (it.next()) |entry| {
+                if (!first) try writer.writeByte(',');
+                first = false;
+                try writer.writeByte('"');
+                try Utils.escapeJsonString(writer, entry.key_ptr.*);
+                try writer.writeAll("\":");
+                try writeJsonValue(writer, entry.value_ptr.*);
+            }
+            try writer.writeByte('}');
+        },
     }
 }
 
@@ -2857,4 +2896,23 @@ fn stripAnsiForTest(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
         }
     }
     return out.toOwnedSlice();
+}
+
+test "json escapes context keys and keeps nested values" {
+    var formatter = Formatter.init(std.testing.allocator);
+    defer formatter.deinit();
+
+    var record = Record.init(std.testing.allocator, .info, "hello");
+    defer record.deinit();
+
+    var nested = std.json.Array.init(std.testing.allocator);
+    defer nested.deinit();
+    try nested.append(.{ .string = "a\"b" });
+    try record.context.put("weird\"key", .{ .array = nested });
+
+    const out = try formatter.formatJson(&record, Config{});
+    defer std.testing.allocator.free(out);
+
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"weird\\\"key\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "[\"a\\\"b\"]") != null);
 }

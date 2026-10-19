@@ -32,6 +32,10 @@ pub const AsyncLogger = struct {
     workerThread: ?std.Thread = null,
     /// Whether the async logger is running.
     running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// Records popped by the worker but not yet handed to every sink. The
+    /// queue can look empty while a batch is still being written; `flushSync`
+    /// waits on this so it is a real durability barrier.
+    inFlightRecords: std.atomic.Value(Constants.AtomicUnsigned) = std.atomic.Value(Constants.AtomicUnsigned).init(0),
     /// List of sinks to write to.
     sinks: std.ArrayList(*Sink) = .empty,
 
@@ -339,16 +343,30 @@ pub const AsyncLogger = struct {
         const self = try allocator.create(AsyncLogger);
         errdefer allocator.destroy(self);
 
+        // Reject unusable timing/capacity values: a zero-capacity ring would
+        // silently drop every record, and a zero flush interval would
+        // busy-spin the worker thread.
+        var effectiveConfig = config;
+        if (effectiveConfig.bufferSize == 0) {
+            effectiveConfig.bufferSize = Constants.BufferSizes.asyncQueue;
+        }
+        if (effectiveConfig.flushIntervalMs == 0) {
+            effectiveConfig.flushIntervalMs = 1;
+        }
+
+        var buffer = try RingBuffer.init(allocator, effectiveConfig.bufferSize);
+        errdefer buffer.deinit();
+
         self.* = .{
             .allocator = allocator,
             .io = io_handle,
-            .config = config,
-            .buffer = try RingBuffer.init(allocator, config.bufferSize),
+            .config = effectiveConfig,
+            .buffer = buffer,
             .stats = .{},
             .sinks = .empty,
         };
 
-        if (config.backgroundWorker) {
+        if (effectiveConfig.backgroundWorker) {
             try self.startWorker();
         }
 
@@ -455,7 +473,7 @@ pub const AsyncLogger = struct {
                 .colorVertical = vertical,
                 .colorPresentable = presentable,
             };
-            self.writeToSinks(entry);
+            self.writeToSinks(entry, self.sinks.items);
             return true;
         }
 
@@ -580,12 +598,20 @@ pub const AsyncLogger = struct {
         if (self.running.load(.acquire)) return;
 
         self.running.store(true, .release);
-        self.workerThread = try std.Thread.spawn(.{}, workerLoop, .{self});
+        self.workerThread = std.Thread.spawn(.{}, workerLoop, .{self}) catch |err| {
+            self.running.store(false, .release);
+            return err;
+        };
     }
 
     /// Signals the background worker to stop and waits for it to join.
+    ///
+    /// The join is keyed off the worker thread handle rather than the
+    /// running flag: `disableAsync` may have cleared the flag while the
+    /// thread is still draining, and skipping the join there would let
+    /// `deinit` free sinks underneath a live worker.
     pub fn stop(self: *AsyncLogger) void {
-        if (!self.running.load(.acquire)) return;
+        if (self.workerThread == null) return;
 
         self.running.store(false, .release);
         self.condition.broadcast(self.io);
@@ -614,12 +640,22 @@ pub const AsyncLogger = struct {
 
             for (batch[0..count]) |entry| {
                 totalBytes += entry.formattedMessage.len;
-                self.writeToSinks(entry);
+                self.writeToSinks(entry, self.sinks.items);
                 if (entry.owned) {
                     self.allocator.free(entry.formattedMessage);
                 }
             }
             totalFlushed += count;
+        }
+
+        // The worker may have popped a batch just before this call acquired
+        // the mutex and still be writing it without the lock. Wait for that
+        // batch (bounded by the shutdown timeout) so the flush is a real
+        // barrier rather than "the queue happens to be empty".
+        const inFlightStart = Utils.monotonicMillis();
+        while (self.inFlightRecords.load(.acquire) > 0) {
+            if (Utils.monotonicMillis() - inFlightStart >= @as(i64, @intCast(self.config.shutdownTimeoutMs))) break;
+            Utils.sleepMs(1);
         }
 
         if (totalFlushed > 0) {
@@ -663,7 +699,9 @@ pub const AsyncLogger = struct {
 
             // Wait for entries or timeout
             const now = Utils.currentMillis();
-            const elapsed = now - lastFlush;
+            // Clamp against wall-clock adjustments so the later unsigned
+            // conversion cannot trap.
+            const elapsed = @max(now - lastFlush, 0);
 
             if (self.buffer.isEmpty()) {
                 if (self.onEmpty) |cb| cb();
@@ -686,9 +724,33 @@ pub const AsyncLogger = struct {
                 std.Io.Condition.waitTimeout(&self.condition, self.io, &self.mutex, timeout) catch {};
             }
 
-            // Process batch
+            // Process batch. Track it as in flight before releasing the lock
+            // so a concurrent flushSync cannot mistake an empty queue for a
+            // completed flush.
             const count = self.buffer.popBatch(batch[0..batchLimit]);
-            self.mutex.unlock(self.io);
+            if (count > 0) {
+                _ = self.inFlightRecords.fetchAdd(@intCast(count), .acq_rel);
+            }
+
+            // Snapshot the sink list before releasing the lock: addSink may
+            // reallocate it while this worker writes. If the (rare) snapshot
+            // allocation fails, keep holding the lock and write against the
+            // live list instead of racing.
+            const snapshot: ?[]*Sink = if (count > 0)
+                (self.allocator.dupe(*Sink, self.sinks.items) catch null)
+            else
+                null;
+            if (snapshot != null) {
+                self.mutex.unlock(self.io);
+            }
+            defer {
+                if (snapshot) |s| {
+                    self.allocator.free(s);
+                } else {
+                    self.mutex.unlock(self.io);
+                }
+            }
+            const sinks: []const *Sink = if (snapshot) |s| s else self.sinks.items;
 
             if (count > 0) {
                 const writeStart = Utils.currentNanos();
@@ -707,7 +769,7 @@ pub const AsyncLogger = struct {
                     }
 
                     bytesWritten += entry.formattedMessage.len;
-                    self.writeToSinks(entry);
+                    self.writeToSinks(entry, sinks);
                     if (entry.owned) {
                         self.allocator.free(entry.formattedMessage);
                     }
@@ -732,14 +794,20 @@ pub const AsyncLogger = struct {
                 if (self.onBatchFlushed) |cb| {
                     cb(count, @truncate(@as(u64, @intCast(@max(0, writeTime)))));
                 }
+
+                _ = self.inFlightRecords.fetchSub(@intCast(count), .acq_rel);
             }
         }
     }
 
-    /// Distributes a single entry to all registered sinks.
+    /// Distributes a single entry to the given sink snapshot.
+    ///
+    /// Takes an explicit sink list so callers holding `self.mutex` can pass
+    /// the live list while the worker passes a copy that `addSink` cannot
+    /// reallocate mid-write.
     /// Internal errors in sinks are caught and reported via on_error callback.
-    fn writeToSinks(self: *AsyncLogger, entry: BufferEntry) void {
-        for (self.sinks.items) |sink| {
+    fn writeToSinks(self: *AsyncLogger, entry: BufferEntry, sinks: []const *Sink) void {
+        for (sinks) |sink| {
             if (entry.binary) {
                 sink.writeRawBinary(entry.formattedMessage) catch |err| {
                     if (self.onError) |cb| cb(err);
@@ -1030,12 +1098,18 @@ pub const AsyncFileWriter = struct {
     pub fn startAutoFlush(self: *AsyncFileWriter) !void {
         if (self.running.load(.acquire)) return;
         self.running.store(true, .release);
-        self.flushThread = try std.Thread.spawn(.{}, autoFlushLoop, .{self});
+        self.flushThread = std.Thread.spawn(.{}, autoFlushLoop, .{self}) catch |err| {
+            self.running.store(false, .release);
+            return err;
+        };
     }
 
     /// Stops periodic background flushing and joins flush thread.
+    ///
+    /// Keyed off the thread handle: a failed spawn or an earlier stop()
+    /// must not leave a live thread behind for deinit to race.
     pub fn stop(self: *AsyncFileWriter) void {
-        if (!self.running.load(.acquire)) return;
+        if (self.flushThread == null) return;
         self.running.store(false, .release);
         if (self.flushThread) |thread| {
             thread.join();
@@ -1044,8 +1118,10 @@ pub const AsyncFileWriter = struct {
     }
 
     fn autoFlushLoop(self: *AsyncFileWriter) void {
+        // Guard against busy-spinning when the interval was left at zero.
+        const intervalMs = @max(self.config.flushIntervalMs, 1);
         while (self.running.load(.acquire)) {
-            Utils.sleepMs(self.config.flushIntervalMs);
+            Utils.sleepMs(intervalMs);
             self.flushSync();
         }
     }

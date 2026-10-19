@@ -535,9 +535,13 @@ fn parentChildSpansExample(allocator: std.mem.Allocator) !void {
     child2.end();
     try telemetry.endSpan(&child2);
 
-    // End parent span
+    // End parent span. `endSpan` transfers the span's strings into the
+    // telemetry buffer and empties the local span, so capture the trace
+    // id first if it is still needed afterwards.
     parent.setStatus(.ok);
     parent.end();
+    const parentTraceId = try allocator.dupe(u8, parent.traceId);
+    defer allocator.free(parentTraceId);
     try telemetry.endSpan(&parent);
 
     // Get telemetry stats
@@ -548,7 +552,7 @@ fn parentChildSpansExample(allocator: std.mem.Allocator) !void {
     try telemetry.exportSpans();
 
     std.debug.print("[OK] Parent-child spans demonstrated\n", .{});
-    std.debug.print("  Parent trace_id: {s}\n", .{parent.traceId});
+    std.debug.print("  Parent trace_id: {s}\n", .{parentTraceId});
 }
 
 /// Custom exporter callback function

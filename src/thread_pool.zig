@@ -227,11 +227,13 @@ pub const ThreadPool = struct {
         submittedAt: i64,
         priority: Priority = .normal,
         /// Optional cleanup invoked with the task's callback context when
-        /// the item is discarded without executing (clear/cancel). Submit
-        /// functions default this to null; owners of heap contexts must
-        /// provide it or accept the leak on explicit drops. Hooks run under
-        /// the queue lock: they must only free memory and never call back
-        /// into the pool.
+        /// an accepted item is discarded without executing (clear/cancel).
+        /// It never fires for rejected submissions (pool stopped or queue
+        /// full) — the caller keeps ownership there. Submit functions
+        /// default this to null; owners of heap contexts must provide it or
+        /// accept the leak on explicit drops. Hooks run under the queue
+        /// lock: they must only free memory and never call back into the
+        /// pool.
         onDrop: ?*const fn (?*anyopaque) void = null,
 
         /// Priority level for task scheduling.
@@ -547,24 +549,41 @@ pub const ThreadPool = struct {
         else
             config.threadCount;
 
+        // A zero-capacity queue would silently reject every submission; fall
+        // back to the default depth instead of accepting unusable config.
+        var effectiveConfig = config;
+        if (effectiveConfig.queueSize == 0) {
+            effectiveConfig.queueSize = Constants.ThreadDefaults.queueSize;
+        }
+
         // Create workers
         const workers = try allocator.alloc(Worker, numThreads);
         errdefer allocator.free(workers);
 
+        var initialized: usize = 0;
+        errdefer {
+            for (workers[0..initialized]) |*worker| {
+                worker.localQueue.deinit();
+            }
+        }
+
         for (workers, 0..) |*worker, i| {
             worker.* = .{
                 .id = i,
-                .localQueue = try WorkQueue.initWithIo(allocator, io_handle, config.queueSize),
+                .localQueue = try WorkQueue.initWithIo(allocator, io_handle, effectiveConfig.queueSize),
                 .pool = self,
             };
+            initialized += 1;
         }
+
+        const globalCapacity = std.math.mul(usize, effectiveConfig.queueSize, numThreads) catch std.math.maxInt(usize);
 
         self.* = .{
             .allocator = allocator,
             .io = io_handle,
-            .config = config,
+            .config = effectiveConfig,
             .workers = workers,
-            .workQueue = try WorkQueue.initWithIo(allocator, io_handle, config.queueSize * numThreads),
+            .workQueue = try WorkQueue.initWithIo(allocator, io_handle, globalCapacity),
             .stats = .{},
         };
 
@@ -584,15 +603,36 @@ pub const ThreadPool = struct {
     }
 
     /// Starts the thread pool.
+    ///
+    /// If spawning a worker fails partway through, every thread spawned so
+    /// far is signaled, joined, and cleared before the error propagates so
+    /// the pool is left fully stopped and can be retried or deinited safely.
     pub fn start(self: *ThreadPool) !void {
         if (self.running.load(.acquire)) return;
 
         self.running.store(true, .release);
         self.shutdownComplete.store(false, .release);
 
+        var spawned: usize = 0;
+        errdefer {
+            self.running.store(false, .release);
+            self.workQueue.condition.broadcast(self.io);
+            for (self.workers[0..spawned]) |*worker| {
+                worker.running.store(false, .release);
+                worker.localQueue.condition.broadcast(self.io);
+            }
+            for (self.workers[0..spawned]) |*worker| {
+                if (worker.thread) |thread| {
+                    thread.join();
+                    worker.thread = null;
+                }
+            }
+        }
+
         for (self.workers) |*worker| {
             worker.running.store(true, .release);
             worker.thread = try std.Thread.spawn(.{}, workerLoop, .{worker});
+            spawned += 1;
         }
     }
 
@@ -649,8 +689,14 @@ pub const ThreadPool = struct {
         return self.submitWithDrop(task, priority, null);
     }
 
-    /// Submits a task with a drop hook invoked if the item is discarded
-    /// without executing (clear/cancel). See WorkItem.onDrop.
+    /// Submits a task with a drop hook invoked if an accepted item is
+    /// discarded without executing (clear/cancel). See WorkItem.onDrop.
+    ///
+    /// Ownership contract: when this returns an invalid handle (pool not
+    /// running or queue full) the submission was rejected, the hook is NOT
+    /// invoked, and the caller still owns the task context and must release
+    /// it. When a valid handle is returned the pool owns the context until
+    /// it executes or the drop hook reclaims it.
     pub fn submitWithDrop(self: *ThreadPool, task: Task, priority: WorkItem.Priority, onDrop: ?*const fn (?*anyopaque) void) TaskHandle {
         if (!self.running.load(.acquire)) return .{ .id = 0 };
 
@@ -671,7 +717,10 @@ pub const ThreadPool = struct {
 
         self.emitQueueOverflow(self.workQueue.size(), self.workQueue.capacity);
         _ = self.stats.tasksDropped.fetchAdd(1, .monotonic);
-        if (onDrop) |hook| hook(task.dropContext());
+        // A rejected submission never took ownership of the task context:
+        // the caller still owns it and is responsible for releasing it. The
+        // drop hook only fires for items that were accepted and later
+        // discarded by clear/cancel.
         return .{ .id = 0 };
     }
 

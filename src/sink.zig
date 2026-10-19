@@ -655,6 +655,12 @@ pub const Sink = struct {
     pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: SinkConfig) !*Sink {
         var cfg = config;
         cfg.resolveConflicts();
+        // A zero-capacity memory ring would divide by zero on the first
+        // flush; fall back to the default depth instead of accepting an
+        // unusable configuration.
+        if (cfg.memoryCapacity == 0) {
+            cfg.memoryCapacity = Constants.SinkDefaults.memoryRingSize;
+        }
         const sink = try allocator.create(Sink);
         sink.* = .{
             .allocator = allocator,
@@ -672,7 +678,7 @@ pub const Sink = struct {
         }
 
         if (config.isMemory) {
-            sink.memoryRing = try allocator.alloc(?[]const u8, config.memoryCapacity);
+            sink.memoryRing = try allocator.alloc(?[]const u8, cfg.memoryCapacity);
             @memset(sink.memoryRing.?, null);
             sink.memoryRingIndex = 0;
             sink.memoryRingCount = 0;
@@ -1137,7 +1143,7 @@ pub const Sink = struct {
         defer self.mutex.unlock(self.io);
         self.config.asyncWrite = false;
         // Flush any pending data when disabling async
-        self.flush() catch {};
+        self.flushLocked() catch {};
     }
 
     /// Manually flushes the sink buffer.
@@ -1145,7 +1151,7 @@ pub const Sink = struct {
     pub fn flushNow(self: *Sink) !void {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
-        try self.flush();
+        try self.flushLocked();
     }
 
     /// Returns the sink's name, if set.
@@ -1331,7 +1337,7 @@ pub const Sink = struct {
                     try self.rotateMmap(rot, f, mmapF, framing);
                 } else if (framing) {
                     if (!self.jsonArrayOpen) try self.ensureJsonArrayOpen();
-                    try self.flush();
+                    try self.flushLocked();
                     if (rot.shouldRotate(f)) {
                         const oldSize = (f.stat(self.io) catch {
                             try rot.checkAndRotate(f);
@@ -1590,10 +1596,10 @@ pub const Sink = struct {
 
         // Flush logic
         if (!self.config.asyncWrite) {
-            try self.flush();
+            try self.flushLocked();
         } else {
             if (self.buffer.items.len >= self.config.bufferSize) {
-                try self.flush();
+                try self.flushLocked();
             }
         }
     }
@@ -1626,7 +1632,7 @@ pub const Sink = struct {
                 try self.buffer.appendSlice(self.allocator, bytes);
                 self.bufferedRecords += 1;
                 if (self.buffer.items.len >= self.config.bufferSize) {
-                    try self.flush();
+                    try self.flushLocked();
                 }
             } else {
                 if (self.config.mmap) {
@@ -1775,7 +1781,7 @@ pub const Sink = struct {
     /// Array framing uses the same tail/header protocol as regular files,
     /// written through the mapping so offsets stay exact.
     fn rotateMmap(self: *Sink, rot: *Rotation, f: *std.Io.File, mmapF: *MmapFile, framing: bool) !void {
-        try self.flush();
+        try self.flushLocked();
         if (!rot.rotationDue(f, Utils.currentSeconds(), mmapF.writePtr)) return;
 
         const oldPtr = mmapF.writePtr;
@@ -1874,7 +1880,7 @@ pub const Sink = struct {
                 try self.buffer.append(self.allocator, '\n');
                 self.bufferedRecords += 1;
                 if (self.buffer.items.len >= self.config.bufferSize) {
-                    try self.flush();
+                    try self.flushLocked();
                 }
             } else {
                 if (self.config.mmap) {
@@ -2022,7 +2028,7 @@ pub const Sink = struct {
                 try self.buffer.appendSlice(self.allocator, data);
                 self.bufferedRecords += 1;
                 if (self.buffer.items.len >= self.config.bufferSize) {
-                    try self.flush();
+                    try self.flushLocked();
                 }
             } else {
                 if (self.config.mmap) {
@@ -2183,7 +2189,17 @@ pub const Sink = struct {
     }
 
     /// Flushes the internal buffer to storage.
+    ///
+    /// Thread-safe: serializes against concurrent writers and flushes so
+    /// the buffer and file state are never mutated concurrently.
     pub fn flush(self: *Sink) !void {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        try self.flushLocked();
+    }
+
+    /// Flushes while `self.mutex` is already held by the caller.
+    fn flushLocked(self: *Sink) !void {
         if (self.buffer.items.len == 0) return;
 
         const startNs = Utils.currentNanos();
@@ -2495,6 +2511,20 @@ test "sink flush updates stats" {
     try std.testing.expect(stats.getBytesWritten() > 0);
     try std.testing.expect(stats.getFlushCount() >= 1);
     try std.testing.expectEqual(@as(u64, 0), stats.getWriteErrors());
+}
+
+test "sink memory ring clamps zero capacity" {
+    const allocator = std.testing.allocator;
+    const sink = try Sink.init(allocator, .{ .isMemory = true, .memoryCapacity = 0 });
+    defer sink.deinit();
+
+    try sink.writeRaw("first");
+    try sink.writeRaw("second");
+    try sink.flush();
+
+    try std.testing.expect(sink.memoryRing != null);
+    try std.testing.expectEqual(Constants.SinkDefaults.memoryRingSize, sink.memoryRing.?.len);
+    try std.testing.expectEqual(@as(usize, 2), sink.memoryRingCount);
 }
 
 test "sink manual flushNow updates stats" {

@@ -294,15 +294,17 @@ redactor.setRedactionDetailCallback(&onRedactionDetail);
 
 ### Rotation Lifecycle
 
+> [!WARNING]
+> Rotation callbacks run while the rotation lock is held (and, for sink-driven rotation, the sink lock as well). Do not log or call back into the logger from within these callbacks.
+
 ```zig
-fn onRotationStart(old_file: []const u8) void {
-    std.debug.print("Starting rotation: {s}\n", .{old_file});
+fn onRotationStart(old_file: []const u8, new_file: []const u8) void {
+    std.debug.print("Starting rotation: {s} -> {s}\n", .{old_file, new_file});
 }
 
-fn onRotationComplete(old_file: []const u8, new_file: []const u8, durationNs: u64) void {
-    const durationMs = durationNs / 1_000_000;
-    std.debug.print("Rotation complete in {d}ms: {s} -> {s}\n", 
-        .{durationMs, old_file, new_file});
+fn onRotationComplete(old_file: []const u8, new_file: []const u8, elapsedMs: u64) void {
+    std.debug.print("Rotation complete in {d}ms: {s} -> {s}\n",
+        .{elapsedMs, old_file, new_file});
 }
 
 rotation.onRotationStart = &onRotationStart;
@@ -316,9 +318,8 @@ fn onFileArchived(archived_file: []const u8, archivePath: []const u8) void {
     std.debug.print("Archived: {s} -> {s}\n", .{archived_file, archivePath});
 }
 
-fn onRetentionCleanup(deleted_count: u32, freed_bytes: u64) void {
-    std.debug.print("Cleanup: {d} files deleted, {d} bytes freed\n", 
-        .{deleted_count, freed_bytes});
+fn onRetentionCleanup(path: []const u8) void {
+    std.debug.print("Cleanup removed: {s}\n", .{path});
 }
 
 rotation.onFileArchived = &onFileArchived;
@@ -332,14 +333,17 @@ fn onCompressionStart(filePath: []const u8, originalSize: u64) void {
     std.debug.print("Compressing: {s} ({d} bytes)\n", .{filePath, originalSize});
 }
 
-fn onCompressionComplete(filePath: []const u8, ratio: f64, durationNs: u64) void {
-    std.debug.print("Compressed: {s}, ratio: {d:.2}, time: {d}ms\n", 
-        .{filePath, ratio, durationNs / 1_000_000});
+fn onCompressionComplete(inputPath: []const u8, outputPath: []const u8, originalSize: u64, compressedSize: u64, durationNs: u64) void {
+    std.debug.print("Compressed: {s} -> {s} ({d} -> {d} bytes)\n",
+        .{inputPath, outputPath, originalSize, compressedSize});
 }
 
 compression.onCompressionStart = &onCompressionStart;
 compression.onCompressionComplete = &onCompressionComplete;
 ```
+
+> [!NOTE]
+> `durationNs` is part of the callback signature but is currently always passed as `0` by the compressor; derive duration on your side if you need it.
 
 ## Metrics Callbacks
 

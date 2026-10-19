@@ -32,9 +32,9 @@ sequenceDiagram
 
 By registering Logly's panic hook:
 1. Standard asynchronous queuing is immediately bypassed during a panic.
-2. Active locks on files and sockets are handled safely without causing deadlocks.
+2. Sink locks are still acquired for each write, so crash logging is best-effort: it is not async-signal-safe and can block if a crash interrupts a thread while it holds a sink lock.
 3. System diagnostics are captured at the exact moment of failure.
-4. Active sinks are flushed synchronously to ensure absolute data persistence.
+4. Active sinks are flushed synchronously to ensure best-effort data persistence.
 
 ---
 
@@ -118,6 +118,8 @@ Logly registers low-level handlers depending on the host operating system:
 
 > [!IMPORTANT]
 > The global panic and crash hooks are designed to write directly to disk or standard output without allocating memory. In an Out of Memory (OOM) scenario, further allocations could crash the allocator, so the panic hook uses pre-allocated stack buffers and safe platform APIs.
+>
+> Limitation: sink locks are still acquired per write during crash logging, so panic handling is best-effort and not async-signal-safe. If a crash interrupts a thread while it holds a sink lock (or the logger lock used by non-panic writes), the crash log write can block.
 
 * **Register Early**: Call `logly.crash.registerLogger` (or its alias `logly.crash.register`) as soon as your logger is initialized in `main` to catch failures during startup.
 * **Unregister Gracefully**: Use a `defer logly.crash.unregister()` immediately after registration to clean up global references when exiting normally.

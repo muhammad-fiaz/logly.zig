@@ -539,6 +539,14 @@ pub const SinkDefaults = struct {
     pub const maxBufferRecords: usize = 1000;
     /// Default flush interval in milliseconds
     pub const flushIntervalMs: u64 = 1000;
+    /// Default memory sink ring-buffer capacity (records)
+    pub const memoryRingSize: usize = 1024;
+    /// Default per-sink rate limit (messages per second, 0 = unlimited)
+    pub const rateLimitPerSecond: u32 = 0;
+    /// Number of consecutive errors before a sink is considered unhealthy
+    pub const unhealthyErrorThreshold: u32 = 10;
+    /// Default flush period for buffered sinks (ms)
+    pub const flushPeriodMs: u64 = TimeConstants.defaultFlushIntervalMs;
 };
 ```
 

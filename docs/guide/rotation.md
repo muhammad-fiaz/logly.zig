@@ -63,14 +63,21 @@ The `RotationConfig` struct provides the following fields:
 | `enabled` | `bool` | Master switch for default rotation logic. |
 | `interval` | `?[]const u8` | Default time interval ("daily", "hourly"). |
 | `sizeLimit` | `?u64` | Default size limit in bytes. |
+| `sizeLimitStr` | `?[]const u8` | Default size limit as string (e.g. `"10MB"`). |
 | `retentionCount` | `?usize` | Default max number of files to keep. |
 | `maxAgeSeconds` | `?i64` | Default max age of files in seconds. |
+| `maxTotalSize` | `?u64` | Default max combined size of all rotated files in bytes. |
+| `maxTotalSizeStr` | `?[]const u8` | Default max combined size as a string (e.g. `"100MB"`). |
 | `namingStrategy` | `NamingStrategy` | Default naming strategy (`timestamp`, `date`, `isoDatetime`, `index`). |
 | `archiveDir` | `?[]const u8` | Directory to automatically move rotated files into. |
 | `cleanEmptyDirs` | `bool` | Whether to delete the archive directory if it becomes empty. |
+| `asyncCleanup` | `bool` | Perform retention cleanup asynchronously. |
 | `keepOriginal` | `bool` | Keep original file after compression (default: false). |
 | `compressOnRetention` | `bool` | Compress files during retention cleanup instead of deleting. |
 | `deleteAfterRetentionCompress` | `bool` | Delete originals after retention compression (default: true). |
+| `compressionAlgorithm` | `CompressionAlgorithm` | Compression algorithm for rotated files (default: `.gzip`). |
+| `compressionLevel` | `CompressionLevel` | Compression level (default: `.default`). |
+| `onRotate` | callback | Invoked after rotation; runs under the rotation lock (and sink lock for sink-driven rotation) and must not log or re-enter the logger. |
 
 ### Example
 
@@ -136,7 +143,7 @@ When using `logger.add(.{...})`, you can use the following fields to control rot
 ## Naming Strategies
 You can control how rotated files are named using `NamingStrategy`.
 
-- **Timestamp** (Default for `size/hourly`): `app.log` -> `app.log.167882233`
+- **Timestamp** (Default for `size/hourly`): `app.log` -> `app.log.1730072345678` (Unix milliseconds; a numeric suffix like `.1` is appended if the name already exists)
 - **Date** (Default for `daily`+): `app.log` -> `app.log.2023-10-25`
 - **ISO**: `app.log` -> `app.log.2023-10-25T14-30-00`
 - **Index**: `app.log` -> `app.log.1`, `app.log.2` (Rolling log style)
@@ -313,4 +320,4 @@ _ = try logger.addSink(RotationPresets.sizeSink("logs/data.log", 100 * 1024 * 10
 ```
 
 ## Performance
-Rotation checks are optimized to be `O(1)` (simple time or size check). The actual rotation involves file I/O (renaming, creating) and is protected by a mutex to ensure thread safety. Compression happens after the critical logic, so the impact on the logging thread is managed, but for extremely large files, consider scheduling compression separately.
+Rotation checks are optimized to be `O(1)` (simple time or size check). The actual rotation involves file I/O (renaming, creating) and runs while the rotation mutex (and, for sink-driven rotation, the sink mutex) is held. Compression also runs as part of rotation under that lock; if compression fails, the partial compressed file is removed and the uncompressed rotated archive is kept. For extremely large files, consider scheduling compression separately from the logging path.

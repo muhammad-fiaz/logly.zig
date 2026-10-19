@@ -43,7 +43,7 @@ The async module provides non-blocking asynchronous logging with configurable bu
 | `stop()` | `halt()`, `end()` | Stop async logger |
 | `write()` | `writeData()` | Write data (AsyncFileWriter) |
 | `writeLine()` | `writeLn()` | Write line (AsyncFileWriter) |
-| `flushSync()` | `flush()` | Flush synchronously (AsyncFileWriter) |
+| `flushSync()` (AsyncLogger) | `flush()` (AsyncFileWriter) | Synchronously wait for in-flight records (bounded by `shutdownTimeoutMs`) and flush all sinks. Note: `AsyncLogger.flush()` only signals the worker thread to wake; `flushSync()` is the real drain barrier. |
 | `startAutoFlush()` | `startFlush()` | Start auto flush (AsyncFileWriter) |
 | `bytesWritten()` | `written()` | Get bytes written (AsyncFileWriter) |
 
@@ -104,7 +104,7 @@ pub const AsyncConfig = struct {
     /// Buffer size for async queue.
     bufferSize: usize = 8192,
     /// Batch size for flushing.
-    batchSize: usize = 100,
+    batchSize: usize = 64,
     /// Flush interval in milliseconds.
     flushIntervalMs: u64 = 100,
     /// Minimum time between flushes to avoid thrashing.
@@ -115,10 +115,15 @@ pub const AsyncConfig = struct {
     overflowPolicy: OverflowPolicy = .dropOldest,
     /// Auto-start worker thread.
     backgroundWorker: bool = true,
-    /// Shutdown grace period in milliseconds to allow remaining records to flush.
-    shutdownTimeoutMs: u64 = 1000,
-    /// Enable priority queue logic to handle high-priority levels first.
-    enable_priority_queue: bool = false,
+    /// Queue utilization ratio that records a backpressure event.
+    backpressureThreshold: f64 = 0.9,
+    /// Default timeout for explicit drain waits.
+    drainTimeoutMs: u64 = 5000,
+    /// Shutdown grace period timeout in milliseconds. Also bounds the
+    /// `flushSync()` barrier wait.
+    shutdownTimeoutMs: u64 = 5000,
+    /// Explicit I/O handle. When null, inherits from Logger or defaults to stateless I/O.
+    io: ?std.Io = null,
 
     pub const OverflowPolicy = enum {
         dropOldest,
