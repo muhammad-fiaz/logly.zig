@@ -14,39 +14,6 @@ head:
 
 The async module provides non-blocking asynchronous logging with configurable buffering, background processing, and high-throughput capabilities.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize async logger |
-| `deinit()` | `destroy()` | Deinitialize async logger |
-| `queue()` | `enqueue()`, `push()`, `logMsg()` | Queue log message |
-| `getStats()` | `statistics()` | Get statistics |
-| `resetStats()` | `clearStats()` | Reset statistics |
-| `queueDepth()` | `depth()`, `pending()` | Get queue depth |
-| `isQueueEmpty()` | `empty()` | Check if queue empty |
-| `availableCapacity()` | `capacityLeft()`, `freeSlots()` | Get available queue slots |
-| `queueUtilization()` | `utilization()` | Get queue utilization ratio |
-| `isNearCapacity()` | `nearCapacity()`, `isBackpressured()` | Check backpressure threshold |
-| `waitUntilDrained()` | `waitForDrain()`, `drain()` | Wait for queue drain with timeout |
-| `setOverflowCallback()` | `onOverflow()` | Set overflow callback |
-| `setFlushCallback()` | `onFlush()` | Set flush callback |
-| `setWorkerStartCallback()` | `onWorkerStart()` | Set worker start callback |
-| `setWorkerStopCallback()` | `onWorkerStop()` | Set worker stop callback |
-| `setBatchProcessedCallback()` | `onBatchProcessed()` | Set batch processed callback |
-| `setLatencyThresholdExceededCallback()` | `onLatencyThresholdExceeded()` | Set latency threshold exceeded callback |
-| `setFullCallback()` | `onFull()` | Set full callback |
-| `setEmptyCallback()` | `onEmpty()` | Set empty callback |
-| `setErrorCallback()` | `onError()` | Set error callback |
-| `isFull()` | `full()` | Check if full |
-| `startWorker()` | `begin()` | Start worker |
-| `stop()` | `halt()`, `end()` | Stop async logger |
-| `write()` | `writeData()` | Write data (AsyncFileWriter) |
-| `writeLine()` | `writeLn()` | Write line (AsyncFileWriter) |
-| `flushSync()` (AsyncLogger) | `flush()` (AsyncFileWriter) | Synchronously wait for in-flight records (bounded by `shutdownTimeoutMs`) and flush all sinks. Note: `AsyncLogger.flush()` only signals the worker thread to wake; `flushSync()` is the real drain barrier. |
-| `startAutoFlush()` | `startFlush()` | Start auto flush (AsyncFileWriter) |
-| `bytesWritten()` | `written()` | Get bytes written (AsyncFileWriter) |
-
 ## Overview
 
 ```zig
@@ -101,28 +68,27 @@ Configuration available through `Config.AsyncConfig`:
 pub const AsyncConfig = struct {
     /// Enable async logging.
     enabled: bool = false,
-    /// Buffer size for async queue.
+    /// Number of slots in the queue.
     bufferSize: usize = 8192,
-    /// Batch size for flushing.
+    /// Records dequeued per batch.
     batchSize: usize = 64,
-    /// Flush interval in milliseconds.
-    flushIntervalMs: u64 = 100,
-    /// Minimum time between flushes to avoid thrashing.
+    /// Interval between flushes, in milliseconds.
+    flushIntervalMs: u64 = 1000,
+    /// Minimum time between flushes, in milliseconds.
     minFlushIntervalMs: u64 = 0,
-    /// Maximum latency before forcing a flush.
+    /// Maximum time a record may wait before a forced flush, in milliseconds.
     maxLatencyMs: u64 = 5000,
-    /// What to do when buffer is full.
+    /// Behavior when the queue is full.
     overflowPolicy: OverflowPolicy = .dropOldest,
-    /// Auto-start worker thread.
+    /// Start the worker during initialization.
     backgroundWorker: bool = true,
-    /// Queue utilization ratio that records a backpressure event.
+    /// Queue utilization that records a backpressure event.
     backpressureThreshold: f64 = 0.9,
-    /// Default timeout for explicit drain waits.
+    /// Default timeout for explicit drain waits, in milliseconds.
     drainTimeoutMs: u64 = 5000,
-    /// Shutdown grace period timeout in milliseconds. Also bounds the
-    /// `flushSync()` barrier wait.
+    /// Shutdown grace period, in milliseconds.
     shutdownTimeoutMs: u64 = 5000,
-    /// Explicit I/O handle. When null, inherits from Logger or defaults to stateless I/O.
+    /// Explicit I/O handle. Inherited from the logger when null.
     io: ?std.Io = null,
 
     pub const OverflowPolicy = enum {
@@ -139,14 +105,12 @@ What to do when the buffer is full.
 
 ```zig
 pub const OverflowPolicy = enum {
-    /// Drop the oldest entries to make room
+    /// Drop the oldest queued entry to make room.
     dropOldest,
-    /// Drop new entries (block if blocking enabled)
+    /// Drop the incoming entry.
     dropNewest,
-    /// Block until space is available
+    /// Block the producer until space is available.
     block,
-    /// Expand buffer dynamically
-    expand,
 };
 ```
 
@@ -172,61 +136,60 @@ pub const AsyncStats = struct {
     recordsQueued: std.atomic.Value(u64),
     recordsWritten: std.atomic.Value(u64),
     recordsDropped: std.atomic.Value(u64),
+    bufferOverflows: std.atomic.Value(u64),
+    backpressureEvents: std.atomic.Value(u64),
     flushCount: std.atomic.Value(u64),
     totalLatencyNs: std.atomic.Value(u64),
-    maxLatencyNs: std.atomic.Value(u64),
-    buffer_high_watermark: std.atomic.Value(u64),
+    maxQueueDepth: std.atomic.Value(u64),
+    lastFlushTimestamp: std.atomic.Value(i64),
 };
 ```
 
 ### RingBuffer
 
-Lock-free ring buffer for async message queuing.
+Circular buffer used by `AsyncLogger`.
 
 ```zig
 pub const RingBuffer = struct {
+    allocator: std.mem.Allocator,
     entries: []BufferEntry,
-    head: std.atomic.Value(usize),
-    tail: std.atomic.Value(usize),
+    head: usize,
+    tail: usize,
+    count: usize,
     capacity: usize,
 };
 ```
 
 ### AsyncFileWriter
 
-Optimized async file writer with buffering.
+Buffered file writer with optional periodic flushing.
 
 ```zig
 pub const AsyncFileWriter = struct {
     allocator: std.mem.Allocator,
-    config: FileWriterConfig,
-    write_buffer: []u8,
-    buffer_pos: usize,
-    stats: FileWriterStats,
-    background_thread: ?std.Thread,
+    io: std.Io,
+    file: std.Io.File,
+    buffer: std.ArrayList(u8),
+    config: FileConfig,
+    mutex: std.Io.Mutex,
+    flushThread: ?std.Thread,
+    running: std.atomic.Value(bool),
+    totalBytesWritten: std.atomic.Value(u64),
+    lastFlush: std.atomic.Value(i64),
 };
 ```
 
-### FileWriterConfig
+### FileConfig
 
-Configuration for async file writing.
+Configuration for `AsyncFileWriter`.
 
 ```zig
-pub const FileWriterConfig = struct {
-    /// Path to the log file
-    filePath: []const u8,
-    /// Write buffer size
-    bufferSize: usize = 64 * 1024, // 64KB
-    /// Auto-flush interval in milliseconds
-    flushIntervalMs: u64 = 1000,
-    /// Sync to disk on flush
+pub const FileConfig = struct {
+    bufferSize: usize,
+    flushIntervalMs: u64,
     syncOnFlush: bool = false,
-    /// Enable direct I/O (bypass OS cache)
-    direct_io: bool = false,
-    /// Create parent directories if needed
-    create_dirs: bool = true,
-    /// Append to existing file
-    append: bool = true,
+    appendMode: bool = true,
+    io: ?std.Io = null,
 };
 ```
 
@@ -235,8 +198,6 @@ pub const FileWriterConfig = struct {
 ### init
 
 Create a new async logger with default configuration.
-
-**Alias:** `create`
 
 ```zig
 pub fn init(allocator: std.mem.Allocator) !*AsyncLogger
@@ -262,18 +223,16 @@ pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Async
 
 Clean up resources and stop worker thread.
 
-**Alias:** `destroy`
-
 ```zig
 pub fn deinit(self: *AsyncLogger) void
 ```
 
-### start
+### startWorker
 
 Start the background worker thread.
 
 ```zig
-pub fn start(self: *AsyncLogger) !void
+pub fn startWorker(self: *AsyncLogger) !void
 ```
 
 ### stop
@@ -284,12 +243,12 @@ Stop the background worker and flush remaining logs.
 pub fn stop(self: *AsyncLogger) void
 ```
 
-### log
+### queue
 
-Queue a log record for async processing.
+Queue a preformatted message with its level priority. Returns false when the queue is full under a drop policy.
 
 ```zig
-pub fn log(self: *AsyncLogger, record: *const Record) !void
+pub fn queue(self: *AsyncLogger, message: []const u8, levelPriority: u8) bool
 ```
 
 ### addSink
@@ -313,12 +272,12 @@ pub fn flush(self: *AsyncLogger) void
 Wait up to `timeoutMs` for the queue to drain completely, then flush the buffer to ensure durability before shutting down.
 
 ```zig
-pub fn drainAndFlush(self: *AsyncLogger, timeoutMs: u64) !void
+pub fn drainAndFlush(self: *AsyncLogger, timeoutMs: u64) bool
 ```
 
 ### isBackpressured
 
-Alias for `isNearCapacity(0.9)`. Signals if the async system is struggling to keep up with the log volume.
+Returns `isNearCapacity(0.9)`. Signals that the async queue is close to capacity.
 
 ```zig
 pub fn isBackpressured(self: *AsyncLogger) bool
@@ -438,10 +397,16 @@ Calculate successful write rate (0.0 - 1.0).
 pub fn successRate(self: *const AsyncStats) f64
 ```
 
-#### throughputRecordsPerSecond
-Calculate records throughput per second.
+#### getBackpressureEvents()
+Return the number of backpressure events.
 ```zig
-pub fn throughputRecordsPerSecond(self: *const AsyncStats, elapsedSeconds: f64) f64
+pub fn getBackpressureEvents(self: *const AsyncStats) u64
+```
+
+#### hasBackpressureEvents()
+Return true when a backpressure event has been recorded.
+```zig
+pub fn hasBackpressureEvents(self: *const AsyncStats) bool
 ```
 
 #### averageLatencyMs
@@ -458,25 +423,21 @@ pub fn averageLatencyNs(self: *const AsyncStats) u64
 
 ### Reset
 
-#### reset
-Reset all statistics to initial state.
-```zig
-pub fn reset(self: *AsyncStats) void
-```
+`AsyncLogger.resetStats()` resets the logger's runtime statistics.
 
 ## AsyncFileWriter Methods
 
 ### init
 
-Create a new async file writer.
+Open a file for buffered writes.
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, config: FileWriterConfig) !AsyncFileWriter
+pub fn init(allocator: std.mem.Allocator, path: []const u8, config: FileConfig) !*AsyncFileWriter
 ```
 
 ### deinit
 
-Clean up and close file.
+Flush remaining data, stop the flush thread, close the file, and free the writer.
 
 ```zig
 pub fn deinit(self: *AsyncFileWriter) void
@@ -484,79 +445,57 @@ pub fn deinit(self: *AsyncFileWriter) void
 
 ### write
 
-Write data to the buffer (async).
+Queue bytes verbatim; flushes when the buffer reaches `bufferSize`.
 
 ```zig
 pub fn write(self: *AsyncFileWriter, data: []const u8) !void
 ```
 
-### flush
+### writeLine
 
-Flush buffer to file.
+Queue bytes followed by a newline; flushes when the buffer reaches `bufferSize`.
 
 ```zig
-pub fn flush(self: *AsyncFileWriter) !void
+pub fn writeLine(self: *AsyncFileWriter, data: []const u8) !void
+```
+
+### flushSync
+
+Flush the buffer on the calling thread.
+
+```zig
+pub fn flushSync(self: *AsyncFileWriter) void
+```
+
+### startAutoFlush / stop
+
+Start or stop periodic flushing using `flushIntervalMs`.
+
+```zig
+pub fn startAutoFlush(self: *AsyncFileWriter) !void
+pub fn stop(self: *AsyncFileWriter) void
+```
+
+### bytesWritten
+
+Return the number of bytes flushed by this writer.
+
+```zig
+pub fn bytesWritten(self: *const AsyncFileWriter) u64
 ```
 
 ## Presets
 
-### highThroughput
+`AsyncPresets` returns `AsyncLogger.AsyncConfig` values:
 
-Optimized for maximum throughput.
+| Preset | Buffer | Batch | Flush | Max latency | Overflow |
+|--------|--------|-------|-------|-------------|----------|
+| `highThroughput()` | 65,536 | 256 | 500 ms | 1,000 ms | `dropOldest` |
+| `lowLatency()` | 1,024 | 16 | 10 ms | 50 ms | `block` |
+| `balanced()` | 8,192 | 64 | 100 ms | 500 ms | `dropOldest` |
+| `noDrop()` | 16,384 | 64 | 100 ms | 500 ms | `block` |
 
-```zig
-pub fn highThroughput() AsyncConfig {
-    return .{
-        .bufferSize = 65536,
-        .flushIntervalMs = 500,
-        .batchSize = 256,
-        .overflowPolicy = .dropOldest,
-        .preallocate_buffers = true,
-    };
-}
-```
-
-### lowLatency
-
-Optimized for minimum latency.
-
-```zig
-pub fn lowLatency() AsyncConfig {
-    return .{
-        .bufferSize = 1024,
-        .flushIntervalMs = 10,
-        .batchSize = 16,
-        .overflowPolicy = .block,
-    };
-}
-```
-
-### balanced
-
-Balance between throughput and latency.
-
-```zig
-pub fn balanced() AsyncConfig {
-    return .{
-        .bufferSize = 8192,
-        .flushIntervalMs = 100,
-        .batchSize = 64,
-    };
-}
-```
-
-### noDrop
-
-Never drop messages (may block).
-
-```zig
-pub fn noDrop() AsyncConfig {
-    return .{
-        .bufferSize = 16384,
-        .overflowPolicy = .block,
-    };
-}
-```
+All presets enable the background worker and set `enabled = true`.
 
 ## Usage Example
 
@@ -577,13 +516,13 @@ pub fn main() !void {
     defer asyncLogger.deinit();
 
     // Start the background worker
-    try asyncLogger.start();
+    try asyncLogger.startWorker();
     defer asyncLogger.stop();
 
-    // Log messages (non-blocking)
+    // Queue preformatted messages (non-blocking)
     for (0..1000) |i| {
-         _ = i;
-        // async_logger.log(&record);
+        _ = i;
+        _ = asyncLogger.queue("message", 20);
     }
 
     // Check statistics
@@ -599,9 +538,9 @@ pub fn main() !void {
 
 > [!IMPORTANT]
 > **Async logging vs `autoFlush`**: These are independent concepts that are often confused:
-> - **Async logging** (`asyncConfig.enabled`): Records are queued in a lock-free ring buffer and processed by background worker threads. This controls *when* and *how* log records are dispatched.
+> - **Async logging** (`asyncConfig.enabled`): Records are queued in a bounded ring buffer synchronized by a mutex and processed by background worker threads. This controls *when* and *how* log records are dispatched.
 > - **`autoFlush`**: Controls whether sinks are flushed after each record (sync path) or after each batch (async path). This controls *durability guarantees*.
-> - **Thread pool**: Records are submitted as tasks to a worker pool. No flush occurs at submission time — the task is still queued and not yet written to any sink.
+> - **Thread pool**: Records are submitted as tasks to a worker pool. No flush occurs at submission time; the task is still queued and not yet written to any sink.
 >
 > In practice: if you enable async logging with `autoFlush = false`, records are batched and flushed on the configured interval or when the batch size is reached. If you enable async logging with `autoFlush = true`, sinks are flushed after every batch, which can reduce throughput.
 
@@ -610,28 +549,6 @@ pub fn main() !void {
 - [Async Logging Guide](../guide/async.md) - In-depth async logging guide
 - [Thread Pool API](thread-pool.md) - Parallel logging
 - [Configuration Guide](../guide/configuration.md) - Full configuration options
-
-## Aliases
-
-The AsyncLogger provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `enqueue` | `queue` |
-| `push` | `queue` |
-| `logMsg` | `queue` |
-| `statistics` | `getStats` |
-| `depth` | `queueDepth` |
-| `pending` | `queueDepth` |
-| `capacityLeft` | `availableCapacity` |
-| `freeSlots` | `availableCapacity` |
-| `utilization` | `queueUtilization` |
-| `nearCapacity` | `isNearCapacity` |
-| `waitForDrain` | `waitUntilDrained` |
-| `drain` | `waitUntilDrained` |
-| `begin` | `startWorker` |
-| `halt` | `stop` |
-| `end` | `stop` |
 
 ## Additional Methods
 
@@ -660,4 +577,3 @@ logger.setFullCallback(onBufferFull);
 logger.setEmptyCallback(onBufferEmpty);
 logger.setErrorCallback(onError);
 ```
-

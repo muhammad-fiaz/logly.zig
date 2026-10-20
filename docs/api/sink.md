@@ -14,26 +14,6 @@ head:
 
 The `Sink` struct represents a destination for log messages. Sinks can write to console, files, or custom outputs with individual configuration options.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize sink |
-| `deinit()` | `destroy()`, `close()` | Deinitialize sink |
-| `writeWithAllocator()` | `writeWithAlloc()` | Write with custom allocator |
-| `setWriteCallback()` | `onWrite()` | Set write callback |
-| `setFlushCallback()` | `onFlush()` | Set flush callback |
-| `setErrorCallback()` | `onError()` | Set error callback |
-| `setRotationCallback()` | `onRotation()` | Set rotation callback |
-| `setStateChangeCallback()` | `onStateChange()` | Set state change callback |
-| `getStats()` | `statistics()`, `stats_()` | Get sink statistics |
-| `clearBuffer()` | `clear()` | Clear write buffer |
-| `flush()` | `sync()` | Flush buffered data |
-| `isEnabled()` | `is_enabled()` | Check if sink is enabled |
-| `isAsyncEnabled()` | `asyncEnabled()` | Check if async writing is enabled |
-| `flushNow()` | `flushImmediate()` | Force immediate flush |
-| `getName()` | `name()` | Get sink name |
-
 ## SinkConfig
 
 Configuration for a sink.
@@ -47,7 +27,7 @@ Configuration for a sink.
 | `enabled` | `bool` | `true` | Enable/disable sink initially |
 | `eventLog` | `bool` | `false` | Enable system event log output (Windows Event Log on Windows, Syslog on POSIX). See the Windows Event Log mapping below; constants are provided by `Constants.EventLogConstants`. |
 | `tamperEvident` | `bool` | `false` | Enable cryptographic SHA-256 chaining to produce tamper-evident log records. |
-| `mmap` | `bool` | `false` | Enable virtual memory-mapped zero-copy file logging for microsecond-latency writes. |
+| `mmap` | `bool` | `false` | Enable memory-mapped file logging, which avoids a write syscall per record. |
 | `memoryCapacity` | `usize` | `Constants.SinkDefaults.memoryRingSize` (1024) | Ring-buffer capacity for `isMemory` sinks. `0` is clamped to the default. |
 | `io` | `?std.Io` | `null` | Explicit I/O handle for this sink. If `null`, inherits the logger's configured I/O handle or falls back to `logly.defaultIo()`. |
 
@@ -161,16 +141,15 @@ When using `overwriteMode = true`, it is equivalent to `writeMode = .overwrite`.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `asyncWrite` | `bool` | `true` | Enable async writing with buffering |
-| `bufferSize` | `usize` | `8192` | Buffer size for async writing in bytes |
+| `bufferSize` | `usize` | `Constants.BufferSizes.sink` (16384) | Buffer size for async writing in bytes |
 | `maxBufferRecords` | `usize` | `1000` | Maximum records to buffer before forcing a flush |
 | `flushIntervalMs` | `u64` | `1000` | Flush interval in milliseconds |
-| `buffered_write_mode` | `bool` | `false` | Accumulate records in buffer until `flush()` is explicitly called by the user |
 
 ### Rate Limiting
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `rateLimitPerSecond` | `?u32` | `null` | Maximum messages allowed per second. Extra messages are dropped. |
+| `rateLimitPerSecond` | `u32` | `0` | Maximum messages allowed per second; `0` disables rate limiting. Extra messages are dropped. |
 
 ### Error Handling
 
@@ -200,13 +179,13 @@ For TCP sinks, reconnect attempts use centralized retry defaults:
 
 ## Cryptographic Log Chaining
 
-To enforce strict, tamper-evident log integrity, Logly offers built-in SHA-256 cryptographic chaining. 
+To enforce strict, tamper-evident log integrity, Logly offers built-in SHA-256 cryptographic chaining.
 
 ### How It Works
 1. When a log record is written to a tamper-evident sink, Logly calculates a SHA-256 hash.
 2. The hash input is a combination of the current log record bytes and the hash of the *previous* log record written to that sink.
-3. The resulting hash signature is appended to the written log line in a standard `"SIG:<hash>"` format.
-4. If an attacker modifies or deletes any log line, the cryptographic chain is broken. Subsequent signatures will no longer match the calculated hashes, making tampering immediately detectable during log auditing.
+3. The hash is appended as ` [SIG:<hash>]` for text formats or as a `"sig"` field for JSON formats.
+4. Any modification, insertion, or deletion breaks the chain at that record when an external verifier recomputes the hashes.
 
 ### Usage Example
 ```zig
@@ -229,11 +208,11 @@ try logger.flush();
 
 ## Memory-Mapped Sinks (Mmap)
 
-For ultra-high-performance logging workloads, Logly provides portable memory-mapped file writing via POSIX `mmap` (on Linux and macOS) and Win32 Virtual Memory mapping APIs (on Windows).
+For high-throughput workloads, Logly provides portable memory-mapped file writing via POSIX `mmap` (Linux and macOS) and Win32 Virtual Memory APIs (Windows).
 
 ### How It Works
-- By mapping the log file directly into the process's virtual memory address space, Logly performs zero-copy logging directly to RAM, completely bypassing standard operating system write calls (`write` / `WriteFile`).
-- The OS kernel handles flushing memory pages to disk asynchronously in the background.
+- The log file is mapped into the process address space. Records are copied into mapped pages, avoiding a `write`/`WriteFile` call per record.
+- The OS kernel flushes dirty pages to disk asynchronously.
 - Logly manages mapping boundaries, handles dynamic pre-allocation growth when the file capacity is exceeded, and gracefully truncates the log file to its exact written offset during sink deinitialization.
 
 ### Usage Example
@@ -243,14 +222,14 @@ config.autoSink = false;
 
 var mmap_sink = logly.SinkConfig.file("high_throughput.log");
 mmap_sink.mmap = true;         // Enable memory-mapped file sink
-mmap_sink.asyncWrite = false; // direct zero-copy write
+mmap_sink.asyncWrite = false; // mapped write, no per-record syscall
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
 
  _ = try logger.addSink(mmap_sink);
 
-try logger.info("Microsecond-latency zero-copy write", @src());
+try logger.info("Memory-mapped write", @src());
 try logger.flush();
 ```
 
@@ -313,8 +292,6 @@ Use different modes for different sinks:
 
 Initializes a new sink with the specified configuration.
 
-**Alias:** `create`
-
 ### `initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: SinkConfig) !*Sink`
 
 Initializes a new sink with an explicit I/O handle and the specified configuration.
@@ -322,8 +299,6 @@ Initializes a new sink with an explicit I/O handle and the specified configurati
 ### `deinit() void`
 
 Deinitializes the sink and frees resources.
-
-**Alias:** `destroy`
 
 ### `write(record: *const Record, globalConfig: Config) !void`
 
@@ -583,19 +558,6 @@ std.debug.print("Avg bytes/write: {d:.1}\n", .{stats.avgBytesPerWrite()});
 });
 ```
 
-## Aliases
-
-The Sink module provides convenience aliases:
-
-| Alias | Method | Description |
-|-------|--------|-------------|
-| `statistics` | `getStats()` | Get sink statistics |
-| `stats_` | `getStats()` | Get sink statistics |
-| `clear` | `clearBuffer()` | Clear internal buffer |
-| `sync` | `flush()` | Synchronize buffer to storage |
-| `close` | `deinit()` | Close and cleanup sink |
-| `name` | `getName()` | Get sink name |
-
 ## New Methods (v0.0.9)
 
 ```zig
@@ -611,7 +573,7 @@ sink.clearBuffer();
 const name = sink.getName();
 
 // Statistics
-const stats = sink.getStats();  // or sink.statistics()
+const stats = sink.getStats();
 ```
 
 ## Configuration Helpers
@@ -627,22 +589,22 @@ pub const SinkConfig = struct {
 
     /// Returns a console sink configuration.
     pub fn console() SinkConfig;
-    
+
     /// Returns a standard error sink configuration.
     pub fn stderr() SinkConfig;
-    
+
     /// Returns a file sink configuration.
     pub fn file(path: []const u8) SinkConfig;
 
     /// Returns a JSON file sink configuration.
     pub fn jsonFile(path: []const u8) SinkConfig;
-    
+
     /// Returns a rotating file sink configuration.
     pub fn rotating(path: []const u8, rotationInterval: []const u8, retentionCount: usize) SinkConfig;
-    
+
     /// Returns an error-only sink configuration.
     pub fn errorOnly(path: []const u8) SinkConfig;
-    
+
     /// Returns a network sink configuration.
     pub fn network(uri: []const u8) SinkConfig;
 
@@ -673,7 +635,7 @@ pub const SinkGroup = struct {
 
 ## MmapFile
 
-High-performance memory-mapped file abstraction for sub-microsecond logging.
+Memory-mapped file abstraction for high-throughput writes.
 
 ```zig
 pub const MmapFile = struct {
@@ -689,8 +651,8 @@ pub const MmapFile = struct {
     pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, file: std.Io.File, initialSize: usize) !MmapFile;
     pub fn deinit(self: *MmapFile) void;
     pub fn write(self: *MmapFile, data: []const u8) !void;
-    pub fn flush(self: *MmapFile) void;
-    pub fn finalizeForRotation(self: *MmapFile) void;
+    pub fn flush(self: *MmapFile) !void;
+    pub fn finalizeForRotation(self: *MmapFile) !void;
     pub fn remapToFile(self: *MmapFile, newFile: std.Io.File, initialSize: usize) !void;
     pub fn resumeMapping(self: *MmapFile) void;
 };
@@ -703,4 +665,3 @@ pub const MmapFile = struct {
 - [JSON Guide](../guide/json.md) - JSON output configuration
 - [Compression API](compression.md) - Compression options
 - [Logger API](logger.md) - Logger sink management
-

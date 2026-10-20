@@ -116,17 +116,17 @@ Network sinks are ideal for distributed environments. When used with `Distribute
 - `traceId`
 - `spanId`
 
-This makes integration with aggregators (ELK, Splunk, Datadog) seamless as correlation IDs are already present in the JSON payload.
+Correlation IDs are already present in the JSON payload for aggregators such as ELK, Splunk, and Datadog.
 
 ## System Event Log
 
 You can enable logging to the system event log (Windows Event Log or Syslog).
 
-On Windows, when `eventLog` is enabled the sink will send entries to the Windows Event Viewer using the native `ReportEvent` API. Log level → event type mapping:
+On Windows, when `eventLog` is enabled the sink will send entries to the Windows Event Viewer using the native `ReportEvent` API. Log level -> event type mapping:
 
-- Error / Critical / Fail / Fatal → `eventlogErrorType` (`Constants.EventLogConstants.errorType`)
-- Warning → `eventlogWarningType` (`Constants.EventLogConstants.warningType`)
-- Notice / Info / Success → `eventlogInformationType` (`Constants.EventLogConstants.informationType`)
+- Error / Critical / Fail / Fatal -> `eventlogErrorType` (`Constants.EventLogConstants.errorType`)
+- Warning -> `eventlogWarningType` (`Constants.EventLogConstants.warningType`)
+- Notice / Info / Success -> `eventlogInformationType` (`Constants.EventLogConstants.informationType`)
 
 These values are centralized in `Constants.EventLogConstants` and are reused by the sink implementation for consistency.
 
@@ -327,11 +327,11 @@ For high-volume logging:
 
 ## Memory-Mapped (mmap) Sinks (v0.2.0)
 
-To achieve extreme microsecond-level write performance, you can enable virtual memory mapping (`mmap`) on file sinks. This maps files directly to physical memory blocks, bypassing heavy filesystem context switches and kernel write system calls.
+For high-throughput paths, enable memory mapping (`mmap`) on file sinks. Records are copied into mapped pages, avoiding a write syscall per record; the OS flushes dirty pages asynchronously.
 
 ```zig
 var mmap_sink = logly.SinkConfig.file("logs/perf.log");
-mmap_sink.mmap = true; // [!code hl] // Enable zero-copy mmap writes!
+mmap_sink.mmap = true; // [!code hl] // Enable mmap writes
  _ = try logger.addSink(mmap_sink);
 ```
 
@@ -347,6 +347,6 @@ secure_sink.tamperEvident = true; // [!code hl] // Enable cryptographic chain!
 
 ## See Also
 - [Sink API](/api/sink) - Sinks reference API
-- [Memory Mapped Sink Example](/examples/mmap) - Zero-copy I/O example
+- [Memory Mapped Sink Example](/examples/mmap) - Memory-mapped I/O example
 - [Network Logging](/guide/network-logging) - Remote TCP/UDP sinks guide
 ```

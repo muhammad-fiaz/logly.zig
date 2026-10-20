@@ -54,10 +54,10 @@ pub fn main() !void {
 
 ## JSON with Colors
 
-JSON output now supports ANSI colors based on log level, just like console output:
+ANSI colors can be enabled for JSON output when the destination is a terminal:
 
 - **INFO** - White text
-- **SUCCESS** - Green text  
+- **SUCCESS** - Green text
 - **WARNING** - Yellow text
 - **ERROR** - Red text
 - **DEBUG** - Blue text
@@ -152,7 +152,7 @@ logger.configure(config);
 Custom levels display their actual names and colors in JSON:
 
 ```zig
-try logger.addCustomLevel("AUDIT", 35, "35");  // Magenta
+try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35").?);  // Magenta
 try logger.custom("AUDIT", "User login event", @src());
 ```
 

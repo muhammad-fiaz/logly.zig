@@ -1,6 +1,6 @@
 ---
 title: Thread Pool Guide
-description: Learn how to use Logly.zig's high-performance thread pool for parallel log processing. Covers worker configuration, task submission, batch processing, priority queues, work stealing, and cache-aware scheduling.
+description: Use the Logly.zig thread pool for parallel log processing. Covers worker configuration, task submission, priorities, work stealing, and parallel sink writes.
 head:
   - - meta
     - name: keywords
@@ -9,31 +9,35 @@ head:
 
 # Thread Pool Guide
 
-This guide covers parallel log processing in Logly using thread pools, including configuration, task submission, batch processing, priority queues, work stealing, and best practices.
+The thread pool executes log work and application tasks on worker threads. It supports fixed or auto-detected thread counts, work stealing, priorities, batching, cancellation, and parallel sink writes.
 
-## Overview
+## Configuration
 
-The thread pool module enables parallel log processing for high-throughput scenarios. It provides configurable worker threads, priority queues, work stealing, and parallel sink writing.
-
-## Logger Configuration
-
-Configure thread pool settings through the logger's `Config`:
+`ThreadPoolConfig` is available as `logly.ThreadPoolConfig` (an alias of `Config.ThreadPoolConfig`).
 
 ```zig
 const logly = @import("logly");
 
-var config = logly.Config.default();
-config.threadPool = .{
-    .enabled = true,              // Enable thread pool
-    .threadCount = 8,            // Number of worker threads
-    .queueSize = 2048,           // Max queued tasks
-    .stackSize = 1024 * 1024,    // 1MB per thread
-    .workStealing = true,        // Enable work stealing
+const config = logly.ThreadPoolConfig{
+    .enabled = true,
+    .threadCount = 4,          // 0 selects a CPU-based default
+    .queueSize = 1024,         // Capacity per worker
+    .workStealing = true,
+    .threadNamePrefix = "logly-worker",
 };
-
-// Or use helper method
-var config2 = logly.Config.default().withThreadPool(.{ .threadCount = 4 });
 ```
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Enables thread-pool integration |
+| `io` | `?std.Io` | `null` | Explicit I/O handle |
+| `threadCount` | `usize` | auto | Worker count; `0` selects a default |
+| `queueSize` | `usize` | default | Capacity per worker; global capacity is multiplied by worker count |
+| `stackSize` | `usize` | default | Stack size per worker |
+| `workStealing` | `bool` | `true` | Allows idle workers to steal queued work |
+| `threadNamePrefix` | `[]const u8` | `"logly-worker"` | Worker thread name prefix |
+| `keepAliveMs` | `u64` | `60000` | Idle keep-alive period |
+| `threadAffinity` | `bool` | `false` | Requests CPU affinity where supported |
 
 ## Quick Start
 
@@ -46,203 +50,157 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create thread pool with default settings
-    var pool = try logly.ThreadPool.initWithConfig(allocator, .{
+    const pool = try logly.ThreadPool.initWithConfig(allocator, .{
         .threadCount = 4,
         .workStealing = true,
     });
     defer pool.deinit();
 
-    // Start workers
     try pool.start();
-    defer pool.stop();
+    defer pool.shutdown();
 
-    // Submit tasks
-    // pool.submit(...);
+    const Task = struct {
+        fn run(maybe_allocator: ?std.mem.Allocator) void {
+            _ = maybe_allocator;
+            std.debug.print("task executed\n", .{});
+        }
+    };
+
+    if (!pool.submitFn(Task.run)) {
+        return error.QueueFull;
+    }
+
+    pool.waitAll();
 }
 ```
 
-## Configuration
-
-### Thread Count
-
-```zig
-// Specific number of threads
-.threadCount = 8
-
-// Auto-detect (0 = CPU cores)
-.threadCount = 0
-```
-
-### Queue Size
-
-```zig
-// Per-thread queue size
-.queueSize = 1024
-
-// Large queue for bursty workloads
-.queueSize = 4096
-```
-
-### Work Stealing
-
-Enable threads to steal work from other threads' queues:
-
-```zig
-.workStealing = true
-```
-
-This improves load balancing when some threads finish faster than others.
-
-### Thread Naming
-
-Set a custom prefix for worker threads to make debugging easier:
-
-```zig
-.threadNamePrefix = "logly-worker"
-```
-
-Threads will be named automatically (e.g., `logly-worker-0`, `logly-worker-1`).
-
-### Priority Queues
-
-Enable task prioritization:
-
-```zig
-.enable_priorities = true
-```
+`init(allocator)` uses default configuration. `initWithIo` and `initWithConfigAndIo` accept an explicit `std.Io`. `start()` spawns workers; `shutdown()` stops them and drains or cancels pending work as described below.
 
 ## Presets
 
-Use built-in presets for common scenarios:
-
 ```zig
-// Single thread (for testing/debugging)
 const single = logly.ThreadPoolPresets.singleThread();
-
-// CPU-bound tasks (N threads, work stealing)
 const cpu = logly.ThreadPoolPresets.cpuBound();
-
-// I/O-bound tasks (2N threads, large queues)
 const io = logly.ThreadPoolPresets.ioBound();
-
-// Maximum throughput
 const high = logly.ThreadPoolPresets.highThroughput();
+const low = logly.ThreadPoolPresets.lowLatency();
 ```
 
-## Submitting Tasks
+`ThreadPoolPresets` and `ThreadPoolConfig` also provide `default()` and `highThroughput()` variants. `ThreadPoolPresets.lowResource()` exists for constrained environments.
 
-### Basic Task Submission
+## Task Submission
 
-Tasks are submitted and return a `TaskHandle` which can be used to cancel them before execution:
-
-```zig
-const handle = try pool.submit(.{
-    .func = myTaskFunction,
-    .context = @ptrCast(&myData),
-    .priority = .normal,
-    .submittedAt = std.time.milliTimestamp(),
-});
-
-fn myTaskFunction(ctx: *anyopaque) void {
-    const data: *MyData = @alignCast(@ptrCast(ctx));
-    // Process data...
-}
-```
-
-### Task Cancellation
-
-You can cancel pending tasks using their handle:
+`Task` is a tagged union with two variants:
 
 ```zig
-const handle = pool.submitFnWithHandle(myFunction, @ptrCast(&data));
-
-// Later, before it executes:
-const cancelled = pool.cancel(handle);
-if (cancelled) {
-    std.debug.print("Task was successfully cancelled before execution!\n", .{});
-}
-```
-
-### Priority Levels
-
-```zig
-pub const TaskPriority = enum(u8) {
-    low = 0,      // Background tasks
-    normal = 1,   // Regular logging
-    high = 2,     // Important logs
-    critical = 3, // Error/alert logs
+pub const Task = union(enum) {
+    function: struct { func: *const fn (?std.mem.Allocator) void },
+    callback: struct {
+        func: *const fn (*anyopaque, ?std.mem.Allocator) void,
+        context: *anyopaque,
+    },
 };
 ```
 
-### Submit with Priority
+### Core methods
 
 ```zig
-// Standard priority submission
- _ = pool.submitCallback(myFunction, @ptrCast(&data));
-
-// High priority (processed before normal)
- _ = pool.submitHighPriority(myFunction, @ptrCast(&data));
-
-// Critical priority (processed first)
- _ = pool.submitCritical(myFunction, @ptrCast(&data));
+const handle = pool.submit(task, .normal);          // TaskHandle
+const handle = pool.submitWithDrop(task, .high, onDrop);
+const ok = pool.submitFn(runTask);                  // fn (?Allocator) void
+const handle = pool.submitFnWithHandle(runTask);
+const ok = pool.submitCallback(runCallback, context);
+const handle = pool.submitCallbackWithHandle(runCallback, context);
+const ok = pool.submitHighPriority(runCallback, context);
+const ok = pool.submitCritical(runCallback, context);
 ```
 
-### Batch Submission
+`TaskHandle.isValid()` reports whether the task was accepted. Submission can be rejected when the pool is not running or the queue is full; in that case the returned handle has `id == 0`, `tasksDropped` increments, and the caller retains ownership of any context. A drop hook runs only for accepted tasks that are later discarded by `clear()` or `cancel()`.
 
-Submit multiple tasks at once for higher throughput (single lock acquisition):
+### Batch submission
 
 ```zig
-// Create array of tasks
 var tasks: [10]logly.ThreadPool.Task = undefined;
 for (&tasks) |*task| {
-    task.* = .{ .callback = .{ .func = myFunction, .context = context } };
+    task.* = .{ .callback = .{ .func = runCallback, .context = context } };
 }
 
-// Batch submit - returns number of successfully submitted tasks
-const submitted = pool.submitBatch(&tasks, .normal);
-std.debug.print("Submitted {} tasks\n", .{submitted});
+const accepted = pool.submitBatch(&tasks, .normal);
+const accepted_with_retry = pool.submitBatchWithRetry(&tasks, .normal, 3, 100);
 ```
 
-### Non-Blocking Submission
+Both return the number of accepted tasks.
 
-Use `trySubmit` for low-latency scenarios where blocking is unacceptable:
+### Non-blocking and worker-specific submission
 
 ```zig
-// Returns immediately if lock is contended
 if (pool.trySubmit(task, .high)) {
-    // Task submitted successfully
-} else {
-    // Queue is contended or full, handle fallback
-    handleFallback(task);
+    // Accepted.
+}
+
+const worker_handle = pool.submitToWorkerWithHandle(0, task, .normal);
+```
+
+### Cancellation
+
+```zig
+const handle = pool.submitFnWithHandle(runTask);
+if (pool.cancel(handle)) {
+    // Cancelled before execution.
 }
 ```
 
-### Worker Affinity
-
-Submit to a specific worker's local queue for better cache locality:
+## Priorities
 
 ```zig
-// Submit to worker 0's local queue
- _ = pool.submitToWorker(0, task, .normal);
-
-// Submit to worker 1's local queue  
- _ = pool.submitToWorker(1, task, .normal);
+pub const WorkItem = struct {
+    pub const Priority = enum(u8) {
+        low = 0,
+        normal = 1,
+        high = 2,
+        critical = 3,
+    };
+};
 ```
 
-This is useful when tasks need to access the same data, as keeping them on the same worker improves CPU cache hit rates.
+Priority-specific helpers accept function or callback tasks and return `true` when accepted. `submitBatch` and `submitBatchWithRetry` take an explicit priority.
+
+## Waiting and Queue Control
+
+```zig
+pool.waitAll();
+if (!pool.waitAllTimeout(5000)) {
+    // Timed out.
+}
+if (!pool.waitUntilQueueBelow(100, 2000)) {
+    // Timed out.
+}
+
+const pending = pool.pendingTasks();
+const depth = pool.pendingTasksByQueue();
+const capacity = pool.queueCapacity();
+const available = pool.availableQueueCapacity();
+const can_accept = pool.canAcceptTasks(4);
+const utilization = pool.queueUtilization();
+const saturated = pool.isSaturated(0.9);
+const active = pool.activeThreads();
+const empty = pool.isEmpty();
+const full = pool.isFull();
+```
+
+`clear()` discards pending tasks and runs their drop hooks. `resetStats()` clears counters.
 
 ## Parallel Sink Writing
 
-Write to multiple sinks concurrently with the enhanced `ParallelSinkWriter`:
+`ParallelSinkWriter` dispatches the same payload to multiple sinks through the pool.
 
 ```zig
-// Create with default config
-var writer = try logly.ParallelSinkWriter.init(allocator, pool);
-defer writer.deinit();
+const pool = try logly.ThreadPool.initWithConfig(allocator, .{ .threadCount = 4 });
+defer pool.deinit();
+try pool.start();
+defer pool.shutdown();
 
-// Or with custom ParallelConfig
-var writer = try logly.ParallelSinkWriter.initWithConfig(allocator, pool, .{
+const writer = try logly.ParallelSinkWriter.initWithConfig(allocator, pool, .{
     .maxConcurrent = 4,
     .retryOnFailure = true,
     .maxRetries = 3,
@@ -251,411 +209,102 @@ var writer = try logly.ParallelSinkWriter.initWithConfig(allocator, pool, .{
 });
 defer writer.deinit();
 
-// Add sinks
+fn writeToFile(data: []const u8) void {
+    // Write data to the file sink.
+}
+
+fn flushFile() void {
+    // Flush the file sink.
+}
+
 try writer.addSink(.{
-    .writeFn = &fileWriteFn,
-    .flushFn = &fileFlushFn,
     .name = "file",
-});
-try writer.addSink(.{
-    .writeFn = &consoleWriteFn,
-    .name = "console",
+    .writeFn = writeToFile,
+    .flushFn = flushFile,
 });
 
-// Write to all sinks in parallel
-writer.writeParallel("Log message data");
-
-// Or use alias
-writer.write("Log message data");
-
-// Flush all buffered writes
+writer.writeParallel("log record");
 writer.flushAll();
 ```
 
-### Configuration Options
+`SinkHandle` fields are `name`, `writeFn`, optional `flushFn`, and `enabled` (default `true`). `removeSink(name)` and `setSinkEnabled(name, enabled)` manage registered sinks. `sinkCount()` and `hasEnabledSinks()` report state. Buffered payloads are flushed by `flushBuffer()` or `flushAll()`.
+
+`ParallelConfig` fields:
 
 ```zig
 pub const ParallelConfig = struct {
-    maxConcurrent: usize = 8,       // Max parallel writes
-    writeTimeoutMs: u64 = 1000,    // Timeout per write
-    retryOnFailure: bool = true,   // Retry failed writes
-    maxRetries: u3 = 3,             // Max retry attempts
-    failFast: bool = false,         // Stop on first error
-    buffered: bool = true,           // Buffer before dispatch
-    bufferSize: usize = 64,         // Buffer size
+    maxConcurrent: usize = 8,
+    writeTimeoutMs: u64 = 5000,
+    retryOnFailure: bool = true,
+    maxRetries: u3 = 3,
+    failFast: bool = false,
+    buffered: bool = true,
+    bufferSize: usize = 64,
 };
 ```
 
-### ParallelConfig Presets
-
-```zig
-// High throughput - max concurrent, large buffers
-const config = logly.ParallelConfig.highThroughput();
-
-// Low latency - small buffers, no retry, fail-fast
-const config = logly.ParallelConfig.lowLatency();
-
-// Reliable - more retries, longer timeouts
-const config = logly.ParallelConfig.reliable();
-```
-
-### Sink Management
-
-```zig
-// Remove a sink by name
-writer.removeSink("console");
-
-// Disable a sink temporarily
-writer.setSinkEnabled("file", false);
-
-// Re-enable
-writer.setSinkEnabled("file", true);
-
-// Check if any sinks are enabled
-if (writer.hasEnabledSinks()) {
-    writer.write(data);
-}
-
-// Get sink count
-const count = writer.sinkCount();
-```
-
-### Parallel Write Statistics
-
-```zig
-const stats = writer.getStats();
-
-std.debug.print("Writes submitted: {d}\n", .{
-    stats.getSubmitted(),
-});
-std.debug.print("Writes completed: {d}\n", .{
-    stats.getCompleted(),
-});
-std.debug.print("Writes failed: {d}\n", .{
-    stats.getFailed(),
-});
-std.debug.print("Retries: {d}\n", .{
-    stats.getRetries(),
-});
-std.debug.print("Bytes written: {d}\n", .{
-    stats.getBytesWritten(),
-});
-std.debug.print("Success rate: {d:.2}%\n", .{
-    stats.successRate() * 100,
-});
-```
+Presets: `ParallelConfig.default()`, `highThroughput()`, `lowLatency()`, and `reliable()`.
 
 ## Statistics
 
-Monitor pool performance:
+### Pool statistics
 
 ```zig
 const stats = pool.getStats();
 
-std.debug.print("Tasks completed: {d}\n", .{
-    stats.getCompleted(),
-});
-std.debug.print("Tasks stolen: {d}\n", .{
-    stats.getStolen(),
-});
-std.debug.print("Throughput: {d:.2} tasks/sec\n", .{
-    stats.throughput(),
-});
-std.debug.print("Avg wait time: {d}ns\n", .{
-    stats.avgWaitTimeNs(),
-});
-std.debug.print("Avg exec time: {d}ns\n", .{
-    stats.avgExecTimeNs(),
-});
+std.debug.print("submitted: {d}\n", .{stats.getSubmitted()});
+std.debug.print("completed: {d}\n", .{stats.getCompleted()});
+std.debug.print("stolen: {d}\n", .{stats.getStolen()});
+std.debug.print("dropped: {d}\n", .{stats.getDropped()});
+std.debug.print("cancelled: {d}\n", .{stats.getCancelled()});
+std.debug.print("throughput: {d:.2} tasks/s\n", .{stats.throughput()});
+std.debug.print("avg wait: {d} ns\n", .{stats.avgWaitTimeNs()});
+std.debug.print("avg exec: {d} ns\n", .{stats.avgExecTimeNs()});
 ```
 
-## Use Cases
+Additional methods: `completionRate()`, `dropRate()`, `hasDropped()`, `getActiveThreads()`, and `avgWaitTimeMs()`.
 
-### 1. High-Volume Logging
+### Parallel writer statistics
+
+`ParallelSinkWriter.getStats()` returns `ParallelStats` with atomic counters `writesSubmitted`, `writesCompleted`, `writesFailed`, `retries`, and `bytesWritten`, plus `successRate()`. Read counters with `load(.monotonic)` or the `Utils.atomicLoadU64` helper used by the library.
+
+## Callbacks
 
 ```zig
-// Use high throughput preset
-var pool = try logly.ThreadPool.initWithConfig(
-    allocator,
-    logly.ThreadPoolPresets.highThroughput(),
-);
+pool.setThreadStartCallback(onThreadStart);
+pool.setThreadStopCallback(onThreadStop);
+pool.setTaskSubmittedCallback(onSubmitted);
+pool.setTaskDequeuedCallback(onDequeued);
+pool.setTaskExecutedCallback(onExecuted);
+pool.setWorkStolenCallback(onStolen);
+pool.setQueueOverflowCallback(onOverflow);
 ```
 
-### 2. Multiple Log Destinations
+Callbacks run on worker or submitting threads. Keep them short and avoid blocking, logging, or acquiring locks that the pool itself may hold.
 
-```zig
-// Write to file, console, and network simultaneously
-var writer = try logly.ParallelSinkWriter.init(allocator, .{
-    .maxConcurrent = 3,
-});
-try writer.addSink(&fileSink);
-try writer.addSink(&console_sink);
-try writer.addSink(&network_sink);
-```
+## Lifecycle and Shutdown
 
-### 3. Batch Processing
+- `start()` is idempotent while the pool is running.
+- `shutdown()` stops accepting work, signals workers, and waits for them to exit.
+- `deinit()` calls `shutdown()` and frees worker and queue storage.
+- Do not call `submit()` concurrently with `deinit()`.
+- Call `waitAll()` before shutdown when pending work must complete.
 
-```zig
-// Process log batches in parallel
-for (log_batches) |batch| {
-    try pool.submit(.{
-        .func = processBatch,
-        .context = @ptrCast(&batch),
-    });
-}
-pool.waitIdle();
-```
+## Async Logger Integration
 
-### 4. Priority-Based Logging
-
-```zig
-// Critical logs get processed first
-try pool.submitWithPriority(logError, &error_data, .critical);
-
-// Regular logs processed normally
-try pool.submitWithPriority(logInfo, &info_data, .normal);
-
-// Debug logs processed last
-try pool.submitWithPriority(logDebug, &debug_data, .low);
-```
-
-## Work Stealing
-
-Work stealing improves efficiency when:
-- Tasks have variable execution times
-- Some threads finish faster than others
-- You want better CPU utilization
-
-```zig
-var pool = try logly.ThreadPool.initWithConfig(allocator, .{
-    .workStealing = true, // Enable work stealing
-    .threadCount = 8,
-});
-```
-
-### How It Works
-
-1. Each thread has its own work queue
-2. When a thread's queue is empty, it "steals" from others
-3. Stealing is done from the back of other queues
-4. This balances work across all threads
-
-## Integration with Async Logger
-
-Combine thread pools with async logging:
-
-```zig
-var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
-    .bufferSize = 8192,
-});
-
-var pool = try logly.ThreadPool.initWithConfig(allocator, .{
-    .threadCount = 4,
-});
-
-// Use pool for parallel sink writing
-var parallel_writer = try logly.ParallelSinkWriter.init(allocator, .{});
-
-// Connect components...
-```
+`ParallelSinkWriter` requires a started `ThreadPool`. The async logger has its own queue and worker and does not use the pool. They can run together, but they are independent components; construct the pool explicitly and pass it to the writer.
 
 ## Best Practices
 
-### 1. Choose Appropriate Thread Count
-
-```zig
-// CPU-bound: Use CPU core count
-.threadCount = std.Thread.getCpuCount() catch 4
-
-// I/O-bound: Use 2x CPU cores
-.threadCount = (std.Thread.getCpuCount() catch 4) * 2
-```
-
-### 2. Size Queues Appropriately
-
-```zig
-// For bursty workloads, use larger queues
-.queueSize = 4096
-
-// For steady workloads, smaller is fine
-.queueSize = 256
-```
-
-### 3. Handle Queue Full
-
-```zig
-pool.submit(task) catch |err| {
-    if (err == error.QueueFull) {
-        // Handle backpressure
-        // - Wait and retry
-        // - Drop the task
-        // - Expand queue
-    }
-};
-```
-
-### 4. Graceful Shutdown
-
-```zig
-// Stop accepting new tasks
-pool.stop();
-
-// Or with timeout
-pool.stopWithTimeout(5000); // 5 second timeout
-```
-
-### 5. Monitor Performance
-
-Regularly check statistics to identify bottlenecks:
-
-```zig
-const stats = pool.getStats();
-if (stats.hasDropped()) {
-    // Queue overflow - increase queue size or threads
-}
-```
-
-## Error Handling
-
-```zig
-try pool.submit(task) catch |err| {
-    switch (err) {
-        error.PoolNotRunning => {
-            // Pool hasn't started or has stopped
-        },
-        error.QueueFull => {
-            // All queues are full
-        },
-        error.OutOfMemory => {
-            // Memory allocation failed
-        },
-    }
-};
-```
-
-## Performance Considerations
-
-- **Thread overhead**: Each thread has memory overhead (~8KB stack)
-- **Context switching**: Too many threads can cause overhead
-- **Cache locality**: Work stealing may affect cache performance
-- **Lock contention**: Minimize shared state between tasks
-
-## Example: Production Setup
-
-```zig
-const std = @import("std");
-const logly = @import("logly");
-
-pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    // Production thread pool config
-    const cpuCount = std.Thread.getCpuCount() catch 4;
-    
-    var pool = try logly.ThreadPool.initWithConfig(allocator, .{
-        .threadCount = cpuCount,
-        .queueSize = 2048,
-        .workStealing = true,
-        .enable_priorities = true,
-        .shutdownTimeoutMs = 10000,
-    });
-    defer pool.deinit();
-
-    // Parallel sink writer
-    var writer = try logly.ParallelSinkWriter.init(allocator, .{
-        .maxConcurrent = 4,
-        .retryOnFailure = true,
-        .maxRetries = 3,
-    });
-    defer writer.deinit();
-
-    try pool.start();
-    defer pool.stop();
-
-    // Application runs...
-    
-    // Check final stats
-    const stats = pool.getStats();
-    std.debug.print("Total processed: {d}\n", .{
-        stats.getCompleted(),
-    });
-}
-```
-
-## Method Aliases
-
-The ThreadPool provides convenient aliases for common operations:
-
-| Method | Alias | Description |
-|--------|-------|-------------|
-| `waitAll()` | `await()`, `join()` | Wait for all tasks to complete |
-| `submit()` | `push()`, `enqueue()` | Submit a task |
-| `submitFn()` | `run()` | Submit a function |
-| `pendingTasks()` | `queueDepth()`, `size()` | Get pending task count |
-| `activeThreads()` | `workerCount()` | Get active thread count |
-| `clear()` | `discard()` | Clear pending tasks |
-
-```zig
-// These are equivalent:
-pool.waitAll();
-pool.await();
-pool.join();
-
-// Submit aliases:
-pool.submit(task, .normal);
-pool.push(task, .normal);
-pool.enqueue(task, .normal);
-
-// Check status:
-const pending = pool.size();  // Same as pendingTasks()
-const workers = pool.workerCount();  // Same as activeThreads()
-
-// Control:
-pool.clear();  // Discard pending tasks
-pool.discard();  // Same as clear()
-
-// Status checks:
-if (pool.isRunning()) { ... }
-const total = pool.threadCount();
-```
-
-> [!NOTE]
-> **Thread pool dispatch does not trigger `autoFlush`**: When the thread pool path is used, log records are submitted as tasks to the worker pool. At the point of submission (`dispatchRecord`), no sink write has occurred — the task is only queued. Therefore, even with `autoFlush = true`, no flush happens until the worker thread actually executes the task and writes to sinks. If you need immediate flush after every record, use the sync or asyncLogger paths instead of the thread pool path.
+- Size the pool from measured workload, not core count alone.
+- Use larger queues for bursty workloads and smaller queues to apply backpressure sooner.
+- Treat an invalid `TaskHandle` as an explicit rejection; do not retry a task whose context was already transferred.
+- Prefer `trySubmit` when the caller must not block.
+- Use priorities only when ordering matters; excess priority inversion can starve normal work.
+- Inspect `tasksDropped` and queue utilization before increasing concurrency.
 
 ## See Also
 
-- [Thread Pool API Reference](../api/thread-pool.md)
-- [Async Logging Guide](async.md)
-- [Configuration Guide](configuration.md)
-
-## New Methods (v0.0.9)
-
-```zig
-var pool = try logly.ThreadPool.initWithConfig(allocator, config);
-defer pool.deinit();
-
-// State methods
-const empty = pool.isEmpty();
-const full = pool.isFull();
-
-// Performance metrics
-const util = pool.utilization();  // 0.0 - 1.0
-
-// Reset statistics
-pool.resetStats();
-```
-
-## Additional Aliases
-
-| Alias | Method |
-|-------|--------|
-| `flush` | `clear` |
-| `statistics` | `getStats` |
-| `stop` | `shutdown` |
-| `halt` | `shutdown` |
-| `begin` | `start` |
-| `add` | `submit` |
-
-
+- [Thread Pool API](/api/thread-pool)
+- [Async Logging Guide](/guide/async)
+- [Configuration Guide](/guide/configuration)

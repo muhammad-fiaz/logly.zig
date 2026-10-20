@@ -14,43 +14,9 @@ head:
 
 The `Sampler` struct controls log throughput by selectively processing records.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize sampler |
-| `deinit()` | `destroy()` | Deinitialize sampler |
-| `setAcceptCallback()` | `onAccept()` | Set accept callback |
-| `setRejectCallback()` | `onReject()` | Set reject callback |
-| `setRateLimitCallback()` | `onRateLimit()` | Set rate limit callback |
-| `setAdjustmentCallback()` | `onAdjustment()` | Set adjustment callback |
-| `shouldSampleWithReason()` | `sampleWithReason()`, `decision()` | Sample with reject reason details |
-| `reset()` | `clear()` | Reset sampler state |
-| `resetStats()` | `clearStats()` | Reset statistics |
-| `isEnabled()` | `enabled()` | Check if sampler is enabled |
-| `strategyName()` | `name()` | Get strategy name |
-| `totalProcessed()` | `total_()` | Get total processed count |
-| `totalAccepted()` | `accepted_()` | Get total accepted count |
-| `totalRejected()` | `rejected_()` | Get total rejected count |
-| `shouldSample()` | `sample()`, `check()`, `allow()` | Check if record should be sampled |
-| `shouldSampleKey()` | `sampleKey()` | Deterministic sampling decision for a key |
-| `shouldSampleKeyWithReason()` | `keyDecision()` | Deterministic sampling decision with reason |
-| `setStrategy()` | `configure()` | Update strategy at runtime |
-| `setProbability()` | `probability()`, `setProb()` | Set probability strategy with clamping |
-| `setRateLimit()` | `rateLimit()`, `configureRateLimit()` | Set rate-limit strategy |
-| `setEveryN()` | `everyN()` | Set deterministic every-N strategy |
-| `setAdaptive()` | `adaptive()` | Set adaptive strategy with normalized bounds |
-| `disableSampling()` | `disable()`, `off()` | Disable filtering (allow all records) |
-| `remainingWindowQuota()` | `quotaLeft()` | Remaining rate-limit tokens in current window |
-| `windowResetInMs()` | `resetInMs()` | Milliseconds until window reset |
-| `acceptRate()` | `acceptanceRate()` | Convenience accept rate from stats |
-| `rejectRate()` | `rejectionRate()` | Convenience reject rate from stats |
-| `getCurrentRate()` | `rate()` | Get current sampling rate |
-| `getStats()` | `statistics()`, `stats_()` | Get sampler statistics |
-
 ## Overview
 
-Samplers reduce log volume in high-throughput systems using various strategies like probability sampling, rate limiting, every-n sampling, and adaptive sampling. All operations are thread-safe with atomic counters.
+Samplers reduce log volume in high-throughput systems using probability, rate-limit, every-N, adaptive, and token-bucket strategies. Sampling state is mutex-protected; counters are atomic.
 
 ## Types
 
@@ -62,14 +28,15 @@ The main sampler controller with atomic state and statistics.
 pub const Sampler = struct {
     allocator: std.mem.Allocator,
     strategy: Strategy,
+    bypassLevels: ?LevelMask = null,
     state: SamplerState,
-    stats: SamplerStats,
-    mutex: std.Thread.Mutex,
-    
-    // Callbacks
-    on_sample_accepted: ?*const fn (u64) void,
-    on_sample_rejected: ?*const fn (u64) void,
-    on_rate_adjusted: ?*const fn (f64, f64) void,
+    mutex: std.Io.Mutex,
+    io: std.Io,
+
+    onSampleAccept: ?*const fn (f64) void = null,
+    onSampleReject: ?*const fn (f64, SampleRejectReason) void = null,
+    onRateExceeded: ?*const fn (u32, u32) void = null,
+    onRateAdjustment: ?*const fn (f64, f64, []const u8) void = null,
 };
 ```
 
@@ -81,14 +48,14 @@ The sampling strategy to use.
 pub const Strategy = union(enum) {
     none: void,                  // No sampling, all pass
     probability: f64,            // 0.0 - 1.0
-    rateLimit: RateLimitConfig,
+    rateLimit: SamplingRateLimitConfig,
     everyN: u32,                // 1 in N
     adaptive: AdaptiveConfig,
     tokenBucket: TokenBucketConfig, // Token bucket for burst sampling
 };
 ```
 
-### RateLimitConfig
+### SamplingRateLimitConfig
 
 Configuration for rate limiting.
 
@@ -123,14 +90,15 @@ pub const TokenBucketConfig = struct {
 };
 ```
 
-### SamplerConfig
+### SamplingConfig
 
-Configuration passed to the sampler.
+`Sampler.initWithConfig` accepts `Config.SamplingConfig`.
 
 ```zig
-pub const SamplerConfig = struct {
-    strategy: Strategy = .{ .none = {} },
-    bypassLevels: LevelMask = LevelMask.init(), // Levels that always bypass sampling
+pub const SamplingConfig = struct {
+    enabled: bool = false,
+    strategy: Strategy = .{ .probability = 1.0 },
+    bypassLevels: ?LevelMask = null,
 };
 ```
 
@@ -140,12 +108,11 @@ Statistics for sampler operations.
 
 ```zig
 pub const SamplerStats = struct {
-    total_processed: std.atomic.Value(u64),
-    total_accepted: std.atomic.Value(u64),
-    total_rejected: std.atomic.Value(u64),
-    currentRate: std.atomic.Value(f32),
-    
-    pub fn acceptRate(self: *const SamplerStats) f64;
+    totalRecordsSampled: std.atomic.Value(u64),
+    recordsAccepted: std.atomic.Value(u64),
+    recordsRejected: std.atomic.Value(u64),
+    rateLimitExceeded: std.atomic.Value(u64),
+    rateAdjustments: std.atomic.Value(u64),
 };
 ```
 
@@ -169,8 +136,6 @@ pub const SampleDecision = struct {
 
 Initializes a new Sampler instance with the specified strategy.
 
-**Alias:** `create`
-
 #### `initWithConfig(allocator: std.mem.Allocator, config: Config.SamplingConfig) Sampler`
 
 Initializes a new Sampler with full configuration.
@@ -183,45 +148,31 @@ Initializes a new Sampler with an explicit I/O handle and full configuration.
 
 Releases all resources associated with the sampler.
 
-**Alias:** `destroy`
-
 ### Sampling
 
 #### `shouldSample() bool`
 
 Determines if the current record should be sampled (processed). Returns `true` to process, `false` to drop.
 
-**Alias**: `sample`, `check`, `allow`
-
 #### `shouldSampleKey(key: []const u8) bool`
 
 Deterministically samples based on a stable key (user/session/etc.).
-
-**Alias**: `sampleKey`
 
 #### `shouldSampleKeyWithReason(key: []const u8) SampleDecision`
 
 Deterministic sampling decision with reject reason details.
 
-**Alias**: `keyDecision`
-
 #### `shouldSampleWithReason() SampleDecision`
 
 Evaluates sampling and returns structured decision details including reject reason.
-
-**Alias**: `sampleWithReason`, `decision`
 
 #### `setStrategy(strategy: Strategy) void`
 
 Updates sampler strategy at runtime and resets strategy-specific counters.
 
-**Alias**: `configure`
-
 #### `setProbability(probabilityValue: f64) void`
 
 Sets probability sampling strategy and clamps value into `[0.0, 1.0]`.
-
-**Alias**: `probability`, `setProb`
 
 #### `setRateLimit(maxRecords: u32, windowMs: u64) void`
 
@@ -230,49 +181,33 @@ Sets rate-limit strategy with safe normalization:
 - `maxRecords == 0` becomes `1`
 - `windowMs == 0` uses centralized default window
 
-**Alias**: `rateLimit`, `configureRateLimit`
-
 #### `setEveryN(n: u32) void`
 
 Sets deterministic every-N sampling strategy.
-
-**Alias**: `everyN`
 
 #### `setAdaptive(config: AdaptiveConfig) void`
 
 Sets adaptive strategy and normalizes min/max sampling bounds.
 
-**Alias**: `adaptive`
-
 #### `disableSampling() void`
 
 Disables filtering strategy (`.none`) so all records are accepted.
-
-**Alias**: `disable`, `off`
 
 #### `remainingWindowQuota() ?u32`
 
 For `.rateLimit` strategy, returns remaining records in current window. Returns `null` for non-rate-limit strategies.
 
-**Alias**: `quotaLeft`
-
 #### `windowResetInMs() ?u64`
 
 For `.rateLimit` strategy, returns milliseconds until current window reset. Returns `null` for non-rate-limit strategies.
-
-**Alias**: `resetInMs`
 
 #### `acceptRate() f64`
 
 Convenience wrapper around sampler stats accept rate.
 
-**Alias**: `acceptanceRate`
-
 #### `rejectRate() f64`
 
 Convenience wrapper around sampler stats reject rate.
-
-**Alias**: `rejectionRate`
 
 ### Statistics
 
@@ -280,13 +215,9 @@ Convenience wrapper around sampler stats reject rate.
 
 Returns current sampler statistics.
 
-**Alias**: `statistics`, `stats_`
-
 #### `getCurrentRate() f64`
 
 Returns the current sampling rate.
-
-**Alias**: `rate`
 
 #### `resetStats() void`
 
@@ -306,7 +237,7 @@ Returns total records rejected.
 
 ### SamplerStats Methods
 
-The `SamplerStats` struct provides comprehensive statistics tracking:
+The `SamplerStats` struct tracks counters and rates:
 
 ```zig
 pub const SamplerStats = struct {
@@ -354,17 +285,21 @@ Returns the name of the current strategy.
 
 ### Callbacks
 
-#### `setAcceptedCallback(callback: *const fn (u64) void) void`
+#### `setAcceptCallback(callback: *const fn (f64) void) void`
 
-Sets callback for accepted samples.
+Sets the callback invoked when a record passes sampling. The argument is the effective sample rate.
 
-#### `setRejectedCallback(callback: *const fn (u64) void) void`
+#### `setRejectCallback(callback: *const fn (f64, SampleRejectReason) void) void`
 
-Sets callback for rejected samples.
+Sets the callback invoked when a record is rejected.
 
-#### `setRateAdjustedCallback(callback: *const fn (f64, f64) void) void`
+#### `setRateLimitCallback(callback: *const fn (u32, u32) void) void`
 
-Sets callback for rate adjustments (adaptive strategy).
+Sets the callback invoked when a rate limit is exceeded. Arguments are the current count and the configured maximum.
+
+#### `setAdjustmentCallback(callback: *const fn (f64, f64, []const u8) void) void`
+
+Sets the callback invoked when adaptive sampling changes the rate. Arguments are the old rate, new rate, and strategy name.
 
 ## Presets
 
@@ -373,41 +308,41 @@ Sets callback for rate adjustments (adaptive strategy).
 ```zig
 pub const SamplerPresets = struct {
     /// No sampling - all records pass through.
-    pub fn none(allocator) Sampler;
-    
+    pub fn none(allocator: std.mem.Allocator) Sampler;
+
     /// Sample approximately 10% of records.
-    pub fn sample10Percent(allocator) Sampler;
-    
+    pub fn sample10Percent(allocator: std.mem.Allocator) Sampler;
+
     /// Sample approximately 50% of records.
-    pub fn sample50Percent(allocator) Sampler;
-    
+    pub fn sample50Percent(allocator: std.mem.Allocator) Sampler;
+
     /// Sample approximately 1% of records (high-volume production).
-    pub fn sample1Percent(allocator) Sampler;
-    
+    pub fn sample1Percent(allocator: std.mem.Allocator) Sampler;
+
     /// Limit to 10 records per second (debug/low-volume).
-    pub fn limit10PerSecond(allocator) Sampler;
-    
+    pub fn limit10PerSecond(allocator: std.mem.Allocator) Sampler;
+
     /// Limit to 100 records per second.
-    pub fn limit100PerSecond(allocator) Sampler;
-    
+    pub fn limit100PerSecond(allocator: std.mem.Allocator) Sampler;
+
     /// Limit to 1000 records per second.
-    pub fn limit1000PerSecond(allocator) Sampler;
-    
+    pub fn limit1000PerSecond(allocator: std.mem.Allocator) Sampler;
+
     /// Sample every 5th record.
-    pub fn every5th(allocator) Sampler;
-    
+    pub fn every5th(allocator: std.mem.Allocator) Sampler;
+
     /// Sample every 10th record.
-    pub fn every10th(allocator) Sampler;
-    
+    pub fn every10th(allocator: std.mem.Allocator) Sampler;
+
     /// Sample every 100th record (high-volume production).
-    pub fn every100th(allocator) Sampler;
-    
+    pub fn every100th(allocator: std.mem.Allocator) Sampler;
+
     /// Adaptive sampling targeting 100 records per second.
-    pub fn adaptive100PerSecond(allocator) Sampler;
-    
+    pub fn adaptive100PerSecond(allocator: std.mem.Allocator) Sampler;
+
     /// Adaptive sampling targeting 1000 records per second.
-    pub fn adaptive1000PerSecond(allocator) Sampler;
-    
+    pub fn adaptive1000PerSecond(allocator: std.mem.Allocator) Sampler;
+
     /// Creates a sampled sink configuration.
     pub fn createSampledSink(filePath: []const u8) SinkConfig;
 };
@@ -437,7 +372,7 @@ for (records) |record| {
 
 // Check statistics
 const stats = sampler.getStats();
-std.debug.print("Accept rate: {d:.2}%\n", .{stats.acceptRate() * 100});
+std.debug.print("Accept rate: {d:.2}%\n", .{stats.getAcceptRate() * 100});
 std.debug.print("Processed: {d}, Accepted: {d}, Rejected: {d}\n", .{
     sampler.totalProcessed(),
     sampler.totalAccepted(),
@@ -459,13 +394,13 @@ if (sampler.isEnabled()) {
 | `rateLimit` | Strict throughput control | Low |
 | `everyN` | Predictable sampling | Very low |
 | `adaptive` | Dynamic load handling | Low |
+| `tokenBucket` | Burstable rate limiting | Low |
 
 ## Performance
 
-- **Lock-free** fast path for read-only checks
-- **Atomic counters** for thread-safe statistics
-- **Minimal overhead** in all strategies
-- **Adaptive adjustment** only during adjustment intervals
+- Atomic counters for statistics
+- Mutex-protected strategy state
+- Adaptive adjustment only during adjustment intervals
 
 ## See Also
 

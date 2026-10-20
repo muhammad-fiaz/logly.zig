@@ -74,11 +74,16 @@ If using a flat format, the signature is appended to the end of the line:
 
 ## Verifying Integrity
 
-To verify a log file's integrity:
-1. Initialize a SHA-256 context with the configured initialization seed.
-2. Read the file line by line.
-3. Extract the signature, compute the hash of the current content combined with the *previous* line's signature, and verify that it matches.
-4. If a single line's signature does not match, a warning is raised and the exact index of the tampered line is identified.
+Logly writes the chain values but does not ship a verifier; verification is
+the responsibility of the audit tool consuming the file. The chain is:
+
+1. Start with 32 zero bytes as the previous hash.
+2. Read one record and remove its appended signature (` [SIG:<hex>]` for text,
+   or the `"sig"` field for JSON).
+3. Compute `SHA-256(previous_hash || record_bytes)`.
+4. Compare the result with the signature stored in the record, then use it as
+   the previous hash for the next record.
+5. A mismatch identifies the first modified, inserted, or removed record.
 
 ---
 
@@ -87,6 +92,6 @@ To verify a log file's integrity:
 > [!CAUTION]
 > Cryptographic chaining detects tampering, but it cannot prevent deletion of the entire file. For complete compliance, combine `tamperEvident` logging with remote syslog forwarding so logs exist in multiple secure locations simultaneously.
 
-* **Audit Regularly**: Integrate an automated cron task that checks log files using a validation script to catch discrepancies immediately.
-* **Keep Seeds Secret**: The initialization seed used to start the hash chain should be loaded from a secure environment variable or key vault, never hardcoded in the source code.
-* **Compliance Standards**: Enabling cryptographic chaining helps satisfy rigorous log integrity requirements for compliance standards such as **PCI-DSS (Req 10.5)**, **HIPAA**, and **GDPR**.
+* **Audit Regularly**: Verify the chain with an automated task so modifications are detected promptly.
+* **Record Boundaries**: Verification must hash the exact record bytes before the signature was appended. Preserve line endings and serialization settings.
+* **Compliance Standards**: Cryptographic chaining can support log-integrity controls, but compliance also depends on retention, access control, and monitoring.

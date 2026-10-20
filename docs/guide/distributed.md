@@ -67,7 +67,7 @@ fn handleRequest(req: Request, global_logger: *logly.Logger) !void {
     const logger = global_logger.withTrace(traceId, spanId);
 
     // 3. Log normally - context is auto-injected
-    try logger.info("Handling login request"); 
+    try logger.info("Handling login request", @src());
     // -> { "trace_id": "uuid...", "span_id": "...", "message": "Handling..." }
 }
 ```
@@ -114,21 +114,21 @@ pub fn main() !void {
 
     var config = logly.Config.default();
     config.distributed.enabled = true;
-    
+
     // Register the callbacks
     config.distributed.onTraceCreated = onTraceStarted;
     config.distributed.onSpanCreated = onSpanStarted;
-    
+
     logger.configure(config);
 
     // This will trigger 'onTraceStarted'
     try logger.setTraceContext("trace-uuid-12345", null);
-    
+
     // This will trigger 'onSpanStarted'
     var span = try logger.startSpan("database_query");
-    defer span.end();
+    defer span.endSilent();
 
-    try logger.info("Request processing started", .{});
+    try logger.info("Request processing started", @src());
 }
 ```
 

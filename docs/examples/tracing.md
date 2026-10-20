@@ -77,11 +77,11 @@ For single-threaded scripts or tools:
 ```zig
     // Set trace context for distributed tracing globally
     try logger.setTraceContext("trace-legacy-global", "span-global");
-    
+
     // All logs will now include trace info
     try logger.info("Processing request", @src());
     try logger.debug("Validating input", @src());
-    
+
     // Clear trace context
     logger.clearTraceContext();
 ```
@@ -95,22 +95,22 @@ try logger.setTraceContext("trace-main", "span-root");
 // External service call
 {
     var span = try logger.startSpan("external-api");
-    
+
     try logger.info("Calling external API", @src());
     try logger.debug("Sending request", @src());
     try logger.info("Response received", @src());
-    
-    try span.end(null); // End with optional message
+
+    try span.end(null, @src()); // End with optional message
 }
 
 // Database operation
 {
     var db_span = try logger.startSpan("database");
-    
+
     try logger.info("Executing query", @src());
     try logger.success("Query complete", @src());
-    
-    try db_span.end("database operation done");
+
+    try db_span.end("database operation done", @src());
 }
 ```
 

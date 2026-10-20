@@ -35,13 +35,6 @@ var buf: [32]u8 = undefined;
 const date = try Utils.formatIsoDate(&buf, tc);
 ```
 
-## Quick Reference: Method Aliases
-
-| Full Method           | Alias(es)       | Description              |
-|-----------------------|-----------------|--------------------------|
-| `formatDatePattern()` | `format()`      | Format date with pattern |
-| `formatDateToBuf()`   | `formatToBuf()` | Format date to buffer    |
-
 ## Size Parsing
 
 ### parseSize
@@ -55,10 +48,10 @@ pub fn parseSize(s: []const u8) ?u64
 **Supported units (case insensitive):**
 
 - `B` - Bytes
-- `K`, `KB` - Kilobytes (×1024)
-- `M`, `MB` - Megabytes (×1024²)
-- `G`, `GB` - Gigabytes (×1024³)
-- `T`, `TB` - Terabytes (×1024⁴)
+- `K`, `KB` - Kilobytes (1024 bytes)
+- `M`, `MB` - Megabytes (1024 * 1024 bytes)
+- `G`, `GB` - Gigabytes (1024^3 bytes)
+- `T`, `TB` - Terabytes (1024^4 bytes)
 
 **Examples:**
 
@@ -98,10 +91,10 @@ pub fn parseDuration(s: []const u8) ?i64
 **Supported units (case insensitive):**
 
 - `ms` - Milliseconds
-- `s` - Seconds (×1000)
-- `m` - Minutes (×60000)
-- `h` - Hours (×3600000)
-- `d` - Days (×86400000)
+- `s` - Seconds (1000 ms)
+- `m` - Minutes (60,000 ms)
+- `h` - Hours (3,600,000 ms)
+- `d` - Days (86,400,000 ms)
 
 **Examples:**
 
@@ -213,10 +206,18 @@ pub fn currentMillis() i64
 
 ### currentNanos
 
-Returns current timestamp in nanoseconds.
+Returns the current monotonic timestamp in nanoseconds since an arbitrary (typically boot) epoch. Use for durations and elapsed-time measurements; do not serialize it as a wall-clock time.
 
 ```zig
 pub fn currentNanos() i128
+```
+
+### currentRealNanos
+
+Returns the current wall-clock Unix timestamp in nanoseconds. Use for values exported or persisted as absolute times, such as telemetry spans, events, and metrics.
+
+```zig
+pub fn currentRealNanos() i128
 ```
 
 ### isSameDay
@@ -654,15 +655,15 @@ pub fn main() !void {
     // Parse configuration sizes
     const maxSize = logly.Utils.parseSize("10MB") orelse 10485760;
     const timeout = logly.Utils.parseDuration("30s") orelse 30000;
-    
+
     // Get current time
     const now = logly.Utils.nowComponents();
-    
+
     // Format for display
     var buf: [32]u8 = undefined;
     const date_str = try logly.Utils.formatIsoDate(&buf, now);
     std.debug.print("Today: {s}\n", .{date_str});
-    
+
     // Calculate elapsed time
     const start = logly.Utils.currentMillis();
     // ... do work ...

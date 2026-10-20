@@ -49,7 +49,7 @@ pub fn main() !void {
 
     var config = logly.SinkConfig.file("logs/app.log");
     config.overwriteMode = false;  // Append mode (this is the default)
-    
+
      _ = try logger.addSink(config);
 
     try logger.info("First run", @src());
@@ -59,8 +59,8 @@ pub fn main() !void {
 
 Each time you run the application:
 1. First run: Creates `logs/app.log` with 2 entries
-2. Second run: Appends 2 more entries → file now has 4 entries
-3. Third run: Appends 2 more entries → file now has 6 entries
+2. Second run: Appends 2 more entries -> file now has 4 entries
+3. Third run: Appends 2 more entries -> file now has 6 entries
 
 **File grows continuously**, preserving all historical logs.
 
@@ -83,7 +83,7 @@ pub fn main() !void {
 
     var config = logly.SinkConfig.file("logs/session.log");
     config.overwriteMode = true;  // Enable overwrite mode
-    
+
      _ = try logger.addSink(config);
 
     try logger.info("Fresh start", @src());

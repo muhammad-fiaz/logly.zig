@@ -37,10 +37,10 @@ pub fn main() !void {
     // ========================================
     // Test 1: Console with Color
     // ========================================
-    
-    try logger.addCustomLevel("AUDIT", 25, "35;1");     // Magenta Bold
-    try logger.addCustomLevel("SECURITY", 45, "31;7"); // Red Reverse
-    try logger.addCustomLevel("METRIC", 15, "36");      // Cyan
+
+    try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35;1").?);     // Magenta Bold
+    try logger.addCustomLevel("SECURITY", 45, logly.Color.parse("31;7").?); // Red Reverse
+    try logger.addCustomLevel("METRIC", 15, logly.Color.parse("36").?);      // Cyan
 
     try logger.info("Standard INFO message", @src());
     try logger.custom("AUDIT", "User login recorded", @src());
@@ -50,7 +50,7 @@ pub fn main() !void {
     // ========================================
     // Test 2: File Output
     // ========================================
-    
+
     const file_logger = try logly.Logger.init(allocator);
     defer file_logger.deinit();
 
@@ -62,14 +62,14 @@ pub fn main() !void {
         .path = "logs/audit.log",
     });
 
-    try file_logger.addCustomLevel("AUDIT", 25, "35");
+    try file_logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
     try file_logger.custom("AUDIT", "This goes to the file", @src());
     try file_logger.flush();
 
     // ========================================
     // Test 3: JSON Output
     // ========================================
-    
+
     const json_logger = try logly.Logger.init(allocator);
     defer json_logger.deinit();
 
@@ -78,13 +78,13 @@ pub fn main() !void {
     jsonConfig.prettyJson = true;
     json_logger.configure(jsonConfig);
 
-    try json_logger.addCustomLevel("AUDIT", 25, "35");
+    try json_logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
     try json_logger.custom("AUDIT", "Custom level in JSON format", @src());
 
     // ========================================
     // Test 4: JSON with Context
     // ========================================
-    
+
     try json_logger.bind("service", .{ .string = "auth-service" });
     try json_logger.bind("user_id", .{ .string = "user-12345" });
     try json_logger.custom("AUDIT", "User authentication successful", @src());
@@ -92,8 +92,8 @@ pub fn main() !void {
     // ========================================
     // Test 5: Formatted Messages
     // ========================================
-    
-    try logger.addCustomLevel("PERF", 12, "36;1");
+
+    try logger.addCustomLevel("PERF", 12, logly.Color.parse("36;1").?);
     try logger.customf("PERF", "Request processed in {d}ms", .{42}, @src());
     try logger.customf("AUDIT", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" }, @src());
 }
@@ -151,11 +151,11 @@ Custom levels support **all features** that standard levels support:
 
 | Feature | Description |
 |---------|-------------|
-| Console output | ✅ Colored output with custom ANSI codes |
-| File output | ✅ Write to text log files |
-| JSON output | ✅ Level name appears in JSON |
-| JSON file | ✅ Write JSON to files |
-| Context binding | ✅ Context fields included in logs |
-| Formatted messages | ✅ `customf()` with format strings |
-| Level filtering | ✅ Filter by priority |
-| All sink types | ✅ Works with all sink configurations |
+| Console output | Colored output with custom ANSI codes |
+| File output | Write to text log files |
+| JSON output | Level name appears in JSON |
+| JSON file | Write JSON to files |
+| Context binding | Context fields included in logs |
+| Formatted messages | `customf()` with format strings |
+| Level filtering | Filter by priority |
+| All sink types | Works with all sink configurations |

@@ -11,7 +11,7 @@ fn repeatAlloc(allocator: std.mem.Allocator, s: []const u8, n: usize) ![]u8 {
 const Compression = logly.Compression;
 const CompressionPresets = logly.CompressionPresets;
 
-/// Comprehensive compression demo for Logly v0.2.2
+/// Compression example for Logly
 /// Demonstrates all compression algorithms: deflate, gzip, zlib, zstd, brotli, lzma, lzma2, xz, zip, tar.gz, lz4
 var threaded = std.Io.Threaded.init_single_threaded;
 const io = threaded.io();

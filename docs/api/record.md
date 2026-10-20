@@ -14,40 +14,6 @@ head:
 
 The `Record` struct represents a single log event.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize record |
-| `deinit()` | `destroy()` | Deinitialize record |
-| `addField()` | `setField()`, `put()` | Add context field |
-| `setTraceId()` | `trace()` | Set trace ID |
-| `setSpanId()` | `span()` | Set span ID |
-| `setCorrelationId()` | `correlate()` | Set correlation ID |
-| `setParentSpanId()` | `parentSpan()` | Set parent span ID |
-| `setRequestId()` | `request()` | Set request ID |
-| `setSessionId()` | `session()` | Set session ID |
-| `setUserId()` | `user()` | Set user ID |
-| `clone()` | `copy()`, `duplicate()` | Clone record |
-| `levelName()` | `getLevelName()` | Get level name |
-| `levelColor()` | `getLevelColor()` | Get level color |
-| `initCustom()` | `createCustom()`, `customInit()` | Initialize custom record |
-| `initWithSource()` | `createWithSource()`, `withSource()` | Initialize with source |
-| `setError()` | `setErrorInfo()` | Set error information |
-| `setDurationSince()` | `durationFrom()`, `setDurationFrom()` | Set duration from timestamp |
-| `generateTraceId()` | `newTraceId()`, `createTraceId()` | Generate trace ID |
-| `generateSpanId()` | `newSpanId()`, `createSpanId()` | Generate span ID |
-| `hasCustomLevel()` | `isCustomLevel()` | Check if custom level |
-| `hasContext()` | `hasFields()` | Check if has context |
-| `contextCount()` | `fieldCount()` | Get context field count |
-| `hasStackTrace()` | `hasTrace()` | Check if has stack trace |
-| `hasError()` | `hasErrorInfo()` | Check if has error |
-| `hasTracing()` | `hasTraceInfo()` | Check if has tracing |
-| `hasRequestId()` | `hasRequest()` | Check if has request ID |
-| `hasSessionId()` | `hasSession()` | Check if has session ID |
-| `hasUserId()` | `hasUser()` | Check if has user ID |
-| `hasParentSpan()` | `hasParent()` | Check if has parent span |
-
 ## Core Fields
 
 ### `level: Level`
@@ -136,7 +102,7 @@ Parent span ID for hierarchical tracing. Default: `null`.
 
 ### `stackTrace: ?*std.builtin.StackTrace`
 
-Captured stack trace for the log event. Automatically populated for `Error` and `Critical` levels. Default: `null`.
+Captured stack trace for the log event. Populated for `err`, `fail`, `critical`, and `fatal` records when `captureStackTrace` is enabled. Default: `null`.
 
 ## Error Fields
 
@@ -200,17 +166,17 @@ var record = Record.init(allocator, .info, "User logged in");
 defer record.deinit();
 ```
 
-### `initCustom(allocator, level, message, customName, customColor) Record`
+### `initCustom(allocator, level, customName, customColor, message) Record`
 
-Creates a new Record with custom level name and color.
+Creates a new Record with a custom level name and `Color.Color` value.
 
 ```zig
 var record = Record.initCustom(
     allocator,
     .info,
+    "AUDIT",                        // Custom level name
+    logly.Color.parse("35").?,      // Magenta ANSI color
     "Security audit event",
-    "AUDIT",   // Custom level name
-    "35"       // Magenta color code
 );
 defer record.deinit();
 ```
@@ -233,23 +199,23 @@ defer copy.deinit();
 Returns the level name for display. Returns custom level name if set, otherwise the standard level name.
 
 ```zig
-var record = Record.initCustom(allocator, .info, "msg", "AUDIT", "35");
+var record = Record.initCustom(allocator, .info, "AUDIT", logly.Color.parse("35").?, "msg");
 const name = record.levelName(); // Returns "AUDIT"
 
 var standard = Record.init(allocator, .warning, "msg");
 const std_name = standard.levelName(); // Returns "WARNING"
 ```
 
-### `levelColor(self) []const u8`
+### `levelColor(self) Color.Color`
 
-Returns the color code for the level. Returns custom color if set, otherwise the standard level color.
+Returns the custom color when set, otherwise the standard level color.
 
 ```zig
-var record = Record.initCustom(allocator, .info, "msg", "AUDIT", "35");
-const color = record.levelColor(); // Returns "35" (magenta)
+var record = Record.initCustom(allocator, .info, "AUDIT", logly.Color.parse("35").?, "msg");
+const color = record.levelColor(); // Magenta Color value
 
 var standard = Record.init(allocator, .warning, "msg");
-const std_color = standard.levelColor(); // Returns "33" (yellow)
+const std_color = standard.levelColor(); // Warning color
 ```
 
 ### `generateSpanId(allocator) ![]u8`
@@ -274,9 +240,9 @@ Serializes the record directly into logfmt (`key=value`) string format using the
 
 Custom name for non-standard levels (e.g., "AUDIT", "ALERT", "NOTICE"). Used by `levelName()`.
 
-### `customLevelColor: ?[]const u8`
+### `customLevelColor: ?Color.Color`
 
-Custom ANSI color code for custom levels (e.g., "35", "31;1", "36;4"). Used by `levelColor()`.
+Custom color value for custom levels. Used by `levelColor()`.
 
 ## Example Usage
 
@@ -303,33 +269,15 @@ try record.context.put("status_code", .{ .integer = 200 });
 var audit_record = Record.initCustom(
     allocator,
     .info,
-    "Security event",
     "AUDIT",
-    "35;1"  // Bold magenta
+    logly.Color.parse("35;1").?, // Bold magenta
+    "Security event",
 );
 defer audit_record.deinit();
 
 // The formatter uses levelName() and levelColor() automatically
 // Output: [2024-01-15 10:30:45] [AUDIT] Security event (in bold magenta)
 ```
-
-## Aliases
-
-The Record module provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `setField` | `addField` |
-| `put` | `addField` |
-| `trace` | `setTraceId` |
-| `span` | `setSpanId` |
-| `correlate` | `setCorrelationId` |
-| `parentSpan` | `setParentSpanId` |
-| `request` | `setRequestId` |
-| `session` | `setSessionId` |
-| `user` | `setUserId` |
-| `duplicate` | `clone` |
-| `copy` | `clone` |
 
 ## Tracing Methods
 
@@ -355,7 +303,7 @@ The Record module provides convenience aliases:
 ## Query Methods
 
 - `severity() u8` - Get numeric severity (0-100) derived from level priority
-- `isHighSeverity(threshold: u8) bool` - Check if severity exceeds the numeric threshold
+- `isHighSeverity(threshold: Level) bool` - Check if the record level is at or above the given level
 - `hasTracing() bool` - Check if trace or span ID is set
 - `hasCustomLevel() bool` - Check if custom level is set
 - `hasContext() bool` - Check if context fields exist
@@ -378,4 +326,3 @@ The Record module provides convenience aliases:
 - [Level API](level.md) - Log level definitions
 - [Tracing Guide](../guide/tracing.md) - Distributed tracing
 - [Context Guide](../guide/context.md) - Context binding
-

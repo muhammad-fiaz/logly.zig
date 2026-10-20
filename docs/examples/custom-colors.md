@@ -15,7 +15,7 @@ head:
 
 # Custom Colors
 
-This example demonstrates how to define and use custom colors for log levels. Logly colors the **entire log line** (timestamp, level, and message), not just the level tag.
+This example defines custom colors for log levels. Logly applies the level color to the **entire log line** (timestamp, level, and message), not only the level tag.
 
 ## Platform Support
 
@@ -48,9 +48,9 @@ pub fn main() !void {
     // Bright: 90-97 for bright versions (e.g., 91=Bright Red)
     // Styles: 1=Bold, 4=Underline, 7=Reverse
 
-    try logger.addCustomLevel("NOTICE", 22, "36;1");    // Cyan Bold
-    try logger.addCustomLevel("ALERT", 42, "31;4");     // Red Underline
-    try logger.addCustomLevel("HIGHLIGHT", 52, "33;7"); // Yellow Reverse
+    try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("36;1").?);    // Cyan Bold
+    try logger.addCustomLevel("ALERT", 42, logly.Color.parse("31;4").?);     // Red Underline
+    try logger.addCustomLevel("HIGHLIGHT", 52, logly.Color.parse("33;7").?); // Yellow Reverse
 
     // Standard levels (entire line colored):
     try logger.info("Info message - entire line is white", @src());
@@ -141,24 +141,28 @@ const lime = tint.color.rgb(50, 205, 50);
 ```zig
 const CustomLevel = logly.CustomLevel;
 
-// Full color control
-const audit = CustomLevel.initFull(
-    "AUDIT",        // name
-    35,             // priority
-    "36",           // base color (cyan)
-    "96;1",         // bright color (bright cyan bold)
-    "36;2",         // dim color
-    "38;5;81",      // 256-color
+const audit = CustomLevel.init(
+    "AUDIT",                        // name
+    35,                             // priority
+    logly.Color.parse("36").?,      // cyan
 );
 
 // RGB custom level
 const metric = CustomLevel.initRgb("METRIC", 25, 50, 205, 50);
 
 // With background
-const alert = CustomLevel.initWithBackground("ALERT", 50, "97", "41");
+const alert = CustomLevel.initWithBackground(
+    "ALERT",
+    50,
+    logly.Color.Tint.color.ansi4.brightWhite,
+    logly.Color.Tint.color.ansi4.red,
+);
 
 // With style
-const security = CustomLevel.initStyled("SECURITY", 55, "31", "1;4");
+const security = CustomLevel.initStyled("SECURITY", 55, .{
+    .foreground = logly.Color.Tint.color.ansi4.red,
+    .underline = true,
+});
 ```
 
 ## Expected Output

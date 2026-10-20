@@ -1,10 +1,10 @@
 ---
 title: Advanced Configuration Example
-description: Example of advanced Logly.zig configuration including custom log formats, timestamps, timezone, colors, enterprise features, and multiple sinks with different settings.
+description: Example of advanced Logly.zig configuration including custom log formats, timestamps, timezone, colors, advanced features, and multiple sinks with different settings.
 head:
   - - meta
     - name: keywords
-      content: advanced config, custom format, timezone, enterprise features, multiple sinks, log format
+      content: advanced config, custom format, timezone, advanced features, multiple sinks, log format
   - - meta
     - property: og:title
       content: Advanced Configuration Example | Logly.zig
@@ -12,7 +12,7 @@ head:
 
 # Advanced Configuration
 
-This example demonstrates how to leverage advanced configuration options including custom log formats, timestamps, timezone settings, colors, and enterprise features.
+This example demonstrates advanced configuration options including custom log formats, timestamps, timezone settings, colors, and filtering, sampling, and redaction.
 
 ## Centralized Configuration Types
 
@@ -27,7 +27,7 @@ const SchedulerConfig = logly.SchedulerConfig;
 const CompressionConfig = logly.CompressionConfig;
 const AsyncConfig = logly.AsyncConfig;
 
-// Build comprehensive config using helper methods
+// Build the configuration using helper methods
 var config = logly.Config.default()
   .withThreadPool(.{ .enabled = true, .threadCount = 4 })
   .withScheduler(.{ .enabled = true, .cleanupMaxAgeDays = 7 })
@@ -57,15 +57,15 @@ pub fn main() !void {
     // SECTION 1: Custom Log Format
     // ============================================
     var config = logly.Config.default();
-    
+
     // Available placeholders:
     // {time}, {level}, {message}, {module}, {function}, {file}, {line}, {trace_id}, {span_id}
     config.logFormat = "{time} | {level} | {message}";
     config.timeFormat = logly.Config.TimeFormat.defaultPattern;
     config.timezone = .utc;
-    
+
     logger.configure(config);
-    
+
     try logger.info("Custom format with pipe separators", @src());
     try logger.warn("Notice the UTC timestamp", @src());  // Short alias for warning
 
@@ -74,7 +74,7 @@ pub fn main() !void {
     // ============================================
     config.timeFormat = logly.Config.TimeFormat.unix;
     logger.configure(config);
-    
+
     try logger.info("Now using Unix timestamp", @src());
 
     // ============================================
@@ -85,18 +85,18 @@ pub fn main() !void {
     config.showLineno = true;
     config.logFormat = null;  // Use default format to show file:line
     logger.configure(config);
-    
+
     try logger.debug("This shows file:line for VS Code clickable links", @src());
 
     // ============================================
     // SECTION 4: Color Configuration
     // ============================================
-    
+
     // Global color control
     config.globalColorDisplay = true;  // Master switch for all colors
     config.color = true;                  // Enable ANSI color codes
     logger.configure(config);
-    
+
     try logger.info("Colors enabled globally", @src());
     try logger.success("Green success message", @src());
     try logger.err("Red error message", @src());
@@ -104,7 +104,7 @@ pub fn main() !void {
     // Disable colors
     config.globalColorDisplay = false;
     logger.configure(config);
-    
+
     try logger.info("Colors now disabled", @src());
 
     // Re-enable for remaining examples
@@ -114,13 +114,13 @@ pub fn main() !void {
     // ============================================
     // SECTION 5: Custom Levels with Colors
     // ============================================
-    
+
     // Define custom levels with ANSI color codes
-    try logger.addCustomLevel("AUDIT", 35, "35");       // Magenta (priority 35)
-    try logger.addCustomLevel("NOTICE", 22, "36;1");   // Bold Cyan (priority 22)
-    try logger.addCustomLevel("ALERT", 48, "31;1");    // Bold Red (priority 48)
-    try logger.addCustomLevel("SECURITY", 55, "91;4"); // Underline Bright Red
-    
+    try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35").?);       // Magenta (priority 35)
+    try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("36;1").?);   // Bold Cyan (priority 22)
+    try logger.addCustomLevel("ALERT", 48, logly.Color.parse("31;1").?);    // Bold Red (priority 48)
+    try logger.addCustomLevel("SECURITY", 55, logly.Color.parse("91;4").?); // Underline Bright Red
+
     try logger.custom("AUDIT", "User login event", @src());
     try logger.custom("NOTICE", "System maintenance scheduled", @src());
     try logger.custom("ALERT", "High memory usage detected", @src());
@@ -129,35 +129,35 @@ pub fn main() !void {
     // ============================================
     // SECTION 6: JSON Configuration
     // ============================================
-    
+
     config.format = .json;
     config.prettyJson = true;
     config.globalColorDisplay = false;  // Colors don't apply to JSON structure
     logger.configure(config);
-    
+
     try logger.info("JSON formatted output", @src());
     try logger.custom("AUDIT", "JSON with custom level name", @src());
 
     // ============================================
     // SECTION 7: Multiple Sinks with Different Settings
     // ============================================
-    
+
     // Reset to text format
     config.globalColorDisplay = true;
     config.autoSink = false;  // Disable default console sink
     logger.configure(config);
-    
+
     // Console sink with colors (using add() alias)
      _ = try logger.add(.{
         .color = true,
     });
-    
+
     // File sink without colors
      _ = try logger.add(.{
         .path = "logs/app.log",
         .color = false,
     });
-    
+
     // JSON file sink
      _ = try logger.add(.{
         .path = "logs/app.json",
@@ -165,7 +165,7 @@ pub fn main() !void {
         .prettyJson = false,
         .color = false,
     });
-    
+
     // Error-only file sink
      _ = try logger.add(.{
         .path = "logs/errors.log",

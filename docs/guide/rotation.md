@@ -1,6 +1,6 @@
 # File Rotation Guide
 
-Logly provides a powerful file rotation system suitable for high-throughput production environments. This guide explains how to configure rotation strategies, retention policies, compression, and global defaults.
+Logly provides file rotation for high-throughput production environments. This guide explains how to configure rotation strategies, retention policies, compression, and global defaults.
 
 ## Basics
 
@@ -9,8 +9,7 @@ File rotation prevents log files from growing indefinitely by periodically closi
 To enable rotation, use the `rotating` sink or configure a `Rotation` object manually.
 
 ```zig
-const config = Config.init(allocator)
-    .withSink(SinkConfig.rotating("app.log", "daily", 7));
+_ = try logger.addSink(SinkConfig.rotating("app.log", "daily", 7));
 ```
 
 Alternatively, you can use the `logger.add()` shortcut with a configuration struct:
@@ -247,7 +246,7 @@ try rot.withArchiveDir("logs/archive");
 
 ## Presets
 
-Logly provides comprehensive presets for common rotation scenarios. Use `RotationPresets` for quick setup.
+Logly provides presets for common rotation scenarios. Use `RotationPresets` for quick setup.
 
 ### Time-Based Presets
 
@@ -268,7 +267,7 @@ Logly provides comprehensive presets for common rotation scenarios. Use `Rotatio
 |--------|------|-----------|----------|
 | `size1MB()` | 1 MB | 5 | Embedded systems |
 | `size10MB()` | 10 MB | 5 | Standard apps |
-| `size100MB()` | 100 MB | 10 | Enterprise apps |
+| `size100MB()` | 100 MB | 10 | Large files |
 | `size500MB()` | 500 MB | 3 | High-volume logs |
 | `size1GB()` | 1 GB | 2 | Maximum size logs |
 
@@ -289,7 +288,7 @@ const RotationPresets = @import("logly").RotationPresets;
 var rot = try RotationPresets.production(allocator, "app.log");
 defer rot.deinit();
 
-// Enterprise: daily, 90 days, best compression, ISO naming
+// Daily archival: 90 days, best compression, ISO naming
 var ent = try RotationPresets.enterprise(allocator, "server.log");
 defer ent.deinit();
 

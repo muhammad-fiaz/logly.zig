@@ -1,207 +1,142 @@
 ---
-title: Thread Pool API Reference
-description: API reference for Logly.zig ThreadPool module. Covers worker threads, task submission, batch processing, priority queues, work stealing, and parallel sink writing.
+title: Thread Pool API
+description: API reference for the Logly.zig thread pool and parallel sink writer.
 head:
   - - meta
     - name: keywords
-      content: thread pool api, worker threads, task queue, parallel logging, work stealing, batch processing
+      content: thread pool api, parallel sink writer, task submission, worker threads, zig
   - - meta
     - property: og:title
-      content: Thread Pool API Reference | Logly.zig
+      content: Thread Pool API | Logly.zig
   - - meta
-    - property: og:description
-      content: API reference for parallel log processing with worker threads, priority queues, and work stealing.
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
 ---
 
 # Thread Pool API
 
-The thread pool module provides parallel log processing capabilities with work stealing, priority queues, and concurrent sink writing.
-
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize thread pool |
-| `deinit()` | `destroy()` | Deinitialize thread pool |
-| `start()` | `begin()` | Start worker threads |
-| `shutdown()` | `stop()`, `halt()` | Stop worker threads |
-| `submit()` | `push()`, `enqueue()`, `add()` | Submit task to pool |
-| `submitFn()` | `run()` | Submit function task |
-| `submitBatchWithRetry()` | `submitBatchRetry()` | Batch submit with retry budget |
-| `waitAll()` | `await()`, `join()` | Wait for all tasks |
-| `waitAllTimeout()` | `waitForAll()` | Wait for completion with timeout |
-| `pendingTasks()` | `queueDepth()`, `size()` | Get pending task count |
-| `pendingTasksByQueue()` | `queueBreakdown()` | Get global/local queue depth snapshot |
-| `queueCapacity()` | `totalQueueCapacity()` | Get total queue capacity |
-| `availableQueueCapacity()` | `freeQueueCapacity()`, `availableCapacity()` | Get free queue capacity |
-| `canAcceptTasks()` | `hasCapacityFor()` | Check if queue can accept N tasks |
-| `queueUtilization()` | `queueLoad()` | Get queue utilization |
-| `isSaturated()` | `saturated()` | Check if queue load is above threshold |
-| `waitUntilQueueBelow()` | `waitForQueueBelow()` | Wait until pending queue <= threshold |
-| `activeThreads()` | `workerCount()` | Get active thread count |
-| `clear()` | `discard()`, `flush()` | Clear pending tasks |
-| `getStats()` | `statistics()` | Get pool statistics |
-| `setThreadStartCallback()` | `onThreadStart()` | Set thread start callback |
-| `setThreadStopCallback()` | `onThreadStop()` | Set thread stop callback |
-| `setTaskSubmittedCallback()` | `onTaskSubmitted()` | Set task submitted callback |
-| `setTaskDequeuedCallback()` | `onTaskDequeued()` | Set task dequeued callback |
-| `setTaskExecutedCallback()` | `onTaskExecuted()` | Set task executed callback |
-| `setWorkStolenCallback()` | `onWorkStolen()` | Set work stolen callback |
-| `setQueueOverflowCallback()` | `onQueueOverflow()` | Set queue overflow callback |
+`ThreadPool` executes function and callback tasks on worker threads. `ParallelSinkWriter` dispatches a payload to multiple sinks through a pool.
 
 ## Overview
 
 ```zig
-const logly = @import("logly");
-const ThreadPool = logly.ThreadPool;
-const ThreadPoolPresets = logly.ThreadPoolPresets;
-```
+const pool = try logly.ThreadPool.initWithConfig(allocator, .{
+    .threadCount = 4,
+    .queueSize = 1024,
+});
+defer pool.deinit();
 
-## Centralized Configuration
-
-Thread pool can be enabled through the central `Config` struct:
-
-```zig
-var config = logly.Config.default();
-config.threadPool = .{
-    .enabled = true,
-    .threadCount = 4,  // 0 = auto-detect
-    .queueSize = 10000,
-    .workStealing = true,
-};
-const logger = try logly.Logger.initWithConfig(allocator, config);
-```
-
-Or use the fluent API:
-
-```zig
-const config = logly.Config.default().withThreadPool(.{ .threadCount = 4 });
+try pool.start();
+defer pool.shutdown();
 ```
 
 ## Types
 
 ### ThreadPool
 
-The core thread pool implementation that manages worker threads and task distribution. It employs a work-stealing algorithm to balance load across multiple worker threads, ensuring high throughput and low latency.
-
-**Fields:**
-- `allocator`: The memory allocator used for internal structures.
-- `config`: The active configuration for the thread pool.
-- `workers`: Slice of worker threads.
-- `workQueue`: The global task queue for incoming tasks.
-- `stats`: Performance statistics (submitted, completed, stolen tasks).
-- `running`: Atomic flag indicating the pool's operational state.
-
 ```zig
 pub const ThreadPool = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     config: ThreadPoolConfig,
     workers: []Worker,
     workQueue: WorkQueue,
     stats: ThreadPoolStats,
-    running: std.atomic.Value(bool),
+    // ...
 };
 ```
 
 ### ThreadPoolConfig
 
-Configuration available through `Config.ThreadPoolConfig`. This struct controls the initialization and behavior of the thread pool.
-
-**Fields:**
-- `enabled`: Master switch to enable/disable the thread pool.
-- `threadCount`: Number of worker threads to spawn. Set to 0 to automatically detect and use the number of available CPU cores.
-- `queueSize`: Capacity of the global task queue. If the queue is full, submission may block or fail depending on policy.
-- `stackSize`: Stack size allocated for each worker thread (in bytes). Default is 1MB.
-- `workStealing`: Enables the work-stealing algorithm, allowing idle workers to take tasks from busy workers' local queues.
-- `threadNamePrefix`: Prefix for worker thread names (default: "logly-worker").
-- `keepAliveMs`: Keep-alive time for idle threads in milliseconds.
-- `threadAffinity`: Enable thread affinity (pin threads to CPUs).
-
 ```zig
 pub const ThreadPoolConfig = struct {
-    /// Enable thread pool for parallel processing.
     enabled: bool = false,
-    /// Number of worker threads (0 = auto-detect based on CPU cores).
+    io: ?std.Io = null,
     threadCount: usize = 0,
-    /// Maximum queue size for pending tasks.
     queueSize: usize = 10000,
-    /// Stack size per thread in bytes.
     stackSize: usize = 1024 * 1024,
-    /// Enable work stealing between threads.
     workStealing: bool = true,
-    /// Thread naming prefix.
     threadNamePrefix: []const u8 = "logly-worker",
-    /// Keep alive time for idle threads (milliseconds).
     keepAliveMs: u64 = 60000,
-    /// Enable thread affinity (pin threads to CPUs).
     threadAffinity: bool = false,
 };
 ```
 
-### ThreadPoolPresets
+`default()` returns the default configuration; `highThroughput()` and `ioBound()` return tuned variants. Additional constructors are available through `ThreadPoolPresets`.
 
-Helper functions to create common thread pool configurations. All presets use `Constants.ThreadDefaults` for consistent defaults.
+### Task
 
 ```zig
-pub const ThreadPoolPresets = struct {
-    /// Default configuration: auto-detect threads, standard queue size.
-    pub fn default() ThreadPoolConfig { ... }
-
-    /// High-throughput configuration: larger queues, work stealing enabled.
-    pub fn highThroughput() ThreadPoolConfig { ... }
-
-    /// Low-resource configuration: minimal threads, small queues.
-    pub fn lowResource() ThreadPoolConfig { ... }
-
-    /// I/O-bound configuration: optimized for disk/network workloads.
-    /// Uses 2x CPU cores for better I/O parallelism.
-    pub fn ioBound() ThreadPoolConfig { ... }
-
-    /// CPU-bound configuration: optimized for compute-heavy tasks.
-    /// Uses exactly CPU core count with work stealing disabled.
-    pub fn cpuBound() ThreadPoolConfig { ... }
+pub const Task = union(enum) {
+    function: struct {
+        func: *const fn (?std.mem.Allocator) void,
+    },
+    callback: struct {
+        func: *const fn (*anyopaque, ?std.mem.Allocator) void,
+        context: *anyopaque,
+    },
 };
 ```
 
-### TaskPriority
-
-Priority levels for tasks.
+### TaskHandle
 
 ```zig
-pub const TaskPriority = enum(u8) {
-    low = 0,
-    normal = 1,
-    high = 2,
-    critical = 3,
+pub const TaskHandle = struct {
+    id: u64,
+
+    pub fn isValid(self: TaskHandle) bool;
 };
 ```
 
+An invalid handle (`id == 0`) means the task was rejected or the handle was cancelled.
+
+### WorkItem.Priority
+
+```zig
+pub const WorkItem = struct {
+    pub const Priority = enum(u8) {
+        low = 0,
+        normal = 1,
+        high = 2,
+        critical = 3,
+    };
+};
+```
 
 ### ThreadPoolStats
-
-Statistics for the thread pool.
-
-> Note: Atomic counters are architecture-dependent. On 64-bit targets these use 64-bit atomics (u64); on 32-bit targets they use 32-bit atomics (u32).
 
 ```zig
 pub const ThreadPoolStats = struct {
     tasksSubmitted: std.atomic.Value(u64),
     tasksCompleted: std.atomic.Value(u64),
-    tasksDropped: std.atomic.Value(u64),
     tasksStolen: std.atomic.Value(u64),
+    tasksDropped: std.atomic.Value(u64),
+    tasksCancelled: std.atomic.Value(u64),
     totalWaitTimeNs: std.atomic.Value(u64),
     totalExecTimeNs: std.atomic.Value(u64),
     activeThreads: std.atomic.Value(u32),
-
-    pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64;
-    pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64;
-    pub fn throughput(self: *const ThreadPoolStats) f64;
 };
 ```
 
-### ParallelSinkWriter
+Methods: `avgWaitTimeNs()`, `avgExecTimeNs()`, `throughput()`, `getSubmitted()`, `getCompleted()`, `getStolen()`, `getDropped()`, `getCancelled()`, `completionRate()`, `dropRate()`, `hasDropped()`, `getActiveThreads()`, and `avgWaitTimeMs()`.
 
-Writes to multiple sinks in parallel with full configuration support, buffering, retry logic, and statistics.
+### ParallelConfig
+
+```zig
+pub const ParallelConfig = struct {
+    maxConcurrent: usize = 8,
+    writeTimeoutMs: u64 = 5000,
+    retryOnFailure: bool = true,
+    maxRetries: u3 = 3,
+    failFast: bool = false,
+    buffered: bool = true,
+    bufferSize: usize = 64,
+};
+```
+
+Presets: `default()`, `highThroughput()`, `lowLatency()`, and `reliable()`.
+
+### ParallelSinkWriter
 
 ```zig
 pub const ParallelSinkWriter = struct {
@@ -210,568 +145,301 @@ pub const ParallelSinkWriter = struct {
     config: ParallelConfig,
     sinks: std.ArrayList(SinkHandle),
     buffer: std.ArrayList([]const u8),
-    mutex: std.Thread.Mutex,
     stats: ParallelStats,
+};
 
-    pub const SinkHandle = struct {
-        writeFn: *const fn (data: []const u8) void,
-        flushFn: ?*const fn () void,
-        name: []const u8,
-        enabled: bool,
-    };
+pub const SinkHandle = struct {
+    writeFn: *const fn (data: []const u8) void,
+    flushFn: ?*const fn () void = null,
+    name: []const u8,
+    enabled: bool = true,
+};
 
-    pub const ParallelStats = struct {
-        writesSubmitted: std.atomic.Value(u64),
-        writesCompleted: std.atomic.Value(u64),
-        writesFailed: std.atomic.Value(u64),
-        retries: std.atomic.Value(u64),
-        bytesWritten: std.atomic.Value(u64),
+pub const ParallelStats = struct {
+    writesSubmitted: std.atomic.Value(u64),
+    writesCompleted: std.atomic.Value(u64),
+    writesFailed: std.atomic.Value(u64),
+    retries: std.atomic.Value(u64),
+    bytesWritten: std.atomic.Value(u64),
 
-        pub fn successRate(self: *const ParallelStats) f64;
-    };
+    pub fn successRate(self: *const ParallelStats) f64;
 };
 ```
 
-### ParallelConfig
+## Lifecycle
 
-Configuration for parallel sink writing operations. Available through `Config.ParallelConfig`.
-
-```zig
-pub const ParallelConfig = struct {
-    /// Maximum concurrent writes allowed at once.
-    maxConcurrent: usize = 8,
-    /// Timeout for each write operation (ms).
-    writeTimeoutMs: u64 = 1000,
-    /// Retry failed writes automatically.
-    retryOnFailure: bool = true,
-    /// Maximum number of retry attempts.
-    maxRetries: u3 = 3,
-    /// Fail-fast mode: abort on any sink error.
-    failFast: bool = false,
-    /// Buffer writes before parallel dispatch.
-    buffered: bool = true,
-    /// Buffer size for buffered writes.
-    bufferSize: usize = 64,
-
-    // Presets
-    pub fn default() ParallelConfig;
-    pub fn highThroughput() ParallelConfig;
-    pub fn lowLatency() ParallelConfig;
-    pub fn reliable() ParallelConfig;
-};
-```
-
-## ThreadPool Methods
-
-### init
-
-Create a new thread pool with default configuration.
-
-**Alias:** `create`
+### init / initWithConfig
 
 ```zig
 pub fn init(allocator: std.mem.Allocator) !*ThreadPool
-```
-
-### initWithConfig
-
-Create a new thread pool with custom configuration. Uses `config.io` if set, otherwise defaults to `logly.defaultIo()`.
-
-```zig
 pub fn initWithConfig(allocator: std.mem.Allocator, config: ThreadPoolConfig) !*ThreadPool
 ```
 
-### initWithIo
+Allocates the pool and workers. Workers do not start until `start()` is called.
 
-Create a new thread pool with an explicit `std.Io` handle and custom configuration.
+### initWithIo / initWithConfigAndIo
 
 ```zig
 pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: ThreadPoolConfig) !*ThreadPool
-```
-
-**Parameters:**
-- `allocator`: Memory allocator
-- `io_handle`: Explicit `std.Io` handle for thread coordination and timeout waiting
-- `config`: Thread pool configuration
-
-**Returns:** A pointer to the new `ThreadPool` instance
-
-### deinit
-
-Clean up resources and stop all workers.
-
-**Alias:** `destroy`
-
-```zig
-pub fn deinit(self: *ThreadPool) void
+pub fn initWithConfigAndIo(allocator: std.mem.Allocator, config: ThreadPoolConfig, io_handle: std.Io) !*ThreadPool
 ```
 
 ### start
-
-Start all worker threads.
 
 ```zig
 pub fn start(self: *ThreadPool) !void
 ```
 
-### stop
+Spawns worker threads. Calling `start()` while running is a no-op; a partial spawn failure joins already-started workers and returns an error.
 
-Stop all workers gracefully.
-
-```zig
-pub fn stop(self: *ThreadPool) void
-```
-
-### submit
-
-Submits a task to the pool.
+### shutdown
 
 ```zig
-pub fn submit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool
+pub fn shutdown(self: *ThreadPool) void
 ```
 
-### submitFn
+Signals workers to stop and joins them. Calling `shutdown()` while stopped is a no-op.
 
-Submits a function for execution with normal priority.
+### deinit
+
+```zig
+pub fn deinit(self: *ThreadPool) void
+```
+
+Calls `shutdown()` and releases worker and queue storage.
+
+### isRunning / threadCount
+
+```zig
+pub fn isRunning(self: *const ThreadPool) bool
+pub fn threadCount(self: *const ThreadPool) usize
+```
+
+## Submission
+
+### submit / submitWithDrop
+
+```zig
+pub fn submit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) TaskHandle
+pub fn submitWithDrop(
+    self: *ThreadPool,
+    task: Task,
+    priority: WorkItem.Priority,
+    onDrop: ?*const fn (?*anyopaque) void,
+) TaskHandle
+```
+
+Returns an invalid handle when the pool is stopped or the queue is full. A rejected submission does not invoke the drop hook; the caller retains ownership of the task context. For accepted tasks that are later discarded by `clear()` or `cancel()`, the drop hook receives the callback context.
+
+### Function and callback helpers
 
 ```zig
 pub fn submitFn(self: *ThreadPool, func: *const fn (?std.mem.Allocator) void) bool
+pub fn submitFnWithHandle(self: *ThreadPool, func: *const fn (?std.mem.Allocator) void) TaskHandle
+pub fn submitCallback(
+    self: *ThreadPool,
+    func: *const fn (*anyopaque, ?std.mem.Allocator) void,
+    context: *anyopaque,
+) bool
+pub fn submitCallbackWithHandle(
+    self: *ThreadPool,
+    func: *const fn (*anyopaque, ?std.mem.Allocator) void,
+    context: *anyopaque,
+) TaskHandle
 ```
 
-### submitCallback
-
-Submits a callback with context with normal priority.
+### Priority helpers
 
 ```zig
-pub fn submitCallback(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool
+pub fn submitHighPriority(
+    self: *ThreadPool,
+    func: *const fn (*anyopaque, ?std.mem.Allocator) void,
+    context: *anyopaque,
+) bool
+pub fn submitHighPriorityWithHandle(...) TaskHandle
+pub fn submitCritical(...) bool
+pub fn submitCriticalWithHandle(...) TaskHandle
 ```
 
-### submitHighPriority
-
-Shortcut for submitting a high priority callback.
-
-```zig
-pub fn submitHighPriority(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool
-```
-
-### submitCritical
-
-Shortcut for submitting a critical priority callback.
-
-```zig
-pub fn submitCritical(self: *ThreadPool, func: *const fn (*anyopaque, ?std.mem.Allocator) void, context: *anyopaque) bool
-```
-
-### submitBatch
-
-Submits multiple tasks at once. Returns the number of successfully submitted tasks.
+### Batch submission
 
 ```zig
 pub fn submitBatch(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority) usize
+pub fn submitBatchWithRetry(
+    self: *ThreadPool,
+    tasks: []const Task,
+    priority: WorkItem.Priority,
+    maxAttempts: u8,
+    retryDelayUs: u32,
+) usize
 ```
 
-### submitBatchWithRetry
+Both return the number of accepted tasks.
 
-Submits tasks with bounded retries for transient queue pressure.
-
-```zig
-pub fn submitBatchWithRetry(self: *ThreadPool, tasks: []const Task, priority: WorkItem.Priority, maxAttempts: u8, retryDelayUs: u32) usize
-```
-
-### trySubmit
-
-Attempts to submit without blocking. Returns true if successful.
+### Non-blocking submission
 
 ```zig
+pub fn trySubmitWithHandle(self: *ThreadPool, task: Task, priority: WorkItem.Priority) TaskHandle
 pub fn trySubmit(self: *ThreadPool, task: Task, priority: WorkItem.Priority) bool
 ```
 
-### submitToWorker
+These attempts do not wait for queue capacity.
 
-Submits to a specific worker's local queue.
+### Worker-specific submission
 
 ```zig
-pub fn submitToWorker(self: *ThreadPool, workerId: usize, task: Task, priority: WorkItem.Priority) bool
+pub fn submitToWorkerWithHandle(
+    self: *ThreadPool,
+    workerId: usize,
+    task: Task,
+    priority: WorkItem.Priority,
+) TaskHandle
+pub fn submitToWorker(
+    self: *ThreadPool,
+    workerId: usize,
+    task: Task,
+    priority: WorkItem.Priority,
+) bool
 ```
 
-### waitAll
+Returns rejection when `workerId` is out of range or the pool is not running.
 
-Wait until all submitted tasks are completed.
+### cancel
+
+```zig
+pub fn cancel(self: *ThreadPool, handle: TaskHandle) bool
+```
+
+Removes a queued task if it has not started. Returns `true` when cancelled.
+
+## Waiting and Queue State
 
 ```zig
 pub fn waitAll(self: *ThreadPool) void
-```
-
-### waitAllTimeout
-
-Wait for all submitted tasks until timeout.
-
-```zig
 pub fn waitAllTimeout(self: *ThreadPool, timeoutMs: u64) bool
-```
-
-### waitUntilQueueBelow
-
-Wait until pending queue depth is below or equal to a threshold.
-
-```zig
 pub fn waitUntilQueueBelow(self: *ThreadPool, threshold: usize, timeoutMs: u64) bool
-```
 
-Returns `true` when queue depth reaches threshold before timeout.
-
-### queueCapacity
-
-Get total queue capacity across global and worker-local queues.
-
-```zig
-pub fn queueCapacity(self: *const ThreadPool) usize
-```
-
-### pendingTasksByQueue
-
-Returns queue depth split by global and worker-local queues.
-
-```zig
+pub fn pendingTasks(self: *ThreadPool) usize
 pub fn pendingTasksByQueue(self: *ThreadPool) QueueDepth
-```
-
-`QueueDepth` fields:
-- `global`: tasks in global queue
-- `local`: total tasks across all worker local queues
-- `total`: `global + local`
-
-### availableQueueCapacity
-
-Get currently available queue slots.
-
-```zig
+pub fn queueCapacity(self: *const ThreadPool) usize
 pub fn availableQueueCapacity(self: *ThreadPool) usize
-```
-
-### canAcceptTasks
-
-Checks whether the pool has enough free queue slots for `requiredSlots`.
-
-```zig
 pub fn canAcceptTasks(self: *ThreadPool, requiredSlots: usize) bool
-```
-
-### queueUtilization
-
-Get queue load ratio in `[0.0, 1.0]`.
-
-```zig
 pub fn queueUtilization(self: *ThreadPool) f64
+pub fn isSaturated(self: *ThreadPool, threshold: f64) bool
+pub fn activeThreads(self: *const ThreadPool) u32
 ```
 
-### isSaturated
-
-Returns true if queue utilization is above a threshold.
+### clear / resetStats
 
 ```zig
-pub fn isSaturated(self: *ThreadPool, threshold: f64) bool
+pub fn clear(self: *ThreadPool) void
+pub fn resetStats(self: *ThreadPool) void
 ```
 
-### getStats
+`clear()` discards pending tasks and invokes their drop hooks. `resetStats()` clears counters.
 
-Get current pool statistics.
+### isEmpty / isFull / utilization
+
+```zig
+pub fn isEmpty(self: *ThreadPool) bool
+pub fn isFull(self: *ThreadPool) bool
+pub fn utilization(self: *const ThreadPool) f64
+```
+
+## Callbacks
+
+```zig
+pub fn setThreadStartCallback(self: *ThreadPool, callback: ?*const fn (usize) void) void
+pub fn setThreadStopCallback(self: *ThreadPool, callback: ?*const fn (usize, u64, u64) void) void
+pub fn setTaskSubmittedCallback(self: *ThreadPool, callback: ?*const fn (u8, usize) void) void
+pub fn setTaskDequeuedCallback(self: *ThreadPool, callback: ?*const fn (u8, u64) void) void
+pub fn setTaskExecutedCallback(self: *ThreadPool, callback: ?*const fn (u64, bool) void) void
+pub fn setWorkStolenCallback(self: *ThreadPool, callback: ?*const fn (usize, usize) void) void
+pub fn setQueueOverflowCallback(self: *ThreadPool, callback: ?*const fn (usize, usize) void) void
+```
+
+Callbacks must be thread-safe and non-blocking.
+
+## Statistics
 
 ```zig
 pub fn getStats(self: *const ThreadPool) ThreadPoolStats
 ```
 
-### ThreadPool Callbacks
+Returns a snapshot with atomic counters. See `ThreadPoolStats` for available accessors.
 
-| Method | Description |
-|--------|-------------|
-| `setThreadStartCallback()` | Called when a worker thread starts |
-| `setThreadStopCallback()` | Called when a worker thread stops |
-| `setTaskSubmittedCallback()` | Called when a task enters a queue |
-| `setTaskDequeuedCallback()` | Called when a task is dequeued |
-| `setTaskExecutedCallback()` | Called after a task runs |
-| `setWorkStolenCallback()` | Called when work stealing occurs |
-| `setQueueOverflowCallback()` | Called when a queue is full |
-
-## ThreadPoolStats Methods
-
-### Getter Methods
-
-| Method | Return | Description |
-|--------|--------|-------------|
-| `getSubmitted()` | `u64` | Get total tasks submitted |
-| `getCompleted()` | `u64` | Get total tasks completed |
-| `getDropped()` | `u64` | Get total tasks dropped |
-| `getStolen()` | `u64` | Get total tasks stolen (work stealing) |
-| `getTotalWaitTimeNs()` | `u64` | Get total wait time in nanoseconds |
-| `getTotalExecTimeNs()` | `u64` | Get total execution time in nanoseconds |
-| `getActiveThreads()` | `u32` | Get currently active threads |
-
-### Boolean Checks
-
-| Method | Return | Description |
-|--------|--------|-------------|
-| `hasSubmitted()` | `bool` | Check if any tasks have been submitted |
-| `hasCompleted()` | `bool` | Check if any tasks have been completed |
-| `hasDropped()` | `bool` | Check if any tasks have been dropped |
-| `hasStolen()` | `bool` | Check if any tasks have been stolen |
-
-### Rate Calculations
-
-| Method | Return | Description |
-|--------|--------|-------------|
-| `completionRate()` | `f64` | Calculate task completion rate (0.0 - 1.0) |
-| `dropRate()` | `f64` | Calculate task drop rate (0.0 - 1.0) |
-| `stealRate()` | `f64` | Calculate work stealing rate (0.0 - 1.0) |
-| `throughput()` | `f64` | Calculate tasks per second |
-| `avgWaitTimeNs()` | `u64` | Get average task wait time in nanoseconds |
-| `avgWaitTimeMs()` | `f64` | Get average task wait time in milliseconds |
-| `avgExecTimeNs()` | `u64` | Get average task execution time in nanoseconds |
-| `avgExecTimeMs()` | `f64` | Get average task execution time in milliseconds |
-
-### Reset
-
-| Method | Description |
-|--------|-------------|
-| `reset()` | Reset all statistics to initial state |
-
-### Legacy Methods
+## ThreadPoolPresets
 
 ```zig
-pub fn throughput(self: *const ThreadPoolStats) f64
-pub fn avgWaitTimeNs(self: *const ThreadPoolStats) u64
-pub fn avgExecTimeNs(self: *const ThreadPoolStats) u64
+pub fn singleThread() ThreadPoolConfig
+pub fn cpuBound() ThreadPoolConfig
+pub fn ioBound() ThreadPoolConfig
+pub fn highThroughput() ThreadPoolConfig
+pub fn lowLatency() ThreadPoolConfig
 ```
 
-## ParallelSinkWriter Methods
+`ThreadPool` also exposes `ThreadPoolPresets.default()` and `lowResource()`.
 
-### init
+## ParallelSinkWriter API
 
-Create a new parallel sink writer with default configuration.
+### init / initWithConfig
 
 ```zig
 pub fn init(allocator: std.mem.Allocator, pool: *ThreadPool) !*ParallelSinkWriter
+pub fn initWithConfig(
+    allocator: std.mem.Allocator,
+    pool: *ThreadPool,
+    config: ParallelConfig,
+) !*ParallelSinkWriter
 ```
 
-### initWithConfig
-
-Create a new parallel sink writer with custom configuration.
-
-```zig
-pub fn initWithConfig(allocator: std.mem.Allocator, pool: *ThreadPool, config: ParallelConfig) !*ParallelSinkWriter
-```
+The pool must outlive the writer.
 
 ### deinit
-
-Clean up resources and flush any buffered data.
 
 ```zig
 pub fn deinit(self: *ParallelSinkWriter) void
 ```
 
-### addSink
+Flushes buffered data and releases sinks and buffers.
 
-Add a sink for parallel writing.
+### addSink / removeSink / setSinkEnabled
 
 ```zig
 pub fn addSink(self: *ParallelSinkWriter, handle: SinkHandle) !void
-```
-
-### removeSink
-
-Remove a sink by name.
-
-```zig
 pub fn removeSink(self: *ParallelSinkWriter, name: []const u8) void
-```
-
-### setSinkEnabled
-
-Enable or disable a sink by name.
-
-```zig
 pub fn setSinkEnabled(self: *ParallelSinkWriter, name: []const u8, enabled: bool) void
 ```
 
-### writeParallel / write
+Sink names are compared byte-for-byte. Removing or disabling an unknown name is a no-op.
 
-Write to all enabled sinks in parallel.
+### writeParallel
 
 ```zig
 pub fn writeParallel(self: *ParallelSinkWriter, data: []const u8) void
 ```
 
-### flushBuffer
+Copies `data` into the writer buffer and dispatches to enabled sinks. There is no `write` alias.
 
-Flush any buffered writes immediately.
+### flushBuffer / flushAll
 
 ```zig
 pub fn flushBuffer(self: *ParallelSinkWriter) void
-```
-
-### flushAll / flush
-
-Flush buffer and all sinks.
-
-```zig
 pub fn flushAll(self: *ParallelSinkWriter) void
 ```
 
-### getStats
+`flushBuffer()` drains buffered payloads. `flushAll()` calls `flushBuffer()` and invokes every registered `flushFn`. There is no `flush` alias.
 
-Get current parallel write statistics.
+### getStats / sinkCount / hasEnabledSinks
 
 ```zig
 pub fn getStats(self: *const ParallelSinkWriter) ParallelStats
-```
-
-### sinkCount
-
-Get the number of registered sinks.
-
-```zig
 pub fn sinkCount(self: *const ParallelSinkWriter) usize
-```
-
-### hasEnabledSinks
-
-Check if any sinks are enabled.
-
-```zig
 pub fn hasEnabledSinks(self: *ParallelSinkWriter) bool
 ```
 
-
-## Presets
-
-### singleThread
-
-Single-threaded pool for testing or simple use cases.
-
-```zig
-pub fn singleThread() ThreadPoolConfig {
-    return .{
-        .threadCount = 1,
-        .workStealing = false,
-        .queueSize = 256,
-    };
-}
-```
-
-### cpuBound
-
-Optimized for CPU-intensive tasks. Uses `Constants.ThreadDefaults.cpuBoundThreadCount()`.
-
-```zig
-pub fn cpuBound() ThreadPoolConfig {
-    return .{
-        .threadCount = Constants.ThreadDefaults.cpuBoundThreadCount(),
-        .queueSize = Constants.ThreadDefaults.queueSize,
-        .workStealing = false,
-        .stackSize = Constants.ThreadDefaults.stackSize,
-    };
-}
-```
-
-### ioBound
-
-Optimized for I/O-intensive tasks. Uses `Constants.ThreadDefaults.ioBoundThreadCount()`.
-
-```zig
-pub fn ioBound() ThreadPoolConfig {
-    return .{
-        .threadCount = Constants.ThreadDefaults.ioBoundThreadCount(),
-        .queueSize = Constants.ThreadDefaults.queueSize * 2,
-        .workStealing = true,
-        .stackSize = Constants.ThreadDefaults.stackSize,
-    };
-}
-```
-
-### highThroughput
-
-Maximum throughput configuration. Uses `Constants.ThreadDefaults.maxTasks` for larger queue.
-
-```zig
-pub fn highThroughput() ThreadPoolConfig {
-    return .{
-        .threadCount = 0, // Auto-detect
-        .queueSize = Constants.ThreadDefaults.maxTasks,
-        .workStealing = true,
-        .stackSize = 2 * Constants.ThreadDefaults.stackSize,
-    };
-}
-```
-
-## Usage Example
-
-```zig
-const std = @import("std");
-const logly = @import("logly");
-
-pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    // Create thread pool with CPU-bound preset
-    var pool = try logly.ThreadPool.initWithConfig(
-        allocator,
-        logly.ThreadPoolPresets.cpuBound(),
-    );
-    defer pool.deinit();
-
-    // Start workers
-    try pool.start();
-    defer pool.stop();
-
-    // Submit tasks
-    var counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
-    
-    for (0..100) |i| {
-         _ = pool.submitCallback(incrementTask, &counter);
-    }
-
-    // Wait for completion
-    pool.waitAll();
-
-    // Check stats
-    const stats = pool.getStats();
-    std.debug.print("Completed: {d}, Throughput: {d:.2} tasks/sec\\n", .{
-        stats.getCompleted(),
-        stats.throughput(),
-    });
-}
-
-fn incrementTask(ctx: *anyopaque, _: ?std.mem.Allocator) void {
-    const counter: *std.atomic.Value(u32) = @alignCast(@ptrCast(ctx));
-     _ = counter.fetchAdd(1, .monotonic);
-}
-```
-
-## Aliases
-
-The ThreadPool module provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `flush` | `clear` |
-| `statistics` | `getStats` |
-| `stop` | `shutdown` |
-| `halt` | `shutdown` |
-| `begin` | `start` |
-| `add` | `submit` |
-
-## Additional Methods
-
-- `isEmpty() bool` - Returns true if no pending tasks
-- `isFull() bool` - Returns true if queue is at capacity
-- `utilization() f64` - Returns thread pool utilization ratio (0.0 - 1.0)
-- `resetStats() void` - Resets all statistics
-
 ## See Also
 
-- [Thread Pool Guide](../guide/thread-pool.md) - Usage patterns
-- [Async API](async.md) - Async logging with ring buffers
-- [Scheduler API](scheduler.md) - Scheduled tasks
-- [Configuration Guide](../guide/configuration.md) - Full configuration options
+- [Thread Pool Guide](/guide/thread-pool)
+- [Thread Pool Example](/examples/thread-pool)
+- [Async Logger API](/api/async)

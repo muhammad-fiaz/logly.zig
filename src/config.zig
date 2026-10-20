@@ -97,12 +97,12 @@ pub const Config = struct {
     /// Include trace ID in logs (useful for distributed tracing).
     includeTraceId: bool = false,
 
-    /// Capture stack traces for Error and Critical log levels.
+    /// Capture stack traces for err, fail, critical, and fatal levels.
     /// If false, stack traces will not be collected or displayed.
     captureStackTrace: bool = false,
 
     /// Resolve memory addresses in stack traces to function names and file locations.
-    /// Requires `capture_stack_trace` to be true (or implicit capture for Error/Critical).
+    /// Requires `captureStackTrace` to be true (or implicit capture for the same levels).
     /// This provides human-readable stack traces but has a performance cost.
     symbolizeStackTrace: bool = false,
 
@@ -753,8 +753,6 @@ pub const Config = struct {
         truncateSuffix: []const u8 = Constants.RedactionDefaults.truncateSuffix,
         /// Enable case-insensitive field matching.
         caseInsensitive: bool = true,
-        /// Log when redaction is applied (for audit).
-        auditRedactions: bool = false,
         /// Compliance preset to use (null for custom).
         compliancePreset: ?CompliancePreset = null,
 
@@ -810,7 +808,6 @@ pub const Config = struct {
                 .enabled = true,
                 .compliancePreset = .pciDss,
                 .defaultType = .maskMiddle,
-                .auditRedactions = true,
             };
         }
 
@@ -822,7 +819,6 @@ pub const Config = struct {
                 .compliancePreset = .hipaa,
                 .defaultType = .hash,
                 .hashAlgorithm = .sha256,
-                .auditRedactions = true,
             };
         }
 
@@ -843,7 +839,6 @@ pub const Config = struct {
                 .enabled = true,
                 .defaultType = .full,
                 .caseInsensitive = true,
-                .auditRedactions = true,
             };
         }
     };
@@ -1598,7 +1593,7 @@ pub const Config = struct {
             };
         }
 
-        /// Returns a production-ready compression config.
+        /// Returns a compression config suited to production logging.
         /// Balanced performance with background processing and checksums.
         ///
         /// Example:
@@ -1678,7 +1673,7 @@ pub const Config = struct {
             };
         }
 
-        /// Returns a production-ready zstd compression config.
+        /// Returns a zstd compression config suited to production logging.
         /// Background processing with checksums for reliability.
         ///
         /// Example:
@@ -2517,7 +2512,7 @@ pub const Config = struct {
         return self.withCompression(CompressionConfig.zstdBest());
     }
 
-    /// Returns a configuration with production-ready zstd compression.
+    /// Returns a configuration with production-oriented zstd compression.
     /// Background processing with checksums for reliability.
     ///
     /// Example:
@@ -2977,7 +2972,7 @@ test "config format selection" {
     try std.testing.expectError(error.InvalidFormat, bad);
     const good = try Config.loadFromJson(std.testing.allocator, "{\"format\": \"syslog\"}");
     try std.testing.expectEqual(Config.Format.syslog, good.format);
-    // Removed per-format flags are simply unknown fields and ignored.
+    // Removed per-format flags are unknown fields and are ignored.
     const legacy = try Config.loadFromJson(std.testing.allocator, "{\"json\": true}");
     try std.testing.expectEqual(Config.Format.text, legacy.format);
 }
@@ -3466,7 +3461,7 @@ pub const TelemetryConfig = struct {
     /// OpenTelemetry provider.
     provider: Provider = .none,
 
-    /// Exporter endpoint URL (HTTP/gRPC endpoint).
+    /// Exporter endpoint URL (HTTP(S), TCP, or UDP).
     exporterEndpoint: ?[]const u8 = null,
 
     /// API key for authentication.
@@ -3563,7 +3558,7 @@ pub const TelemetryConfig = struct {
     pub const Provider = enum {
         /// No provider (disabled).
         none,
-        /// Jaeger (native Thrift protocol over UDP).
+        /// Jaeger (OTLP/HTTP JSON).
         jaeger,
         /// Zipkin (JSON over HTTP).
         zipkin,
@@ -3579,7 +3574,7 @@ pub const TelemetryConfig = struct {
         awsXray,
         /// Azure Application Insights.
         azure,
-        /// Generic OpenTelemetry Collector (gRPC/HTTP).
+        /// Generic OpenTelemetry Collector (OTLP/HTTP JSON).
         generic,
         /// File-based exporter (JSONL format, local only).
         file,
@@ -3630,12 +3625,12 @@ pub const TelemetryConfig = struct {
         return .{};
     }
 
-    /// Returns production-ready telemetry configuration with Jaeger.
+    /// Returns telemetry configuration for a local Jaeger instance.
     pub fn jaeger() TelemetryConfig {
         return .{
             .enabled = true,
             .provider = .jaeger,
-            .exporterEndpoint = "http://localhost:14268/api/traces",
+            .exporterEndpoint = "http://localhost:4318/v1/traces",
             .spanProcessorType = .batch,
             .batchSize = Constants.TelemetryDefaults.batchSize,
             .samplingStrategy = .traceIdRatio,
@@ -3763,7 +3758,7 @@ pub const TelemetryConfig = struct {
         return .{
             .enabled = true,
             .provider = .jaeger,
-            .exporterEndpoint = "http://localhost:14268/api/traces",
+            .exporterEndpoint = "http://localhost:4318/v1/traces",
             .spanProcessorType = .batch,
             .batchSize = Constants.TelemetryDefaults.highThroughputBatchSize,
             .batchTimeoutMs = Constants.TelemetryDefaults.highThroughputBatchTimeoutMs,

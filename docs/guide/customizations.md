@@ -46,9 +46,9 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 
 ```
 ./logs/
-├── application.log
-├── errors.log
-└── debug.log
+|-- application.log
+|-- errors.log
+`-- debug.log
 ```
 
 ## Format Structure Customization
@@ -199,7 +199,7 @@ pub const AlertSeverity = enum {
 
 ## Complete Example
 
-Here's a comprehensive example combining all customization features:
+The following example combines the customization features:
 
 ```zig
 const std = @import("std");
@@ -252,7 +252,7 @@ pub fn main() !void {
 
 ## Combining with Other Features
 
-All customization features work seamlessly with Logly's other capabilities:
+All customization features work with the other logger capabilities:
 
 - **Thread Pool**: Customizations apply to all threaded log writes
 - **Async Logging**: Format customizations work with buffered output

@@ -59,7 +59,7 @@ const spanId = request.headers.get("X-Span-ID");
 const reqLogger = logger.withTrace(traceId, spanId);
 
 // Logs will include trace_id, span_id, and service context
-try reqLogger.info("Processing payment"); 
+try reqLogger.info("Processing payment");
 ```
 
 ## Legacy Usage (Global State)
@@ -81,9 +81,9 @@ pub fn main() !void {
     try logger.setTraceContext("trace-abc-123", "span-parent-456");
 
     // All subsequent logs include the trace context
-    try logger.info("Processing request");
-    try logger.debug("Validating input");
-    try logger.info("Request completed");
+    try logger.info("Processing request", @src());
+    try logger.debug("Validating input", @src());
+    try logger.info("Request completed", @src());
 
     // Clear context when done
     logger.clearTraceContext();
@@ -104,7 +104,7 @@ fn handleRequest(req: *Request, logger: *logly.Logger) !void {
     try logger.setTraceContext(traceId, spanId);
     defer logger.clearTraceContext();
 
-    try logger.info("Handling request");
+    try logger.info("Handling request", @src());
     // ... process request ...
 }
 ```
@@ -115,9 +115,9 @@ fn handleRequest(req: *Request, logger: *logly.Logger) !void {
 // Set correlation ID for business context
 try logger.setCorrelationId("order-12345");
 
-try logger.info("Processing order");
-try logger.info("Validating inventory");
-try logger.info("Charging payment");
+try logger.info("Processing order", @src());
+try logger.info("Validating inventory", @src());
+try logger.info("Charging payment", @src());
 ```
 
 ## Working with Spans
@@ -130,29 +130,29 @@ const logly = @import("logly");
 pub fn processOrder(logger: *logly.Logger, order_id: []const u8) !void {
     // Create a span for this operation
     const span = try logger.startSpan("process_order");
-    defer span.end(null) catch {};
+    defer span.end(null, @src()) catch {};
 
-    try logger.infof("Processing order: {s}", .{order_id});
+    try logger.infof("Processing order: {s}", .{order_id}, @src());
 
     // Nested span for database operation
     {
         const db_span = try logger.startSpan("database_query");
-        defer db_span.end(null) catch {};
+        defer db_span.end(null, @src()) catch {};
 
-        try logger.info("Querying order from database");
+        try logger.info("Querying order from database", @src());
         // ... database operation ...
     }
 
     // Nested span for payment
     {
         const payment_span = try logger.startSpan("payment_processing");
-        defer payment_span.end(null) catch {};
+        defer payment_span.end(null, @src()) catch {};
 
-        try logger.info("Processing payment");
+        try logger.info("Processing payment", @src());
         // ... payment operation ...
     }
 
-    try logger.info("Order processing complete");
+    try logger.info("Order processing complete", @src());
 }
 ```
 
@@ -171,7 +171,7 @@ logger.configure(config);
 });
 
 try logger.setTraceContext("trace-123", "span-456");
-try logger.info("Processing request");
+try logger.info("Processing request", @src());
 
 // Output:
 // {
@@ -209,21 +209,21 @@ pub fn handleHttpRequest(
 
     // Create span for this handler
     const span = try logger.startSpan("http_handler");
-    defer span.end(null) catch {};
+    defer span.end(null, @src()) catch {};
 
-    try logger.info("Request received");
+    try logger.info("Request received", @src());
 
     // Call downstream service
     {
         const service_span = try logger.startSpan("downstream_call");
-        defer service_span.end(null) catch {};
+        defer service_span.end(null, @src()) catch {};
 
-        try logger.info("Calling downstream service");
+        try logger.info("Calling downstream service", @src());
         // Pass trace context to downstream service
         // downstream.call(ctx.trace_id, service_span.span_id);
     }
 
-    try logger.info("Request completed");
+    try logger.info("Request completed", @src());
 }
 
 pub fn main() !void {
@@ -285,7 +285,7 @@ try logger.bind("user_id", .{ .string = "user-456" });
 try logger.bind("request_path", .{ .string = "/api/orders" });
 
 // All logs include trace ID and bound context
-try logger.info("Processing user request");
+try logger.info("Processing user request", @src());
 ```
 
 ## Best Practices

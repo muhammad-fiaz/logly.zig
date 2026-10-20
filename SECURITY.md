@@ -101,7 +101,7 @@ public issues for critical findings; use a private advisory instead.
 **Timeline:**
 
 - Acknowledgement: within 48 hours
-- Initial review: within 5–7 days
+- Initial review: within 5-7 days
 - Resolution: depending on severity
 
 Reports affecting unsupported versions, documented behavior, or already

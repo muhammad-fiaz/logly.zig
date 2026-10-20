@@ -229,19 +229,7 @@ var adaptive_100 = SamplerPresets.adaptive100PerSecond(allocator);
 var adaptive_1000 = SamplerPresets.adaptive1000PerSecond(allocator);
 ```
 
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `sample` | `shouldSample` |
-| `check` | `shouldSample` |
-| `allow` | `shouldSample` |
-| `statistics` | `getStats` |
-| `stats_` | `getStats` |
-| `rate` | `getCurrentRate` |
-
 ## See Also
 
 - [Sampling Guide](/guide/sampling) - Detailed sampling documentation
 - [Sampler API](/api/sampler) - Full API reference
-

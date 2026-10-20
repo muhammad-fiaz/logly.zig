@@ -28,7 +28,7 @@ Output:
 Metrics exported to telemetry_metrics.jsonl
 ```
 
-File preview (`telemetry_metrics.jsonl` — one JSON object per line):
+File preview (`telemetry_metrics.jsonl` - one JSON object per line):
 
 ```json
 { "name": "http.request.duration", "value": 12.5, "kind": "histogram" }

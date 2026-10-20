@@ -1,6 +1,6 @@
 ---
 title: What is Logly.zig?
-description: Logly.zig is a high-performance structured logging library for Zig with zero-copy architecture, async I/O, JSON output, file rotation, and enterprise features like redaction, metrics, and distributed tracing.
+description: Logly.zig is a structured logging library for Zig with async I/O, JSON output, file rotation, redaction, metrics, and distributed tracing.
 head:
   - - meta
     - name: keywords
@@ -9,20 +9,20 @@ head:
 
 # What is Logly.zig?
 
-Logly.zig is a high-performance, structured logging library for Zig, designed to deliver a comprehensive feature set while maximizing native Zig performance and safety guarantees.
+Logly.zig is a structured logging library for Zig built around explicit configuration and predictable allocation behavior.
 
 ## Key Features
 
-### ðŸš€ Performance
+### Performance
 
-- **Zero-Copy Architecture**: Minimized allocations for maximum throughput.
-- **Asynchronous I/O**: Non-blocking write operations to keep your application responsive.
-- **Thread-Safety**: Fully optimized for concurrent execution environments.
+- **Allocation-Aware Design**: Records use caller-owned slices until dispatch; asynchronous paths clone records explicitly.
+- **Asynchronous I/O**: `AsyncLogger` and the thread pool move formatting and writes off the calling thread when enabled.
+- **Thread Safety**: Shared logger, sink, and filter state is protected by locks; statistics use atomic counters.
 - **Efficient Buffering**: Configurable buffer strategies to balance latency and throughput.
 
-### ðŸ› ï¸ Flexibility
+### Flexibility
 
-- **Comprehensive Log Levels**: 10 distinct levels (TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL) for granular control.
+- **Log Levels**: 10 levels (TRACE, DEBUG, INFO, NOTICE, SUCCESS, WARNING, ERROR, FAIL, CRITICAL, FATAL).
 - **Multi-Sink Support**: Simultaneously output to console, files, and custom destinations.
 - **Custom Formatting**: Flexible template strings and full printf-style formatting support.
 - **Rich Context**: Structured logging with JSON support and context binding.
@@ -34,10 +34,10 @@ Logly.zig is a high-performance, structured logging library for Zig, designed to
 - **Custom Levels**: Define your own log levels with custom names, priorities, and colors.
 - **Cross-Platform Colors**: Works on Linux, macOS, Windows 10+, and popular terminals.
 
-### ðŸ›¡ï¸ Reliability
+### Reliability
 
-- **Concurrency Safe**: Robust locking mechanisms ensure data integrity across threads.
-- **Resilient Error Handling**: Comprehensive error types and recovery strategies.
+- **Concurrency**: Per-logger and per-sink locking protect shared state across threads.
+- **Error Handling**: Typed errors and configurable sink error policies.
 - **Automated Rotation**: Sophisticated time-based and size-based file rotation.
 - **Retention Management**: Automatic cleanup policies to manage disk usage.
 
@@ -45,49 +45,49 @@ Logly.zig is a high-performance, structured logging library for Zig, designed to
 
 Logly.Zig is built upon the following core principles:
 
-1.  **Developer Experience**: An intuitive, ergonomic API that reduces cognitive load.
-2.  **Uncompromised Performance**: Optimized for high-throughput, low-latency applications.
-3.  **Type Safety**: Leveraging Zig's powerful compile-time checks to prevent runtime errors.
-4.  **Zero-Cost Abstractions**: Features that incur no runtime overhead when unused.
-5.  **Modularity**: A composable architecture allowing you to include only what you need.
+1.  **Explicit API**: Configuration is stated directly and validated before use.
+2.  **Predictable Overhead**: Hot paths avoid per-record allocation unless an enabled feature requires it.
+3.  **Type Safety**: Zig compile-time checks catch type errors; invalid runtime combinations return typed errors.
+4.  **Feature Gating**: Disabled subsystems are not entered on the logging path.
+5.  **Modularity**: Components can be used independently.
 
-## Enterprise Features
+## Advanced Features
 
-Logly.zig v0.0.6+ includes enterprise-grade features:
+Logly.zig provides:
 
-### ðŸ” Filtering
+### Filtering
 
 Rule-based log filtering by level, message patterns, or modules.
 
-### ðŸ“Š Sampling
+### Sampling
 
 Probability-based sampling, rate limiting, and every-Nth message sampling for high-volume scenarios.
 
-### ðŸ”’ Redaction
+### Redaction
 
 Automatic masking of sensitive data (passwords, API keys, PII) in log messages.
 
-### ðŸ“ˆ Metrics
+### Metrics
 
 Built-in metrics collection for logging performance monitoring.
 
-### ðŸ”— Distributed Tracing
+### Distributed Tracing
 
 OpenTelemetry-compatible trace context propagation with automatic span ID generation.
 
-### ðŸŽ¨ Cross-Platform Colors
+### Cross-Platform Colors
 
 Enhanced ANSI color support for Windows, Linux, macOS, and bare metal/freestanding targets.
 
-### ðŸ“ Method Aliases
+### Method Aliases
 
-Short aliases for common methods: `warn`/`crit` for levels, `add`/`remove`/`clear`/`count` for sink management.
+The `Logger` type exposes `warn`, `crit`, `add`, and `remove` as short aliases for `warning`, `critical`, `addSink`, and `removeSink`.
 
 ## When to Use Logly.Zig
 
-Logly.Zig is perfect for:
+Logly.Zig is intended for:
 
-- **Production applications** requiring robust logging
+- **Production applications** requiring structured logging
 - **High-performance systems** with strict latency requirements
 - **Cross-platform projects** targeting multiple operating systems
 - **Projects** that need structured logging for analysis

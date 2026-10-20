@@ -458,11 +458,11 @@ pub const Logger = struct {
     }
 
     /// Enables metrics collection.
-    pub fn enableMetrics(self: *Logger) void {
+    pub fn enableMetrics(self: *Logger) !void {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
         if (self.metrics == null) {
-            const m = self.allocator.create(Metrics) catch return;
+            const m = try self.allocator.create(Metrics);
             m.* = Metrics.initWithIo(self.allocator, self.io, .{});
             self.metrics = m;
         }
@@ -754,13 +754,13 @@ pub const Logger = struct {
     /// Restarts the background worker when a previous `disableAsync` stopped
     /// it, so records queued after re-enabling are not stranded.
     /// Thread-safe: Uses mutex for concurrent access protection.
-    pub fn enableAsync(self: *Logger) void {
+    pub fn enableAsync(self: *Logger) !void {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
 
         if (self.asyncLogger) |al| {
             // startWorker is a no-op while the worker is already running.
-            al.startWorker() catch {};
+            try al.startWorker();
         }
     }
 
@@ -1170,6 +1170,17 @@ pub const Logger = struct {
         }
     }
 
+    /// Reports a failed auto-flush through the configured error policy.
+    fn handleFlushError(self: *Logger, flushErr: anyerror) !void {
+        if (self.metrics) |m| m.recordError();
+        switch (self.config.errorHandling) {
+            .silent => {},
+            .logAndContinue => std.debug.print("Sink flush error: {}\n", .{flushErr}),
+            .failFast => return flushErr,
+            .callback => if (self.onSinkError) |cb| cb("logger", @errorName(flushErr)),
+        }
+    }
+
     /// Overrides the minimum level for one module prefix.
     pub fn setModuleLevel(self: *Logger, module: []const u8, level: Level) !void {
         self.mutex.lockUncancelable(self.io);
@@ -1237,9 +1248,28 @@ pub const Logger = struct {
         // Snapshot sinks to avoid holding lock during write
         logger.mutex.lockUncancelable(logger.io);
         var sinksSnapshot: std.ArrayList(*Sink) = .empty;
-        sinksSnapshot.appendSlice(logger.allocator, logger.sinks.items) catch {};
+        var snapshotAllocator = logger.allocator;
+        sinksSnapshot.appendSlice(snapshotAllocator, logger.sinks.items) catch {
+            // Never silently drop an accepted record because the snapshot
+            // allocation failed. Retry with the page allocator; if even that
+            // fails, write while holding the lock as a last resort.
+            sinksSnapshot.deinit(snapshotAllocator);
+            snapshotAllocator = std.heap.page_allocator;
+            sinksSnapshot = .empty;
+            sinksSnapshot.appendSlice(snapshotAllocator, logger.sinks.items) catch {
+                for (logger.sinks.items) |sink| {
+                    sink.writeWithAllocator(&taskCtx.record, logger.config, allocator) catch |writeErr| {
+                        if (logger.config.debugMode) {
+                            std.debug.print("Async sink write error: {}\n", .{writeErr});
+                        }
+                    };
+                }
+                logger.mutex.unlock(logger.io);
+                return;
+            };
+        };
         logger.mutex.unlock(logger.io);
-        defer sinksSnapshot.deinit(logger.allocator);
+        defer sinksSnapshot.deinit(snapshotAllocator);
 
         for (sinksSnapshot.items) |sink| {
             sink.writeWithAllocator(&taskCtx.record, logger.config, allocator) catch |writeErr| {
@@ -1600,7 +1630,7 @@ pub const Logger = struct {
 
         // Auto-flush on synchronous path only
         if (self.config.autoFlush) {
-            self.flushInternal() catch {};
+            self.flushInternal() catch |flushErr| try self.handleFlushError(flushErr);
         }
     }
 
@@ -2127,7 +2157,7 @@ pub const Logger = struct {
 
         // Auto-flush if enabled
         if (self.config.autoFlush) {
-            self.flushInternal() catch {};
+            self.flushInternal() catch |flushErr| try self.handleFlushError(flushErr);
         }
 
         if (self.onRecordLogged) |cb| cb(level, finalMessage, &record);
@@ -3423,7 +3453,7 @@ test "thread pool submitWithDrop keeps ownership on overflow and fires hook on c
 
     // Third task must overflow the 2-slot queue: the rejection records a
     // drop and returns an invalid handle, but must NOT invoke the drop hook
-    // — ownership of the context stays with the rejected caller.
+    // - ownership of the context stays with the rejected caller.
     const h3 = pool.submitWithDrop(.{ .callback = .{ .func = struct {
         fn run(_: *anyopaque, _: ?std.mem.Allocator) void {}
     }.run, .context = &droppedCount } }, .normal, DropHelper.onDrop);

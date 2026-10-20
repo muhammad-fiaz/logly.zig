@@ -12,7 +12,7 @@ head:
 
 # Telemetry Metric Names
 
-Prefixing (`api.v1` → `api_v1`) plus sanitization for Prometheus.
+Prefixing (`api.v1` -> `api_v1`) plus sanitization for Prometheus.
 
 ```zig
 var config = logly.TelemetryConfig.development()

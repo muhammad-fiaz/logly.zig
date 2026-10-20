@@ -1,315 +1,161 @@
 ---
-title: Scheduler API Reference
-description: API reference for Logly.zig Scheduler module. Automatic log maintenance with scheduled cleanup, compression, rotation, cron expressions, and custom periodic tasks.
+title: Scheduler API
+description: API reference for scheduled log maintenance in Logly.zig.
 head:
   - - meta
     - name: keywords
-      content: scheduler api, log maintenance, automatic cleanup, cron scheduler, periodic tasks, log rotation scheduler
+      content: scheduler api, cleanup, compression, schedule, task management, maintenance
   - - meta
     - property: og:title
-      content: Scheduler API Reference | Logly.zig
+      content: Scheduler API | Logly.zig
+  - - meta
+    - property: og:image
+      content: https://muhammad-fiaz.github.io/logly.zig/cover.png
 ---
 
 # Scheduler API
 
-The scheduler module provides automatic log maintenance with scheduled cleanup, compression, rotation, and custom tasks. It runs in the background using either a dedicated worker thread or by submitting tasks to a shared `ThreadPool`.
-
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize scheduler |
-| `initFromConfig()` | `fromConfig()` | Initialize from config |
-| `deinit()` | `destroy()` | Deinitialize scheduler |
-| `setHealthCallback()` | `onHealth()` | Set health callback |
-| `setMetricsCallback()` | `onMetrics()` | Set metrics callback |
-| `getHealthStatus()` | `healthStatus()` | Get health status |
-| `getMetrics()` | `snapshot()` | Get metrics snapshot |
-| `addTask()` | `add()` | Add a task |
-| `setTaskPriority()` | `setPriority()` | Set task priority |
-| `setTaskRetryPolicy()` | `retry()` | Set task retry policy |
-| `setTaskDependency()` | `dependsOn()` | Set task dependency |
-| `addCleanupTask()` | `cleanup()` | Add cleanup task |
-| `addCompressionTask()` | `compress()` | Add compression task |
-| `addCustomTask()` | `custom()` | Add custom task |
-| `setTaskEnabled()` | `enable()` | Enable/disable task |
-| `removeTask()` | `remove()` | Remove task |
-| `taskIndexByName()` | `indexOfTask()` | Find task index by name |
-| `getTaskSnapshot()` | `snapshotTask()` | Get immutable task snapshot by index |
-| `getTaskSnapshotByName()` | `snapshotTaskByName()` | Get immutable task snapshot by name |
-| `hasTaskNamed()` | `hasTask()` | Check task existence by name |
-| `setTaskEnabledByName()` | `enableByName()` | Enable/disable task by name |
-| `removeTaskByName()` | `removeNamed()` | Remove task by name |
-| `enabledTaskCount()` | `enabledCount()` | Count enabled tasks |
-| `runningTaskCount()` | `runningCount()` | Count running tasks |
-| `readyTaskCount()` | `readyCount()` | Count tasks ready to run |
-| `nextRunInMs()` | `nextRunMs()` | Get ms until task next run |
-| `nextRunInMsByName()` | `nextRunForTask()` | Get ms until task next run by name |
-| `setTaskSchedule()` | `updateSchedule()` | Update task schedule |
-| `rescheduleNow()` | `runSoon()` | Force task runnable immediately |
-| `setTaskStartedCallback()` | `onStarted()` | Set task started callback |
-| `setTaskCompletedCallback()` | `onCompleted()` | Set task completed callback |
-| `setTaskErrorCallback()` | `onError()` | Set task error callback |
-| `setScheduleTickCallback()` | `onTick()` | Set tick callback |
-| `setHealthCheckCallback()` | `onHealthCheck()` | Set health check callback |
-| `runNow()` | `run()` | Run task immediately |
-| `runNowByName()` | `runNamed()` | Run task immediately by name |
-| `runPending()` | `pending()` | Run pending tasks |
-| `start()` | `begin()` | Start scheduler |
-| `stop()` | `end()`, `halt()` | Stop scheduler |
-| `getStats()` | `statistics()` | Get scheduler statistics |
-| `resetStats()` | `clearStats()` | Reset statistics |
-| `setTelemetry()` | `trace()` | Set telemetry |
-| `clearTelemetry()` | `noTelemetry()` | Clear telemetry |
-| `getTasks()` | `tasks_()` | Get tasks |
-| `taskCount()` | `count()` | Get task count |
-| `isRunning()` | `running_()` | Check if running |
-| `hasTasks()` | `has_()` | Check if has tasks |
+The `Scheduler` type runs log-maintenance tasks on interval, daily, cron-style, or one-shot schedules.
 
 ## Overview
 
 ```zig
 const logly = @import("logly");
-const Scheduler = logly.Scheduler;
-const SchedulerPresets = logly.SchedulerPresets;
+
+const scheduler = try logly.Scheduler.init(allocator);
+defer scheduler.deinit();
+
+_ = try scheduler.addTask(
+    "cleanup",
+    .cleanup,
+    .{ .daily = .{ .hour = 2, .minute = 0 } },
+    .{ .path = "logs", .maxAgeSeconds = 7 * 24 * 60 * 60 },
+);
+
+try scheduler.start();
+defer scheduler.stop();
 ```
 
-## Centralized Configuration
-
-Scheduler can be enabled through the central `Config` struct:
-
-```zig
-var config = logly.Config.default();
-config.scheduler = .{
-    .enabled = true,
-    .cleanupMaxAgeDays = 14,
-    .maxFiles = 100,
-    .compressBeforeCleanup = true,
-    .filePattern = "*.log",
-};
-const logger = try logly.Logger.initWithConfig(allocator, config);
-```
-
-Or use the fluent API:
-
-```zig
-const config = logly.Config.default().withScheduler(.{});
-```
+`start()` spawns the scheduling thread. `stop()` joins it. `deinit()` calls `stop()` and releases all task storage.
 
 ## Types
 
 ### Scheduler
 
-The main scheduler struct for managing scheduled tasks with optional telemetry integration.
-
 ```zig
 pub const Scheduler = struct {
     allocator: std.mem.Allocator,
-    tasks: std.ArrayList(ScheduledTask),
-    stats: SchedulerStats,
-    compression: Compression,  // Integrated compression support
+    io: std.Io,
+    tasks: std.ArrayList(*ScheduledTask),
     running: std.atomic.Value(bool),
-    workerThread: ?std.Thread,
-    telemetry: ?*Telemetry,    // Optional telemetry for distributed tracing
+    isPaused: std.atomic.Value(bool),
+    thread: ?std.Thread,
+    // ...
 };
 ```
 
-### SchedulerConfig (Centralized)
+Read `isPaused` with `scheduler.isPaused.load(.acquire)`; use `pause()` and `unpause()` to change it safely.
 
-Configuration available through `Config.SchedulerConfig`:
+### SchedulerConfig
+
+`logly.SchedulerConfig` is `Config.SchedulerConfig`.
 
 ```zig
 pub const SchedulerConfig = struct {
-    /// Enable the scheduler.
+    io: ?std.Io = null,
     enabled: bool = false,
-    /// Default cleanup max age in days.
     cleanupMaxAgeDays: u64 = 7,
-    /// Default max files to keep.
     maxFiles: ?usize = null,
-    /// Enable compression before cleanup.
     compressBeforeCleanup: bool = false,
-    /// Default file pattern for cleanup.
     filePattern: []const u8 = "*.log",
-    /// Root directory for compressed/archived files.
     archiveRootDir: ?[]const u8 = null,
-    /// Create date-based subdirectories (YYYY/MM/DD).
     createDateSubdirs: bool = false,
-    /// Compression algorithm for scheduled compression tasks.
-    compressionAlgorithm: CompressionConfig.CompressionAlgorithm = .gzip,
-    /// Compression level for scheduled tasks.
-    compressionLevel: CompressionConfig.CompressionLevel = .default,
-    /// Keep original files after scheduled compression.
+    compressionAlgorithm: CompressionAlgorithm = .gzip,
+    compressionLevel: CompressionLevel = .default,
     keepOriginals: bool = false,
-    /// Custom prefix for archived file names.
     archiveFilePrefix: ?[]const u8 = null,
-    /// Custom suffix for archived file names.
     archiveFileSuffix: ?[]const u8 = null,
-    /// Preserve directory structure in archive root.
     preserveDirStructure: bool = true,
-    /// Delete empty directories after cleanup.
     cleanEmptyDirs: bool = false,
-    /// Minimum file age in days before compression.
     minAgeDaysForCompression: u64 = 1,
-    /// Maximum concurrent compression tasks.
     maxConcurrentCompressions: usize = 2,
 };
 ```
 
-### SchedulerConfig Field Reference
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | `bool` | `false` | Enable the scheduler |
-| `cleanupMaxAgeDays` | `u64` | `7` | Max age for cleanup tasks |
-| `maxFiles` | `?usize` | `null` | Max files to retain |
-| `compressBeforeCleanup` | `bool` | `false` | Compress before deleting |
-| `filePattern` | `[]const u8` | `"*.log"` | File pattern for tasks |
-| `archiveRootDir` | `?[]const u8` | `null` | Centralized archive location |
-| `createDateSubdirs` | `bool` | `false` | Create YYYY/MM/DD subdirs |
-| `compressionAlgorithm` | `CompressionAlgorithm` | `.gzip` | Algorithm for compression (gzip, zlib, deflate, zstd, lzma, lzma2, xz, zip, tar.gz, lz4) |
-| `compressionLevel` | `CompressionLevel` | `.default` | Compression level |
-| `keepOriginals` | `bool` | `false` | Keep originals after compression |
-| `archiveFilePrefix` | `?[]const u8` | `null` | Prefix for archived files |
-| `archiveFileSuffix` | `?[]const u8` | `null` | Suffix for archived files |
-| `preserveDirStructure` | `bool` | `true` | Keep directory structure |
-| `cleanEmptyDirs` | `bool` | `false` | Remove empty directories |
-| `minAgeDaysForCompression` | `u64` | `1` | Min age before compression |
-| `maxConcurrentCompressions` | `usize` | `2` | Max parallel compressions |
-
-> Note: v0.1.6 expanded compression and archiving support — including LZMA, LZMA2, XZ, TAR.GZ, ZIP, and LZ4 — and added helper utilities (e.g., `Utils.getCompressionExtension()`) and factory presets to simplify usage. Use the `compressionAlgorithm` and `compressionLevel` fields (or the `Compression` factory methods) to select the appropriate algorithm and extension for your scheduled compression tasks.
-
+Methods: `maintenance(logsPath)`, `withCleanupDays(days)`, `withMaxFiles(count)`, and `withCompression(algorithm)` return modified copies with `enabled = true`.
 
 ### ScheduledTask
 
-A scheduled task configuration.
-
 ```zig
 pub const ScheduledTask = struct {
-    /// Unique task name
     name: []const u8,
-    /// Task type
     taskType: TaskType,
-    /// Schedule configuration
     schedule: Schedule,
-    /// Task-specific configuration
-    config: TaskConfig,
-    /// Task execution callback (for custom tasks)
     callback: ?*const fn (*ScheduledTask) anyerror!void = null,
-    /// Whether task is enabled
-    enabled: bool = true,
-    /// Whether task is currently running
-    running: bool = false,
-    /// Task execution priority
-    priority: Priority = .normal,
-    /// Retry policy for failed tasks
-    retryPolicy: RetryPolicy = .{},
-    /// Name of another task that must complete successfully before this one runs
-    dependsOn: ?[]const u8 = null,
-    /// Last execution timestamp
     lastRun: i64 = 0,
-    /// Next scheduled execution
     nextRun: i64 = 0,
-    /// Number of executions
     runCount: u64 = 0,
-    /// Number of failures
     errorCount: u64 = 0,
-    /// Retries remaining for current failure
     retriesRemaining: u32 = 0,
-
-    pub const Priority = enum {
-        low,
-        normal,
-        high,
-        critical,
-    };
-
-    pub const RetryPolicy = struct {
-        maxRetries: u32 = 3,
-        intervalMs: u32 = 5000,
-        backoffMultiplier: f32 = 1.5,
-    };
+    enabled: bool = true,
+    running: std.atomic.Value(bool),
+    removed: bool = false,
+    priority: Priority = .normal,
+    retryPolicy: RetryPolicy = .{},
+    dependsOn: ?[]const u8 = null,
+    config: TaskConfig = .{},
 };
 ```
 
-### TaskType
+`Priority` values: `low`, `normal`, `high`, `critical`.
 
-Types of scheduled tasks.
+`RetryPolicy` fields: `maxRetries` (default `3`), `intervalMs` (default `5000`), and `backoffMultiplier` (default `1.5`).
+
+### TaskType
 
 ```zig
 pub const TaskType = enum {
-    /// Clean up old log files
     cleanup,
-    /// Rotate log files
     rotation,
-    /// Compress log files
     compression,
-    /// Flush all buffers
     flush,
-    /// Custom user-defined task
     custom,
-    /// Health check
     healthCheck,
-    /// Metrics collection
     metricsSnapshot,
 };
 ```
 
 ### TaskConfig
 
-Configuration specific to tasks.
-
 ```zig
 pub const TaskConfig = struct {
-    /// Path for file-based tasks
     path: ?[]const u8 = null,
-    /// Maximum age in seconds for cleanup
-    maxAgeSeconds: u64 = 7 * 24 * 60 * 60,
-    /// Maximum files to keep
+    maxAgeSeconds: u64 = 604800,
     maxFiles: ?usize = null,
-    /// Maximum total size in bytes
     maxTotalSize: ?u64 = null,
-    /// Minimum age in seconds (useful for compression)
     minAgeSeconds: u64 = 0,
-    /// File pattern to match (e.g., "*.log")
+    maxRetries: u32 = 0,
+    retryBackoffMs: u64 = 0,
     filePattern: ?[]const u8 = null,
-    /// Compress files before cleanup (compress then delete)
     compressBeforeDelete: bool = false,
-    /// Compress files and keep both original and compressed (archive mode)
     compressAndKeep: bool = false,
-    /// Only compress files, don't delete any (pure archival)
     compressOnly: bool = false,
-    /// Skip files that are already compressed (.gz, .lgz, .zst)
     skipAlreadyCompressed: bool = true,
-    /// Recursive directory processing
     recursive: bool = false,
-    /// Trigger task only if disk usage exceeds this percentage (0-100)
     triggerDiskUsagePercent: ?u8 = null,
-    /// Required free space in bytes before running task
     minFreeSpaceBytes: ?u64 = null,
 };
 ```
 
-#### TaskConfig Compression Modes
-
-| Field | Behavior |
-|-------|----------|
-| `compressBeforeDelete` | Compress file, then delete original |
-| `compressAndKeep` | Compress file, keep both versions |
-| `compressOnly` | Compress file, never delete anything |
+Helpers: `fromCentralized(SchedulerConfig)`, `withPath(path)`, `withMaxAgeDays(days)`, and `withFilePattern(pattern)` return modified copies.
 
 ### Schedule
 
-Schedule configuration.
-
 ```zig
 pub const Schedule = union(enum) {
-    /// Run once after delay (in milliseconds)
-    once: u64,
-    /// Run at fixed intervals (in milliseconds)
-    interval: u64,
-    /// Run at specific time of day
+    once: u64,          // delay in milliseconds
+    interval: u64,      // period in milliseconds
     daily: DailySchedule,
-    /// Cron-like schedule
     cron: CronSchedule,
 
     pub const DailySchedule = struct {
@@ -322,172 +168,217 @@ pub const Schedule = union(enum) {
         hour: ?u8 = null,
         dayOfMonth: ?u8 = null,
         month: ?u8 = null,
-        dayOfWeek: ?u8 = null,
+        dayOfWeek: ?u8 = null, // 0 = Sunday
     };
+};
+```
+
+`nextRunTime(fromTime)` returns the next timestamp in milliseconds. Unset cron fields match any value.
+
+### TaskSnapshot
+
+```zig
+pub const TaskSnapshot = struct {
+    name: []const u8,
+    taskType: TaskType,
+    enabled: bool,
+    running: bool,
+    nextRun: i64,
+    lastRun: i64,
+    runCount: u64,
+    errorCount: u64,
+    retriesRemaining: u32,
 };
 ```
 
 ### SchedulerStats
 
-Thread-safe statistics for scheduled operations using atomic counters. Works correctly on both 32-bit and 64-bit architectures.
-
 ```zig
 pub const SchedulerStats = struct {
-    /// Total tasks executed successfully (atomic).
-    tasksExecuted: std.atomic.Value(Constants.AtomicUnsigned),
-    /// Total tasks that failed (atomic).
-    tasksFailed: std.atomic.Value(Constants.AtomicUnsigned),
-    /// Total files cleaned up (atomic).
-    filesCleaned: std.atomic.Value(Constants.AtomicUnsigned),
-    /// Total files compressed (atomic).
-    filesCompressed: std.atomic.Value(Constants.AtomicUnsigned),
-    /// Total bytes freed by cleanup operations (atomic).
-    bytesFreed: std.atomic.Value(Constants.AtomicUnsigned),
-    /// Total bytes saved by compression (atomic).
-    bytesSaved: std.atomic.Value(Constants.AtomicUnsigned),
-    /// Last run time in milliseconds (atomic).
+    tasksExecuted: std.atomic.Value(u64),
+    tasksFailed: std.atomic.Value(u64),
+    filesCleaned: std.atomic.Value(u64),
+    filesCompressed: std.atomic.Value(u64),
+    bytesFreed: std.atomic.Value(u64),
+    bytesSaved: std.atomic.Value(u64),
     lastRunTime: std.atomic.Value(i64),
-    /// Scheduler start time for uptime calculation (atomic).
     startTime: std.atomic.Value(i64),
 };
 ```
 
-#### SchedulerStats Helper Methods
+Methods: `successRate()`, `failureRate()`, `hasFailures()`, `getExecuted()`, `getFailed()`, `getFilesCleaned()`, `getFilesCompressed()`, `getBytesFreed()`, `getBytesSaved()`, `uptimeSeconds()`, `tasksPerHour()`, and `compressionRatio()`.
 
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `successRate()` | `f64` | Task success rate (0.0 - 1.0) |
-| `failureRate()` | `f64` | Task failure rate (0.0 - 1.0) |
-| `hasFailures()` | `bool` | Returns `true` if any tasks have failed |
-| `getExecuted()` | `u64` | Total tasks executed as u64 |
-| `getFailed()` | `u64` | Total tasks failed as u64 |
-| `getFilesCleaned()` | `u64` | Total files cleaned as u64 |
-| `getFilesCompressed()` | `u64` | Total files compressed as u64 |
-| `getBytesFreed()` | `u64` | Total bytes freed as u64 |
-| `getBytesSaved()` | `u64` | Total bytes saved by compression as u64 |
-| `uptimeSeconds()` | `i64` | Uptime in seconds since scheduler started |
-| `tasksPerHour()` | `f64` | Average tasks executed per hour |
-| `compressionRatio()` | `f64` | Compression savings ratio (bytes saved / total) |
-
-#### Usage Example
+### HealthStatus and MetricsSnapshot
 
 ```zig
-const stats = scheduler.getStats();
+pub const HealthStatus = struct {
+    healthy: bool = true,
+    diskSpaceOk: bool = true,
+    memoryOk: bool = true,
+    writeLatencyMs: u64 = 0,
+    message: ?[]const u8 = null,
+};
 
-// Check success/failure rates
-const success = stats.successRate();  // e.g., 0.95 (95%)
-const failure = stats.failureRate();  // e.g., 0.05 (5%)
-
-// Check for failures
-if (stats.hasFailures()) {
-    std.log.warn("Scheduler has {d} failed tasks", .{stats.getFailed()});
-}
-
-// Get uptime info
-const uptime = stats.uptimeSeconds();
-const rate = stats.tasksPerHour();
-std.log.info("Running for {d}s, {d:.2} tasks/hour", .{uptime, rate});
-
-// Check cleanup efficiency
-const freed = stats.getBytesFreed();
-const saved = stats.getBytesSaved();
-const ratio = stats.compressionRatio();
-std.log.info("Freed {d} bytes, saved {d} bytes ({d:.1}% compression)", .{
-    freed, saved, ratio * 100.0
-});
+pub const MetricsSnapshot = struct {
+    timestamp: i64 = 0,
+    logCount: u64 = 0,
+    bytesWritten: u64 = 0,
+    errorCount: u64 = 0,
+    avgLatencyMs: f64 = 0,
+};
 ```
 
-## Methods
+## Lifecycle
 
 ### init
-
-Create a new scheduler.
-
-**Alias:** `create`
 
 ```zig
 pub fn init(allocator: std.mem.Allocator) !*Scheduler
 ```
 
-### initWithIo
+Creates a scheduler using the default single-threaded I/O handle.
 
-Create a new scheduler with an explicit `std.Io` handle.
+### initWithIo
 
 ```zig
 pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) !*Scheduler
 ```
 
-### initWithThreadPool
+Creates a scheduler with an explicit I/O handle.
 
-Create a new scheduler that uses a thread pool for task execution (inheriting the pool's I/O handle).
+### initWithThreadPool
 
 ```zig
 pub fn initWithThreadPool(allocator: std.mem.Allocator, threadPool: *ThreadPool) !*Scheduler
 ```
 
-**Parameters:**
-- `allocator`: Memory allocator
-- `threadPool`: Shared thread pool instance
+Creates a scheduler that dispatches tasks through an existing thread pool.
 
 ### initFromConfig
 
-Create a scheduler from global configuration using default I/O.
-
 ```zig
-pub fn initFromConfig(allocator: std.mem.Allocator, config: SchedulerConfig, logsPath: ?[]const u8) !*Scheduler
+pub fn initFromConfig(
+    allocator: std.mem.Allocator,
+    config: SchedulerConfig,
+    logsPath: ?[]const u8,
+) !*Scheduler
 ```
 
-### initFromConfigWithIo
-
-Create a scheduler from global configuration with an explicit `std.Io` handle.
-
-```zig
-pub fn initFromConfigWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: SchedulerConfig, logsPath: ?[]const u8) !*Scheduler
-```
+Creates a scheduler from centralized configuration. When `config.enabled` is true and `logsPath` is set, an `auto_cleanup` task is registered for 02:00 daily using `TaskConfig.fromCentralized(config)`.
 
 ### deinit
-
-Clean up resources and stop the scheduler.
 
 ```zig
 pub fn deinit(self: *Scheduler) void
 ```
 
-### start
+Stops the scheduler, destroys all tasks, and releases owned memory.
 
-Start the scheduler worker thread.
+### start
 
 ```zig
 pub fn start(self: *Scheduler) !void
 ```
 
-### stop
+Starts the scheduling thread. Calling `start()` while already running is a no-op.
 
-Stop the scheduler gracefully, waiting for pending tasks to complete (with timeout).
+### stop
 
 ```zig
 pub fn stop(self: *Scheduler) void
 ```
 
-### addTask
+Stops the scheduling thread and joins it. Calling `stop()` while stopped is a no-op.
 
-Add a scheduled task.
+### pause / unpause
 
 ```zig
-pub fn addTask(self: *Scheduler, name: []const u8, taskType: TaskType, schedule: Schedule, config: ScheduledTask.TaskConfig) !usize
+pub fn pause(self: *Scheduler) void
+pub fn unpause(self: *Scheduler) void
 ```
 
-**Parameters:**
-- `name`: Unique task identifier
-- `taskType`: Type of task
-- `schedule`: Execution schedule
-- `config`: Task configuration
+Pauses and resumes task execution without removing tasks.
 
-**Returns:** Index of the added task
+### isRunning / hasTasks
+
+```zig
+pub fn isRunning(self: *const Scheduler) bool
+pub fn hasTasks(self: *const Scheduler) bool
+```
+
+## Task Creation
+
+### addTask
+
+```zig
+pub fn addTask(
+    self: *Scheduler,
+    name: []const u8,
+    taskType: TaskType,
+    schedule: Schedule,
+    config: ScheduledTask.TaskConfig,
+) !usize
+```
+
+Registers a task and returns its index. The scheduler copies `name`, `config.path`, and `config.filePattern`.
+
+### addCleanupTask
+
+```zig
+pub fn addCleanupTask(
+    self: *Scheduler,
+    name: []const u8,
+    path: []const u8,
+    maxAgeDays: u64,
+    schedule: Schedule,
+) !usize
+```
+
+Registers a `.cleanup` task with a `*.log` pattern.
+
+### addCompressionTask
+
+```zig
+pub fn addCompressionTask(
+    self: *Scheduler,
+    name: []const u8,
+    path: []const u8,
+    schedule: Schedule,
+) !usize
+```
+
+Registers a `.compression` task with a `*.log` pattern.
+
+### addCustomTask
+
+```zig
+pub fn addCustomTask(
+    self: *Scheduler,
+    name: []const u8,
+    schedule: Schedule,
+    callback: *const fn (*ScheduledTask) anyerror!void,
+) !usize
+```
+
+Registers a `.custom` task with a callback.
+
+### addCustomTaskWithConfig
+
+```zig
+pub fn addCustomTaskWithConfig(
+    self: *Scheduler,
+    name: []const u8,
+    schedule: Schedule,
+    callback: *const fn (*ScheduledTask) anyerror!void,
+    config: ScheduledTask.TaskConfig,
+) !usize
+```
+
+Registers a `.custom` task with callback and task configuration.
+
+## Task Configuration
 
 ### setTaskPriority
-
-Set the execution priority for a task.
 
 ```zig
 pub fn setTaskPriority(self: *Scheduler, index: usize, priority: ScheduledTask.Priority) void
@@ -495,463 +386,220 @@ pub fn setTaskPriority(self: *Scheduler, index: usize, priority: ScheduledTask.P
 
 ### setTaskRetryPolicy
 
-Configure retry behavior for a task.
-
 ```zig
 pub fn setTaskRetryPolicy(self: *Scheduler, index: usize, policy: ScheduledTask.RetryPolicy) void
 ```
 
 ### setTaskDependency
 
-Set a dependency for a task (it will only run if the dependency is running).
-
 ```zig
 pub fn setTaskDependency(self: *Scheduler, index: usize, dependencyName: []const u8) !void
 ```
 
-### taskIndexByName
+Copies `dependencyName`. The dependency must exist in the same scheduler.
 
-Find a task index by its name.
-
-```zig
-pub fn taskIndexByName(self: *Scheduler, name: []const u8) ?usize
-```
-
-### getTaskSnapshot
-
-Returns immutable task state snapshot by task index.
+### validateDependencies
 
 ```zig
-pub fn getTaskSnapshot(self: *Scheduler, index: usize) ?TaskSnapshot
+pub fn validateDependencies(self: *Scheduler) !void
 ```
 
-### getTaskSnapshotByName
-
-Returns immutable task state snapshot by task name.
-
-```zig
-pub fn getTaskSnapshotByName(self: *Scheduler, name: []const u8) ?TaskSnapshot
-```
-
-### hasTaskNamed
-
-Check whether a task with this name exists.
-
-```zig
-pub fn hasTaskNamed(self: *Scheduler, name: []const u8) bool
-```
-
-### setTaskEnabledByName
-
-Enable or disable task by task name.
-
-```zig
-pub fn setTaskEnabledByName(self: *Scheduler, name: []const u8, enabled: bool) bool
-```
-
-Returns `true` when task exists and was updated.
-
-### removeTaskByName
-
-Remove task by name.
-
-```zig
-pub fn removeTaskByName(self: *Scheduler, name: []const u8) bool
-```
-
-Returns `true` when task existed and was removed.
-
-### enabledTaskCount
-
-Get number of enabled tasks.
-
-```zig
-pub fn enabledTaskCount(self: *Scheduler) usize
-```
-
-### runningTaskCount
-
-Get number of tasks currently running.
-
-```zig
-pub fn runningTaskCount(self: *Scheduler) usize
-```
-
-### readyTaskCount
-
-Get number of tasks currently ready to run (time/dependency/resource checks passed).
-
-```zig
-pub fn readyTaskCount(self: *Scheduler) usize
-```
-
-### nextRunInMs
-
-Get remaining milliseconds until next run for a task index.
-
-```zig
-pub fn nextRunInMs(self: *Scheduler, index: usize) ?i64
-```
-
-### nextRunInMsByName
-
-Get remaining milliseconds until next run by task name.
-
-```zig
-pub fn nextRunInMsByName(self: *Scheduler, name: []const u8) ?i64
-```
+Returns an error if a dependency name is missing or if dependencies form a cycle.
 
 ### setTaskSchedule
-
-Update schedule for a task and recalculate next-run timestamp.
 
 ```zig
 pub fn setTaskSchedule(self: *Scheduler, index: usize, schedule: Schedule) bool
 ```
 
-### rescheduleNow
+Updates the schedule and returns `false` when `index` is out of range.
 
-Force a task to become runnable on next scheduler pass.
+### rescheduleNow
 
 ```zig
 pub fn rescheduleNow(self: *Scheduler, index: usize) bool
 ```
 
-### getDiskUsage
+Makes the task runnable immediately and returns `false` when `index` is out of range.
 
-Get current disk usage percentage for a path.
+## Task Control
 
-```zig
-pub fn getDiskUsage(self: *Scheduler, path: []const u8) !u8
-```
-
-### getFreeSpace
-
-Get free space in bytes for a path.
+### setTaskEnabled
 
 ```zig
-pub fn getFreeSpace(self: *Scheduler, path: []const u8) !u64
+pub fn setTaskEnabled(self: *Scheduler, index: usize, enabled: bool) void
 ```
+
+### setTaskEnabledByName
+
+```zig
+pub fn setTaskEnabledByName(self: *Scheduler, name: []const u8, enabled: bool) bool
+```
+
+Returns `false` when no task has that name.
 
 ### removeTask
 
-Remove a task by index.
-
 ```zig
-pub fn removeTask(self: *Scheduler, index: usize) !void
+pub fn removeTask(self: *Scheduler, index: usize) void
 ```
 
-### enableTask
-
-Enable a task by index.
+### removeTaskByName
 
 ```zig
-pub fn enableTask(self: *Scheduler, index: usize) void
+pub fn removeTaskByName(self: *Scheduler, name: []const u8) bool
 ```
 
-### disableTask
+Returns `true` when a task was removed.
 
-Disable a task by index.
+### runNow
 
 ```zig
-pub fn disableTask(self: *Scheduler, index: usize) void
+pub fn runNow(self: *Scheduler, index: usize) !void
 ```
 
-### runTaskNow
-
-Execute a task immediately.
-
-```zig
-pub fn runTaskNow(self: *Scheduler, index: usize) !void
-```
+Runs a task immediately. Returns an error when `index` is out of range.
 
 ### runNowByName
-
-Run task immediately by task name.
 
 ```zig
 pub fn runNowByName(self: *Scheduler, name: []const u8) !bool
 ```
 
-Returns `true` when task exists and was executed.
+Runs the named task immediately. Returns `false` when the task does not exist.
 
-### getStats
+### runPending
 
-Get current scheduler statistics.
+```zig
+pub fn runPending(self: *Scheduler) void
+```
+
+Runs all tasks whose next run time has elapsed.
+
+### taskIndexByName
+
+```zig
+pub fn taskIndexByName(self: *Scheduler, name: []const u8) ?usize
+```
+
+### hasTaskNamed
+
+```zig
+pub fn hasTaskNamed(self: *Scheduler, name: []const u8) bool
+```
+
+## Inspection
+
+### getTasks / taskCount
+
+```zig
+pub fn getTasks(self: *const Scheduler) []const *ScheduledTask
+pub fn taskCount(self: *const Scheduler) usize
+```
+
+`getTasks()` returns borrowed pointers. Do not free them or retain them after the task is removed or the scheduler is deinitialized.
+
+### getTaskSnapshot / getTaskSnapshotByName
+
+```zig
+pub fn getTaskSnapshot(self: *Scheduler, index: usize) ?TaskSnapshot
+pub fn getTaskSnapshotByName(self: *Scheduler, name: []const u8) ?TaskSnapshot
+```
+
+Returns an immutable copy of task state.
+
+### Counts
+
+```zig
+pub fn enabledTaskCount(self: *Scheduler) usize
+pub fn runningTaskCount(self: *Scheduler) usize
+pub fn readyTaskCount(self: *Scheduler) usize
+```
+
+### nextRunInMs / nextRunInMsByName
+
+```zig
+pub fn nextRunInMs(self: *Scheduler, index: usize) ?i64
+pub fn nextRunInMsByName(self: *Scheduler, name: []const u8) ?i64
+```
+
+Returns the remaining delay in milliseconds, or `null` when the task does not exist.
+
+## Callbacks
+
+```zig
+pub fn setTaskStartedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void
+pub fn setTaskCompletedCallback(self: *Scheduler, callback: *const fn ([]const u8, u64) void) void
+pub fn setTaskErrorCallback(self: *Scheduler, callback: *const fn ([]const u8, []const u8) void) void
+pub fn setScheduleTickCallback(self: *Scheduler, callback: *const fn (u32, u32) void) void
+pub fn setHealthCheckCallback(self: *Scheduler, callback: *const fn (*const HealthStatus) void) void
+pub fn setHealthCallback(self: *Scheduler, callback: *const fn () HealthStatus) void
+pub fn setMetricsCallback(self: *Scheduler, callback: *const fn () MetricsSnapshot) void
+```
+
+Started and completed callbacks receive the task name and an index or elapsed milliseconds. Error callbacks receive the task name and error message. Tick callbacks receive executed and pending counts.
+
+## Health and Metrics
+
+```zig
+pub fn getHealthStatus(self: *Scheduler) HealthStatus
+pub fn getMetrics(self: *Scheduler) MetricsSnapshot
+```
+
+Without a callback, `getHealthStatus()` performs a basic disk-space check on the working directory and `getMetrics()` returns a snapshot derived from scheduler state.
+
+## Statistics and Telemetry
 
 ```zig
 pub fn getStats(self: *const Scheduler) SchedulerStats
-```
-
-### pause
-
-Pauses background execution of all tasks. Tasks will not be executed until unpaused.
-
-```zig
-pub fn pause(self: *Scheduler) void
-```
-
-### unpause
-
-Resumes background execution of tasks.
-
-```zig
-pub fn unpause(self: *Scheduler) void
-```
-
-### isPaused
-
-Check if the scheduler is currently paused.
-
-```zig
-pub fn isPaused(self: *const Scheduler) bool
-```
-
-### resetStats
-
-Reset all scheduler statistics to zero.
-
-```zig
 pub fn resetStats(self: *Scheduler) void
-```
-
-### setTelemetry
-
-Set the telemetry instance for distributed tracing. When enabled, task executions create spans for observability.
-
-```zig
 pub fn setTelemetry(self: *Scheduler, telemetry: *Telemetry) void
-```
-
-**Parameters:**
-- `telemetry`: Telemetry instance for tracing
-
-### clearTelemetry
-
-Disable telemetry tracing.
-
-```zig
 pub fn clearTelemetry(self: *Scheduler) void
 ```
 
-### listTasks
-
-Get list of all scheduled tasks.
-
-```zig
-pub fn listTasks(self: *const Scheduler) []const ScheduledTask
-```
-
-## Usage Example
-
-```zig
-const std = @import("std");
-const logly = @import("logly");
-const Scheduler = logly.Scheduler;
-const SchedulerPresets = logly.SchedulerPresets;
-
-pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    // Create scheduler
-    var scheduler = try Scheduler.init(allocator);
-    defer scheduler.deinit();
-
-    // Add daily cleanup task using Presets
-     _ = try scheduler.addTask(
-        "log_cleanup",
-        .cleanup,
-        SchedulerPresets.dailyAt(2, 30), // Daily at 2:30 AM
-        SchedulerPresets.dailyCleanup("logs", 30), // Config helper
-    );
-
-    // Add hourly compression manually
-     _ = try scheduler.addTask(
-        "log_compression",
-        .compression,
-        .{ .interval = 3600 * 1000 }, // Every hour (ms)
-        .{
-            .path = "logs",
-            .minAgeSeconds = 3600, // Compress files older than 1 hour
-            .filePattern = "*.log",
-        },
-    );
-
-    // Start scheduler
-    try scheduler.start();
-    defer scheduler.stop();
-
-    // Check stats periodically
-    const stats = scheduler.getStats();
-    std.debug.print("Tasks executed: {d}\n", .{
-        stats.getExecuted(),
-    });
-}
-```
-
-## Aliases
-
-The Scheduler module provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `begin` | `start` |
-| `end` | `stop` |
-| `halt` | `stop` |
-| `statistics` | `getStats` |
-
-## Additional State Methods
-
-- `taskCount() usize` - Returns number of scheduled tasks
-- `isRunning() bool` - Returns true if scheduler is running
-- `hasTasks() bool` - Returns true if any tasks are scheduled
+When telemetry is attached, task executions emit spans and metrics through the scheduler's telemetry integration.
 
 ## SchedulerPresets
 
-Helper functions for creating common schedules and task configurations.
-
-### Schedule Presets
-
-| Method | Description |
-|--------|-------------|
-| `hourlyCompression()` | Compression every hour |
-| `everyMinutes(n)` | Every N minutes |
-| `every15Minutes()` | Every 15 minutes (v0.1.8+) |
-| `every30Minutes()` | Every 30 minutes |
-| `every6Hours()` | Every 6 hours |
-| `every12Hours()` | Every 12 hours |
-| `dailyAt(hour, minute)` | Daily at specific time |
-| `dailyMidnight()` | Daily at midnight |
-| `dailyMaintenance()` | Daily at 2 AM |
-| `weeklyCleanup()` | Weekly on Sunday at 2 AM |
-| `onceAfter(seconds)` | Once after delay (v0.1.8+) |
-| `healthCheckSchedule()` | Every 5 minutes (v0.1.8+) |
-| `metricsSchedule()` | Every minute (v0.1.8+) |
-
-### Task Config Presets
-
-| Method | Description |
-|--------|-------------|
-| `dailyCleanup(path, days)` | Delete logs older than N days |
-| `compressThenDelete(path, days)` | Compress then delete originals |
-| `compressAndKeep(path, days)` | Compress, keep both versions |
-| `compressOnly(path, days)` | Compress only, never delete |
-| `archiveOldLogs(path, compress_days, delete_days)` | Archive with age limits |
-| `aggressiveCleanup(path, days, maxFiles)` | Compress + file count limit |
-| `hourlyArchive(path)` | Compress files older than 1 day (v0.1.8+) |
-| `compressOnRotation(path)` | Compress just-rotated files (v0.1.8+) |
-| `sizeBasedCompression(path, bytes)` | Compress when size exceeds threshold (v0.1.8+) |
-| `diskUsageTriggered(path, percent)` | Compress when disk usage high (v0.1.8+) |
-| `lowDiskSpaceTriggered(path, minFree)` | Compress when disk space low (v0.1.8+) |
-| `recursiveCompression(path, days)` | Recursive directory compression (v0.1.8+) |
+### Schedule presets
 
 ```zig
-pub const SchedulerPresets = struct {
-    // Schedules
-    pub fn hourlyCompression() Schedule;
-    pub fn everyMinutes(n: u64) Schedule;
-    pub fn every15Minutes() Schedule;          // v0.1.8+
-    pub fn every30Minutes() Schedule;
-    pub fn every6Hours() Schedule;
-    pub fn every12Hours() Schedule;
-    pub fn dailyAt(hour: u8, minute: u8) Schedule;
-    pub fn dailyMidnight() Schedule;
-    pub fn dailyMaintenance() Schedule;
-    pub fn weeklyCleanup() Schedule;
-    pub fn onceAfter(seconds: u64) Schedule;   // v0.1.8+
-    pub fn healthCheckSchedule() Schedule;     // v0.1.8+
-    pub fn metricsSchedule() Schedule;         // v0.1.8+
+pub fn weeklyCleanup() Schedule
+pub fn hourlyCompression() Schedule
+pub fn everyMinutes(n: u64) Schedule
+pub fn dailyAt(hour: u8, minute: u8) Schedule
+pub fn every30Minutes() Schedule
+pub fn every6Hours() Schedule
+pub fn every12Hours() Schedule
+pub fn dailyMidnight() Schedule
+pub fn dailyMaintenance() Schedule
+pub fn every15Minutes() Schedule
+pub fn onceAfter(seconds: u64) Schedule
+pub fn healthCheckSchedule() Schedule
+pub fn metricsSchedule() Schedule
+```
 
-    // Task Configurations
-    pub fn dailyCleanup(path: []const u8, maxAgeDays: u64) TaskConfig;
-    pub fn compressThenDelete(path: []const u8, minAgeDays: u64) TaskConfig;
-    pub fn compressAndKeep(path: []const u8, minAgeDays: u64) TaskConfig;
-    pub fn compressOnly(path: []const u8, minAgeDays: u64) TaskConfig;
-    pub fn archiveOldLogs(path: []const u8, compress_days: u64, delete_days: u64) TaskConfig;
-    pub fn aggressiveCleanup(path: []const u8, maxAgeDays: u64, maxFiles: usize) TaskConfig;
-    pub fn hourlyArchive(path: []const u8) TaskConfig;             // v0.1.8+
-    pub fn compressOnRotation(path: []const u8) TaskConfig;        // v0.1.8+
-    pub fn sizeBasedCompression(path: []const u8, bytes: u64) TaskConfig;  // v0.1.8+
-    pub fn diskUsageTriggered(path: []const u8, percent: u8) TaskConfig;   // v0.1.8+
-    pub fn lowDiskSpaceTriggered(path: []const u8, minFree: u64) TaskConfig;  // v0.1.8+
-    pub fn recursiveCompression(path: []const u8, days: u64) TaskConfig;   // v0.1.8+
-};
+### TaskConfig presets
+
+```zig
+pub fn dailyCleanup(path: []const u8, maxAgeDays: u64) TaskConfig
+pub fn createScheduledSink(filePath: []const u8, rotation: []const u8) SinkConfig
+pub fn weeklyCleanupConfig(path: []const u8, maxAgeDays: u64) TaskConfig
+pub fn compressThenDelete(path: []const u8, minAgeDays: u64) TaskConfig
+pub fn compressAndKeep(path: []const u8, minAgeDays: u64) TaskConfig
+pub fn compressOnly(path: []const u8, minAgeDays: u64) TaskConfig
+pub fn archiveOldLogs(path: []const u8, compressAfterDays: u64, deleteAfterDays: u64) TaskConfig
+pub fn aggressiveCleanup(path: []const u8, maxAgeDays: u64, maxFiles: usize) TaskConfig
+pub fn hourlyArchive(path: []const u8) TaskConfig
+pub fn compressOnRotation(path: []const u8) TaskConfig
+pub fn sizeBasedCompression(path: []const u8, maxTotalBytes: u64) TaskConfig
+pub fn diskUsageTriggered(path: []const u8, diskUsagePercent: u8) TaskConfig
+pub fn lowDiskSpaceTriggered(path: []const u8, minFreeBytes: u64) TaskConfig
+pub fn recursiveCompression(path: []const u8, minAgeDays: u64) TaskConfig
 ```
 
 ## See Also
 
-- [Compression API](compression.md) - Log compression
-- [Rotation Guide](../guide/rotation.md) - Log rotation
-- [Configuration Guide](../guide/configuration.md) - Full configuration options
-- [Telemetry API](telemetry.md) - Distributed tracing integration
-
-## Telemetry Integration
-
-The scheduler supports optional telemetry integration for distributed tracing. When enabled, each task execution creates a span with relevant attributes.
-
-### Setup
-
-```zig
-const logly = @import("logly");
-
-// Create telemetry instance
-var telemetry = try logly.Telemetry.init(allocator, .{
-    .provider = .file,
-    .exporterFilePath = "telemetry_spans.jsonl",
-});
-defer telemetry.deinit();
-
-// Create scheduler with telemetry
-var scheduler = try logly.Scheduler.init(allocator);
-defer scheduler.deinit();
-
-scheduler.setTelemetry(&telemetry);
-```
-
-### Span Attributes
-
-Task execution spans include the following attributes:
-
-| Attribute | Type | Description |
-|-----------|------|-------------|
-| `task.type` | string | Task type (cleanup, compression, etc.) |
-| `task.priority` | string | Task priority level |
-| `task.durationMs` | integer | Execution duration in milliseconds |
-| `cleanup.filesDeleted` | integer | Files deleted (cleanup tasks) |
-| `cleanup.bytesFreed` | integer | Bytes freed (cleanup tasks) |
-| `compression.files` | integer | Files compressed (compression tasks) |
-| `compression.bytesSaved` | integer | Bytes saved (compression tasks) |
-| `health.healthy` | boolean | Health status (healthCheck tasks) |
-| `metrics.logCount` | integer | Log count (metricsSnapshot tasks) |
-| `metrics.errorCount` | integer | Error count (metricsSnapshot tasks) |
-
-### Telemetry Metrics
-
-The scheduler also records counter and gauge metrics:
-
-- `scheduler.tasksExecuted` (counter): Incremented for each task execution
-- `scheduler.task_duration_ms` (gauge): Task execution duration
-
-### Example Output
-
-```json
-{
-  "trace_id": "abc123...",
-  "span_id": "def456...",
-  "name": "log_cleanup",
-  "kind": "internal",
-  "status": "ok",
-  "start_time": 1704067200000000000,
-  "end_time": 1704067200500000000,
-  "attributes": {
-    "task.type": "cleanup",
-    "task.priority": "normal",
-    "task.duration_ms": 500,
-    "cleanup.files_deleted": 5,
-    "cleanup.bytes_freed": 1048576
-  }
-}
-```
-
+- [Scheduler Guide](/guide/scheduler)
+- [Scheduler Example](/examples/scheduler)
+- [Compression API](/api/compression)

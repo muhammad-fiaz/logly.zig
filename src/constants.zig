@@ -986,10 +986,6 @@ pub const NetworkExtendedDefaults = struct {
 
 /// Scheduler system constants (extended).
 pub const SchedulerExtendedDefaults = struct {
-    /// Maximum jitter in milliseconds (added as random +/-jitter to task intervals).
-    pub const maxJitterMs: u64 = 5000;
-    /// Default jitter percentage of interval (0.0 = no jitter, 0.1 = +/-10%).
-    pub const defaultJitterFraction: f64 = 0.0;
     /// Cron-expression field count.
     pub const cronFieldCount: usize = 5;
     /// Task history ring size (entries).

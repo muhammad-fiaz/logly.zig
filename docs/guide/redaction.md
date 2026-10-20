@@ -49,7 +49,7 @@ pub fn main() !void {
     const message = "User login password=secret success";
     const redacted = try redactor.redact(message);
     defer allocator.free(redacted);
-    
+
     std.debug.print("{s}\n", .{redacted});
     // Output: User login [REDACTED] success
 }
@@ -96,8 +96,8 @@ Supports: `*` (zero or more), `+` (one or more), `?` (optional), `.` (any char),
 
 ```zig
 // Credit card numbers
-try redactor.addPattern("credit_card", .regex, 
-    "\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d", 
+try redactor.addPattern("credit_card", .regex,
+    "\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d",
     "****-****-****-****");
 ```
 
@@ -192,7 +192,7 @@ pub fn main() !void {
 
     // Add custom patterns
     try redactor.addPattern("bearer_token", .prefix, "Bearer ", "[TOKEN] ");
-    try redactor.addPattern("credit_card", .regex, 
+    try redactor.addPattern("credit_card", .regex,
         "\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d-\\d\\d\\d\\d",
         "****-****-****-****");
 
@@ -200,7 +200,7 @@ pub fn main() !void {
     const message = "Processing payment for card 4532-1234-5678-9012";
     const redacted = try redactor.redact(message);
     defer allocator.free(redacted);
-    
+
     std.debug.print("{s}\n", .{redacted});
     // Output: Processing payment for card ****-****-****-****
 }
@@ -254,9 +254,6 @@ fn onRedactDetail(original: []const u8, redacted: []const u8, pattern_name: []co
 redactor.setRedactionDetailCallback(onRedactDetail);
 ```
 
-> [!TIP]
-> Use `onRedactionDetail` alongside `auditRedactions = true` in your `RedactionConfig` to build a complete audit trail for compliance scenarios like GDPR or PCI-DSS.
-
 ## Global Configuration
 
 Configure redaction globally through `Config.RedactionConfig`:
@@ -271,7 +268,6 @@ config.redaction = .{
     .partialStartChars = 4,
     .partialEndChars = 4,
     .caseInsensitive = true,
-    .auditRedactions = true,
     .compliancePreset = .gdpr,
 };
 
@@ -291,7 +287,6 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 | `partialEndChars` | `u8` | `4` | Characters to reveal at end |
 | `maskChar` | `u8` | `'*'` | Mask character |
 | `caseInsensitive` | `bool` | `true` | Case-insensitive field matching |
-| `auditRedactions` | `bool` | `false` | Log when redaction applied |
 | `compliancePreset` | `?CompliancePreset` | `null` | Use compliance preset |
 
 ### Configuration Presets
@@ -333,15 +328,3 @@ defer api.deinit();
 var fin = try RedactionPresets.financial(allocator);
 defer fin.deinit();
 ```
-
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `addRule` | `addPattern` |
-| `field` | `addField` |
-| `sensitiveField` | `addField` |
-| `mask` | `redact` |
-| `sanitize` | `redact` |
-| `statistics` | `getStats` |
-

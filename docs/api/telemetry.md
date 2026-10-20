@@ -1,27 +1,26 @@
 # OpenTelemetry API Reference
 
-Complete reference for the OpenTelemetry integration in Logly.
+API reference for the OpenTelemetry integration in Logly.
 
 ## Overview
 
-Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracing, metrics collection, and span context propagation. Features include:
+Logly provides OpenTelemetry (OTEL) support for distributed tracing, metrics collection, and span context propagation. Features include:
 
 - **Multiple Provider Support**: Jaeger, Zipkin, Datadog, Google Cloud Trace, Google Analytics 4, Google Tag Manager, AWS X-Ray, Azure Application Insights, generic OTEL Collector, file-based, and custom implementations
-- **Distributed Tracing**: Full W3C Trace Context specification support with parent-child span relationships
+- **Distributed Tracing**: W3C `traceparent` generation and parsing with parent-child span relationships
 - **W3C Baggage**: Context propagation for arbitrary key-value pairs across service boundaries
 - **Metrics Collection**: Counter, gauge, histogram, and summary metrics with configurable export formats
 - **Metrics Export Paths**: `metricsFilePath` overrides the default file exporter path for JSON/Prometheus metrics
 - **Metric Name Controls**: `metricPrefix`, `metricPrefixSeparator`, and `sanitizeMetricNames` normalize exported metric names for Prometheus-compatible output
-- **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span export; metrics are exported via file-based JSON/Prometheus writers or network OTLP/HTTP JSON export
+- **Network Export**: UDP/TCP/HTTP(S) transport protocols for span export; metrics are exported via file-based JSON/Prometheus writers or network OTLP/HTTP JSON export
 - **Export Modes**: Synchronous, async buffered, batch, and network export modes
 - **Span Processor Semantics**: `spanProcessorType` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
-- **Note (v0.1.8)**: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor semantics; telemetry now builds cleanly across targets.
-- **Exporter Statistics**: Real-time monitoring of export performance with atomic counters
+- **Exporter Statistics**: Atomic counters for exported spans, metrics, bytes, batches, network exports, and errors
 - **Resource Detection**: Automatic detection of service metadata and resource attributes
 - **Sampling Strategies**: Four sampling algorithms (alwaysOn, alwaysOff, traceIdRatio, parentBased)
 - **Custom Callbacks**: User-defined handlers for span lifecycle and metric events
 - **Thread Safety**: Mutex-protected concurrent access to spans and metrics
-- **Utils Integration**: Leverages utils.zig for ID generation, time calculations, and JSON escaping
+- **Utils Integration**: Uses utils.zig for ID generation, time calculations, and JSON escaping
 
 ### Metric Export Formats
 
@@ -50,35 +49,9 @@ config.sanitizeMetricNames = true;
 try telemetry.recordCounter("http.requests-total", 1.0);
 ```
 
-Sanitization replaces unsupported characters with `` and protects names that
+Sanitization replaces unsupported characters with `_` and protects names that
 start with digits. Disable it with `withMetricNameSanitization(false)` when a
 custom backend expects raw metric names.
-
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize telemetry |
-| `deinit()` | `destroy()` | Deinitialize telemetry |
-| `startSpan()` | `beginSpan()`, `start_span()` | Start a new span |
-| `endSpan()` | `finishSpan()`, `closeSpan()` | End a span |
-| `recordMetric()` | `record_metric()` | Record a metric |
-| `recordCounter()` | `counter()` | Record a counter metric |
-| `recordGauge()` | `gauge()` | Record a gauge metric |
-| `recordHistogram()` | `histogram()` | Record a histogram metric |
-| `recordMetricsBatch()` | `recordBatch()` | Record multiple metrics in one call |
-| `exportSpans()` | `export_()` | Export spans |
-| `flush()` | `sync()` | Flush telemetry data |
-| `getStats()` | `statistics()`, `stats_()` | Get telemetry statistics |
-| `setEnabled()` | `enable()` | Enable telemetry |
-| `isEnabled()` | `is_enabled()` | Check if telemetry is enabled |
-| `setSampling()` | `setSampler()` | Update sampling strategy/rate at runtime |
-| `getSampling()` | `sampling()` | Get current sampling snapshot |
-| `setContextHeaders()` | `configureHeaders()` | Set trace/baggage header names |
-| `getContextHeaders()` | `contextHeaders()` | Get trace/baggage header names |
-| `hasPendingData()` | `hasPending()` | Check if spans/metrics are pending export |
-| `pendingItemCount()` | `pendingCount()` | Total pending spans + metrics |
-| `resetStats()` | `clearStats()` | Reset telemetry statistics |
 
 ## Core Types
 
@@ -113,7 +86,7 @@ pub const Telemetry = struct {
     networkAddress: ?std.Io.net.IpAddress,
     batchBuffer: std.ArrayList(u8),
     lastBatchExport: i64,
-    
+
     pub fn init(allocator: std.mem.Allocator, config: TelemetryConfig) !Telemetry
     pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: TelemetryConfig) !Telemetry
     pub fn deinit(self: *Telemetry) void
@@ -585,7 +558,7 @@ pub const Span = struct {
     endTime: ?i64,
     attributes: std.StringHashMap(SpanAttribute),
     events: std.ArrayList(SpanEvent),
-    
+
     pub fn setAttribute(self: *Span, key: []const u8, value: SpanAttribute) !void
     pub fn setAttributes(self: *Span, attrs: []const AttributeEntry) !usize
     pub fn addEvent(self: *Span, name: []const u8, attributes: ?[]const AttributeEntry) !void
@@ -794,7 +767,6 @@ pub const NetworkProtocol = enum {
     udp,      // UDP transport (recommended for high throughput)
     syslog,   // Syslog protocol
     http,     // HTTP/HTTPS transport
-    grpc,     // gRPC transport (OTLP native)
 };
 ```
 
@@ -847,7 +819,7 @@ W3C Baggage for context propagation across service boundaries.
 pub const Baggage = struct {
     allocator: std.mem.Allocator,
     items: std.StringHashMap([]const u8),
-    
+
     pub fn init(allocator: std.mem.Allocator) Baggage
     pub fn deinit(self: *Baggage) void
     pub fn set(self: *Baggage, key: []const u8, value: []const u8) !void
@@ -937,7 +909,7 @@ Controls trace sampling decision.
 pub const TelemetrySampler = struct {
     strategy: SamplingStrategy,
     samplingRate: f64,
-    
+
     pub fn shouldSample(self: TelemetrySampler, traceId: []const u8) bool
 };
 
@@ -1037,7 +1009,7 @@ Jaeger distributed tracing backend.
 
 **Default Settings:**
 
-- Endpoint: `http://localhost:14268/api/traces` (Jaeger Collector HTTP)
+- Endpoint: `http://localhost:4318/v1/traces` (Jaeger OTLP/HTTP receiver, JSON encoding)
 - Batch Size: 256
 - Processor: Batch
 - Sampling: deterministic traceIdRatio at 10%
@@ -1145,7 +1117,7 @@ Generic OpenTelemetry Collector endpoint.
 
 **Parameters:**
 
-- `endpoint`: Collector gRPC endpoint (e.g., `http://localhost:4317`)
+- `endpoint`: Collector OTLP/HTTP endpoint including the signal path (e.g., `http://localhost:4318/v1/traces`)
 
 #### `TelemetryConfig.file(path: []const u8) -> TelemetryConfig`
 
@@ -1188,7 +1160,7 @@ Pre-configured for high-throughput scenarios.
 **Settings:**
 
 - Provider: Jaeger
-- Endpoint: `http://localhost:14268/api/traces`
+- Endpoint: `http://localhost:4318/v1/traces`
 - Batch Size: 1024
 - Batch Timeout: 2000ms
 - Sampling: traceIdRatio at 1%

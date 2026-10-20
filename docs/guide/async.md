@@ -9,7 +9,7 @@ head:
 
 # Async Logging
 
-Logly provides comprehensive asynchronous logging capabilities to ensure that logging operations do not block your application's main execution flow. This is particularly important for high-performance applications.
+Logly provides asynchronous logging so log submission does not block the application thread. This is useful for latency-sensitive services.
 
 ## Overview
 
@@ -23,7 +23,7 @@ Logly offers multiple async logging options:
 
 ### Simple Async Sinks
 
-The simplest way to use async logging:
+Minimal async logger setup:
 
 ```zig
  _ = try logger.add(.{  // Short alias for addSink()
@@ -47,7 +47,7 @@ var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, .{
 });
 defer asyncLogger.deinit();
 
-try asyncLogger.start();
+try asyncLogger.startWorker();
 defer asyncLogger.stop();
 ```
 
@@ -80,25 +80,25 @@ When enabled, the `Logger` dispatches log records to the thread pool. Each recor
 
 When async logging is enabled, log messages follow this flow:
 
-1. **Queuing**: Messages are added to a lock-free ring buffer
+1. **Queuing**: Messages are added to a bounded ring buffer synchronized by a mutex
 2. **Background Processing**: A worker thread processes queued messages
 3. **Batch Writing**: Messages are written in batches for efficiency
 4. **Flushing**: Buffers are flushed based on time or size
 
-The async stats object now also tracks backpressure events so you can see when the queue approaches capacity.
+The async statistics also track backpressure events, showing when the queue approaches capacity.
 
 The backpressure threshold and drain timeout are configurable:
 
 ```zig
 const asyncCfg = logly.AsyncConfig.lowLatency()
-    .buffer(2048)
-    .batch(32)
-    .backpressure(0.75);
+    .withBufferSize(2048)
+    .withBatchSize(32)
+    .withBackpressureThreshold(0.75);
 
 var asyncLogger = try logly.AsyncLogger.initWithConfig(allocator, asyncCfg);
 defer asyncLogger.deinit();
 
- _ = asyncLogger.drainDefault(); // uses async_cfg.drain_timeout_ms
+ _ = asyncLogger.drainAndFlush(asyncCfg.drainTimeoutMs);
 ```
 
 ## Configuration
@@ -151,7 +151,7 @@ const config = logly.AsyncLogger.AsyncConfig{
 | `overflowPolicy` | `.dropOldest` | Behavior when buffer full |
 | `backgroundWorker` | true | Enable background thread |
 | `backpressureThreshold` | 0.9 | Queue utilization ratio that records backpressure |
-| `drainTimeoutMs` | 5000 | Default timeout for `drainDefault()` |
+| `drainTimeoutMs` | 5000 | Default timeout for explicit drain waits |
 
 ## Overflow Policies
 
@@ -342,8 +342,8 @@ const critical_config = logly.AsyncLogger.AsyncConfig{
 
 1. **Use batch writing**: Larger batches = fewer I/O operations
 2. **Tune flush interval**: Balance latency vs throughput
-3. **Pre-allocate buffers**: Set `preallocate_buffers = true`
-4. **Use direct I/O**: For very high throughput (with caution)
+3. **Size the queue for the load**: Larger queues absorb bursts but increase memory use
+4. **Measure sink cost**: Slow sinks become the limiting factor once the queue is full
 
 ## Example: High-Throughput Setup
 
@@ -389,18 +389,3 @@ const empty = asyncLogger.isQueueEmpty();
 // Reset statistics
 asyncLogger.resetStats();
 ```
-
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `enqueue` | `log` |
-| `push` | `log` |
-| `logMsg` | `log` |
-| `statistics` | `getStats` |
-| `depth` | `queueDepth` |
-| `pending` | `queueDepth` |
-| `begin` | `startWorker` |
-| `halt` | `stop` |
-| `end` | `stop` |
-

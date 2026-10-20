@@ -50,8 +50,8 @@ This automatically creates the `./logs` directory and stores both log files ther
 **Output:**
 ```
 ./logs/
-├── application.log
-└── errors.log
+|-- application.log
+`-- errors.log
 ```
 
 ### 2. Format Structure Customization
@@ -94,7 +94,7 @@ Matches patterns in log messages and triggers alerts.
 
 ### 5. Combined Customizations
 
-All features work together seamlessly:
+All features work together:
 
 ```zig
 var configCombined = logly.Config.default();
@@ -159,9 +159,9 @@ The example creates the following directory structure:
 
 ```
 ./logs/
-├── application.log      # From example 1
-├── errors.log           # From example 1
-└── combined.log         # From example 6
+|-- application.log      # From example 1
+|-- errors.log           # From example 1
+`-- combined.log         # From example 6
 ```
 
 Each file contains the formatted log entries with custom colors (in ANSI format).

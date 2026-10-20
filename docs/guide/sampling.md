@@ -85,7 +85,7 @@ Sample a percentage of messages randomly:
 var sampler = Sampler.init(allocator, .{ .probability = 0.25 });
 defer sampler.deinit();
 
-for (0..1000) || {
+for (0..1000) |_| {
     if (sampler.shouldSample()) {
         // Approximately 250 messages will reach here
     }
@@ -139,12 +139,9 @@ Allows temporary bursts of logs over the limit, useful for startup sequences or 
 
 ```zig
 var sampler = Sampler.init(allocator, .{ .tokenBucket = .{
-    .capacity = 1000,          // Max burst size
-    .refill_rate = 100,        // Tokens per second
-    .refill_interval_ms = 100, // Refill every 100ms
+    .burstCapacity = 1000,   // Max burst size
+    .refillRatePerSec = 100, // Tokens per second
 }});
-```
-
 ```
 
 ### Deterministic Key Sampling
@@ -166,13 +163,15 @@ if (should_log) {
 You can configure the Sampler to always allow specific log levels regardless of sampling logic (e.g., always let `.err` and `.critical` pass through).
 
 ```zig
-var config = logly.SamplerConfig{
-    .probability = 0.5,
+var config = logly.SamplingConfig{
+    .enabled = true,
+    .strategy = .{ .probability = 0.5 },
+    .bypassLevels = logly.LevelMask.init(),
 };
-config.bypassLevels.enable(.err);
-config.bypassLevels.enable(.critical);
+config.bypassLevels.?.enable(.err);
+config.bypassLevels.?.enable(.critical);
 
-var sampler = Sampler.init(allocator, config);
+var sampler = Sampler.initWithConfig(allocator, config);
 // Errors will skip sampling and return true instantly!
 ```
 ## Monitoring and Callbacks
@@ -201,7 +200,7 @@ var sampler = Sampler.init(allocator, .{ .probability = 0.5 });
 defer sampler.deinit();
 
 // Sample some logs
-for (0..100) || {
+for (0..100) |_| {
      _ = sampler.shouldSample();
 }
 
@@ -245,11 +244,11 @@ pub fn main() !void {
     while (i < 10000) : (i += 1) {
         // Sample debug/info logs
         if (sampler.shouldSample()) {
-            try logger.infof("Processing item {d}", .{i});
+            try logger.infof("Processing item {d}", .{i}, @src());
         }
-        
+
         // Never sample errors - always log them
-        // try logger.err("Error if needed");
+        // try logger.err("Error if needed", @src());
     }
 }
 ```
@@ -288,15 +287,3 @@ var every_100 = SamplerPresets.every100th(allocator);
 // Adaptive sampling presets
 var adaptive_100 = SamplerPresets.adaptive100PerSecond(allocator);
 ```
-
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `sample` | `shouldSample` |
-| `check` | `shouldSample` |
-| `allow` | `shouldSample` |
-| `statistics` | `getStats` |
-| `stats_` | `getStats` |
-| `rate` | `getCurrentRate` |
-

@@ -1470,7 +1470,7 @@ pub fn main() !void {
     defer mdFile.close(io);
 
     const mdHeader =
-        \\#### 📊 LOGLY.ZIG BENCHMARK RESULTS
+        \\#### LOGLY.ZIG BENCHMARK RESULTS
         \\
         \\**Environment Details:**
         \\- **Platform:** {s}
@@ -1532,7 +1532,7 @@ pub fn main() !void {
 
     // Write summary to Markdown
     if (count > 0) {
-        try mdFile.writeStreamingAll(io, "\n### 📈 Benchmark Summary\n\n");
+        try mdFile.writeStreamingAll(io, "\n### Benchmark Summary\n\n");
         var summaryBuf: [1024]u8 = undefined;
         const summary = std.fmt.bufPrint(&summaryBuf,
             \\- **Total benchmarks run:** {d}

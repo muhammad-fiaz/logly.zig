@@ -1,6 +1,6 @@
 ---
 title: Invoke API Reference
-description: API reference for Logly.zig Invoke module. Attach extra messages to log records when conditions match — level-based, message content, custom levels, and more.
+description: API reference for Logly.zig Invoke module. Attach extra messages to log records when conditions match - level-based, message content, custom levels, and more.
 head:
   - - meta
     - name: keywords
@@ -39,7 +39,7 @@ The Invoke module attaches extra messages to log records when conditions match. 
 
 ### `Message`
 
-Just `[]const u8`. Write whatever you want — prefix, color codes, emoji, formatting — it all goes through as-is.
+A borrowed byte slice (`[]const u8`). The formatter writes it verbatim; prefixes, escape sequences, and formatting are controlled by the caller.
 
 ```zig
 const Message = []const u8;

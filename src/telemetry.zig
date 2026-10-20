@@ -18,7 +18,6 @@ pub const NetworkProtocol = enum {
     udp,
     syslog,
     http,
-    grpc,
 };
 
 /// Export mode for spans and metrics
@@ -306,20 +305,25 @@ pub const Telemetry = struct {
             .onError = cfg.onError,
         };
 
-        // Initialize ArrayLists with proper allocator
-        telemetry.spans = std.ArrayList(Span).initCapacity(allocator, 32) catch .empty;
-        telemetry.completedSpans = std.ArrayList(Span).initCapacity(allocator, 32) catch .empty;
-        telemetry.metrics = std.ArrayList(Metric).initCapacity(allocator, 32) catch .empty;
-        telemetry.logs = std.ArrayList(TelemetryLog).initCapacity(allocator, 32) catch .empty;
-        telemetry.batchBuffer = std.ArrayList(u8).initCapacity(allocator, Constants.BufferSizes.telemetry) catch .empty;
+        // Initialize ArrayLists with proper allocator. Allocation failures are
+        // fatal to construction: continuing with `.empty` would defer the
+        // failure to the logging path and lose the original context.
+        telemetry.spans = try std.ArrayList(Span).initCapacity(allocator, 32);
+        errdefer telemetry.spans.deinit(allocator);
+        telemetry.completedSpans = try std.ArrayList(Span).initCapacity(allocator, 32);
+        errdefer telemetry.completedSpans.deinit(allocator);
+        telemetry.metrics = try std.ArrayList(Metric).initCapacity(allocator, 32);
+        errdefer telemetry.metrics.deinit(allocator);
+        telemetry.logs = try std.ArrayList(TelemetryLog).initCapacity(allocator, 32);
+        errdefer telemetry.logs.deinit(allocator);
+        telemetry.batchBuffer = try std.ArrayList(u8).initCapacity(allocator, Constants.BufferSizes.telemetry);
+        errdefer telemetry.batchBuffer.deinit(allocator);
 
-        // Initialize network connection if using network export
+        // Initialize network connection if using network export. An invalid
+        // UDP endpoint must fail construction instead of silently leaving the
+        // telemetry instance unable to export.
         if (cfg.enabled and cfg.exporterEndpoint != null) {
-            telemetry.initNetworkExport() catch {
-                if (cfg.onError) |callback| {
-                    callback("Failed to initialize network export");
-                }
-            };
+            try telemetry.initNetworkExport();
         }
 
         return telemetry;
@@ -433,7 +437,7 @@ pub const Telemetry = struct {
             .traceId = traceId,
             .parentSpanId = parentSpanId,
             .name = ownedName,
-            .startTime = utils.currentNanos(),
+            .startTime = utils.currentRealNanos(),
             .kind = opts.kind orelse .internal,
         };
 
@@ -469,7 +473,7 @@ pub const Telemetry = struct {
     /// Returns true when a batch export payload was queued and should be
     /// flushed after the lock is released.
     fn endSpanLocked(self: *Telemetry, span: *Span) !bool {
-        span.endTime = utils.currentNanos();
+        span.endTime = utils.currentRealNanos();
 
         // Calculate duration using utils helper
         const durationNs: u64 = if (span.endTime > span.startTime)
@@ -591,7 +595,7 @@ pub const Telemetry = struct {
             .value = value,
             .unit = opts.unit,
             .description = opts.description,
-            .timestamp = utils.currentNanos(),
+            .timestamp = utils.currentRealNanos(),
         });
 
         self.metricCount += 1;
@@ -668,7 +672,7 @@ pub const Telemetry = struct {
     }
 
     fn recordMetricsBatchLocked(self: *Telemetry, metrics: []const MetricInput) !usize {
-        const batchTimestamp = utils.currentNanos();
+        const batchTimestamp = utils.currentRealNanos();
         try self.metrics.ensureTotalCapacity(self.allocator, self.metrics.items.len + metrics.len);
         var recorded: usize = 0;
         for (metrics) |metric| {
@@ -733,8 +737,7 @@ pub const Telemetry = struct {
                     try self.writeSpanJson(writer, span);
                 }
             },
-            .generic, .googleCloud => try self.writeOtlpSpans(writer),
-            .jaeger => try self.writeJaegerPayload(writer),
+            .generic, .googleCloud, .jaeger => try self.writeOtlpSpans(writer),
             .zipkin => try self.writeZipkinPayload(writer),
             .datadog => try self.writeDatadogPayload(writer),
             .googleAnalytics, .googleTagManager => try self.writeGoogleAnalyticsPayload(writer),
@@ -1327,94 +1330,6 @@ pub const Telemetry = struct {
         }
 
         try writer.writeByte('}');
-    }
-
-    /// Write the Jaeger JSON payload (Jaeger's JSON trace model).
-    fn writeJaegerPayload(self: *Telemetry, writer: anytype) !void {
-        try writer.writeAll("{\"data\":[{\"traceID\":\"");
-        if (self.completedSpans.items.len > 0) {
-            try writer.writeAll(self.completedSpans.items[0].traceId);
-        }
-        try writer.writeAll("\",\"spans\":[");
-
-        for (self.completedSpans.items, 0..) |span, i| {
-            if (i > 0) try writer.writeByte(',');
-            try self.writeJaegerSpan(writer, span);
-        }
-
-        try writer.writeAll("],\"processes\":{\"p1\":{\"serviceName\":\"");
-        try writer.writeAll(self.resource.serviceName orelse "unknown");
-        try writer.writeAll("\"}}}]}");
-    }
-
-    /// Write Jaeger span format.
-    fn writeJaegerSpan(self: *Telemetry, writer: anytype, span: Span) !void {
-        try writer.writeAll("{\"traceID\":\"");
-        try writer.writeAll(span.traceId);
-        try writer.writeAll("\",\"spanID\":\"");
-        try writer.writeAll(span.spanId);
-        try writer.writeAll("\",\"operationName\":\"");
-        try utils.escapeJsonString(writer, span.name);
-        try writer.writeAll("\",\"startTime\":");
-        const startUs = utils.safeToUnsigned(u64, span.startTime) / Constants.TimeConstants.nsPerUs;
-        try utils.writeInt(writer, startUs);
-        if (span.endTime > 0) {
-            try writer.writeAll(",\"duration\":");
-            const durationUs = utils.safeToUnsigned(u64, span.endTime - span.startTime) / Constants.TimeConstants.nsPerUs;
-            try utils.writeInt(writer, durationUs);
-        }
-        if (span.parentSpanId) |pid| {
-            try writer.writeAll(",\"references\":[{\"refType\":\"CHILD_OF\",\"traceID\":\"");
-            try writer.writeAll(span.traceId);
-            try writer.writeAll("\",\"spanID\":\"");
-            try writer.writeAll(pid);
-            try writer.writeAll("\"}]");
-        }
-
-        // Attributes are exported as string tags
-        if (span.hasAttributes and span.attributes.count() > 0) {
-            try writer.writeAll(",\"tags\":[");
-            var tagIt = span.attributes.iterator();
-            var firstTag = true;
-            while (tagIt.next()) |entry| {
-                if (!firstTag) try writer.writeByte(',');
-                firstTag = false;
-                try writer.writeAll("{\"key\":\"");
-                try utils.escapeJsonString(writer, entry.key_ptr.*);
-                try writer.writeAll("\",\"vType\":\"STRING\",\"vStr\":\"");
-                try self.writeAttributeTextEscaped(writer, entry.value_ptr.*);
-                try writer.writeAll("\"}");
-            }
-            try writer.writeByte(']');
-        }
-
-        // Events are exported as Jaeger logs
-        if (span.hasEvents and span.events.items.len > 0) {
-            try writer.writeAll(",\"logs\":[");
-            for (span.events.items, 0..) |event, i| {
-                if (i > 0) try writer.writeByte(',');
-                try writer.writeAll("{\"timestamp\":");
-                const eventUs = utils.safeToUnsigned(u64, event.timestamp) / Constants.TimeConstants.nsPerUs;
-                try utils.writeInt(writer, eventUs);
-                try writer.writeAll(",\"fields\":[{\"key\":\"event\",\"vType\":\"STRING\",\"vStr\":\"");
-                try utils.escapeJsonString(writer, event.name);
-                try writer.writeAll("\"}");
-                if (event.hasAttributes) {
-                    var fieldIt = event.attributes.iterator();
-                    while (fieldIt.next()) |entry| {
-                        try writer.writeAll(",{\"key\":\"");
-                        try utils.escapeJsonString(writer, entry.key_ptr.*);
-                        try writer.writeAll("\",\"vType\":\"STRING\",\"vStr\":\"");
-                        try self.writeAttributeTextEscaped(writer, entry.value_ptr.*);
-                        try writer.writeAll("\"}");
-                    }
-                }
-                try writer.writeAll("]}");
-            }
-            try writer.writeByte(']');
-        }
-
-        try writer.writeAll(",\"processID\":\"p1\"}");
     }
 
     /// Renders an attribute value as JSON text, escaped for embedding inside
@@ -2344,7 +2259,7 @@ pub const Span = struct {
 
         var event = SpanEvent{
             .name = ownedName,
-            .timestamp = utils.currentNanos(),
+            .timestamp = utils.currentRealNanos(),
         };
 
         if (attrs) |entries| {
@@ -2375,7 +2290,7 @@ pub const Span = struct {
     /// Ends the span (sets end_time)
     pub fn end(self: *Span) void {
         if (self.endTime == 0) {
-            self.endTime = utils.currentNanos();
+            self.endTime = utils.currentRealNanos();
         }
     }
 
@@ -3176,7 +3091,7 @@ test "Provider configurations" {
     try std.testing.expectEqualStrings("dd-api-key", dd.apiKey.?);
 
     // OTEL Collector
-    const otel = TelemetryConfig.otelCollector("http://localhost:4317");
+    const otel = TelemetryConfig.otelCollector("http://localhost:4318/v1/traces");
     try std.testing.expectEqual(otel.provider, .generic);
 }
 
@@ -3495,7 +3410,6 @@ test "NetworkProtocol values" {
     try std.testing.expectEqual(NetworkProtocol.udp, .udp);
     try std.testing.expectEqual(NetworkProtocol.syslog, .syslog);
     try std.testing.expectEqual(NetworkProtocol.http, .http);
-    try std.testing.expectEqual(NetworkProtocol.grpc, .grpc);
 }
 
 test "ExportMode values" {
@@ -3936,7 +3850,7 @@ test "Span getDuration uses the recorded end time" {
     var span = try telemetry.startSpan("duration_span", .{});
     defer span.deinit();
 
-    span.startTime = utils.currentNanos() - 100 * Constants.TimeConstants.nsPerMs;
+    span.startTime = utils.currentRealNanos() - 100 * Constants.TimeConstants.nsPerMs;
     span.endTime = span.startTime + 25 * Constants.TimeConstants.nsPerMs;
 
     const durationNs = span.getDuration();
@@ -4191,6 +4105,204 @@ test "Telemetry HTTP transport posts payloads and gzips on request" {
     try std.testing.expect(gzipRequest.len > bodyStart + 2);
     try std.testing.expectEqual(@as(u8, 0x1f), gzipRequest[bodyStart]);
     try std.testing.expectEqual(@as(u8, 0x8b), gzipRequest[bodyStart + 1]);
+}
+
+test "Telemetry provider exports reach their configured HTTP endpoints" {
+    const allocator = std.testing.allocator;
+
+    var capture = HttpCapture{};
+    const thread = try std.Thread.spawn(.{}, httpCaptureWorker, .{&capture});
+    defer stopCaptureServer(&capture, thread);
+
+    var attempts: usize = 0;
+    while (attempts < 600 and capture.port.load(.acquire) == 0) : (attempts += 1) {
+        Utils.defaultIo().sleep(std.Io.Duration.fromMilliseconds(5), .awake) catch {};
+    }
+    const port = capture.port.load(.acquire);
+    try std.testing.expect(port != 0);
+
+    const Case = struct {
+        config: TelemetryConfig,
+        suffix: []const u8,
+        body_marker: []const u8,
+        header_marker: ?[]const u8 = null,
+        request_marker: ?[]const u8 = null,
+    };
+    const cases = [_]Case{
+        .{
+            .config = .{ .enabled = true, .provider = .generic, .spanProcessorType = .simple, .samplingStrategy = .alwaysOn },
+            .suffix = "/v1/traces",
+            .body_marker = "\"resourceSpans\"",
+        },
+        .{
+            .config = .{ .enabled = true, .provider = .jaeger, .spanProcessorType = .simple, .samplingStrategy = .alwaysOn },
+            .suffix = "/api/traces",
+            .body_marker = "\"resourceSpans\"",
+        },
+        .{
+            .config = .{ .enabled = true, .provider = .zipkin, .spanProcessorType = .simple, .samplingStrategy = .alwaysOn },
+            .suffix = "/api/v2/spans",
+            .body_marker = "\"localEndpoint\"",
+        },
+        .{
+            .config = .{
+                .enabled = true,
+                .provider = .datadog,
+                .apiKey = "dd-test-key",
+                .spanProcessorType = .simple,
+                .samplingStrategy = .alwaysOn,
+            },
+            .suffix = "/v0.3/traces",
+            .body_marker = "\"trace_id\"",
+            .header_marker = "DD-API-KEY: dd-test-key",
+        },
+        .{
+            .config = .{
+                .enabled = true,
+                .provider = .googleCloud,
+                .apiKey = "gcp-key",
+                .spanProcessorType = .simple,
+                .samplingStrategy = .alwaysOn,
+            },
+            .suffix = "/v1/traces",
+            .body_marker = "\"resourceSpans\"",
+            .header_marker = "authorization: Bearer gcp-key",
+        },
+        .{
+            .config = .{
+                .enabled = true,
+                .provider = .awsXray,
+                .region = "eu-west-1",
+                .spanProcessorType = .simple,
+                .samplingStrategy = .alwaysOn,
+            },
+            .suffix = "/xray",
+            .body_marker = "\"trace_id\":\"1-",
+        },
+        .{
+            .config = .{
+                .enabled = true,
+                .provider = .azure,
+                .connectionString = "InstrumentationKey=azure-key;IngestionEndpoint=https://example/",
+                .spanProcessorType = .simple,
+                .samplingStrategy = .alwaysOn,
+            },
+            .suffix = "/v2.1/track",
+            .body_marker = "\"iKey\":\"azure-key\"",
+        },
+        .{
+            .config = .{
+                .enabled = true,
+                .provider = .googleAnalytics,
+                .projectId = "G-TEST123",
+                .apiKey = "ga-secret",
+                .spanProcessorType = .simple,
+                .samplingStrategy = .alwaysOn,
+            },
+            .suffix = "/mp/collect",
+            .body_marker = "\"client_id\"",
+            .request_marker = "POST /mp/collect?measurement_id=G-TEST123&api_secret=ga-secret HTTP/1.1",
+        },
+        .{
+            .config = .{
+                .enabled = true,
+                .provider = .googleTagManager,
+                .apiKey = "gtm-key",
+                .spanProcessorType = .simple,
+                .samplingStrategy = .alwaysOn,
+            },
+            .suffix = "/gtm",
+            .body_marker = "\"client_id\"",
+            .header_marker = "authorization: Bearer gtm-key",
+        },
+    };
+
+    for (cases, 1..) |case, expected_hits| {
+        var config = case.config;
+        config.io = std.testing.io;
+        config.exporterEndpoint = try std.fmt.allocPrint(allocator, "http://127.0.0.1:{d}{s}", .{ port, case.suffix });
+        defer allocator.free(config.exporterEndpoint.?);
+
+        var telemetry = try Telemetry.init(allocator, config);
+        defer telemetry.deinit();
+
+        var span = try telemetry.startSpan("provider_matrix_span", .{});
+        defer span.deinit();
+        span.end();
+        try telemetry.endSpan(&span);
+        try telemetry.exportSpans();
+
+        try waitForCaptureHits(&capture, expected_hits);
+        const request = capture.snapshot();
+        try std.testing.expect(std.mem.indexOf(u8, request, case.request_marker orelse case.suffix) != null);
+        try std.testing.expect(std.mem.indexOf(u8, request, case.body_marker) != null);
+        try std.testing.expect(std.mem.indexOf(u8, request, "provider_matrix_span") != null);
+        if (case.header_marker) |marker| {
+            try std.testing.expect(std.mem.indexOf(u8, request, marker) != null);
+        }
+    }
+}
+
+test "Telemetry OTLP metrics export posts over HTTP" {
+    const allocator = std.testing.allocator;
+
+    var capture = HttpCapture{};
+    const thread = try std.Thread.spawn(.{}, httpCaptureWorker, .{&capture});
+    defer stopCaptureServer(&capture, thread);
+
+    var attempts: usize = 0;
+    while (attempts < 600 and capture.port.load(.acquire) == 0) : (attempts += 1) {
+        Utils.defaultIo().sleep(std.Io.Duration.fromMilliseconds(5), .awake) catch {};
+    }
+    const port = capture.port.load(.acquire);
+    try std.testing.expect(port != 0);
+
+    var endpointBuffer: [128]u8 = undefined;
+    const endpoint = try std.fmt.bufPrint(&endpointBuffer, "http://127.0.0.1:{d}/v1/metrics", .{port});
+
+    var config = TelemetryConfig{
+        .enabled = true,
+        .provider = .generic,
+        .exporterEndpoint = endpoint,
+        .spanProcessorType = .simple,
+        .samplingStrategy = .alwaysOn,
+        .metricFormat = .otlp,
+    };
+    config.io = std.testing.io;
+
+    var telemetry = try Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    try telemetry.recordCounter("http.probe", 3.0);
+    try telemetry.exportMetrics();
+
+    try waitForCaptureHits(&capture, 1);
+    const request = capture.snapshot();
+    try std.testing.expect(std.mem.indexOf(u8, request, "POST /v1/metrics HTTP/1.1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, request, "\"resourceMetrics\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, request, "\"http_probe\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, request, "\"sum\"") != null);
+}
+
+test "Telemetry span timestamps use wall clock time" {
+    const allocator = std.testing.allocator;
+    const config = TelemetryConfig{
+        .enabled = true,
+        .provider = .generic,
+        .exporterEndpoint = "http://127.0.0.1:1/v1/traces",
+        .spanProcessorType = .simple,
+    };
+
+    var telemetry = try Telemetry.init(allocator, config);
+    defer telemetry.deinit();
+
+    var span = try telemetry.startSpan("wall_clock_span", .{});
+    defer span.deinit();
+    span.end();
+
+    const epoch_threshold = 1_700_000_000 * Constants.TimeConstants.nsPerSecond;
+    try std.testing.expect(span.startTime > epoch_threshold);
+    try std.testing.expect(span.endTime >= span.startTime);
 }
 
 test "Telemetry rejects gzip compression for non-HTTP transports" {

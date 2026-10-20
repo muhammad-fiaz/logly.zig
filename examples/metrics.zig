@@ -19,7 +19,7 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Enable metrics on the logger
-    logger.enableMetrics();
+    try logger.enableMetrics();
 
     std.debug.print("Logging messages to collect metrics\n\n", .{});
 
@@ -117,7 +117,7 @@ pub fn main() !void {
         });
         defer metrics.deinit();
 
-        // Record latencies: 1µs, 5µs, 10µs, 50µs, 100µs, 500µs, 1ms
+        // Record latencies: 1us, 5us, 10us, 50us, 100us, 500us, 1ms
         const latencies = [_]u64{ 1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000 };
         for (latencies) |lat| {
             metrics.recordLogWithLatency(.info, 64, lat);

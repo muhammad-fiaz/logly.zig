@@ -12,88 +12,15 @@ head:
 
 # Metrics API
 
-The `Metrics` struct provides comprehensive observability into the logging system's performance and health.
-
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize metrics |
-| `deinit()` | `destroy()` | Deinitialize metrics |
-| `initWithConfig()` | `createWithConfig()`, `newWithConfig()` | Initialize with config |
-| `recordLog()` | `record()`, `log()` | Record log event |
-| `recordDrop()` | `drop()`, `dropped()` | Record dropped event |
-| `recordError()` | `recordErr()` | Record error event |
-| `getSnapshot()` | `metricsSnapshot()` | Get metrics snapshot |
-| `formatLevelBreakdown()` | `levels()`, `breakdown()` | Format level breakdown |
-| `reset()` | `clear()` | Reset metrics |
-| `uptimeSeconds()` | `uptimeSec()` | Get uptime in seconds |
-| `bytesPerSecond()` | `throughput()` | Get bytes per second |
-| `setRecordLoggedCallback()` | `onRecordLogged()`, `setOnRecordLogged()` | Set record logged callback |
-| `setSnapshotCallback()` | `onSnapshot()`, `setOnSnapshot()` | Set snapshot callback |
-| `setThresholdCallback()` | `onThreshold()`, `setOnThreshold()` | Set threshold callback |
-| `setErrorCallback()` | `onError()`, `setOnError()` | Set error callback |
-| `getConfig()` | `getConfiguration()`, `configuration()` | Get configuration |
-| `isEnabled()` | `enabled()`, `isActive()` | Check if enabled |
-| `recordLogWithLatency()` | `recordWithLatency()`, `logWithLatency()` | Record log with latency |
-| `recordSinkWrite()` | `sinkWrite()`, `recordSinkWriteOp()` | Record sink write |
-| `recordSinkError()` | `sinkError()`, `recordSinkErrorOp()` | Record sink error |
-| `takeSnapshot()` | `captureSnapshot()`, `takeSnapshotNow()` | Take snapshot |
-| `getHistory()` | `getSnapshots()`, `snapshots()` | Get snapshots history |
-| `exportMetrics()` | `exportData()`, `toString()` | Export metrics |
-| `exportJson()` | `json()`, `toJson()` | Export as JSON |
-| `exportPrometheus()` | `prometheus()`, `toPrometheus()` | Export as Prometheus |
-| `exportStatsd()` | `statsd()`, `toStatsd()` | Export as StatsD |
-| `avgLatencyNs()` | `avgLatency()`, `averageLatency()` | Get average latency |
-| `minLatencyNs()` | `minLatency()` | Get minimum latency |
-| `maxLatencyNs()` | `maxLatency()` | Get maximum latency |
-| `getHistogram()` | `latencyHistogram()`, `getLatencyHistogram()` | Get latency histogram |
-| `latencyPercentileNs()` | `latencyPercentile()`, `percentileNs()` | Estimate latency percentile (ns) |
-| `latencyPercentileMs()` | `percentileMs()` | Estimate latency percentile (ms) |
-| `getLatencySummary()` | `latencySummary()`, `summaryLatency()` | Get latency summary (p50/p95/p99) |
-| `format()` | `formatMetrics()`, `stringify()` | Format metrics |
-| `recordCustomLog()` | `recordCustom()`, `customLog()` | Record custom log |
-| `hasRecords()` | `hasData()` | Check if has records |
-| `totalRecordCount()` | `recordCount()`, `totalRecords()` | Get total record count |
-| `totalBytesLogged()` | `bytesLogged()`, `totalBytes()` | Get total bytes logged |
-| `rate()` | `recordsPerSecond()`, `recordsPerSec()` | Get records per second |
-| `errorCount()` | `errorTotal()`, `totalErrors()` | Get error count |
-| `droppedCount()` | `dropTotal()`, `totalDropped()` | Get dropped count |
-| `errorRate()` | `failureRate()` | Get error rate |
-| `dropRate()` | `dropPercentage()` | Get drop rate |
-| `hasHighErrorRate()` | `highErrorRate()`, `errorRateHigh()` | Check if high error rate |
-| `hasHighDropRate()` | `highDropRate()`, `dropRateHigh()` | Check if high drop rate |
-| `levelCount()` | `countForLevel()`, `levelRecords()` | Get level count |
-| `sinkCount()` | `sinks()`, `sinkTotal()` | Get sink count |
-| `totalSinkErrors()` | `sinkErrorsTotal()` | Get total sink errors |
-| `totalSinkFlushes()` | `sinkFlushesTotal()` | Get total sink flushes |
-| `lastRecordAgeMs()` | `recordAgeMs()`, `ageSinceLastRecordMs()` | Get age since last record |
-| `recordSinkFlush()` | `sinkFlush()`, `recordSinkFlushOp()` | Record sink flush |
-| `getSinkMetrics()` | `sinkMetrics()`, `getSinkStats()` | Get sink metrics |
-| `getSinkMetricsByName()` | `sinkMetricsByName()`, `getSinkStatsByName()` | Get sink metrics by name |
-| `hasErrors()` | `hasFailures()` | Check if has errors |
-| `hasDropped()` | `hasDrops()` | Check if has dropped |
-| `getRecordsWritten()` | `records()`, `written()` | Get records written (SinkMetrics) |
-| `getBytesWritten()` | `bytes()`, `bytesWritten()` | Get bytes written (SinkMetrics) |
-| `getWriteErrors()` | `writeErrors()`, `errors()` | Get write errors (SinkMetrics) |
-| `getFlushCount()` | `flushes()`, `flushCount()` | Get flush count (SinkMetrics) |
-| `hasWritten()` | `hasData()`, `isActive()` | Check if has written (SinkMetrics) |
-| `getErrorRate()` | `errorRate()`, `failureRate()` | Get error rate (SinkMetrics) |
-| `getSuccessRate()` | `successRate()`, `success()` | Get success rate (SinkMetrics) |
-| `avgBytesPerRecord()` | `avgBytes()`, `bytesPerRecord()` | Get avg bytes per record (SinkMetrics) |
-| `avgRecordsPerFlush()` | `avgRecords()`, `recordsPerFlush()` | Get avg records per flush (SinkMetrics) |
-| `throughputBytesPerSecond()` | `throughput()`, `bytesPerSecond()` | Get throughput (SinkMetrics) |
-| `getDropRate()` | `dropRate()`, `dropPercentage()` | Get drop rate (Snapshot) |
-| `basic()` | `simple()`, `minimal()` | Basic preset (MetricsPresets) |
-| `createMetricsSink()` | `metricsSink()`, `sink()` | Create metrics sink (MetricsPresets) |
+The `Metrics` struct exposes counters, histograms, and rates for the logging system.
 
 ## Overview
 
-Metrics tracks record counts, throughput, errors, and per-sink statistics. It uses thread-safe atomic operations for all counters, making it safe for concurrent access without locks on hot paths.
+Metrics tracks record counts, throughput, errors, and per-sink statistics. Counters use atomic operations, and mutations that touch shared structures are synchronized by an internal mutex.
 
 ## Export Customization
 
-`Config.MetricsConfig` now includes exporter naming and breakdown controls:
+`Config.MetricsConfig` includes exporter naming and breakdown controls:
 
 ```zig
 const cfg = logly.Config.MetricsConfig.production()
@@ -109,7 +36,7 @@ Available controls:
 
 | Field / Helper | Purpose |
 |----------------|---------|
-| `metricPrefix`, `withPrefix()` / `prefix()` | Namespace exported metrics |
+| `metricPrefix`, `withPrefix()` | Namespace exported metrics |
 | `metricSeparator` | Separator for Prometheus-compatible names |
 | `statsdSeparator` | Separator for StatsD metric names |
 | `sanitizeNames` | Replace exporter-unsafe characters |
@@ -117,8 +44,8 @@ Available controls:
 | `exportSinkBreakdown` | Include per-sink counters/errors |
 | `prometheus()` | Configure Prometheus export naming |
 | `statsd()` | Configure StatsD export naming |
-| `withAlerts()` / `alerts()` | Configure error/drop thresholds |
-| `withLatencyHistogram()` / `histogram()` | Enable latency histogram collection |
+| `withAlerts()` | Configure error/drop thresholds |
+| `withLatencyHistogram()` | Enable latency histogram collection |
 
 ### MetricsConfig
 
@@ -129,20 +56,25 @@ pub const MetricsConfig = struct {
     enabled: bool = false,
     trackLevels: bool = true,
     trackSinks: bool = true,
+    trackThroughput: bool = true,
     trackLatency: bool = false,
+    snapshotIntervalMs: u64 = 0,
+    errorRateThreshold: f32 = 0.0,
+    dropRateThreshold: f32 = 0.0,
+    maxRecordsPerSecond: u64 = 0,
+    exportFormat: ExportFormat = .text,
     enableHistogram: bool = false,
-    histogramBuckets: usize = 20,
-    exportFormat: ExportFormat = .none,
-    export_interval_ms: u64 = 60000,
-    exportLevelBreakdown: bool = true,
-    exportSinkBreakdown: bool = true,
+    histogramBuckets: u8 = 10,
+    historySize: u16 = 0,
     metricPrefix: []const u8 = "logly",
     metricSeparator: []const u8 = "_",
     statsdSeparator: []const u8 = ".",
     sanitizeNames: bool = true,
-    
+    exportLevelBreakdown: bool = true,
+    exportSinkBreakdown: bool = true,
+
     pub const ExportFormat = enum {
-        none,
+        text,
         json,
         prometheus,
         statsd,
@@ -161,11 +93,11 @@ pub const Metrics = struct {
     totalRecords: std.atomic.Value(u64),
     totalBytes: std.atomic.Value(u64),
     droppedRecords: std.atomic.Value(u64),
-    errorCount: std.atomic.Value(u64),
-    levelCounts: [10]std.atomic.Value(u64),
+    totalErrors: std.atomic.Value(u64),
+    levelCounts: [Constants.LevelConstants.count]std.atomic.Value(u64),
     startTime: i64,
     sinkMetrics: std.ArrayList(SinkMetrics),
-    
+
     // Callbacks
     onRecordLogged: ?*const fn (Level, u64) void,
     onMetricsSnapshot: ?*const fn (*const Snapshot) void,
@@ -262,7 +194,7 @@ pub const Snapshot = struct {
     recordsPerSecond: f64,
     bytesPerSecond: f64,
     levelCounts: [10]u64,
-    
+
     pub fn getDropRate(self: *const Snapshot) f64;
 };
 ```
@@ -275,8 +207,6 @@ pub const Snapshot = struct {
 
 Initializes a new Metrics instance with all counters at zero.
 
-**Alias:** `create`
-
 #### `initWithConfig(allocator: std.mem.Allocator, config: MetricsConfig) Metrics`
 
 Initializes a new Metrics instance with custom configuration.
@@ -288,8 +218,6 @@ Initializes a new Metrics instance with an explicit I/O handle and custom config
 #### `deinit(self: *Metrics) void`
 
 Releases all resources associated with metrics.
-
-**Alias:** `destroy`
 
 ### Callbacks
 
@@ -325,8 +253,6 @@ Returns true if metrics collection is enabled.
 
 Records a successful log event with its level and size.
 
-**Alias**: `record`, `log`
-
 #### `recordLogWithLatency(level: Level, bytes: u64, latencyNs: u64) void`
 
 Records a log with latency measurement for histogram tracking.
@@ -335,13 +261,9 @@ Records a log with latency measurement for histogram tracking.
 
 Records a dropped log event (e.g., due to buffer overflow).
 
-**Alias**: `drop`, `dropped`
-
 #### `recordError() void`
 
 Records an internal error.
-
-**Alias**: `recordErr`
 
 #### `recordCustomLog(bytes: u64) void`
 
@@ -379,8 +301,6 @@ Returns sink metrics by name.
 
 Returns a thread-safe snapshot of the current metrics.
 
-**Alias**: `metricsSnapshot`
-
 #### `takeSnapshot() !Snapshot`
 
 Takes a snapshot and optionally stores in history.
@@ -392,8 +312,6 @@ Returns the snapshot history.
 #### `formatLevelBreakdown(allocator: Allocator) ![]u8`
 
 Returns a formatted string showing log counts by level.
-
-**Alias**: `levels`, `breakdown`
 
 ### Export
 
@@ -477,8 +395,6 @@ Returns records per second throughput.
 
 Returns bytes per second throughput.
 
-**Alias**: `throughput`
-
 #### `uptime() i64`
 
 Returns uptime in milliseconds.
@@ -486,8 +402,6 @@ Returns uptime in milliseconds.
 #### `uptimeSeconds() f64`
 
 Returns uptime in seconds.
-
-**Alias**: `uptimeSec`
 
 #### `levelCount(level: Level) u64`
 
@@ -535,8 +449,6 @@ Returns true if drop rate exceeds the threshold.
 
 Resets all metrics to zero.
 
-**Alias**: `clear`
-
 ## Presets
 
 ### MetricsPresets
@@ -545,7 +457,7 @@ Resets all metrics to zero.
 pub const MetricsPresets = struct {
     /// Creates a basic metrics instance.
     pub fn basic(allocator: std.mem.Allocator) Metrics;
-    
+
     /// Creates a metrics sink configuration.
     pub fn createMetricsSink(filePath: []const u8) SinkConfig;
 };
@@ -585,7 +497,5 @@ metrics.reset();
 
 ## Performance
 
-- **Lock-free**: All hot paths use atomic operations
-- **Low overhead**: ~1-2% CPU for enabled metrics
-- **Thread-safe**: Safe for concurrent access from multiple threads
-- **Batch updates**: Reduces contention in high-throughput scenarios
+- **Thread-safe**: Recording and snapshot reads are synchronized by an internal mutex.
+- **Opt-in overhead**: Allocation and locking costs apply only when metrics collection is enabled.

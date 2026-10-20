@@ -256,7 +256,7 @@ if (logger.getSink(index)) |sink| {
 ```
 
 Sink management helpers: `getSinkCount()`, `removeSink(index)` (alias
-`remove`), `removeAllSinks()` (aliases `removeAll` and `clear`).
+`remove`), `removeAllSinks()` (alias `removeAll`).
 
 ## Explicit Io handle
 

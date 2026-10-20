@@ -7,6 +7,7 @@ const std = @import("std");
 
 // Core components
 pub const Level = @import("level.zig").Level;
+pub const LevelMask = @import("level.zig").LevelMask;
 pub const CustomLevel = @import("level.zig").CustomLevel;
 pub const Logger = @import("logger.zig").Logger;
 pub const ScopedLogger = @import("logger.zig").ScopedLogger;
@@ -20,6 +21,7 @@ pub const OwnedMemoryMessages = Sink.OwnedMemoryMessages;
 pub const Record = @import("record.zig").Record;
 pub const Formatter = @import("formatter.zig").Formatter;
 pub const Rotation = @import("rotation.zig").Rotation;
+pub const RotationPresets = @import("rotation.zig").RotationPresets;
 pub const Constants = @import("constants.zig");
 pub const Utils = @import("utils.zig");
 pub const utils = Utils;
@@ -47,7 +49,7 @@ pub const ErrorHandling = Config.ErrorHandling;
 pub const Timezone = Config.Timezone;
 pub const ConfigOverride = Config.ConfigOverride;
 
-// Enterprise components
+// Advanced components
 pub const Filter = @import("filter.zig").Filter;
 pub const FilterRule = Filter.FilterRule;
 pub const FilterPresets = @import("filter.zig").FilterPresets;
@@ -70,6 +72,7 @@ pub const Scheduler = @import("scheduler.zig").Scheduler;
 pub const SchedulerPresets = @import("scheduler.zig").SchedulerPresets;
 pub const ThreadPool = @import("thread_pool.zig").ThreadPool;
 pub const ThreadPoolPresets = @import("thread_pool.zig").ThreadPoolPresets;
+pub const ParallelSinkWriter = @import("thread_pool.zig").ParallelSinkWriter;
 pub const Network = @import("network.zig");
 pub const crash = @import("crash.zig");
 pub const panic = crash.panic;

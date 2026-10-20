@@ -254,7 +254,7 @@ To update to a newer version:
 3. Update the hash in `build.zig.zon`
 4. Rebuild your project
 
-Or simply run:
+Or run:
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/logly.zig/archive/refs/tags/NEW_VERSION.tar.gz

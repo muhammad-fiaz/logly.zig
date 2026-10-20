@@ -1281,7 +1281,7 @@ pub const RedactionPresets = struct {
         return redactor;
     }
 
-    /// Creates a secure sink configuration with redaction enabled.
+    /// Creates a JSON sink configuration for records that have already been redacted.
     pub fn createSecureSink(filePath: []const u8) SinkConfig {
         return SinkConfig{
             .path = filePath,

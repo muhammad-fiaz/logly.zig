@@ -49,7 +49,7 @@ pub fn main() !void {
     const decompressed = try comp.decompress(compressed);
     defer allocator.free(decompressed);
     std.debug.print("   Decompressed size: {d} bytes\n", .{decompressed.len});
-    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, testData, decompressed)) "âœ“ Verified" else "âœ— Failed"});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, testData, decompressed)) "OK" else "FAILED"});
 
     // Example 2: Compression presets
     std.debug.print("2. Compression Presets\n", .{});
@@ -88,7 +88,7 @@ pub fn main() !void {
     const zstdDecompressed = try zstdComp.decompress(zstdCompressed);
     defer allocator.free(zstdDecompressed);
     std.debug.print("   Zstd decompressed: {d} bytes\n", .{zstdDecompressed.len});
-    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, zstdData, zstdDecompressed)) "âœ“ Verified" else "âœ— Failed"});
+    std.debug.print("   Data integrity: {s}\n\n", .{if (std.mem.eql(u8, zstdData, zstdDecompressed)) "OK" else "FAILED"});
 
     // Example 8: Streaming Compression
     std.debug.print("8. Streaming Compression\n", .{});
@@ -129,7 +129,7 @@ zig build run-compression
    Original data size: 470 bytes
    Compressed size: 77 bytes
    Decompressed size: 470 bytes
-   Data integrity: âœ“ Verified
+   Data integrity: OK
 
 ...
 
@@ -140,7 +140,7 @@ zig build run-compression
 7. Streaming Compression
    ---------------------
    Stream compressed size: 57 bytes
-   Stream decompressed verified: âœ“ Yes
+   Stream decompressed verified: OK
 
 8. Directory Compression
    ---------------------
@@ -276,13 +276,13 @@ defer allocator.free(fast_compressed);
 
 | Algorithm | Speed | Ratio | Use Case |
 |-----------|-------|-------|----------|
-| `deflate` | ★★★★ | ★★★ | General purpose |
-| `zstd` | ★★★★★ | ★★★★ | High performance |
-| `lzma` | ★★ | ★★★★★ | Long-term storage |
-| `xz` | ★★ | ★★★★★ | Distribution |
-| `zip` | ★★★★ | ★★★ | Cross-platform |
-| `tarGz` | ★★★ | ★★★★ | Unix archives |
-| `lz4` | ★★★★★ | ★★ | Real-time |
+| `deflate` | High | Moderate | General purpose |
+| `zstd` | Very high | High | High performance |
+| `lzma` | Low | Very high | Long-term storage |
+| `xz` | Low | Very high | Distribution |
+| `zip` | High | Moderate | Cross-platform |
+| `tarGz` | Moderate | High | Unix archives |
+| `lz4` | Very high | Low | Real-time |
 
 ## See Also
 

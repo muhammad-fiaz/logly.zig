@@ -57,7 +57,7 @@ prevents leakage into later output.
 
 Serialization is always valid on its own; color is a presentation layer
 applied afterwards, never inside the data. All rendering goes through
-`tint.zig` — Logly keeps no second ANSI implementation.
+`tint.zig`; Logly keeps no second ANSI implementation.
 
 | Format | No color | Horizontal | Vertical |
 |---|---|---|---|
@@ -81,11 +81,11 @@ from the same record.
 
 | Platform | Color Support | Notes |
 |----------|--------------|-------|
-| Linux | ✅ Native | Works out of the box |
-| macOS | ✅ Native | Works out of the box |
-| Windows 10+ | ✅ Requires init | Call `Terminal.enableAnsiColors()` |
-| VS Code Terminal | ✅ Full | Works on all platforms |
-| Windows Console | ⚠️ Legacy | May need VT processing enabled |
+| Linux | Native | Works out of the box |
+| macOS | Native | Works out of the box |
+| Windows 10+ | Requires init | Call `Terminal.enableAnsiColors()` |
+| VS Code Terminal | Full | Works on all platforms |
+| Windows Console | Legacy | May need VT processing enabled |
 
 ## Enabling Colors
 
@@ -99,7 +99,7 @@ const logly = @import("logly");
 pub fn main() !void {
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
      _ = logly.Terminal.enableAnsiColors();
-    
+
     // ... rest of your code
 }
 ```
@@ -213,20 +213,20 @@ const logly = @import("logly");
 
 pub fn main() !void {
      _ = logly.Terminal.enableAnsiColors();
-    
+
     var gpa = std.heap.DebugAllocator(.{}){};
     const allocator = gpa.allocator();
-    
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
-    
+
     // Add custom levels with custom colors
-    try logger.addCustomLevel("AUDIT", 35, "35");        // Magenta
-    try logger.addCustomLevel("NOTICE", 22, "36;1");     // Bold Cyan
-    try logger.addCustomLevel("ALERT", 48, "91;1");      // Bold Bright Red
-    try logger.addCustomLevel("SECURITY", 55, "97;41"); // White on Red BG
-    try logger.addCustomLevel("METRIC", 15, "32;1");     // Bold Green
-    
+    try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35").?);        // Magenta
+    try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("36;1").?);     // Bold Cyan
+    try logger.addCustomLevel("ALERT", 48, logly.Color.parse("91;1").?);      // Bold Bright Red
+    try logger.addCustomLevel("SECURITY", 55, logly.Color.parse("97;41").?); // White on Red BG
+    try logger.addCustomLevel("METRIC", 15, logly.Color.parse("32;1").?);     // Bold Green
+
     // Use custom levels
     try logger.custom("AUDIT", "User login event", @src());
     try logger.custom("NOTICE", "Important notice", @src());
@@ -387,15 +387,15 @@ logger.configure(config);
 Colors are enabled by default for console output:
 
 ```zig
-try logger.info("White text");      // \x1b[37m...\x1b[0m
-try logger.warning("Yellow text");  // \x1b[33m...\x1b[0m
-try logger.err("Red text");         // \x1b[31m...\x1b[0m
+try logger.info("White text", @src());      // \x1b[37m...\x1b[0m
+try logger.warning("Yellow text", @src());  // \x1b[33m...\x1b[0m
+try logger.err("Red text", @src());         // \x1b[31m...\x1b[0m
 ```
 
 ### JSON Output Is Never Colored
 
 Serialization formats never contain ANSI sequences, even with colors
-enabled — color is a presentation concern for human-readable text only:
+enabled - color is a presentation concern for human-readable text only:
 
 ```zig
 var config = logly.Config.default();
@@ -403,7 +403,7 @@ config.format = .json;
 config.color = true; // Has no effect on JSON output
 logger.configure(config);
 
-try logger.info("Plain JSON object, no escape codes");
+try logger.info("Plain JSON object, no escape codes", @src());
 ```
 
 Color applies to `text` and `logfmt` output. `json`, `ndjson`, `syslog`,
@@ -437,7 +437,7 @@ config.color = true;
 logger.configure(config);
 
 // Output: \x1b[33m2024-01-15 10:30:45 | WARNING | Message\x1b[0m
-try logger.warning("Formatted warning");
+try logger.warning("Formatted warning", @src());
 ```
 
 ## Disabling Colors
@@ -472,48 +472,48 @@ const logly = @import("logly");
 pub fn main() !void {
     // Enable Windows ANSI support
      _ = logly.Terminal.enableAnsiColors();
-    
+
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
-    
+
       // Add custom colored levels (tint colors)
       try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("magenta").?);
       try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("cyan").?);
       try logger.addCustomLevel("HIGHLIGHT", 52, logly.Color.parse("yellow").?);
-    
+
     // Standard levels (all colored)
-    try logger.trace("Cyan trace message");
-    try logger.debug("Blue debug message");
-    try logger.info("White info message");
-    try logger.success("Green success message");
-    try logger.warning("Yellow warning message");
-    try logger.err("Red error message");
-    try logger.fail("Magenta fail message");
-    try logger.critical("Bright red critical message");
-    
+    try logger.trace("Cyan trace message", @src());
+    try logger.debug("Blue debug message", @src());
+    try logger.info("White info message", @src());
+    try logger.success("Green success message", @src());
+    try logger.warning("Yellow warning message", @src());
+    try logger.err("Red error message", @src());
+    try logger.fail("Magenta fail message", @src());
+    try logger.critical("Bright red critical message", @src());
+
     // Custom levels
-    try logger.custom("AUDIT", "Magenta audit message");
-    try logger.custom("NOTICE", "Bold cyan notice");
-    try logger.custom("HIGHLIGHT", "Yellow reverse highlight");
-    
+    try logger.custom("AUDIT", "Magenta audit message", @src());
+    try logger.custom("NOTICE", "Bold cyan notice", @src());
+    try logger.custom("HIGHLIGHT", "Yellow reverse highlight", @src());
+
     // Add file sink with colors
      _ = try logger.addSink(.{
         .path = "logs/colored.log",
         .color = true,
     });
-    
+
     // Add JSON sink without colors
      _ = try logger.addSink(.{
         .path = "logs/app.json",
         .format = .json,
         .color = false,
     });
-    
-    try logger.info("This goes to console (colored) and both files");
+
+    try logger.info("This goes to console (colored) and both files", @src());
 }
 ```
 
@@ -521,7 +521,7 @@ pub fn main() !void {
 
 Color never corrupts serialized data. For `json`, `ndjson`, `syslog`, and
 `syslog3164` the record is serialized first and color is applied *around* the
-result, so stripping ANSI recovers the exact document — `PRI`, timestamp,
+result, so stripping ANSI recovers the exact document - `PRI`, timestamp,
 hostname, and structured data included.
 
 | Format | No color | Horizontal | Vertical | Custom / level colors |

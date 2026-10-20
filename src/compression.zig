@@ -10,7 +10,7 @@ const zstd = @import("zstd");
 const brotli = @import("brotli");
 const ThreadPool = @import("thread_pool.zig").ThreadPool;
 
-/// Log compression utilities with callback support and comprehensive monitoring.
+/// Log compression with callbacks and statistics.
 ///
 /// Provides compression and decompression capabilities for log files using
 /// various algorithms (deflate, zlib, raw_deflate, zstd).
@@ -408,7 +408,7 @@ pub const Compression = struct {
         return initWithConfig(allocator, CompressionConfig.zstdBest());
     }
 
-    /// Creates a Compression instance with production-ready zstd settings.
+    /// Creates a Compression instance with the default production zstd settings.
     /// Background processing with checksums for reliability.
     ///
     /// Example:
@@ -477,12 +477,6 @@ pub const Compression = struct {
         return initWithConfig(allocator, CompressionConfig.zstdWithLevel(level));
     }
 
-    /// Alias for zstdCompression(). Creates a Compression instance with default zstd settings.
-    /// v0.1.5+
-    /// Alias for zstdFast(). Creates a Compression instance with fast zstd settings.
-    /// v0.1.5+
-    /// Alias for zstdBest(). Creates a Compression instance with best zstd settings.
-    /// v0.1.5+
     /// Creates a Compression instance with background processing.
     ///
     /// Example:
@@ -3015,43 +3009,30 @@ test "compression callbacks" {
     try std.testing.expect(comp.onDecompressionComplete != null);
 }
 
-test "compression aliases" {
+test "compression roundtrip" {
     const allocator = std.testing.allocator;
 
     var comp = Compression.init(allocator);
     defer comp.deinit();
 
-    const data = "Test data for alias methods";
+    const data = "Test data for compression roundtrip";
 
-    // Test encode alias (same as compress)
-    const encoded = try comp.compress(data);
-    defer allocator.free(encoded);
+    const compressed = try comp.compress(data);
+    defer allocator.free(compressed);
 
-    // Test decode alias (same as decompress)
-    const decoded = try comp.decompress(encoded);
-    defer allocator.free(decoded);
+    const decompressed = try comp.decompress(compressed);
+    defer allocator.free(decompressed);
 
-    try std.testing.expectEqualStrings(data, decoded);
-
-    // Test deflate alias (same as compress)
-    const deflated = try comp.compress(data);
-    defer allocator.free(deflated);
-
-    // Test inflate alias (same as decompress)
-    const inflated = try comp.decompress(deflated);
-    defer allocator.free(inflated);
-
-    try std.testing.expectEqualStrings(data, inflated);
+    try std.testing.expectEqualStrings(data, decompressed);
 }
 
-test "compression create alias" {
+test "compression init and deinit" {
     const allocator = std.testing.allocator;
 
-    // Test create alias (same as init)
     var comp = Compression.init(allocator);
-    defer comp.deinit(); // Test destroy alias (same as deinit)
+    defer comp.deinit();
 
-    const data = "Test create and destroy aliases";
+    const data = "Test compression initialization";
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
@@ -3155,7 +3136,7 @@ test "compression lz4" {
     try std.testing.expectEqualStrings(testData, decompressed);
 }
 
-test "statistics alias" {
+test "statistics accessor" {
     const allocator = std.testing.allocator;
 
     var comp = Compression.init(allocator);
@@ -3165,19 +3146,18 @@ test "statistics alias" {
     const compressed = try comp.compress(data);
     defer allocator.free(compressed);
 
-    // Test statistics alias (same as getStats)
+    // Stats are returned by getStats().
     const stats = comp.getStats();
     try std.testing.expect(stats.bytesBefore.load(.monotonic) > 0);
 }
 
-test "needsCompression alias" {
+test "needs compression predicate" {
     const allocator = std.testing.allocator;
 
     var comp = Compression.init(allocator);
     defer comp.deinit();
 
-    // Test needsCompression alias (same as shouldCompress)
-    // This should return true for non-compressed files
+    // shouldCompress() returns true for files that are not compressed.
     const needs = comp.shouldCompress("test.log");
     try std.testing.expect(needs);
 
@@ -3348,11 +3328,11 @@ test "zstd getEffectiveZstdLevel" {
     }
 }
 
-test "zstd aliases" {
+test "zstd presets" {
     const allocator = std.testing.allocator;
     const testData = comptime repeatString("Alias test data ", 30);
 
-    // Test zstdDefault alias (same as zstdCompression)
+    // Default zstd settings
     {
         var comp = Compression.zstdCompression(allocator);
         defer comp.deinit();
@@ -3366,7 +3346,7 @@ test "zstd aliases" {
         try std.testing.expectEqualStrings(testData, decompressed);
     }
 
-    // Test zstdSpeed alias (same as zstdFast)
+    // Fast zstd settings
     {
         var comp = Compression.zstdFast(allocator);
         defer comp.deinit();
@@ -3380,7 +3360,7 @@ test "zstd aliases" {
         try std.testing.expectEqualStrings(testData, decompressed);
     }
 
-    // Test zstdMax alias (same as zstdBest)
+    // Best-compression zstd settings
     {
         var comp = Compression.zstdBest(allocator);
         defer comp.deinit();
@@ -3395,17 +3375,17 @@ test "zstd aliases" {
     }
 }
 
-test "CompressionConfig zstd aliases" {
+test "CompressionConfig zstd presets" {
     const CompressionConfig = Compression.CompressionConfig;
-    // Test zstdDefault alias
+    // Default zstd configuration
     const defaultConfig = CompressionConfig.zstd();
     try std.testing.expectEqual(Compression.Algorithm.zstd, defaultConfig.algorithm);
 
-    // Test zstdSpeed alias
+    // Fast zstd configuration
     const speedConfig = CompressionConfig.zstdFast();
     try std.testing.expectEqual(Compression.Level.fastest, speedConfig.level);
 
-    // Test zstdMax alias
+    // Best-compression zstd configuration
     const maxConfig = CompressionConfig.zstdBest();
     try std.testing.expectEqual(Compression.Level.best, maxConfig.level);
 }

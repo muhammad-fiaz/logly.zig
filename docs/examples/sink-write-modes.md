@@ -23,9 +23,9 @@ Resulting files:
 
 ```text
 logs/
-├── append_mode.log      (growing file)
-├── overwrite_mode.log   (fresh each run)
-├── persistent.log       (all history)
-├── session.log          (current run only)
-└── logs.json            (JSON array)
+|-- append_mode.log      (growing file)
+|-- overwrite_mode.log   (fresh each run)
+|-- persistent.log       (all history)
+|-- session.log          (current run only)
+`-- logs.json            (JSON array)
 ```

@@ -739,7 +739,7 @@ pub const Sink = struct {
 
                 var sizeLimit = config.sizeLimit;
                 if (sizeLimit == null and config.sizeLimitStr != null) {
-                    sizeLimit = Utils.parseSize(config.sizeLimitStr.?);
+                    sizeLimit = Utils.parseSize(config.sizeLimitStr.?) orelse return error.InvalidSizeLimit;
                 }
 
                 if (config.rotation != null or sizeLimit != null) {
@@ -1791,7 +1791,9 @@ pub const Sink = struct {
                 return;
             };
         }
-        mmapF.finalizeForRotation();
+        mmapF.finalizeForRotation() catch |err| {
+            try self.handleWriteError(err, 1);
+        };
         const before = rot.stats.totalRotations.load(.monotonic);
         try rot.checkAndRotate(f);
         if (rot.stats.totalRotations.load(.monotonic) != before) {
@@ -2301,7 +2303,14 @@ pub const Sink = struct {
                             cb(self.config.name orelse "unnamed_sink", oldCapacity, mmapF.capacity);
                         }
                     }
-                    mmapF.flush();
+                    mmapF.flush() catch |err| {
+                        // Data reached the mapping, so drop the buffered copy to
+                        // avoid duplicating records on a retry, but surface the
+                        // durability failure through the configured error policy.
+                        self.buffer.clearRetainingCapacity();
+                        self.bufferedRecords = 0;
+                        return self.handleWriteError(err, bufferedRecords);
+                    };
                 }
             } else {
                 file.writeStreamingAll(self.io, self.buffer.items) catch |err| {
@@ -3527,7 +3536,8 @@ pub const MmapFile = struct {
 
     pub fn deinit(self: *MmapFile) void {
         self.unmap();
-        // Truncate file to actual bytes written before closing
+        // Truncate file to actual bytes written before closing. Deinit cannot
+        // report errors; normal shutdown flushes through `Sink.flush`.
         self.file.setLength(self.io, self.writePtr) catch {};
     }
 
@@ -3549,14 +3559,15 @@ pub const MmapFile = struct {
         self.writePtr += data.len;
     }
 
-    pub fn flush(self: *MmapFile) void {
+    pub fn flush(self: *MmapFile) !void {
         if (!self.isMapped) return;
 
         if (builtin.os.tag == .windows) {
-            _ = win32.FlushViewOfFile(self.memory.ptr, self.writePtr);
+            const flushed = win32.FlushViewOfFile(self.memory.ptr, self.writePtr);
+            if (!flushed.toBool()) return error.MmapFlushFailed;
         } else {
             // POSIX msync (MS_ASYNC = 1)
-            std.posix.msync(self.memory, 1) catch {};
+            try std.posix.msync(self.memory, 1);
         }
     }
 
@@ -3567,11 +3578,11 @@ pub const MmapFile = struct {
     /// platforms, and renaming needs the mapping released, notably on
     /// Windows. writePtr is preserved so a failed rotation can resume.
     /// Files never mapped (fallback mode) keep their layout untouched.
-    pub fn finalizeForRotation(self: *MmapFile) void {
-        self.flush();
+    pub fn finalizeForRotation(self: *MmapFile) !void {
+        try self.flush();
         if (!self.isMapped) return;
         self.unmap();
-        self.file.setLength(self.io, self.writePtr) catch {};
+        try self.file.setLength(self.io, self.writePtr);
     }
 
     /// Maps onto a fresh file handle after rotation (the previous file was

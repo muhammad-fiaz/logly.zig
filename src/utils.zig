@@ -98,7 +98,7 @@ pub fn parseSize(s: []const u8) ?u64 {
     if (std.ascii.eqlIgnoreCase(unit, "G") or std.ascii.eqlIgnoreCase(unit, "GB")) return num * Constants.SizeConstants.bytesPerGb;
     if (std.ascii.eqlIgnoreCase(unit, "T") or std.ascii.eqlIgnoreCase(unit, "TB")) return num * Constants.SizeConstants.bytesPerTb;
 
-    return num;
+    return null;
 }
 
 /// Writes a human-readable byte size to the writer.
@@ -160,7 +160,7 @@ pub fn parseDuration(s: []const u8) ?i64 {
     if (std.ascii.eqlIgnoreCase(unit, "h")) return num * @as(i64, @intCast(Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond));
     if (std.ascii.eqlIgnoreCase(unit, "d")) return num * @as(i64, @intCast(Constants.TimeConstants.secondsPerDay * Constants.TimeConstants.msPerSecond));
 
-    return num;
+    return null;
 }
 
 /// Writes a human-readable duration to the writer.
@@ -365,9 +365,20 @@ pub fn currentMillis() i64 {
     return nowReal().toMilliseconds();
 }
 
-/// Returns current timestamp in nanoseconds.
+/// Returns the current monotonic timestamp in nanoseconds since an arbitrary
+/// (typically boot) epoch. Use this for durations and elapsed-time checks; it
+/// must not be serialized as a wall-clock time.
 pub fn currentNanos() i128 {
     return @as(i128, nowMonotonic().toNanoseconds());
+}
+
+/// Returns the current wall-clock Unix timestamp in nanoseconds.
+///
+/// Use this for values that are exported or persisted as absolute times
+/// (telemetry spans, events, and metrics). Monotonic timestamps from
+/// `currentNanos` are not valid Unix times.
+pub fn currentRealNanos() i128 {
+    return @as(i128, nowReal().toNanoseconds());
 }
 
 /// Sleeps for the specified duration in nanoseconds.
@@ -756,6 +767,7 @@ test "parseSize with whitespace" {
 test "parseSize invalid" {
     try std.testing.expectEqual(@as(?u64, null), parseSize(""));
     try std.testing.expectEqual(@as(?u64, null), parseSize("invalid"));
+    try std.testing.expectEqual(@as(?u64, null), parseSize("10XB"));
 }
 
 test "parseDuration" {
@@ -765,6 +777,7 @@ test "parseDuration" {
     try std.testing.expectEqual(@as(?i64, @intCast(2 * Constants.TimeConstants.secondsPerHour * Constants.TimeConstants.msPerSecond)), parseDuration("2h"));
     const oneDayMs = @as(i64, @intCast(Constants.TimeConstants.secondsPerDay * Constants.TimeConstants.msPerSecond));
     try std.testing.expectEqual(@as(?i64, oneDayMs), parseDuration("1d"));
+    try std.testing.expectEqual(@as(?i64, null), parseDuration("10fortnights"));
 }
 
 test "fromEpochSeconds" {

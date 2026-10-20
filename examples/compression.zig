@@ -200,34 +200,25 @@ pub fn main() !void {
     std.debug.print("     Background: {s}\n", .{if (zstdProd.background) "enabled" else "disabled"});
     std.debug.print("     Keep original: {s}\n\n", .{if (zstdProd.keepOriginal) "yes" else "no"});
 
-    // Example 10: Compression Aliases (v0.2.2+)
-    std.debug.print("10. Compression Aliases (v0.2.2+)\n", .{});
+    // Example 10: Compression Roundtrip
+    std.debug.print("10. Compression Roundtrip\n", .{});
     std.debug.print("\n", .{});
 
-    var aliasComp = logly.Compression.init(allocator); // Alias for init()
-    defer aliasComp.deinit(); // Alias for deinit()
+    var roundtrip = logly.Compression.init(allocator);
+    defer roundtrip.deinit();
 
-    const aliasData = "Testing compression aliases";
+    const roundtripData = "Testing compression roundtrip";
 
-    // Use encode/decode aliases
-    const encoded = try aliasComp.compress(aliasData);
-    defer allocator.free(encoded);
-    const decoded = try aliasComp.decompress(encoded);
-    defer allocator.free(decoded);
-    std.debug.print("    encode/decode aliases: {s}\n", .{if (std.mem.eql(u8, aliasData, decoded)) "[OK] Working" else "[FAIL] Failed"});
+    const roundtripCompressed = try roundtrip.compress(roundtripData);
+    defer allocator.free(roundtripCompressed);
+    const roundtripDecompressed = try roundtrip.decompress(roundtripCompressed);
+    defer allocator.free(roundtripDecompressed);
+    std.debug.print("    compress/decompress: {s}\n", .{if (std.mem.eql(u8, roundtripData, roundtripDecompressed)) "[OK] Working" else "[FAIL] Failed"});
 
-    // Use deflate/inflate aliases
-    const deflated = try aliasComp.compress(aliasData);
-    defer allocator.free(deflated);
-    const inflated = try aliasComp.decompress(deflated);
-    defer allocator.free(inflated);
-    std.debug.print("    deflate/inflate aliases: {s}\n", .{if (std.mem.eql(u8, aliasData, inflated)) "[OK] Working" else "[FAIL] Failed"});
-
-    // Check needsCompression alias
-    const needs = aliasComp.shouldCompress("test.log");
-    std.debug.print("    needsCompression('test.log'): {s}\n", .{if (needs) "true" else "false"});
-    const noNeeds = aliasComp.shouldCompress("test.log.gz");
-    std.debug.print("    needsCompression('test.log.gz'): {s}\n\n", .{if (noNeeds) "true" else "false"});
+    const needs = roundtrip.shouldCompress("test.log");
+    std.debug.print("    shouldCompress('test.log'): {s}\n", .{if (needs) "true" else "false"});
+    const noNeeds = roundtrip.shouldCompress("test.log.gz");
+    std.debug.print("    shouldCompress('test.log.gz'): {s}\n\n", .{if (noNeeds) "true" else "false"});
 
     // Example 11: Streaming Compression
     std.debug.print("11. Streaming Compression\n", .{});

@@ -31,18 +31,18 @@ Several sinks support dynamic path formatting, which lets you include date and t
 
 Common placeholders supported by `SinkConfig.path` include:
 
-- `{date}` → `YYYY-MM-DD` (e.g., "2023-10-25")
-- `{time}` → `HH-mm-ss` (e.g., "14-30-00")
-- `{timestamp}` → Unix timestamp (milliseconds)
-- `{YYYY}`, `{YY}` → Year
-- `{MM}`, `{M}` → Month (01-12, 1-12)
-- `{DD}`, `{D}` → Day (01-31, 1-31)
-- `{HH}`, `{H}` → Hour (00-23, 0-23)
-- `{mm}`, `{m}` → Minute (00-59, 0-59)
-- `{ss}`, `{s}` → Second (00-59, 0-59)
+- `{date}` -> `YYYY-MM-DD` (e.g., "2023-10-25")
+- `{time}` -> `HH-mm-ss` (e.g., "14-30-00")
+- `{timestamp}` -> Unix timestamp (milliseconds)
+- `{YYYY}`, `{YY}` -> Year
+- `{MM}`, `{M}` -> Month (01-12, 1-12)
+- `{DD}`, `{D}` -> Day (01-31, 1-31)
+- `{HH}`, `{H}` -> Hour (00-23, 0-23)
+- `{mm}`, `{m}` -> Minute (00-59, 0-59)
+- `{ss}`, `{s}` -> Second (00-59, 0-59)
 
 ### Usage with Rotation
-Dynamic paths work seamlessly with **rotation** and **compression**. The placeholders are resolved when the file is created.
+Dynamic paths work with **rotation** and **compression**. Placeholders are resolved when the file is created.
 
 **Example: Organized Logs by Date**
 

@@ -13,7 +13,7 @@ Logly provides high-performance **Zero-Downtime Hot-Reloading** of its configura
 
 ## How It Works
 
-Logly leverages atomic state transitions to safely swap its active configuration struct. When a reload is triggered:
+Logly uses atomic state transitions to safely swap its active configuration struct. When a reload is triggered:
 1. The new JSON configuration is loaded and validated.
 2. If validation succeeds, active sinks, levels, and filter states are updated.
 3. If parsing fails (e.g., due to invalid JSON syntax), the logger catches the error, logs a warning, and **falls back gracefully** to the existing configuration. This guarantees that your application never crashes or stops logging due to a configuration syntax error.
@@ -57,7 +57,7 @@ pub fn main() !void {
         std.debug.print("Failed to reload config: {}\n", .{err});
     };
 
-    try logger.debug("This debug log is now visible if the JSON enabled debug level!", @src());
+    try logger.debug("This debug log is visible after enabling debug in the reloaded JSON.", @src());
 }
 ```
 
@@ -89,7 +89,7 @@ The configuration file is a simple, standard JSON structure that mirrors Logly's
 ## Best Practices
 
 > [!NOTE]
-> Hot-reloading is highly efficient and designed for safe execution in multi-threaded environments. Standard lock-free reads protect active log calls while configuration swapping takes place.
+> Configuration updates are applied atomically under an exclusive lock. Active log calls observe either the previous configuration or the fully applied replacement, never a partial state.
 
 * **Validate Before Reload**: If using a custom ingestion pipeline, parse the JSON slice first using `Config.loadFromJson` before swapping to ensure correct configuration schemas.
 * **Use SIGUSR1 / SIGHUP**: On Unix-like systems, set up a signal handler for `SIGHUP` or `SIGUSR1` that triggers `logger.reloadFromFile` to change settings without standard API exposure.

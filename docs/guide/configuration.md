@@ -1,6 +1,6 @@
 ---
 title: Configuration Guide
-description: Complete guide to configuring Logly.zig. Learn about log levels, output formats, JSON logging, color settings, async configuration, thread pools, compression, and enterprise features like filtering, sampling, and redaction.
+description: Complete guide to configuring Logly.zig. Learn about log levels, output formats, JSON logging, color settings, async configuration, thread pools, compression, and advanced features such as filtering, sampling, and redaction.
 head:
   - - meta
     - name: keywords
@@ -9,7 +9,7 @@ head:
 
 # Configuration
 
-Logly.zig offers a comprehensive and flexible configuration system, allowing you to tailor every aspect of the logging behavior to your application's needs.
+Logly.zig provides a configuration system that controls logging behavior at the logger and sink levels.
 
 ## Basic Configuration
 
@@ -54,7 +54,7 @@ logger.configure(config);
 | `globalColorDisplay`   | `bool`        | `true`                  | Globally enable/disable colored output.              |
 | `globalConsoleDisplay` | `bool`        | `true`                  | Globally enable/disable console output.              |
 | `globalFileStorage`    | `bool`        | `true`                  | Globally enable/disable file output.                 |
-| `json`                   | `bool`        | `false`                 | Format logs as JSON objects.                         |
+| `format`                 | `Format`      | `.text`                 | Output format (`.text`, `.json`, `.ndjson`, `.logfmt`, `.syslog`, `.syslog3164`, `.msgpack`). |
 | `prettyJson`            | `bool`        | `false`                 | Pretty-print JSON output (indented).                 |
 | `color`                  | `bool`        | `true`                  | Enable ANSI color codes.                             |
 | `showTime`              | `bool`        | `true`                  | Include timestamp in log output.                     |
@@ -64,7 +64,7 @@ logger.configure(config);
 | `showLineno`            | `bool`        | `false`                 | Include the source line number.                      |
 | `includeHostname`       | `bool`        | `false`                 | Include the system hostname.                         |
 | `includePid`            | `bool`        | `false`                 | Include the process ID.                              |
-| `captureStackTrace`    | `bool`        | `false`                 | Capture stack traces for Error/Critical logs.        |
+| `captureStackTrace`    | `bool`        | `false`                 | Capture stack traces for `err`, `fail`, `critical`, and `fatal` records. |
 | `symbolizeStackTrace`  | `bool`        | `false`                 | Resolve stack trace addresses to symbols.            |
 | `autoSink`              | `bool`        | `true`                  | Automatically add a console sink on init             |
 | `enableCallbacks`       | `bool`        | `false`                 | Enable log callbacks (only when using callbacks)     |
@@ -231,7 +231,7 @@ const custom = logly.Config.withDisplayStorage(true, true, true);
 
 `autoSink` adds a console sink at logger creation, but only when
 `globalConsoleDisplay` is also on. The two flags are independent, so a
-contradictory pairing is simply inert rather than an error:
+a contradictory pairing is inert rather than an error:
 
 | `globalConsoleDisplay` | `globalFileStorage` | `autoSink` | Result |
 |:--|:--|:--|:--|
@@ -327,7 +327,7 @@ config.showFilename = true;
 config.showLineno = true;
 ```
 
-This will output the location in `path/to/file:line` format.
+This outputs the location in `path/to/file:line` format.
 
 ### Time Configuration
 
@@ -342,7 +342,7 @@ Logly supports multiple timestamp formats:
 | `HH:mm:ss` | `06:39:53` | Time only |
 | `HH:mm:ss.SSS` | `06:39:53.091` | Time with milliseconds |
 | `unix` | `1764830393` | Unix timestamp (seconds) |
-| `unixMs` | `1764830393091` | Unix timestamp (milliseconds) |
+| `unix_ms` | `1764830393091` | Unix timestamp (milliseconds) |
 
 ```zig
 // Use ISO8601 format
@@ -359,7 +359,7 @@ config.timezone = .utc;   // Use UTC
 config.timezone = .local; // Use local time (default)
 ```
 
-## Enterprise Configuration
+## Subsystem Configuration
 
 ### Filtering
 
@@ -414,7 +414,7 @@ var redactor = Redactor.init(allocator);
 defer redactor.deinit();
 
 // Mask passwords by keyword
-try redactor.addPattern("password", .keyword, "password", "[REDACTED]");
+try redactor.addPattern("password", .contains, "password", "[REDACTED]");
 
 // Mask credit card patterns
 try redactor.addPattern("card", .contains, "card=", "[CARD-REDACTED]");
@@ -427,7 +427,7 @@ logger.setRedactor(&redactor);
 Enable logging metrics collection:
 
 ```zig
-logger.enableMetrics();
+try logger.enableMetrics();
 
 // ... later ...
 if (logger.getMetrics()) |metrics| {
@@ -451,9 +451,9 @@ try logger.setCorrelationId("request-789");
 
 // Create spans for operations
 const span = try logger.startSpan("database_query");
-defer span.end(null) catch {};
+defer span.end(null, @src()) catch {};
 
-try logger.info("Executing query");
+try logger.info("Executing query", @src());
 ```
 
 ## Color Configuration
@@ -507,7 +507,7 @@ pub fn main() !void {
     // Enable Virtual Terminal Processing on Windows
     // This is a no-op on Linux/macOS
      _ = logly.Terminal.enableAnsiColors();
-    
+
     // ... rest of initialization
 }
 ```
@@ -526,23 +526,23 @@ pub fn main() !void {
 | CRITICAL | Bright Red | 91 | Critical errors |
 
 ### Level Colors Configuration
- 
+
 You can customize the colors for standard levels using the `levelColors` configuration:
- 
+
 ```zig
 var config = logly.Config.default();
- 
+
 // Use a built-in theme
 config.levelColors.themePreset = .neon; // .bright, .dim, .neon, .pastel, .dark, etc.
- 
+
 // Override specific level colors (ANSI codes)
 config.levelColors.infoColor = logly.Color.parse("36").?;    // Cyan
 config.levelColors.warningColor = logly.Color.parse("33").?; // Yellow
 config.levelColors.errorColor = logly.Color.parse("31").?;   // Red
- 
+
 logger.configure(config);
 ```
- 
+
 Available theme presets:
 - `.default`: Standard ANSI colors
 - `.bright`: Bold/bright variants
@@ -553,24 +553,24 @@ Available theme presets:
 - `.dark`: Optimized for dark terminals
 - `.light`: Optimized for light terminals
 - `.none`: No colors
- 
+
 ### Custom Level Colors
- 
+
 Define custom levels with your own colors:
 
 ```zig
 // Basic custom colors
-try logger.addCustomLevel("audit", 35, "35");       // Magenta
-try logger.addCustomLevel("security", 55, "91");   // Bright Red
+try logger.addCustomLevel("audit", 35, logly.Color.parse("35").?);       // Magenta
+try logger.addCustomLevel("security", 55, logly.Color.parse("91").?);   // Bright Red
 
 // With modifiers (bold, underline, reverse)
-try logger.addCustomLevel("notice", 22, "36;1");   // Bold Cyan
-try logger.addCustomLevel("alert", 48, "31;4");    // Underline Red
-try logger.addCustomLevel("highlight", 38, "33;7"); // Reverse Yellow
+try logger.addCustomLevel("notice", 22, logly.Color.parse("36;1").?);   // Bold Cyan
+try logger.addCustomLevel("alert", 48, logly.Color.parse("31;4").?);    // Underline Red
+try logger.addCustomLevel("highlight", 38, logly.Color.parse("33;7").?); // Reverse Yellow
 
 // Use custom levels
-try logger.custom("audit", "User login detected");
-try logger.customf("security", "Access from IP: {s}", .{"10.0.0.1"});
+try logger.custom("audit", "User login detected", @src());
+try logger.customf("security", "Access from IP: {s}", .{"10.0.0.1"}, @src());
 ```
 
 ### Color Modifiers
@@ -633,7 +633,7 @@ var config = logly.Config.default();
 config.format = .json;
 logger.configure(config);
 
-try logger.info("Application started");
+try logger.info("Application started", @src());
 // Output: {"timestamp":"...","level":"INFO","message":"Application started"}
 ```
 
@@ -662,8 +662,8 @@ Output:
 Custom level names appear in JSON output:
 
 ```zig
-try logger.addCustomLevel("audit", 35, "35");
-try logger.custom("audit", "Security event");
+try logger.addCustomLevel("audit", 35, logly.Color.parse("35").?);
+try logger.custom("audit", "Security event", @src());
 // Output: {"timestamp":"...","level":"AUDIT","message":"Security event"}
 ```
 
@@ -681,11 +681,10 @@ config.rules.enabled = true;
 For more advanced customizations like custom themes, scoped context, and advanced redaction, check out the [Advanced Features Example](../../examples/advanced_features.zig) and the [Context Guide](./context.md).
 
 > [!TIP]
-> Logly uses `std.math.clamp` internally to clamp compression levels to valid ranges when converting between enum levels and numeric values (e.g., zstd levels 1-22). You don't need to clamp values yourself — invalid levels are automatically clamped to the nearest valid bound.
+> Logly uses `std.math.clamp` internally to clamp compression levels to valid ranges when converting between enum levels and numeric values (e.g., zstd levels 1-22). You don't need to clamp values yourself; invalid levels are automatically clamped to the nearest valid bound.
 
 ## See Also
 
 - [Sinks](./sinks.md) - Configure output destinations (Console, File, Network)
 - [Network Logging](../examples/network-logging.md) - Detailed guide on TCP/UDP logging
 - [Compression](./compression.md) - Configure log compression
-

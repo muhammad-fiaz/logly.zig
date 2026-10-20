@@ -14,43 +14,6 @@ head:
 
 The `Network` module provides utilities for network-based logging, including TCP, UDP connections, HTTP requests, and Syslog support.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `reset()` | `clear()`, `zero()` | Reset network statistics |
-| `totalBytesSent()` | `bytesSent()`, `sentBytes()` | Get total bytes sent |
-| `totalBytesReceived()` | `bytesReceived()`, `receivedBytes()` | Get total bytes received |
-| `totalMessagesCount()` | `messagesCount()`, `messageCount()`, `totalMessages()` | Get total messages count |
-| `totalConnectionsMade()` | `connectionsMade()`, `connectionCount()`, `totalConnections()` | Get total connections made |
-| `totalErrors()` | `errorCount()` | Get total errors |
-| `hasErrors()` | `hasFailures()`, `isError()` | Check if there are errors |
-| `errorRate()` | `failureRate()` | Get error rate |
-| `avgBytesPerMessage()` | `avgBytes()`, `bytesPerMessage()` | Get average bytes per message |
-| `totalBytesTransferred()` | `bytesTransferred()`, `totalTransferred()` | Get total bytes transferred |
-| `formatSyslog()` | `syslogFormat()`, `formatAsSyslog()` | Format message as syslog |
-| `connectTcp()` | `tcpConnect()`, `connect()` | Connect to TCP endpoint |
-| `createUdpSocket()` | `udpSocket()` | Create UDP socket |
-| `sendUdp()` | `udpSend()`, `sendToUdp()` | Send UDP message |
-| `sendTcp()` | `tcpSend()`, `sendToTcp()` | Send TCP message |
-| `sendSyslogUdp()` | `syslogSend()`, `sendSyslog()` | Send syslog message over UDP |
-| `fetchJson()` | `getJson()`, `httpGet()` | Fetch JSON from HTTP endpoint |
-| `init()` | `create()` | Initialize log server |
-| `deinit()` | `destroy()` | Deinitialize log server |
-| `stop()` | `shutdown()`, `close()` | Stop log server |
-| `isRunning()` | `isActive()` | Check if server is running |
-| `messageCount()` | `messagesReceived()`, `receivedCount()` | Get message count |
-| `startTcp()` | `listenTcp()` | Start TCP listener |
-| `startUdp()` | `listenUdp()` | Start UDP listener |
-  | `createTcpSink()` | `tcpSink()` | Create TCP sink config |
-  | `createUdpSink()` | `udpSink()` | Create UDP sink config |
-  | `createSyslogSink()` | `syslogSink()` | Create syslog sink config |
-  | `getStats()` | `networkStats()`, `getNetworkStats()` | Get network statistics |
-  | `resetStats()` | `clearStats()`, `resetNetworkStats()` | Reset network statistics |
-
-  > Sink factories take an allocator: `createTcpSink(allocator, host, port)`.
-  > The returned URI string is caller-owned; free `config.path.?` after use.
-
 ## Overview
 
 This module is primarily used by network sinks but can be used directly for custom network operations. It includes statistics tracking and callback support for monitoring network operations.
@@ -113,37 +76,21 @@ pub const LogServer = struct {
     tcpThread: ?std.Thread,
     udpThread: ?std.Thread,
     messagesReceived: std.atomic.Value(Constants.AtomicUnsigned),
-    
+
     pub fn init(allocator: std.mem.Allocator) LogServer;
     pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io) LogServer;
-    /// Alias for init()
-    pub const create = init;
 
     pub fn deinit(self: *LogServer) void;
-    /// Alias for deinit()
-    pub const destroy = deinit;
 
     pub fn stop(self: *LogServer) void;
-    /// Alias for stop()
-    pub const shutdown = stop;
-    pub const close = stop;
 
     pub fn isRunning(self: *const LogServer) bool;
-    /// Alias for isRunning()
-    pub const isActive = isRunning;
 
     pub fn messageCount(self: *const LogServer) u64;
-    /// Alias for messageCount()
-    pub const messagesReceived = messageCount;
-    pub const receivedCount = messageCount;
 
     pub fn startTcp(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) !void;
-    /// Alias for startTcp()
-    pub const listenTcp = startTcp;
 
     pub fn startUdp(self: *LogServer, port: u16, callback: *const fn ([]const u8) void) !void;
-    /// Alias for startUdp()
-    pub const listenUdp = startUdp;
 };
 ```
 
@@ -243,33 +190,6 @@ Fetches and parses a JSON response from a URL.
 
 Formats a log message as a Syslog message (RFC 5424). Uses `Constants.SyslogConstants.Severity` and `Constants.SyslogConstants.Facility` for the enums.
 
-## Aliases
-
-The Network module provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `tcpConnect` | `connectTcp` |
-| `connect` | `connectTcp` |
-| `udpSocket` | `createUdpSocket` |
-| `udpSend` | `sendUdp` |
-| `sendToUdp` | `sendUdp` |
-| `tcpSend` | `sendTcp` |
-| `sendToTcp` | `sendTcp` |
-| `syslogSend` | `sendSyslogUdp` |
-| `sendSyslog` | `sendSyslogUdp` |
-| `getJson` | `fetchJson` |
-| `httpGet` | `fetchJson` |
-| `syslogFormat` | `formatSyslog` |
-| `formatAsSyslog` | `formatSyslog` |
-| `networkStats` | `getStats` |
-| `getNetworkStats` | `getStats` |
-| `clearStats` | `resetStats` |
-| `resetNetworkStats` | `resetStats` |
-| `tcpSink` | `createTcpSink` |
-| `udpSink` | `createUdpSink` |
-| `syslogSink` | `createSyslogSink` |
-
 ## Additional Methods
 
 - `getStats() NetworkStats` - Returns current network statistics
@@ -277,36 +197,23 @@ The Network module provides convenience aliases:
 
 ## Network Sink Configuration
 
+A network target is configured through `SinkConfig.path` with a `tcp://` or `udp://` URI. `SinkConfig.network(uri)` creates a network sink with asynchronous writes enabled.
+
 ```zig
-pub const NetworkSinkConfig = struct {
-    uri: []const u8,
-    /// Enable TCP keepalive to maintain long-lived connections.
-    tcp_keepalive: bool = true,
-    /// Automatically reconnect on connection drop.
-    auto_reconnect: bool = true,
-    /// Use HTTP chunked transfer encoding for streaming data over HTTP.
-    http_chunked_streaming: bool = false,
-    /// Emit Syslog RFC-5424 formatted messages.
-    syslog_rfc5424: bool = false,
-};
-
 // TCP sink
-const tcpSink = logly.SinkConfig{
-    .network = "tcp://logserver.example.com:8080",
-    .format = .json,
-    .color = false,
-};
+const tcpSink = logly.SinkConfig.network("tcp://logserver.example.com:8080");
 
-// UDP sink (Syslog)
+// UDP sink with Syslog framing
 const udpSink = logly.SinkConfig{
-    .network = "udp://localhost:514",
+    .path = "udp://localhost:514",
     .format = .syslog,
+    .color = false,
 };
 ```
 
-### `NetworkSink.health()`
+### `NetworkSink.health() ConnectionState`
 
-For network sinks, the `health()` method actively checks the connection status. If `auto_reconnect` is enabled, it may trigger a reconnection attempt in the background before returning the health report.
+Returns the current connection state. It does not probe the remote endpoint or trigger reconnection.
 
 ## Example
 

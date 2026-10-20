@@ -136,28 +136,31 @@ logger.setFilter(&filter);
 - **Security**: Filter out PII-containing messages
 
 ## New Features (v0.1.8)
- 
+
  ### Improved Regex Engine
- 
- The filter now supports a production-ready regex-like engine for `allowRegex` and `denyRegex` (see [Filtering Guide](/guide/filtering) for details).
- 
+
+ The filter supports a regex-like engine for `allowRegex` and `denyRegex` (see [Filtering Guide](/guide/filtering) for details).
+
  ### Batch Evaluation
- 
+
  ```zig
  var filter = logly.Filter.init(allocator);
 defer filter.deinit();
 
 // Add rules
 try filter.addMinLevel(.warning);
-try filter.addModulePrefix("database.", .allow);
+try filter.addModulePrefix("database.");
 try filter.addMessageFilter("password", .deny);
 
 // Batch evaluation (more efficient for multiple records)
-var results: [100]bool = undefined;
+var record = logly.Record.init(allocator, .warning, "Example");
+defer record.deinit();
+const records = [_]*const logly.Record{&record};
+var results: [1]bool = undefined;
 filter.shouldLogBatch(&records, &results);
 
 // Fast path check
-if (filter.allowsAll()) {
+if (filter.isEmpty()) {
     // No rules, skip evaluation
 }
 
@@ -176,26 +179,7 @@ const empty = filter.isEmpty();
 filter.disable();
 ```
 
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `check` | `shouldLog` |
-| `evaluate` | `shouldLog` |
-| `minLevel` | `addMinLevel` |
-| `min` | `addMinLevel` |
-| `maxLevel` | `addMaxLevel` |
-| `max` | `addMaxLevel` |
-| `moduleFilter` | `addModulePrefix` |
-| `addPrefix` | `addModulePrefix` |
-| `messageFilter` | `addMessageFilter` |
-| `reset` | `clear` |
-| `removeAll` | `clear` |
-| `ruleCount` | `count` |
-| `length` | `count` |
-
 ## See Also
 
 - [Filtering Guide](/guide/filtering) - Detailed filtering documentation
 - [Filter API](/api/filter) - Full API reference
-

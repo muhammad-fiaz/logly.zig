@@ -74,7 +74,7 @@ The JSON output contains the following fields:
 Custom levels display their actual names in JSON output:
 
 ```zig
-try logger.addCustomLevel("audit", 35, "35");
+try logger.addCustomLevel("audit", 35, logly.Color.parse("35").?);
 try logger.custom("audit", "Security event", @src());
 ```
 

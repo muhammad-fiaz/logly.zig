@@ -2,36 +2,6 @@
 
 The Callback API allows you to hook into the logging lifecycle for monitoring, tracing, and custom extensions.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `setLogCallback()` | - | Set log callback |
-| `setColorCallback()` | - | Set color callback |
-| `setLoggedCallback()` | - | Set logged callback |
-| `setFilteredCallback()` | - | Set filtered callback |
-| `setSinkErrorCallback()` | - | Set sink error callback |
-| `setInitializedCallback()` | - | Set initialized callback |
-| `setDestroyedCallback()` | - | Set destroyed callback |
-| `setCrashCallback()` | `onCrash()` | Set crash callback |
-| `setThreadStartCallback()` | `onThreadStart()` | Set thread pool start callback |
-| `setThreadStopCallback()` | `onThreadStop()` | Set thread pool stop callback |
-| `setTaskSubmittedCallback()` | `onTaskSubmitted()` | Set task submitted callback |
-| `setTaskDequeuedCallback()` | `onTaskDequeued()` | Set task dequeued callback |
-| `setTaskExecutedCallback()` | `onTaskExecuted()` | Set task executed callback |
-| `setWorkStolenCallback()` | `onWorkStolen()` | Set work stolen callback |
-| `setQueueOverflowCallback()` | `onQueueOverflow()` | Set queue overflow callback |
-| `setWriteCallback()` | `onWrite()` | Set write callback (Sink) |
-| `setFlushCallback()` | `onFlush()` | Set flush callback (Sink) |
-| `setErrorCallback()` | `onError()` | Set error callback (Sink) |
-| `setRotationCallback()` | `onRotation()` | Set rotation callback (Sink) |
-| `setStateChangeCallback()` | `onStateChange()` | Set state change callback (Sink) |
-| `setCompressionStartCallback()` | `onCompressionStart()` | Set compression start callback (Compression) |
-| `setCompressionCompleteCallback()` | `onCompressionComplete()` | Set compression complete callback (Compression) |
-| `setCompressionErrorCallback()` | `onCompressionError()` | Set compression error callback (Compression) |
-| `setDecompressionCompleteCallback()` | `onDecompressionComplete()` | Set decompression complete callback (Compression) |
-| `setArchiveDeletedCallback()` | `onArchiveDeleted()` | Set archive deleted callback (Compression) |
-
 ## Core Callbacks
 
 ### Log Callback
@@ -80,35 +50,43 @@ These callbacks are configured via `Config` or specialized setter methods.
 
 ### onRecordFiltered
 
-Invoked when a record is dropped due to level filtering or other rules.
+Invoked when a record is dropped by a filter. The first argument is the reason supplied by the filter.
 
 ```zig
-callback: *const fn(context: ?*anyopaque, level: Level) void
+callback: *const fn(reason: []const u8, record: *const Record) void
 ```
+
+Set with `setFilteredCallback()`.
 
 ### onSinkError
 
-Invoked when a sink fails to write a message.
+Invoked when a sink fails to write or flush. Arguments are the sink name and `@errorName(err)`.
 
 ```zig
-callback: *const fn(context: ?*anyopaque, err: anyerror) void
+callback: *const fn(sinkName: []const u8, errorName: []const u8) void
 ```
+
+Set with `setSinkErrorCallback()`.
 
 ### onLoggerInitialized
 
 Invoked after the logger is fully initialized.
 
 ```zig
-callback: *const fn(context: ?*anyopaque) void
+callback: *const fn(stats: *const LoggerStats) void
 ```
+
+Set with `setInitializedCallback()`.
 
 ### onLoggerDestroyed
 
 Invoked just before the logger is deinitialized.
 
 ```zig
-callback: *const fn(context: ?*anyopaque) void
+callback: *const fn(stats: *const LoggerStats) void
 ```
+
+Set with `setDestroyedCallback()`.
 
 ### `onCrashCallback`
 
@@ -118,9 +96,9 @@ Invoked immediately when a panic, Windows VEH exception, or POSIX signal occurs.
 callback: *const fn(message: []const u8) void
 ```
 
-### `on_thread_pool_callback`
+### Thread-pool callbacks
 
-Invoked by the thread pool for worker lifecycle and queue events:
+The thread pool exposes callbacks for worker lifecycle and queue events:
 
 - `setThreadStartCallback(threadId)`
 - `setThreadStopCallback(threadId, tasksProcessed, uptimeMs)`

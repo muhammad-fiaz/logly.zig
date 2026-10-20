@@ -1,6 +1,6 @@
 ---
 title: Scheduler Example
-description: Example of automatic log maintenance with Logly.zig scheduler. Configure cleanup, compression, rotation, cron expressions, and custom periodic tasks.
+description: Example of automatic log maintenance with the Logly.zig scheduler. Configure cleanup, compression, rotation, cron expressions, and custom tasks.
 head:
   - - meta
     - name: keywords
@@ -12,36 +12,30 @@ head:
 
 # Scheduler Example
 
-This example demonstrates automatic log maintenance using Logly's scheduler.
+This example registers cleanup, compression, and custom tasks with the Logly scheduler, then inspects task state and statistics.
 
-## Centralized Configuration
+## Configuration
+
+`SchedulerConfig` holds defaults used by the logger and by task presets:
 
 ```zig
 const logly = @import("logly");
 
 var config = logly.Config.default();
-config.scheduler = logly.SchedulerConfig{
-    .maxTasks = 512,
-    .timer_resolution_ms = 10,
-    .thread_pool_size = 4,
-    .enable_persistence = true,
-    .persistence_path = "scheduler.state",
+config.scheduler = .{
+    .enabled = true,
+    .cleanupMaxAgeDays = 7,
+    .maxFiles = 10,
+    .compressBeforeCleanup = true,
+    .filePattern = "*.log",
 };
-
-// Or use helper method
-var config2 = logly.Config.default().withScheduler(.{
-    .maxTasks = 256,
-    .timer_resolution_ms = 50,
-});
 ```
 
-## Source Code
+The same settings can be applied with `logly.Config.default().withScheduler(...)`.
+
+## Core Usage
 
 ```zig
-//! Scheduler Example
-//!
-//! Demonstrates scheduled log maintenance tasks.
-
 const std = @import("std");
 const logly = @import("logly");
 
@@ -50,15 +44,13 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // 1. Basic Scheduler Setup
     const scheduler = try logly.Scheduler.init(allocator);
     defer scheduler.deinit();
 
-    // 2. Add interval-based cleanup task
-    const cleanupIdx = try scheduler.addTask(
+    const cleanup_index = try scheduler.addTask(
         "log_cleanup",
         .cleanup,
-        .{ .interval = 3600000 },
+        .{ .interval = 60 * 60 * 1000 },
         .{
             .path = "logs",
             .maxAgeSeconds = 7 * 24 * 60 * 60,
@@ -66,8 +58,7 @@ pub fn main() !void {
         },
     );
 
-    // 3. Add compression task with cron-like preset
-    const compIdx = try scheduler.addTask(
+    _ = try scheduler.addTask(
         "log_compression",
         .compression,
         logly.SchedulerPresets.dailyAt(3, 0),
@@ -76,36 +67,34 @@ pub fn main() !void {
             .filePattern = "*.log",
         },
     );
-    _ = compIdx;
 
-    // 4. Add one-shot custom task
-    const OneShotTask = struct {
-        fn execute(_: *logly.Scheduler.ScheduledTask) anyerror!void {
-            std.debug.print("Maintenance task executed!\n", .{});
+    const Maintenance = struct {
+        fn run(_: *logly.Scheduler.ScheduledTask) anyerror!void {
+            // Application-defined work.
         }
     };
-    _ = try scheduler.addCustomTask("oneshot_task", .{ .interval = 1 }, OneShotTask.execute);
 
-    // 5. Task management and control
-    scheduler.setTaskEnabled(cleanupIdx, false); // Cancel / disable
-    scheduler.setTaskEnabled(cleanupIdx, true);  // Re-enable
+    _ = try scheduler.addCustomTask(
+        "oneshot_maintenance",
+        .{ .once = 1 },
+        Maintenance.run,
+    );
 
-    // 6. Inspect registered tasks
-    const tasks = scheduler.getTasks();
-    for (tasks, 0..) |task, i| {
-        std.debug.print("Task {d}: '{s}' type={s} enabled={s}\n", .{
-            i,
+    scheduler.setTaskEnabled(cleanup_index, false);
+    scheduler.setTaskEnabled(cleanup_index, true);
+
+    for (scheduler.getTasks(), 0..) |task, index| {
+        std.debug.print("task {d}: {s} ({s})\n", .{
+            index,
             task.name,
             @tagName(task.taskType),
-            if (task.enabled) "yes" else "no",
         });
     }
 
-    // 7. Check statistics
     const stats = scheduler.getStats();
-    std.debug.print("Tasks executed: {d}, Files cleaned: {d}\n", .{
+    std.debug.print("executed: {d}, failed: {d}\n", .{
         stats.getExecuted(),
-        stats.getFilesCleaned(),
+        stats.getFailed(),
     });
 }
 ```
@@ -113,14 +102,7 @@ pub fn main() !void {
 ## Running the Example
 
 ```bash
-zig build run-scheduler-demo
-```
-
-## Expected Output
-
-```
-Task 0: log_cleanup (cleanup)
-Task 1: log_compression (compression)
+zig build run-scheduler
 ```
 
 ## Key Concepts
@@ -128,191 +110,105 @@ Task 1: log_compression (compression)
 ### Schedule Types
 
 ```zig
-// Fixed interval
-.schedule = logly.Schedule.interval(60), // Every 60 seconds
+// Fixed interval, in milliseconds
+.schedule = .{ .interval = 60 * 1000 },
 
-// Daily at specific time
-.schedule = logly.Schedule.daily(2, 30), // 2:30 AM
+// Daily at a specific local time
+.schedule = .{ .daily = .{ .hour = 2, .minute = 30 } },
 
-// Weekly
-.schedule = logly.Schedule.weekly(0, 3, 0), // Sunday 3 AM
+// Cron-style: Sunday at 03:00
+.schedule = .{ .cron = .{ .dayOfWeek = 0, .hour = 3, .minute = 0 } },
 
-// Convenience methods
-.schedule = logly.Schedule.everyMinutes(5),
-.schedule = logly.Schedule.everyHours(1),
+// One-shot after a delay, in milliseconds
+.schedule = .{ .once = 5000 },
 ```
 
 ### Task Types
 
-```zig
-.taskType = .cleanup,      // Remove old logs
-.taskType = .compression,  // Compress logs
-.taskType = .rotation,     // Force rotation
-.taskType = .custom,       // Custom function
-.taskType = .flush,        // Flush buffers
-.taskType = .healthCheck, // Health check
-```
+`TaskType` values are `cleanup`, `compression`, `rotation`, `flush`, `custom`, `healthCheck`, and `metricsSnapshot`.
 
-### Cleanup Configuration
+### TaskConfig
+
+`TaskConfig` is a flat struct shared by all task types:
 
 ```zig
-.config = .{ .cleanup = .{
-    .path = "logs",
-    .maxAgeDays = 30,
-    .pattern = "*.log",
-    .include_compressed = true,
-    .min_files_to_keep = 5,
-}},
-```
-
-### Compression Configuration
-
-```zig
-.config = .{ .compression = .{
-    .path = "logs",
-    .pattern = "*.log",
-    .minAgeDays = 1,
-    .delete_originals = true,
-}},
-```
-
-### Compression Modes
-
-```zig
-// Mode 1: Compress then delete original
-.config = .{
-    .path = "logs",
-    .filePattern = "*.log",
-    .compressBeforeDelete = true,
-    .skipAlreadyCompressed = true,
-},
-
-// Mode 2: Compress and keep both versions
-.config = .{
-    .path = "logs",
-    .filePattern = "*.log",
-    .compressAndKeep = true,
-    .skipAlreadyCompressed = true,
-},
-
-// Mode 3: Only compress, never delete
-.config = .{
-    .path = "logs",
-    .filePattern = "*.log",
-    .compressOnly = true,
-    .skipAlreadyCompressed = true,
-},
-```
-
-### Using Presets
-
-```zig
-// Daily cleanup at 2 AM
- _ = try scheduler.addTask(
-    logly.SchedulerPresets.dailyCleanup("logs"),
-);
-
-// Hourly compression
- _ = try scheduler.addTask(
-    logly.SchedulerPresets.hourlyCompression("logs"),
-);
-
-// Weekly deep clean
- _ = try scheduler.addTask(
-    logly.SchedulerPresets.weeklyDeepClean("logs"),
+_ = try scheduler.addTask(
+    "archive_logs",
+    .compression,
+    logly.SchedulerPresets.dailyAt(4, 0),
+    .{
+        .path = "logs",
+        .filePattern = "*.log",
+        .minAgeSeconds = 24 * 60 * 60,
+        .compressAndKeep = true,
+        .skipAlreadyCompressed = true,
+    },
 );
 ```
 
-### Compression Presets
+Compression modes:
 
 ```zig
-const Presets = logly.SchedulerPresets;
+// Compress and delete the original
+.{ .path = "logs", .filePattern = "*.log", .compressBeforeDelete = true },
 
-// Compress files older than 7 days, then delete originals
-const archive = Presets.compressThenDelete("logs", 7);
+// Compress and keep both files
+.{ .path = "logs", .filePattern = "*.log", .compressAndKeep = true },
 
-// Compress files older than 3 days, keep both versions
-const backup = Presets.compressAndKeep("logs", 3);
+// Compress only, never delete
+.{ .path = "logs", .filePattern = "*.log", .compressOnly = true },
+```
 
-// Only compress, never delete anything
-const pure_archive = Presets.compressOnly("logs", 1);
+### Presets
 
-// Archive: compress after 7 days, delete after 30 days
-const tiered = Presets.archiveOldLogs("logs", 7, 30);
+`SchedulerPresets` returns either a `Schedule` or a `TaskConfig`, depending on the helper:
 
-// Aggressive: compress & delete, max 100 files
-const aggressive = Presets.aggressiveCleanup("logs", 30, 100);
+```zig
+// Schedules
+const daily = logly.SchedulerPresets.dailyAt(2, 0);
+const hourly = logly.SchedulerPresets.hourlyCompression();
+const weekly = logly.SchedulerPresets.weeklyCleanup();
+const every_five = logly.SchedulerPresets.everyMinutes(5);
+
+// Task configurations
+const cleanup = logly.SchedulerPresets.dailyCleanup("logs", 30);
+const archive = logly.SchedulerPresets.compressThenDelete("logs", 7);
+const backup = logly.SchedulerPresets.compressAndKeep("logs", 3);
+const pure_archive = logly.SchedulerPresets.compressOnly("logs", 1);
+const tiered = logly.SchedulerPresets.archiveOldLogs("logs", 7, 30);
+const aggressive = logly.SchedulerPresets.aggressiveCleanup("logs", 30, 100);
 ```
 
 ### Task Management
 
 ```zig
-// Disable a task
-scheduler.disableTask(0);
+scheduler.setTaskEnabled(index, false);
+scheduler.setTaskEnabledByName("log_cleanup", true);
 
-// Enable a task
-scheduler.enableTask(0);
+try scheduler.runNow(index);
+_ = try scheduler.runNowByName("log_cleanup");
 
-// Run immediately
-try scheduler.runTaskNow(0);
+scheduler.removeTask(index);
+_ = scheduler.removeTaskByName("log_cleanup");
 
-// Remove a task
-try scheduler.removeTask(0);
+_ = scheduler.setTaskSchedule(index, .{ .interval = 30 * 60 * 1000 });
+_ = scheduler.rescheduleNow(index);
 ```
 
 ### Statistics
 
 ```zig
 const stats = scheduler.getStats();
-std.debug.print("Tasks executed: {d}\n", .{
-    stats.getExecuted(),
-});
-std.debug.print("Files cleaned: {d}\n", .{
-    stats.getFilesCleaned(),
-});
-std.debug.print("Bytes freed: {d}\n", .{
-    stats.getBytesFreed(),
-});
+
+std.debug.print("executed: {d}\n", .{stats.getExecuted()});
+std.debug.print("failed: {d}\n", .{stats.getFailed()});
+std.debug.print("files cleaned: {d}\n", .{stats.getFilesCleaned()});
+std.debug.print("bytes freed: {d}\n", .{stats.getBytesFreed()});
+std.debug.print("bytes saved: {d}\n", .{stats.getBytesSaved()});
 ```
 
 ## See Also
 
-- [Scheduler API](../api/scheduler.md)
-- [Scheduler Guide](../guide/scheduler.md)
-- [Compression Example](compression.md)
-
-## New Presets (v0.0.9)
-
-```zig
-const SchedulerPresets = logly.SchedulerPresets;
-
-// Every N minutes presets
-var every_5 = SchedulerPresets.every5Minutes();
-var every_15 = SchedulerPresets.every15Minutes();
-var every_30 = SchedulerPresets.every30Minutes();
-
-// Hourly presets
-var every_hour = SchedulerPresets.everyHour();
-var every_6 = SchedulerPresets.every6Hours();
-var every_12 = SchedulerPresets.every12Hours();
-
-// Daily presets
-var midnight = SchedulerPresets.dailyMidnight();
-var maintenance = SchedulerPresets.dailyMaintenance();  // 2 AM
-var at_time = SchedulerPresets.dailyAt(9, 30);  // 9:30 AM
-
-// Task configs
-var cleanup = SchedulerPresets.dailyCleanup("logs", 30);
-var compress = SchedulerPresets.hourlyCompression("logs");
-var weekly = SchedulerPresets.weeklyCleanupConfig("logs", 90);
-```
-
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `begin` | `start` |
-| `end` | `stop` |
-| `halt` | `stop` |
-| `statistics` | `getStats` |
-
+- [Scheduler API](/api/scheduler)
+- [Scheduler Guide](/guide/scheduler)
+- [Compression Example](/examples/compression)

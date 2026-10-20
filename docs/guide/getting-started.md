@@ -9,7 +9,7 @@ head:
 
 # Getting Started
 
-Get started with Logly.zig in minutes.
+Get started with Logly.zig.
 
 ## Prerequisites
 
@@ -231,10 +231,10 @@ You can create custom log levels with any ANSI color code:
 
 ```zig
 // Add custom level with cyan bold color
-try logger.addCustomLevel("NOTICE", 35, "36;1");
+try logger.addCustomLevel("NOTICE", 35, logly.Color.parse("36;1").?);
 
 // Use the custom level
-try logger.custom("NOTICE", "Custom notice message");
+try logger.custom("NOTICE", "Custom notice message", @src());
 ```
 
 **Common ANSI color codes:**
@@ -264,17 +264,6 @@ logger.configure(config);
     .color = false,  // No colors in file
 });
 ```
-
-## Coding Style & Aliases
-
-Logly.zig supports two naming conventions for core lifecycle methods. You can use whichever fits your project's style:
-
-| Convention | Constructor | Destructor | Log Method |
-| :--- | :--- | :--- | :--- |
-| **Standard (Zig)** | `init()` | `deinit()` | `log()` |
-| **Alternative** | `create()` | `destroy()` | `record()` |
-
-Both sets of methods are functionally identical.
 
 ## Troubleshooting
 

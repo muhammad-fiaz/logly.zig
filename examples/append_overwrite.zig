@@ -150,7 +150,7 @@ pub fn main() !void {
     std.debug.print("\nRotation:\n", .{});
     std.debug.print("  .rotation = \"daily\"   - Rotate daily\n", .{});
     std.debug.print("  .rotation = \"hourly\"  - Rotate hourly\n", .{});
-    std.debug.print("  .size_limit = N       - Rotate when file exceeds N bytes\n", .{});
+    std.debug.print("  .sizeLimit = N        - Rotate when file exceeds N bytes\n", .{});
     std.debug.print("  .retention = N        - Keep N rotated files\n", .{});
     std.debug.print("\nAll modes work correctly with rotation.\n", .{});
 }

@@ -13,7 +13,7 @@
 <a href="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/github-code-scanning/codeql"><img src="https://github.com/muhammad-fiaz/logly.zig/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL"></a>
 <a href="https://github.com/muhammad-fiaz/logly.zig/releases/latest"><img src="https://img.shields.io/github/v/release/muhammad-fiaz/logly.zig?label=Latest%20Release&style=flat-square" alt="Latest Release"></a>
 <a href="https://pay.muhammadfiaz.com"><img src="https://img.shields.io/badge/Sponsor-pay.muhammadfiaz.com-ff69b4?style=flat&logo=heart" alt="Sponsor"></a>
-<a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/badge/Sponsor-💖-pink?style=social&logo=github" alt="GitHub Sponsors"></a>
+<a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/badge/Sponsor-GitHub-pink?style=social&logo=github" alt="GitHub Sponsors"></a>
 <a href="https://hits.sh/muhammad-fiaz/logly.zig/"><img src="https://hits.sh/muhammad-fiaz/logly.zig.svg?label=Visitors&extraCount=0&color=green" alt="Repo Visitors"></a>
 
 <p><em>A fast, high-performance structured logging library for Zig.</em></p>
@@ -128,7 +128,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Filtering** | Rule-based log filtering by level, module, or content | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/filtering) |
 | **Per-Sink Filtering** | Configure filters on each sink in addition to global logger filters | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/sinks) |
 | **Source Location** | Optional clickable `file:line` output via `@src()` when `showFilename`/`showLineno` are enabled | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/source-location) |
-| **Method Aliases** | Convenience aliases for common APIs e.g., `add()` / `remove()` for sink management, `warn()` / `crit()` for logging | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/introduction) |
+| **Method Aliases** | Convenience aliases for common APIs: `add()` / `remove()` for sink management, `warn()` / `crit()` for logging | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/introduction) |
 | **Sampling** | Control log throughput with probability and rate-limiting | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/sampling) |
 | **Redaction** | Automatic masking of sensitive data (PII, credentials) | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/redaction) |
 | **Metrics** | Built-in observability with log counters and statistics | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/metrics) |
@@ -359,7 +359,7 @@ pub fn main() !void {
 
 ## Allocator Usage
 
-Logly works with any `std.mem.Allocator` implementation. Pass your own allocator directly — no built-in arena allocation:
+Logly works with any `std.mem.Allocator` implementation. Pass your own allocator directly; there is no built-in arena allocation:
 
 ```zig
 var gpa = std.heap.DebugAllocator(.{}){};
@@ -549,12 +549,12 @@ ANSI into a file or network sink.
 
 | Format | No color | Horizontal | Vertical | Custom / level colors |
 |--------|:--------:|:----------:|:--------:|:---------------------:|
-| `text` | ✓ | ✓ | ✓ | ✓ |
-| `logfmt` | ✓ | ✓ | ✓ | ✓ |
-| `json` | ✓ | ✓ | ✓ | ✓ |
-| `ndjson` | ✓ | ✓ | ✓ | ✓ |
-| `syslog` / `syslog3164` | ✓ | ✓ | whole-record | ✓ |
-| `msgpack` | ✓ | presentation only | presentation only | presentation only |
+| `text` | Yes | Yes | Yes | Yes |
+| `logfmt` | Yes | Yes | Yes | Yes |
+| `json` | Yes | Yes | Yes | Yes |
+| `ndjson` | Yes | Yes | Yes | Yes |
+| `syslog` / `syslog3164` | Yes | Yes | whole-record | Yes |
+| `msgpack` | Yes | presentation only | presentation only | presentation only |
 
 For `json`, `ndjson`, and `syslog`, color is applied **around** the serialized
 bytes, so the underlying data stays valid: strip ANSI and you recover the exact
@@ -695,7 +695,7 @@ config.distributed = .{
     .instanceId = "pod-123",
 };
 logger.configure(config);
-// Logs will now include service identity fields automatically
+// Logs include service identity fields automatically
 ```
 
 ### Distributed Tracing
@@ -722,14 +722,14 @@ try logger.setTraceContextFromTraceparent(incoming_traceparent);
 // Export global context for outbound propagation
 if (try logger.getTraceparentHeader(allocator)) |traceparent| {
     defer allocator.free(traceparent);
-    // Inject header into HTTP/gRPC metadata: traceparent: {traceparent}
+    // Inject into HTTP headers or message metadata: traceparent: {traceparent}
 }
 
 // Legacy span helper for nested operations
 {
     var span = try logger.startSpan("database-query");
     try logger.info("Executing query", @src());
-    try span.end(null);
+    try span.end(null, @src());
 }
 
 // Clear global context
@@ -740,7 +740,7 @@ logger.clearTraceContext();
 
 ### OpenTelemetry Integration
 
-Logly provides comprehensive OpenTelemetry support for distributed tracing, metrics, and context propagation.
+Logly provides OpenTelemetry support for distributed tracing, metrics, and context propagation.
 
 #### Basic Telemetry Setup
 
@@ -880,7 +880,7 @@ const logger = try logly.Logger.init(allocator);
 defer logger.deinit();
 
 // Enable metrics collection
-logger.enableMetrics();
+try logger.enableMetrics();
 
 // Log some messages
 try logger.info("Request processed", @src());
@@ -933,7 +933,7 @@ config.autoSink = false; // Disable default console output
 
 // Enable tamper-evident cryptographic chaining on a file sink
 var fileSink = logly.SinkConfig.file("secure_audit.log");
-fileSink.tamperEvident = true; 
+fileSink.tamperEvident = true;
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
@@ -947,7 +947,7 @@ try logger.flush();
 
 ### Memory-Mapped Sinks (Extreme Performance)
 
-Map log files directly into RAM via native Win32 or POSIX `mmap` virtual memory mappings. Bypasses standard system call overhead for microsecond-latency disk writes, with automated dynamic resizing/remapping and exact file truncation to the written offset in `deinit`.
+Map log files into memory using native Win32 or POSIX `mmap`. Writes copy bytes into mapped pages without a per-record `write`/`WriteFile` syscall, and the OS flushes dirty pages asynchronously. Supports dynamic remapping and truncates files to the written offset in `deinit`.
 
 ```zig
 var config = logly.Config.default();
@@ -955,7 +955,7 @@ config.autoSink = false;
 
 var sinkCfg = logly.SinkConfig.file("perf.log");
 sinkCfg.mmap = true;         // Use memory mapping
-sinkCfg.asyncWrite = false; // direct zero-copy write
+sinkCfg.asyncWrite = false; // mapped write, no per-record syscall
 
 const logger = try logly.Logger.initWithConfig(allocator, config);
 defer logger.deinit();
@@ -968,9 +968,9 @@ try logger.flush();
 
 ### Global Panic Hook (Crash Interception)
 
-A robust crash protection hook that automatically captures standard Zig panics, emits crash dumps synchronously to active sinks (bypassing async worker queues), and flushes log buffers before process exit. Crash logging is best-effort: sink locks are still acquired per write, so it is not async-signal-safe and can block if a crash interrupts a thread while it holds a sink lock.
+A crash protection hook that captures standard Zig panics, emits crash dumps synchronously to active sinks (bypassing async worker queues), and flushes log buffers before process exit. Crash logging is best-effort: sink locks are still acquired per write, so it is not async-signal-safe and can block if a crash interrupts a thread while it holds a sink lock.
 
-Simply export the panic handler in your root source file (e.g., `main.zig`):
+Export the panic handler in your root source file (e.g., `main.zig`):
 
 ```zig
 const logly = @import("logly");
@@ -1134,13 +1134,13 @@ var config = logly.Config.default()
 | TRACE    | 5        | `logger.trace()`    | -              | Very detailed debugging |
 | DEBUG    | 10       | `logger.debug()`    | -              | Debugging information   |
 | INFO     | 20       | `logger.info()`     | -              | General information     |
-| NOTICE   | 22       | `logger.notice()`   | `note()`       | Notice messages         |
+| NOTICE   | 22       | `logger.notice()`   | -              | Notice messages         |
 | SUCCESS  | 25       | `logger.success()`  | -              | Successful operations   |
 | WARNING  | 30       | `logger.warning()`  | `warn()`       | Warning messages        |
-| ERROR    | 40       | `logger.err()`      | `error()`      | Error conditions        |
-| FAIL     | 45       | `logger.fail()`     | `failure()`    | Operation failures      |
+| ERROR    | 40       | `logger.err()`      | -              | Error conditions        |
+| FAIL     | 45       | `logger.fail()`     | -              | Operation failures      |
 | CRITICAL | 50       | `logger.critical()` | `crit()`       | Critical system errors  |
-| FATAL    | 55       | `logger.fatal()`    | `panic()`      | Fatal system errors     |
+| FATAL    | 55       | `logger.fatal()`    | -              | Fatal system errors     |
 
 ### Sink Management Aliases
 
@@ -1148,8 +1148,8 @@ var config = logly.Config.default()
 | ----------------- | --------------- | ------------------------ |
 | `addSink()`       | `add()`         | Add a new sink           |
 | `removeSink()`    | `remove()`      | Remove a specific sink   |
-| `removeAllSinks()`| `removeAll()`, `clear()` | Remove all sinks |
-| `getSinkCount()`  | `count()`, `sinkCount()` | Get number of sinks |
+| `removeAllSinks()`| `removeAll()`   | Remove all sinks         |
+| `getSinkCount()`  | -               | Get number of sinks      |
 
 ## Rotation Intervals
 
@@ -1244,7 +1244,7 @@ Logly.Zig is designed for high-performance logging with minimal overhead. Below 
 </details>
 
 <details>
-<summary><strong>Enterprise Features</strong></summary>
+<summary><strong>Advanced Features</strong></summary>
 
 | Benchmark | Ops/sec (higher is better) | Avg Latency (ns) (lower is better) | Notes |
 | :--- | :--- | :--- | :--- |
@@ -1415,7 +1415,7 @@ zig build example-customizations
 zig build example-sink_write_modes
 zig build example-append_overwrite
 
-# Enterprise feature examples
+# Advanced feature examples
 zig build example-filtering
 zig build example-sampling
 zig build example-redaction
@@ -1462,7 +1462,7 @@ This will generate HTML documentation in the `zig-out/docs/` directory. Open `zi
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome; submit a Pull Request.
 
 ## License
 

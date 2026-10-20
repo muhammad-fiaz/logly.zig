@@ -61,13 +61,13 @@ pub fn main() !void {
      _ = try logger.addSink(udpJsonSink);
 
     // 3. Register Custom Levels
-    try logger.addCustomLevel("AUDIT", 35, "34"); // Blue
-    try logger.addCustomLevel("SECURITY", 45, "31"); // Red
+    try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("34").?); // Blue
+    try logger.addCustomLevel("SECURITY", 45, logly.Color.parse("31").?); // Red
 
     // Log some messages
     try logger.info("Application started", @src());
     try logger.warn("Connection latency high", @src());
-    
+
     // Log with custom levels
     try logger.custom("AUDIT", "User login attempt", null);
     try logger.custom("SECURITY", "Invalid password attempt", null);

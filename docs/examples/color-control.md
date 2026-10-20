@@ -12,7 +12,7 @@ head:
 
 # Color Control Example
 
-This example demonstrates comprehensive control over ANSI color output at global and per-sink levels, including Windows support and custom colors.
+This example demonstrates control over ANSI color output at global and per-sink levels, including Windows support and custom colors.
 
 ## Enable Colors on Windows
 
@@ -34,10 +34,10 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Colors now work on Windows!
-    try logger.info("Colored output on all platforms");
-    try logger.success("Green success message");
-    try logger.warning("Yellow warning message");
-    try logger.err("Red error message");
+    try logger.info("Colored output on all platforms", @src());
+    try logger.success("Green success message", @src());
+    try logger.warning("Yellow warning message", @src());
+    try logger.err("Red error message", @src());
 }
 ```
 
@@ -54,15 +54,15 @@ config.globalColorDisplay = false;
 logger.configure(config);
 
 // All output will be plain text (no ANSI codes)
-try logger.info("No colors here");
-try logger.warning("Still no colors");
+try logger.info("No colors here", @src());
+try logger.warning("Still no colors", @src());
 
 // Re-enable colors
 config.globalColorDisplay = true;
 config.color = true;
 logger.configure(config);
 
-try logger.success("Colors are back!");
+try logger.success("Colors are back!", @src());
 ```
 
 ## Per-Sink Color Control
@@ -95,8 +95,8 @@ logger.configure(config);
 });
 
 // Console shows colored output, files are plain text
-try logger.info("Console: colored, File: plain text");
-try logger.err("Error appears red on console only");
+try logger.info("Console: colored, File: plain text", @src());
+try logger.err("Error appears red on console only", @src());
 ```
 
 ## Sink-Specific Level Filtering
@@ -134,18 +134,18 @@ defer logger.deinit();
 
 // Define custom levels with specific colors
 // Format: (name, priority, color_code)
-try logger.addCustomLevel("AUDIT", 35, "35");        // Magenta
-try logger.addCustomLevel("NOTICE", 22, "36;1");    // Bold Cyan
-try logger.addCustomLevel("ALERT", 48, "91;1");     // Bold Bright Red
-try logger.addCustomLevel("SECURITY", 55, "31;4");  // Underline Red
-try logger.addCustomLevel("HIGHLIGHT", 28, "33;7"); // Reverse Yellow
+try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35").?);        // Magenta
+try logger.addCustomLevel("NOTICE", 22, logly.Color.parse("36;1").?);    // Bold Cyan
+try logger.addCustomLevel("ALERT", 48, logly.Color.parse("91;1").?);     // Bold Bright Red
+try logger.addCustomLevel("SECURITY", 55, logly.Color.parse("31;4").?);  // Underline Red
+try logger.addCustomLevel("HIGHLIGHT", 28, logly.Color.parse("33;7").?); // Reverse Yellow
 
 // Use custom levels - entire line gets the custom color
-try logger.custom("AUDIT", "Security audit event");
-try logger.custom("NOTICE", "Important notice");
-try logger.custom("ALERT", "System alert!");
-try logger.custom("SECURITY", "Unauthorized access attempt");
-try logger.customf("HIGHLIGHT", "User {s} action", .{"admin"});
+try logger.custom("AUDIT", "Security audit event", @src());
+try logger.custom("NOTICE", "Important notice", @src());
+try logger.custom("ALERT", "System alert!", @src());
+try logger.custom("SECURITY", "Unauthorized access attempt", @src());
+try logger.customf("HIGHLIGHT", "User {s} action", .{"admin"}, @src());
 ```
 
 ## Color Code Reference
@@ -208,8 +208,8 @@ config.format = .json;
 config.prettyJson = true;
 logger.configure(config);
 
-try logger.addCustomLevel("AUDIT", 35, "35");
-try logger.custom("AUDIT", "Login event");
+try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35").?);
+try logger.custom("AUDIT", "Login event", @src());
 ```
 
 Output:
@@ -239,28 +239,28 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Add custom levels
-    try logger.addCustomLevel("AUDIT", 35, "35;1");
-    try logger.addCustomLevel("SECURITY", 55, "91;4");
+    try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35;1").?);
+    try logger.addCustomLevel("SECURITY", 55, logly.Color.parse("91;4").?);
 
     // Standard levels (whole line colored)
-    try logger.trace("Cyan trace line");
-    try logger.debug("Blue debug line");
-    try logger.info("White info line");
-    try logger.success("Green success line");
-    try logger.warning("Yellow warning line");
-    try logger.err("Red error line");
-    try logger.critical("Bright red critical line");
+    try logger.trace("Cyan trace line", @src());
+    try logger.debug("Blue debug line", @src());
+    try logger.info("White info line", @src());
+    try logger.success("Green success line", @src());
+    try logger.warning("Yellow warning line", @src());
+    try logger.err("Red error line", @src());
+    try logger.critical("Bright red critical line", @src());
 
     // Custom levels
-    try logger.custom("AUDIT", "Bold magenta audit line");
-    try logger.custom("SECURITY", "Underline bright red security line");
+    try logger.custom("AUDIT", "Bold magenta audit line", @src());
+    try logger.custom("SECURITY", "Underline bright red security line", @src());
 
     // Disable colors for comparison
     var config = logly.Config.default();
     config.globalColorDisplay = false;
     logger.configure(config);
 
-    try logger.info("Plain text - no colors");
+    try logger.info("Plain text - no colors", @src());
 
     std.debug.print("\nColor control example completed!\n", .{});
 }

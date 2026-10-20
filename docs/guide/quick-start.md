@@ -1,6 +1,6 @@
 ---
 title: Quick Start Guide
-description: Get started with Logly.zig in minutes. Learn basic console logging, file rotation, JSON output, context binding, and more with practical examples.
+description: Learn basic console logging, file rotation, JSON output, context binding, and more with practical examples.
 head:
   - - meta
     - name: keywords
@@ -136,7 +136,7 @@ try logger.info("User action", @src());
 ### Custom Log Levels
 
 ```zig
-try logger.addCustomLevel("NOTICE", 35, "96");
+try logger.addCustomLevel("NOTICE", 35, logly.Color.parse("96").?);
 try logger.custom("NOTICE", "Custom level message", @src());
 ```
 

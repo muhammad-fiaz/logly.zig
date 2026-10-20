@@ -12,26 +12,7 @@ head:
 
 # Compression API Reference
 
-Comprehensive log file compression with multiple algorithms, streaming support, and advanced monitoring.
-
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize compression |
-| `deinit()` | `destroy()` | Deinitialize compression |
-| `compress()` | `encode()`, `deflate()` | Compress data |
-| `decompress()` | `decode()`, `inflate()` | Decompress data |
-| `compressFile()` | `packFile()` | Compress a file |
-| `decompressFile()` | `unpackFile()` | Decompress a file |
-| `compressDirectory()` | `packDirectory()`, `archiveFolder()` | Compress directory (v0.1.8+) |
-| `getStats()` | `statistics()` | Get compression statistics |
-| `resetStats()` | `clearStats()` | Reset statistics (v0.1.8+) |
-| `configure()` | `setConfig()`, `updateConfig()` | Update configuration (v0.1.8+) |
-| `shouldCompress()` | `needsCompression()` | Check if file needs compression |
-| `zstdCompression()` | `zstdDefault()` | Create zstd compressor (v0.1.8+) |
-| `zstdFast()` | `zstdSpeed()` | Create fast zstd compressor (v0.1.8+) |
-| `zstdBest()` | `zstdMax()` | Create best zstd compressor (v0.1.8+) |
+Log file compression with multiple algorithms, streaming support, and statistics.
 
 ## Batch Compression Methods (v0.1.8+)
 
@@ -66,7 +47,7 @@ const ext = Utils.getCompressionExtension(CompressionAlgorithm.zstd); // ".zst"
 
 The Compression module provides high-performance log file compression with:
 
-- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4
+- **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4, BROTLI
 - **Compression Strategies**: Text-optimized, binary, RLE, adaptive
 - **Streaming Support**: `compressStream` and `decompressStream` helpers
 - **Background Compression**: Offload compression to background threads
@@ -119,7 +100,7 @@ pub const Compression = struct {
 
 ### CompressionConfig
 
-Comprehensive configuration for compression behavior. Available as `Config.CompressionConfig`.
+Configuration for compression behavior. Available as `Config.CompressionConfig`.
 
 ```zig
 pub const CompressionConfig = struct {
@@ -235,6 +216,8 @@ pub const CompressionAlgorithm = enum {
     zip,
     /// LZ4 fast compression
     lz4,
+    /// Brotli compression for UTF-8 text
+    brotli,
 };
 ```
 
@@ -242,17 +225,18 @@ pub const CompressionAlgorithm = enum {
 
 | Algorithm | Speed | Ratio | Best For |
 |-----------|-------|-------|----------|
-| `none` | ★★★★★ | - | Pass-through |
-| `deflate` | ★★★★ | ★★★ | General logs |
-| `zlib` | ★★★★ | ★★★ | HTTP/Web logs |
-| `gzip` | ★★★★ | ★★★ | File archives |
-| `zstd` | ★★★★★ | ★★★★ | High-perf logging |
-| `lzma` | ★★ | ★★★★★ | Long-term archival |
-| `lzma2` | ★★ | ★★★★★ | Large files |
-| `xz` | ★★ | ★★★★★ | Distribution |
-| `tarGz` | ★★★ | ★★★★ | Multi-file archives |
-| `zip` | ★★★★ | ★★★ | Cross-platform |
-| `lz4` | ★★★★★ | ★★ | Real-time logging |
+| `none` | Pass-through | 1:1 | Test data and already-compressed input |
+| `deflate` | Fast | Moderate | General logs |
+| `zlib` | Fast | Moderate | HTTP and web logs |
+| `gzip` | Fast | Moderate | File archives |
+| `zstd` | Very fast | High | High-throughput logging |
+| `lzma` | Slow | Very high | Long-term archival |
+| `lzma2` | Slow | Very high | Large files |
+| `xz` | Slow | Very high | Distribution |
+| `tarGz` | Slow | High | Multi-file archives |
+| `zip` | Moderate | Moderate | Cross-platform |
+| `lz4` | Fastest | Low | Real-time logging |
+| `brotli` | Moderate | High | UTF-8 and log text |
 
 ## CompressionConfig Preset Methods
 
@@ -291,7 +275,7 @@ The `CompressionConfig` struct provides preset factory methods for minimal confi
 | `forLogs()` | Optimized for log files (text strategy) |
 | `archive()` | Archival mode (best compression, delete original) |
 | `keepOriginals()` | Keep original files after compression |
-| `production()` | Production-ready (balanced, background, checksums) |
+| `production()` | Balanced settings with background processing and checksums |
 | `development()` | Development mode (fast, keep originals) |
 
 ### Zstd Presets (v0.1.8+)
@@ -301,11 +285,8 @@ Zstandard (zstd) compression provides excellent compression ratios with very fas
 | Method | Description |
 |--------|-------------|
 | `zstd()` | Default zstd compression (level 6) |
-| `zstdDefault()` | Alias for zstd() |
 | `zstdFast()` | Fast zstd compression (level 1) |
-| `zstdSpeed()` | Alias for zstdFast() |
 | `zstdBest()` | Best zstd compression (level 19) |
-| `zstdMax()` | Alias for zstdBest() |
 | `zstdProduction()` | Production zstd with background processing |
 | `zstdWithLevel(level)` | Custom zstd level (1-22) |
 
@@ -351,7 +332,7 @@ const cfg2 = CompressionConfig.zstdFast();
 // Best zstd for archival
 const cfg3 = CompressionConfig.zstdBest();
 
-// Production-ready zstd with background processing
+// Production zstd with background processing
 const cfg4 = CompressionConfig.zstdProduction();
 
 // Custom level for specific use case
@@ -418,14 +399,14 @@ The `Config` struct provides quick-enable methods for compression:
 
 | Method | Description |
 |--------|-------------|
-| `withCompressionEnabled()` | Simplest one-liner to enable |
+| `withCompressionEnabled()` | Enables compression with default settings |
 | `withImplicitCompression()` | Automatic on rotation |
 | `withExplicitCompression()` | Manual control |
 | `withFastCompression()` | Speed priority |
 | `withBestCompression()` | Ratio priority |
 | `withBackgroundCompression()` | Background thread |
 | `withLogCompression()` | Log-optimized |
-| `withProductionCompression()` | Production-ready |
+| `withProductionCompression()` | Production-oriented compression settings |
 | `withZstdCompression()` | Default zstd compression (v0.1.8+) |
 | `withZstdFastCompression()` | Fast zstd compression (v0.1.8+) |
 | `withZstdBestCompression()` | Best zstd compression (v0.1.8+) |
@@ -437,7 +418,7 @@ The `Config` struct provides quick-enable methods for compression:
 // Quick-enable compression
 var config = logly.Config.default().withCompressionEnabled();
 
-// Production-ready in one line
+// Production-oriented compression in one line
 var config2 = logly.Config.default().withProductionCompression();
 
 // Zstd compression with one line (v0.1.8+)
@@ -468,7 +449,7 @@ The `Compression` struct provides preset factory methods for direct instantiatio
 | `best(allocator)` | Ratio priority |
 | `forLogs(allocator)` | Log-optimized |
 | `archive(allocator)` | Archival mode |
-| `production(allocator)` | Production-ready |
+| `production(allocator)` | Production-oriented preset |
 | `development(allocator)` | Development mode |
 | `background(allocator)` | Background thread |
 | `streaming(allocator)` | Streaming mode |
@@ -505,7 +486,6 @@ try zstd_compressor.compressFile("logs/app.log", null);
 | `gzip` | 3-5x | ~190 MB/s | ~290 MB/s | Standard file compatibility |
 | `zstd` | 3-6x | ~400 MB/s | ~1400 MB/s | High-performance, streaming (v0.1.8+) |
 
-
 ### CompressionLevel
 
 Compression level controlling speed vs size tradeoff.
@@ -522,7 +502,7 @@ pub const CompressionLevel = enum {
     default,
     /// Maximum compression (level 9)
     best,
-    
+
     pub fn toInt(self: CompressionLevel) u4;
     pub fn toZstdLevel(self: CompressionLevel) i32;
 };
@@ -630,7 +610,6 @@ pub const CompressionStats = struct {
 | `getBytesSaved()` | `u64` | Get total bytes saved by compression |
 | `getCompressionErrors()` | `u64` | Get compression error count |
 | `getDecompressionErrors()` | `u64` | Get decompression error count |
-| `getTotalErrors()` | `u64` | Get total error count |
 | `getBackgroundTasksQueued()` | `u64` | Get background tasks queued |
 | `getBackgroundTasksCompleted()` | `u64` | Get background tasks completed |
 | `getTotalOperations()` | `u64` | Get total operations (compress + decompress) |
@@ -641,9 +620,6 @@ pub const CompressionStats = struct {
 |--------|--------|-------------|
 | `hasOperations()` | `bool` | Check if any operations have been performed |
 | `hasErrors()` | `bool` | Check if any errors have occurred |
-| `hasCompressionErrors()` | `bool` | Check for compression errors |
-| `hasDecompressionErrors()` | `bool` | Check for decompression errors |
-| `hasPendingBackgroundTasks()` | `bool` | Check for pending background tasks |
 
 #### Rate Calculations
 
@@ -654,9 +630,7 @@ pub const CompressionStats = struct {
 | `avgCompressionSpeedMBps()` | `f64` | Calculate average compression speed in MB/s |
 | `avgDecompressionSpeedMBps()` | `f64` | Calculate average decompression speed in MB/s |
 | `errorRate()` | `f64` | Calculate overall error rate (0.0 - 1.0) |
-| `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
 | `backgroundTaskCompletionRate()` | `f64` | Calculate background task completion rate |
-| `avgBytesPerOperation()` | `f64` | Calculate average bytes per operation |
 
 #### Reset
 
@@ -698,7 +672,7 @@ pub const CompressionResult = struct {
     compressedSize: u64,
     outputPath: ?[]const u8,
     errorMessage: ?[]const u8 = null,
-    
+
     pub fn ratio(self: *const CompressionResult) f64;
 };
 ```
@@ -708,8 +682,6 @@ pub const CompressionResult = struct {
 ### init
 
 Creates a new Compression instance with default configuration.
-
-**Alias:** `create`
 
 ```zig
 pub fn init(allocator: std.mem.Allocator) Compression
@@ -745,8 +717,6 @@ pub fn initWithIo(allocator: std.mem.Allocator, io_handle: std.Io, config: Compr
 ### deinit
 
 Releases resources associated with the compression instance.
-
-**Alias:** `destroy`
 
 ```zig
 pub fn deinit(self: *Compression) void
@@ -784,7 +754,7 @@ const compressed = try compression.compress(data);
 defer allocator.free(compressed);
 
 const ratio = @as(f64, @floatFromInt(data.len)) / @as(f64, @floatFromInt(compressed.len));
-std.debug.print("Compressed: {d} -> {d} bytes ({d:.2}x)\n", 
+std.debug.print("Compressed: {d} -> {d} bytes ({d:.2}x)\n",
     .{data.len, compressed.len, ratio});
 ```
 
@@ -817,7 +787,7 @@ try std.testing.expectEqualStrings(original_data, decompressed);
 
 ### compressFile
 
-Compresses a file on disk with comprehensive error handling.
+Compresses a file on disk and returns the result or an error.
 
 ```zig
 pub fn compressFile(self: *Compression, inputPath: []const u8, outputPath: ?[]const u8) !CompressionResult
@@ -1123,7 +1093,7 @@ Called before compression begins.
 
 ```zig
 pub fn setCompressionStartCallback(
-    self: *Compression, 
+    self: *Compression,
     callback: *const fn (filePath: []const u8, uncompressedSize: u64) void
 ) void
 ```
@@ -1166,7 +1136,7 @@ fn onCompressionComplete(
     elapsed: u64
 ) void {
     const ratio = @as(f64, @floatFromInt(orig_size)) / @as(f64, @floatFromInt(comp_size));
-    std.debug.print("Compressed {s} -> {s}: {d:.2}x in {d}ms\n", 
+    std.debug.print("Compressed {s} -> {s}: {d:.2}x in {d}ms\n",
         .{orig, comp, ratio, elapsed});
 }
 
@@ -1222,7 +1192,6 @@ pub fn setArchiveDeletedCallback(
 
 Pre-configured compression settings for common use cases.
 
-
 ```zig
 // No compression
 const noneConfig = CompressionPresets.none();
@@ -1253,9 +1222,9 @@ const sizeConfig = CompressionPresets.onSize(50); // 50MB threshold
 
 ### Thread Safety
 
-- ✅ Thread-safe: All public methods protected by mutex
-- ✅ Atomic statistics: Lock-free reads
-- ⚠️ Callbacks: Must be thread-safe (called under lock)
+- Thread-safe: all public methods are protected by a mutex
+- Statistics use atomic counters for lock-free reads
+- Callbacks run under the internal lock and must be thread-safe
 
 ### Performance Tips
 
@@ -1346,29 +1315,29 @@ pub fn main() !void {
     defer if (result.outputPath) |p| allocator.free(p);
 
     if (result.success) {
-        std.debug.print("✓ Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});
+        std.debug.print("[OK] Compressed: {d:.1}% savings\\n", .{result.ratio() * 100});
 
         // Get statistics
         const stats = compression.getStats();
-        std.debug.print("Total files: {d}\\n", 
+        std.debug.print("Total files: {d}\\n",
             .{stats.getFilesCompressed()});
-        std.debug.print("Compression ratio: {d:.2}x\\n", 
+        std.debug.print("Compression ratio: {d:.2}x\\n",
             .{stats.compressionRatio()});
-        std.debug.print("Speed: {d:.1} MB/s\\n", 
+        std.debug.print("Speed: {d:.1} MB/s\\n",
             .{stats.avgCompressionSpeedMBps()});
     }
 }
 
-fn onComplete(orig: []const u8, comp: []const u8, 
+fn onComplete(orig: []const u8, comp: []const u8,
               orig_size: u64, comp_size: u64, elapsed: u64) void {
-    const ratio = @as(f64, @floatFromInt(orig_size)) / 
+    const ratio = @as(f64, @floatFromInt(orig_size)) /
                   @as(f64, @floatFromInt(comp_size));
     std.debug.print("Compressed {s} -> {s}: {d:.2}x in {d}ms\n",
         .{orig, comp, ratio, elapsed});
 }
 
 fn onError(path: []const u8, err: anyerror) void {
-    std.debug.print("Error compressing {s}: {s}\n", 
+    std.debug.print("Error compressing {s}: {s}\n",
         .{path, @errorName(err)});
 }
 ```
@@ -1378,28 +1347,13 @@ fn onError(path: []const u8, err: anyerror) void {
 Logly uses a real LZ77 + RLE compression algorithm:
 
 1. **LZ77 Sliding Window**: Finds repeated patterns and encodes them as (distance, length) pairs
-2. **Run-Length Encoding**: Compresses repeated byte sequences  
+2. **Run-Length Encoding**: Compresses repeated byte sequences
 3. **CRC32 Checksums**: Validates data integrity on decompression
 
 Typical compression ratios:
 - Repetitive data (logs): 4-10x compression (75-90% space savings)
 - Text data (logs): 3-5x compression (66-80% space savings)
 - Already compressed data: No benefit
-
-## Aliases
-
-The Compression module provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `encode` | `compress` |
-| `deflate` | `compress` |
-| `decode` | `decompress` |
-| `inflate` | `decompress` |
-| `packFile` | `compressFile` |
-| `unpackFile` | `decompressFile` |
-| `statistics` | `getStats` |
-| `needsCompression` | `shouldCompress` |
 
 ## Additional Methods
 
@@ -1412,4 +1366,3 @@ The Compression module provides convenience aliases:
 - [Rotation Guide](../guide/rotation.md) - Log rotation with compression
 - [Callbacks Guide](../guide/callbacks.md) - Callback patterns
 - [Configuration](../guide/configuration.md) - Centralized config setup
-

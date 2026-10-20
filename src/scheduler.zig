@@ -2223,7 +2223,7 @@ test "scheduler phase 3 features (pause/resume)" {
     try std.testing.expect(!sched.isPaused.load(.acquire));
 }
 
-test "scheduler task retries and jitter" {
+test "scheduler task retry policy" {
     const task = Scheduler.ScheduledTask{
         .name = "retry_task",
         .taskType = .custom,

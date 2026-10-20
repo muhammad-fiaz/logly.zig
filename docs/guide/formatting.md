@@ -80,7 +80,7 @@ const logly = @import("logly");
 pub fn main() !void {
     // Enable ANSI colors on Windows (no-op on Linux/macOS)
      _ = logly.Terminal.enableAnsiColors();
-    
+
     // ... rest of initialization
 }
 ```
@@ -130,7 +130,7 @@ Output:
 Custom levels show their actual names in JSON:
 
 ```zig
-try logger.addCustomLevel("audit", 35, "35");
+try logger.addCustomLevel("audit", 35, logly.Color.parse("35").?);
 try logger.custom("audit", "Security event", @src());
 ```
 
@@ -320,7 +320,7 @@ try logger.infof("User {s} logged in from {s}", .{ "Alice", "192.168.1.1" }, @sr
 try logger.debugf("Processed {d} items in {d}ms", .{ 100, 50 }, @src());
 
 // Error details (use errorf or errf)
-try logger.errorf("Failed to connect: {s} (Code: {d})", .{ "Connection Refused", 403 }, @src());
+try logger.errf("Failed to connect: {s} (Code: {d})", .{ "Connection Refused", 403 }, @src());
 ```
 
 This feature uses Zig's standard `std.fmt` syntax, so all standard format specifiers are supported.

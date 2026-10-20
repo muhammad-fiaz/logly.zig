@@ -67,9 +67,9 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 
 ## Best Practices
 
-1. **Use `DebugAllocator` in development** — catches memory leaks and double-frees
-2. **Use a dedicated arena for high-throughput logging** — reduce malloc overhead
-3. **Keep allocations simple** — Logly's internal allocations are designed to be minimal
+1. **Use `DebugAllocator` in development** - catches memory leaks and double-frees
+2. **Use a dedicated arena for high-throughput logging** - reduce malloc overhead
+3. **Keep allocations simple** - Logly's internal allocations are designed to be minimal
 
 ## See Also
 

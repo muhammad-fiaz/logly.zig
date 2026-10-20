@@ -1,6 +1,6 @@
 ---
 title: Network Logging
-description: Send logs over TCP and UDP with Logly.zig. Perfect for centralized logging, shipping to collectors like Logstash, and remote application monitoring.
+description: Send logs over TCP and UDP with Logly.zig. Suited to centralized logging, shipping to collectors like Logstash, and remote application monitoring.
 head:
   - - meta
     - name: keywords
@@ -36,7 +36,7 @@ pub fn main() !void {
     var udpSink = logly.SinkConfig.network("udp://127.0.0.1:9001");
      _ = try logger.addSink(udpSink);
 
-    try logger.info("This message goes to network sinks!", .{});
+    try logger.info("This message goes to network sinks!", @src());
 }
 ```
 
@@ -82,7 +82,7 @@ nc -l -k 9000
 ```zig
 var sink = logly.SinkConfig.network("tcp://localhost:9000");
  _ = try logger.addSink(sink);
-try logger.info("Hello from client!", .{});
+try logger.info("Hello from client!", @src());
 ```
 
 ## Network Helper APIs
@@ -116,21 +116,28 @@ try Network.sendSyslogUdp(
 *   **Buffering**: The async writer buffers logs and sends them in batches, improving network efficiency.
 *   **Reconnection**: TCP sinks handle reconnection logic automatically.
 
-## Syslog over TCP (RFC 6587) (v0.2.0)
+## Syslog over TCP
 
-Logly `v0.2.0` introduces complete support for connection-oriented, reliable Syslog forwarding over TCP (conforming to RFC 6587). This completes the remote Syslog RFC 5424 suite by providing guaranteed delivery of secure event streams, whereas traditional UDP Syslog is "fire-and-forget" and prone to packet loss under congestion.
+Syslog over TCP is exposed through the `Network` helpers rather than a dedicated sink type. Connect a TCP stream and send an RFC 5424 message with an explicit facility and severity:
 
-### Configuration
-
-To send logs to a remote Syslog TCP daemon:
 ```zig
-var syslogSink = logly.SinkConfig.syslog("tcp://syslog-collector:514");
-syslogSink.facility = .local0;
-syslogSink.severity = .info;
- _ = try logger.addSink(syslogSink);
+const Network = logly.Network;
+
+const stream = try Network.connectTcp(allocator, "tcp://syslog-collector:514");
+defer stream.close(logly.Utils.io());
+
+try Network.sendSyslogTcp(
+    allocator,
+    stream,
+    .local0,
+    .info,
+    "logly-host",
+    "logly",
+    "application started",
+);
 ```
 
-Logly automatically takes care of packet framing (e.g. octet counting or non-transparent framing via newlines) and maintains robust reconnection loops to ensure zero log loss during brief collector downtime.
+For UDP delivery, use `Network.sendSyslogUdp` with a socket from `Network.createUdpSocket`. To route logger records through a network sink, use `SinkConfig.network(uri)` and set `format` to `.syslog` or `.syslog3164`; the network sink reconnects on transport failure but does not add RFC 6587 octet-counting framing.
 
 ## Security
 

@@ -14,58 +14,6 @@ head:
 
 The `Redactor` struct handles the masking of sensitive data in log messages and context fields.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize redactor |
-| `deinit()` | `destroy()` | Deinitialize redactor |
-| `initWithConfig()` | `createWithConfig()` | Initialize with config |
-| `addPattern()` | `addRule()` | Add redaction pattern |
-| `addField()` | `field()`, `sensitiveField()` | Add sensitive field |
-| `addFields()` | `addFieldsBatch()`, `addSensitiveFields()` | Add multiple sensitive fields |
-| `addPatterns()` | `addPatternBatch()`, `addRules()` | Add multiple redaction patterns |
-| `removeField()` | `deleteField()`, `removeSensitiveField()` | Remove field rule |
-| `removePatternByName()` | `removePattern()`, `deletePattern()` | Remove patterns by name |
-| `redact()` | `mask()`, `sanitize()`, `process()` | Redact text |
-| `previewRedaction()` | `previewMessage()`, `preview()` | Preview full-message redaction without stats mutation |
-| `previewRedactionWithAllocator()` | `previewMessageWithAllocator()` | Preview redaction with allocator |
-| `redactField()` | `maskField()` | Redact field |
-| `previewFieldRedaction()` | `previewField()` | Preview field redaction without stats mutation |
-| `redactWithAllocator()` | `maskWithAllocator()`, `sanitizeWithAllocator()` | Redact with allocator |
-| `getStats()` | `statistics()` | Get statistics |
-| `resetStats()` | `resetStatistics()` | Reset statistics |
-| `patternCount()` | `ruleCount()` | Get pattern count |
-| `fieldCount()` | `sensitiveFieldCount()` | Get field count |
-| `hasRules()` | `hasConfiguration()` | Check if has rules |
-| `clearPatterns()` | `clearRules()` | Clear patterns |
-| `clearFields()` | `clearSensitiveFields()` | Clear fields |
-| `clear()` | `clearAll()` | Clear all |
-| `setRedactionAppliedCallback()` | `onRedactionApplied()` | Set redaction applied callback |
-| `setPatternMatchedCallback()` | `onPatternMatched()` | Set pattern matched callback |
-| `setInitializedCallback()` | `onInitialized()` | Set initialized callback |
-| `setErrorCallback()` | `onError()` | Set error callback |
-| `getFieldRedaction()` | `getFieldRule()` | Get field redaction |
-| `hasFieldRule()` | `hasRuleForField()` | Check whether a field has a rule |
-| `wouldRedact()` | `shouldRedact()`, `needsRedaction()` | Check whether a message matches configured patterns |
-| `matchingPatternCount()` | `matchingPatterns()`, `matchedPatternCount()` | Count matched patterns for a message |
-| `apply()` | `redact()`, `mask()` | Apply pattern (RedactionPattern) |
-| `getTotalProcessed()` | `totalProcessed()`, `processedCount()` | Get total processed (RedactorStats) |
-| `getValuesRedacted()` | `valuesRedacted()`, `redactedCount()` | Get values redacted (RedactorStats) |
-| `getPatternsMatched()` | `patternsMatched()`, `matchedCount()` | Get patterns matched (RedactorStats) |
-| `getFieldsRedacted()` | `fieldsRedacted()`, `fieldRedactionCount()` | Get fields redacted (RedactorStats) |
-| `getRedactionErrors()` | `redactionErrors()`, `errorCount()` | Get redaction errors (RedactorStats) |
-| `hasProcessed()` | `processed()` | Check if processed (RedactorStats) |
-| `hasRedacted()` | `redacted()` | Check if redacted (RedactorStats) |
-| `hasMatchedPatterns()` | `matchedPatterns()` | Check if matched patterns (RedactorStats) |
-| `hasErrors()` | `hasRedactionErrors()` | Check if has errors (RedactorStats) |
-| `redactionRate()` | `redactionPercentage()` | Get redaction rate (RedactorStats) |
-| `errorRate()` | `errorPercentage()` | Get error rate (RedactorStats) |
-| `successRate()` | `successPercentage()` | Get success rate (RedactorStats) |
-| `patternMatchRate()` | `patternMatchPercentage()` | Get pattern match rate (RedactorStats) |
-| `avgRedactionsPerValue()` | `avgRedactions()` | Get avg redactions per value (RedactorStats) |
-| `reset()` | `clear()`, `zero()` | Reset stats (RedactorStats) |
-
 ## Overview
 
 Redactors ensure compliance and security by preventing sensitive information (like passwords, API keys, or PII) from being written to logs. Supports pattern-based and field-based redaction with multiple masking types.
@@ -84,11 +32,13 @@ pub const Redactor = struct {
     fields: std.StringHashMap(RedactionType),
     stats: RedactorStats,
     mutex: std.Io.Mutex,
-    
+
     // Callbacks
-    onRedactionApplied: ?*const fn ([]const u8, []const u8) void,
-    on_field_redacted: ?*const fn ([]const u8, RedactionType) void,
-    onPatternMatched: ?*const fn ([]const u8, []const u8) void,
+    onRedactionApplied: ?*const fn (u64, u64, u32) void = null,
+    onPatternMatched: ?*const fn ([]const u8, []const u8) void = null,
+    onRedactionDetail: ?*const fn ([]const u8, []const u8, []const u8) void = null,
+    onRedactorInitialized: ?*const fn (*const RedactorStats) void = null,
+    onRedactionError: ?*const fn ([]const u8) void = null,
 };
 ```
 
@@ -110,6 +60,10 @@ pub const RedactionPattern = struct {
         contains,
         regex,
         regexReplace,
+        email,
+        ip,
+        jwt,
+        luhn,
     };
 };
 ```
@@ -126,7 +80,7 @@ pub const RedactionType = enum {
     hash,           // SHA256 hash
     maskMiddle,    // 12****34
     truncate,       // Truncate to N chars
-    
+
     pub fn apply(self: RedactionType, allocator: Allocator, value: []const u8) ![]u8;
 };
 ```
@@ -212,8 +166,6 @@ pub const RedactionConfig = struct {
     maskChar: u8 = '*',
     /// Enable case-insensitive field matching.
     caseInsensitive: bool = true,
-    /// Log when redaction is applied (for audit).
-    auditRedactions: bool = false,
     /// Compliance preset to use (null for custom).
     compliancePreset: ?CompliancePreset = null,
 
@@ -271,7 +223,6 @@ var redactor = Redactor.initWithConfig(allocator, .{
     .partialStartChars = 3,
     .partialEndChars = 3,
     .caseInsensitive = true,
-    .auditRedactions = true,
 });
 ```
 
@@ -285,25 +236,17 @@ Releases all resources associated with the redactor.
 
 Adds a new pattern-based redaction rule.
 
-**Alias**: `addRule`
-
 #### `addField(fieldName: []const u8, redactionType: RedactionType) !void`
 
 Adds a field-based redaction rule (for structured logging context).
-
-**Alias**: `field`, `sensitiveField`
 
 #### `addFields(fieldNames: []const []const u8, redactionType: RedactionType) !usize`
 
 Adds multiple field-based redaction rules and returns the number of fields added.
 
-**Alias**: `addFieldsBatch`, `addSensitiveFields`
-
 #### `addPatterns(patterns: []const RedactionPattern) !usize`
 
 Adds multiple pattern-based redaction rules and returns the number of patterns added.
-
-**Alias**: `addPatternBatch`, `addRules`
 
 #### `removeField(fieldName: []const u8) bool`
 
@@ -312,13 +255,9 @@ Removes a field redaction rule by name.
 - Honors case-insensitive matching when enabled in config.
 - Returns `true` when a rule was removed.
 
-**Alias**: `deleteField`, `removeSensitiveField`
-
 #### `removePatternByName(name: []const u8) usize`
 
 Removes all pattern rules with the provided name and returns number of removed rules.
-
-**Alias**: `removePattern`, `deletePattern`
 
 #### `clearPatterns() void`
 
@@ -338,8 +277,6 @@ Removes all redaction rules.
 
 Applies redaction to a string value using pattern rules. Returns a new allocated string.
 
-**Alias**: `mask`, `sanitize`, `process`
-
 #### `redactWithAllocator(value: []const u8, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Applies redaction using an optional scratch allocator. If provided, temporary allocations use the scratch allocator (useful for arena allocators). If null, uses the redactor's main allocator.
@@ -353,37 +290,25 @@ const result = try redactor.redactWithAllocator(message, logger.scratchAllocator
 
 Previews how full-message pattern redaction would look without mutating stats or callbacks.
 
-**Alias**: `previewMessage`, `preview`
-
 #### `previewRedactionWithAllocator(value: []const u8, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Allocator-aware variant of `previewRedaction(...)`.
-
-**Alias**: `previewMessageWithAllocator`
 
 #### `redactField(fieldName: []const u8, value: []const u8) ![]u8`
 
 Redacts a field value based on field rules with config settings.
 
-**Alias**: `maskField`
-
 #### `previewFieldRedaction(fieldName: []const u8, value: []const u8) ![]u8`
 
 Returns how a field value would be redacted without incrementing runtime counters.
-
-**Alias**: `previewField`
 
 #### `wouldRedact(value: []const u8) bool`
 
 Returns true when at least one configured pattern would match and redact the provided value.
 
-**Alias**: `shouldRedact`, `needsRedaction`
-
 #### `matchingPatternCount(value: []const u8) usize`
 
 Returns count of configured pattern rules that match this value.
-
-**Alias**: `matchingPatterns`, `matchedPatternCount`
 
 ### Audit & Logging
 
@@ -393,11 +318,9 @@ Writes a compliance audit log to the provided writer, detailing the configured f
 
 ### Redaction Detail Callback
 
-#### `setRedactionDetailCallback(callback: ?*const fn ([]const u8, []const u8, []const u8) void) void`
+#### `setRedactionDetailCallback(callback: *const fn ([]const u8, []const u8, []const u8) void) void`
 
 Sets a callback that fires for every redaction event, providing the original value, the redacted value, and the pattern name that triggered the redaction. Useful for audit logging and debugging redaction rules.
-
-**Alias**: `onRedactionDetail`
 
 ```zig
 fn onRedactDetail(original: []const u8, redacted: []const u8, pattern_name: []const u8) void {
@@ -408,34 +331,18 @@ redactor.setRedactionDetailCallback(onRedactDetail);
 ```
 
 **Parameters:**
-- `callback` — The callback function, or `null` to remove an existing callback.
+- `callback`: the callback function.
 
 **Callback Signature:**
-- `original: []const u8` — The original value before redaction.
-- `redacted: []const u8` — The value after redaction was applied.
-- `pattern_name: []const u8` — The name of the pattern or field that matched.
-
-### Configuration
-
-#### `getConfig() RedactionConfig`
-
-Returns current redaction configuration.
-
-#### `isEnabled() bool`
-
-Returns true if redaction is enabled in config.
-
-#### `getDefaultReplacement() []const u8`
-
-Returns the default replacement text from config.
+- `original: []const u8`: the original value before redaction.
+- `redacted: []const u8`: the value after redaction was applied.
+- `pattern_name: []const u8`: the name of the pattern or field that matched.
 
 ### Statistics
 
 #### `getStats() RedactorStats`
 
 Returns current redactor statistics.
-
-**Alias**: `statistics`
 
 #### `resetStats() void`
 
@@ -465,31 +372,37 @@ Returns true if any redaction rules are configured.
 
 ```zig
 pub const RedactionPresets = struct {
-    /// Standard sensitive data redaction.
-    /// Includes: password, email (with robust format validation), ssn, api_key fields
-    pub fn standard(allocator: std.mem.Allocator) !Redactor;
-    
-    /// PCI-DSS compliant redaction.
-    /// Includes: pan, cvv, pin, card_number, expiry fields. Card numbers are dynamically validated using the Luhn algorithm.
+    /// Redacts email addresses with the `.email` pattern.
+    pub fn gdprEmail(allocator: std.mem.Allocator) !Redactor;
+
+    /// Redacts credit card numbers with the Luhn-validated `.luhn` pattern.
+    pub fn pciCard(allocator: std.mem.Allocator) !Redactor;
+
+    /// Redacts common sensitive fields.
+    /// Includes: password, secret, api_key, token, credit_card, ssn, email.
+    pub fn common(allocator: std.mem.Allocator) !Redactor;
+
+    /// PCI-DSS field preset.
+    /// Includes: pan, cvv, pin, card_number, expiry fields.
     pub fn pciDss(allocator: std.mem.Allocator) !Redactor;
-    
-    /// HIPAA compliant redaction.
-    /// Includes: patient_id, ssn, dob, address, phone, email, medical_record
+
+    /// HIPAA field preset.
+    /// Includes: patient_id, ssn, dob, address, phone, email, medical_record.
     pub fn hipaa(allocator: std.mem.Allocator) !Redactor;
-    
-    /// GDPR compliant redaction.
-    /// Includes: name, email, phone, address, ip, ip_address, user_id. Supports advanced IPv4/IPv6 address masking.
+
+    /// GDPR field preset.
+    /// Includes: name, email, phone, address, ip, ip_address, user_id.
     pub fn gdpr(allocator: std.mem.Allocator) !Redactor;
-    
-    /// API secrets redaction.
-    /// Includes: api_key, secret_key, access_token, refresh_token, bearer_token, jwt (with JWT pattern validation).
+
+    /// API secret field preset.
+    /// Includes: api_key, secret_key, access_token, refresh_token, bearer_token, authorization.
     pub fn apiSecrets(allocator: std.mem.Allocator) !Redactor;
-    
-    /// Financial data redaction.
-    /// Includes: account_number, routing_number, balance, amount, iban, swift
+
+    /// Financial field preset.
+    /// Includes: account_number, routing_number, balance, amount, iban, swift.
     pub fn financial(allocator: std.mem.Allocator) !Redactor;
-    
-    /// Creates a secure sink configuration with redaction enabled.
+
+    /// Creates a JSON sink configuration for records that have already been redacted.
     pub fn createSecureSink(filePath: []const u8) SinkConfig;
 };
 ```

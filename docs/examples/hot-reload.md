@@ -13,20 +13,23 @@ For detailed concepts, see the [Zero-Downtime Hot-Reload Guide](/guide/hot-reloa
 
 ## Code Listing
 
-The following is the complete source from [examples/hot_reload.zig](file:///c:/Users/smuha/Downloads/logly.zig/examples/hot_reload.zig):
+The following is the complete source from [examples/hot_reload.zig](https://github.com/muhammad-fiaz/logly.zig/blob/main/examples/hot_reload.zig):
 
 ```zig
 const std = @import("std");
 const logly = @import("logly");
 
+var threaded = std.Io.Threaded.init_single_threaded;
+const io = threaded.io();
+
 pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){}; 
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-     _ = logly.Terminal.enableAnsiColors();
+    _ = logly.Terminal.enableAnsiColors();
 
-    std.debug.print("=== Logly v0.2.0 Hot-Reload Config Example ===\n\n", .{});
+    std.debug.print("Hot-Reload Config Example\n\n", .{});
 
     // Start with display-only config (no files)
     const logger = try logly.Logger.initWithConfig(allocator, logly.Config.displayOnly());
@@ -36,7 +39,6 @@ pub fn main() !void {
 
     // Write a sample JSON config file to disk using Zig 0.16 IO API
     const configPath = "hot_reload_test.json";
-    const io = logly.Utils.io();
     {
         const f = try std.Io.Dir.cwd().createFile(io, configPath, .{});
         defer f.close(io);
@@ -58,7 +60,7 @@ pub fn main() !void {
     try logger.warning("Post-reload warning message.", @src());
 
     std.debug.print("\n[Hot-Reload] Configuration hot-reload demonstrated successfully.\n", .{});
-    std.debug.print("=== Hot-Reload Example Complete ===\n", .{});
+    std.debug.print("Hot-Reload Example Complete\n", .{});
 }
 ```
 

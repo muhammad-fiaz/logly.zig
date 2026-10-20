@@ -1,56 +1,6 @@
 # Rotation API
 
-The `Rotation` module provides enterprise-grade log rotation capabilities, including time-based and size-based rotation, retention policies, compression, and flexible naming strategies.
-
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize rotation |
-| `deinit()` | `destroy()` | Deinitialize rotation |
-| `withCompression()` | `setCompression()` | Set compression config |
-| `withNaming()` | `setNaming()` | Set naming strategy |
-| `withNamingFormat()` | `namingFormat()`, `setNamingFormat()` | Set naming format |
-| `withMaxAge()` | `maxAge()`, `setMaxAge()` | Set max age |
-| `setInterval()` | `updateInterval()` | Set rotation interval directly |
-| `setIntervalFromString()` | `configureInterval()` | Set interval from string or disable |
-| `setSizeLimit()` | `updateSizeLimit()` | Set size limit directly |
-| `setRetentionCount()` | `updateRetentionCount()` | Set retention count directly |
-| `setRetentionPolicy()` | `configureRetention()` | Set retention count + max age |
-| `withArchiveDir()` | `archiveDir()`, `setArchiveDir()` | Set archive directory |
-| `setCleanEmptyDirs()` | `cleanEmptyDirs()` | Set clean empty dirs |
-| `withKeepOriginal()` | `keepOriginal()`, `setKeepOriginal()` | Set keep original |
-| `withCompressOnRetention()` | `compressOnRetention()`, `setCompressOnRetention()` | Set compress on retention |
-| `withDeleteAfterRetentionCompress()` | `deleteAfterRetentionCompress()`, `setDeleteAfterRetentionCompress()` | Set delete after retention compress |
-| `applyConfig()` | `configure()`, `applyConfiguration()` | Apply configuration |
-| `isEnabled()` | `enabled()` | Check if enabled |
-| `intervalName()` | `getIntervalName()` | Get interval name |
-| `getRotationReason()` | `rotationReason()`, `getReason()` | Get current rotation trigger reason |
-| `shouldRotate()` | `shouldRotateNow()` | Check if conditions currently require rotation |
-| `nextRotationInSeconds()` | `secondsUntilNextRotation()` | Get remaining interval seconds |
-| `nextRotationAt()` | `nextRotationAtSeconds()` | Get epoch seconds for next interval rotation |
-| `rotationAgeSeconds()` | `lastRotationAgeSeconds()` | Get seconds since last rotation |
-| `previewNextPath()` | `previewPath()`, `nextPath()` | Preview next rotated file path |
-| `forceRotate()` | `rotateNow()`, `force()` | Force rotation immediately |
-| `checkAndRotate()` | `rotateIfNeeded()`, `maybeRotate()` | Check and rotate if needed |
-| `createRotatingSink()` | `rotatingSink()` | Create rotating sink |
-| `createSizeRotatingSink()` | `sizeSink()` | Create size rotating sink |
-| `seconds()` | `duration()`, `intervalSeconds()` | Get seconds (RotationInterval) |
-| `fromString()` | `parse()`, `fromStr()` | Parse from string (RotationInterval) |
-| `name()` | `displayName()`, `string()` | Get name (RotationInterval) |
-| `reset()` | `clear()`, `zero()` | Reset stats (RotationStats) |
-| `rotationCount()` | `rotations()`, `totalRotations()` | Get rotation count (RotationStats) |
-| `errorCount()` | `totalErrors()` | Get error count (RotationStats) |
-| `getFilesArchived()` | `filesArchived()`, `archivedCount()` | Get files archived (RotationStats) |
-| `getFilesDeleted()` | `filesDeleted()`, `deletedCount()` | Get files deleted (RotationStats) |
-| `getCompressionErrors()` | `compressionErrors()`, `compressErrors()` | Get compression errors (RotationStats) |
-| `hasErrors()` | `hasRotationErrors()` | Check if has errors (RotationStats) |
-| `successRate()` | `successPercentage()` | Get success rate (RotationStats) |
-| `totalErrorRate()` | `errorPercentage()`, `totalErrorPercentage()` | Get total error rate (RotationStats) |
-| `weekly4Weeks()` | `weekly()` | Weekly preset (RotationPresets) |
-| `monthly12Months()` | `monthly()` | Monthly preset (RotationPresets) |
-| `hourly24Hours()` | `hourly()` | Hourly preset (RotationPresets) |
-| `daily7Days()` | `daily()` | Daily preset (RotationPresets) |
+The `Rotation` module provides time- and size-based log rotation, retention policies, compression, and configurable file naming.
 
 ## Rotation Struct
 
@@ -178,7 +128,7 @@ pub fn setRetentionPolicy(self: *Rotation, retentionCount: ?usize, maxAgeSeconds
 Sets a maximum total size across all rotated archive files. When the total size of all rotated logs exceeds this threshold, the oldest logs are deleted to free space.
 
 ```zig
-pub fn setMaxTotalSize(self: *Rotation, bytes: u64) void
+pub fn setMaxTotalSize(self: *Rotation, bytes: ?u64) void
 ```
 
 #### `withOnRotate`
@@ -342,15 +292,30 @@ pub const RotationConfig = struct {
 | `maxTotalSizeStr` | `?[]const u8` | `null` | Max combined size as a string (e.g. `"100MB"`) |
 | `onRotate` | `?*const fn (oldPath: []const u8, newPath: []const u8) void` | `null` | Callback invoked after rotation; runs under the rotation lock (and sink lock for sink-driven rotation) and must not log or re-enter the logger |
 
-### Parsing Helpers
+### Configuration Factories
 
-`RotationConfig` provides convenient parsers to convert strings into configuration limits:
+`RotationConfig` provides factory helpers for common policies:
 
-#### `fromSize(sizeStr: []const u8) !u64`
-Parses size strings like `"10MB"`, `"2.5GB"`, `"500KB"` into bytes.
+#### `bySize(sizeBytes: u64, retention: usize) RotationConfig`
+Creates an enabled byte-size rotation policy.
 
-#### `fromInterval(durStr: []const u8) !i64`
-Parses duration strings like `"30d"`, `"12h"`, `"45m"` into seconds.
+#### `fromSize(sizeStr: []const u8) RotationConfig`
+Creates an enabled policy that stores `sizeStr` (for example `"10MB"`) in `sizeLimitStr`.
+
+#### `byInterval(intervalName: []const u8, retention: usize) RotationConfig`
+Creates an enabled interval rotation policy.
+
+#### `fromInterval(durStr: []const u8) RotationConfig`
+Creates an enabled policy that stores `durStr` (for example `"24h"`) in `interval`.
+
+#### `daily(retentionDays: usize) RotationConfig`
+Creates an enabled daily rotation policy.
+
+#### `withCompression(algorithm: CompressionConfig.CompressionAlgorithm) RotationConfig`
+Returns a copy with compression enabled for rotated files.
+
+#### `withArchive(dir: []const u8, dateSubdirs: bool) RotationConfig`
+Returns a copy with archive directories configured.
 
 ## Enums
 
@@ -420,30 +385,25 @@ The `RotationStats` struct provides insights into the rotation process.
 
 | Method | Return | Description |
 |--------|--------|-------------|
-| `getTotalRotations()` | `u64` | Get total rotations performed |
+| `rotationCount()` | `u64` | Get total rotations performed |
 | `getFilesArchived()` | `u64` | Get files archived count |
 | `getFilesDeleted()` | `u64` | Get files deleted count |
-| `getRotationErrors()` | `u64` | Get rotation error count |
+| `errorCount()` | `u64` | Get rotation error count |
 | `getCompressionErrors()` | `u64` | Get compression error count |
-| `getTotalErrors()` | `u64` | Get total error count |
 
 ### Boolean Checks
 
 | Method | Return | Description |
 |--------|--------|-------------|
-| `hasRotated()` | `bool` | Check if any rotations have occurred |
 | `hasErrors()` | `bool` | Check if any errors have occurred |
 | `hasCompressionErrors()` | `bool` | Check for compression errors |
-| `hasArchived()` | `bool` | Check if any files have been archived |
 
 ### Rate Calculations
 
 | Method | Return | Description |
 |--------|--------|-------------|
 | `successRate()` | `f64` | Calculate success rate (0.0 - 1.0) |
-| `errorRate()` | `f64` | Calculate error rate (0.0 - 1.0) |
 | `totalErrorRate()` | `f64` | Calculate total error rate including compression |
-| `archiveRate()` | `f64` | Calculate archive rate (archived / rotated) |
 
 ### Reset
 
@@ -453,7 +413,7 @@ The `RotationStats` struct provides insights into the rotation process.
 
 ## Presets
 
-The `RotationPresets` struct offers comprehensive pre-configured rotation strategies for common use cases.
+`RotationPresets` provides preconfigured rotation strategies for common use cases.
 
 ### Time-Based Presets
 
@@ -480,7 +440,7 @@ The `RotationPresets` struct offers comprehensive pre-configured rotation strate
 | `size10MB()` | 10 MB | 5 | Standard size |
 | `size25MB()` | 25 MB | 10 | Medium size |
 | `size50MB()` | 50 MB | 10 | Large size |
-| `size100MB()` | 100 MB | 10 | Enterprise size |
+| `size100MB()` | 100 MB | 10 | Large files |
 | `size250MB()` | 250 MB | 5 | High volume |
 | `size500MB()` | 500 MB | 3 | Very high volume |
 | `size1GB()` | 1 GB | 2 | Maximum size |
@@ -514,15 +474,6 @@ The `RotationPresets` struct offers comprehensive pre-configured rotation strate
 | `monthlySink(path, retention)` | Create monthly rotation sink config |
 | `sizeSink(path, bytes, retention)` | Create size-based rotation sink config |
 
-### Preset Aliases
-
-| Alias | Target |
-|-------|--------|
-| `daily` | `daily7Days` |
-| `hourly` | `hourly24Hours` |
-| `weekly` | `weekly4Weeks` |
-| `monthly` | `monthly12Months` |
-
 ### Example Usage
 
 ```zig
@@ -532,15 +483,11 @@ const RotationPresets = @import("logly").RotationPresets;
 var rot = try RotationPresets.daily7Days(allocator, "app.log");
 defer rot.deinit();
 
-// Using alias
-var rot2 = try RotationPresets.daily(allocator, "server.log");
-defer rot2.deinit();
-
 // Production preset with compression enabled
 var prod = try RotationPresets.production(allocator, "production.log");
 defer prod.deinit();
 
-// Enterprise preset with full archival
+// Daily archival preset
 var ent = try RotationPresets.enterprise(allocator, "enterprise.log");
 defer ent.deinit();
 

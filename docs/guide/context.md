@@ -1,6 +1,6 @@
 ---
 title: Context Binding
-description: Use context binding in Logly.zig to attach persistent key-value pairs to logs. Track user sessions, request IDs, and system state effortlessly.
+description: Use context binding in Logly.zig to attach persistent key-value pairs to logs. Track user sessions, request IDs, and system state.
 head:
   - - meta
     - name: keywords
@@ -101,13 +101,13 @@ For temporary context that should only apply to a specific scope or set of opera
 {
     var scoped = logger.with();
     defer scoped.deinit();
-    
+
      _ = scoped.str("request_id", "req-123")
               .int("attempt", 1);
-              
-    try scoped.info("Processing request"); // Includes request_id and attempt
-    try scoped.warn("Retrying...");        // Includes request_id and attempt
+
+    try scoped.info("Processing request", @src()); // Includes request_id and attempt
+    try scoped.warn("Retrying...", @src());        // Includes request_id and attempt
 }
 
-try logger.info("Back to global context"); // Does NOT include request_id
+try logger.info("Back to global context", @src()); // Does NOT include request_id
 ```

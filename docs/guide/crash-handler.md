@@ -13,14 +13,14 @@ Logly solves this problem using a dedicated **Global Panic Handler** that interc
 
 ## Architecture Overview
 
-Standard async logging queues messages in ring buffers and flushes them to disk on a thread pool or timer. When an unhandled panic occurs in standard code, the OS halts all threads and terminates the process immediately. 
+Standard async logging queues messages in ring buffers and flushes them to disk on a thread pool or timer. When an unhandled panic occurs in standard code, the OS halts all threads and terminates the process immediately.
 
 ```mermaid
 sequenceDiagram
     participant App as Application Thread
     participant Logly as Logly Crash Handler
     participant Sinks as Active Sinks (Disk/Syslog)
-    
+
     App->>App: Unhandled Panic / Crash
     App->>Logly: panic() hook invoked
     Note over Logly: Bypasses async worker thread
@@ -60,14 +60,8 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Register our active logger for panic and crash signal handling
-    logly.crash.registerLogger(logger);
-    defer logly.crash.unregisterLogger();
-
-    // Alternatively, you can use the shorter public aliases:
-    // logly.crash.register(logger);
-    // defer logly.crash.unregister();
-    //
-    // Other ergonomic aliases include: logly.crash.setup/reset and logly.crash.init/deinit.
+    logly.crash.register(logger);
+    defer logly.crash.unregister();
 
     try logger.info("Process initialized. Panic and OS crash handlers are active.", @src());
 }
@@ -85,7 +79,7 @@ try logger.logPanic("Recoverable failure: custom panic condition triggered");
 
 ## Process Crash Callbacks
 
-In advanced setups, you might want to execute custom telemetry reporting or notification logic immediately when a crash occurs (for example, notifying a service like Sentry or Rollbar). You can register a global crash callback using `setCrashCallback` (or its ergonomic aliases `onCrash`, `setCallback`):
+In advanced setups, you might want to execute custom telemetry reporting or notification logic immediately when a crash occurs (for example, notifying a service like Sentry or Rollbar). You can register a global crash callback using `setCrashCallback`:
 
 ```zig
 fn customCrashCallback(msg: []const u8) void {
@@ -121,6 +115,6 @@ Logly registers low-level handlers depending on the host operating system:
 >
 > Limitation: sink locks are still acquired per write during crash logging, so panic handling is best-effort and not async-signal-safe. If a crash interrupts a thread while it holds a sink lock (or the logger lock used by non-panic writes), the crash log write can block.
 
-* **Register Early**: Call `logly.crash.registerLogger` (or its alias `logly.crash.register`) as soon as your logger is initialized in `main` to catch failures during startup.
+* **Register Early**: Call `logly.crash.register` as soon as your logger is initialized in `main` to catch failures during startup.
 * **Unregister Gracefully**: Use a `defer logly.crash.unregister()` immediately after registration to clean up global references when exiting normally.
 * **Bypass Async**: The crash subsystem automatically bypasses asynchronous thread pool queues during failure, writing synchronously to ensure logs are fully captured on crash. Do not try to perform asynchronous network requests inside panic hooks. Always direct panic logs to reliable, local, or connection-oriented sinks.

@@ -21,7 +21,7 @@ pub fn main() !void {
     // Add a rotating sink: Daily rotation, keep 30 files
     _ = try logger.addSink(logly.SinkConfig.rotating("logs/app.log", "daily", 30));
 
-    logger.info("Application started");
+    logger.info("Application started", @src());
 }
 ```
 
@@ -29,17 +29,17 @@ pub fn main() !void {
 Rotate every 50MB, keep 5 files.
 
 ```zig
-_ = try logger.addSink(logly.SinkConfig.createSizeRotatingSink("logs/data.log", 50 * 1024 * 1024, 5));
+_ = try logger.addSink(logly.Rotation.createSizeRotatingSink("logs/data.log", 50 * 1024 * 1024, 5));
 ```
 
-### Concise Configuration (Short Alias)
+### Inline Sink Configuration
 You can use `logger.add()` with a struct literal to configure rotation inline, without needing helper functions. This gives you full access to all `SinkConfig` fields.
 
 ```zig
  _ = try logger.add(.{
     .path = "logs/app.log",
     .sizeLimitStr = "10MB",       // Use string for easy size definition
-    // .size_limit = 10 * 1024 * 1024, // Or raw bytes
+    // .sizeLimit = 10 * 1024 * 1024, // Or raw bytes
     .retention = 5,                 // Keep 5 rotated files
     .rotation = "daily",            // Optional: Combine time and size
 });
@@ -63,7 +63,7 @@ std.debug.print("Last rotation age: {d}s\n", .{age});
 
 ## Using Presets
 
-Logly provides comprehensive presets for common rotation scenarios.
+Logly provides presets for common rotation scenarios.
 
 ### Time-Based Presets
 
@@ -130,14 +130,14 @@ var fast = try RotationPresets.hourlyOr50MB(allocator, "logs/fast.log");
 defer fast.deinit();
 ```
 
-### Production-Ready Presets
+### Rotation Presets
 
 ```zig
 // Production: daily, 30 days, gzip compression, date naming
 var prod = try RotationPresets.production(allocator, "logs/production.log");
 defer prod.deinit();
 
-// Enterprise: daily, 90 days, best compression, ISO naming
+// Daily archival: 90 days, best compression, ISO naming
 var ent = try RotationPresets.enterprise(allocator, "logs/enterprise.log");
 defer ent.deinit();
 
@@ -209,13 +209,13 @@ const Rotation = logly.Rotation;
 var rot = try Rotation.init(allocator, "logs/access.log", "daily", null, 60);
 
 // 1. Enable compression
-try rot.withCompression(.{ 
-    .algorithm = .gzip, 
-    .level = .best 
+try rot.withCompression(.{
+    .algorithm = .gzip,
+    .level = .best
 });
 
 // 2. Use ISO timestamps for better sorting
-rot.withNaming(.isoDatetime); 
+rot.withNaming(.isoDatetime);
 
 // 3. Move rotated files to a dedicated archive folder
 try rot.withArchiveDir("logs/archive/access");
@@ -259,7 +259,7 @@ Enforce both max age and max count. The stricter limit applies.
 var rot = try Rotation.init(allocator, "server.log", "daily", null, 100); // Max 100 files
 
 // AND max 7 days old
-rot.withMaxAge(7 * 24 * 3600); 
+rot.withMaxAge(7 * 24 * 3600);
 
 // Result: Files are deleted if they are the 101st file OR if they are older than 7 days.
 ```
@@ -271,7 +271,7 @@ Mimic standard Unix `logrotate` behavior: `app.log` -> `app.log.1` -> `app.log.2
 var rot = try Rotation.init(allocator, "sys.log", null, 10 * 1024 * 1024, 5);
 rot.withNaming(.index);
 
-// Result: 
+// Result:
 // sys.log (current)
 // sys.log.1 (previous)
 // sys.log.2 (oldest)

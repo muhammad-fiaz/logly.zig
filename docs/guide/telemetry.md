@@ -15,7 +15,7 @@ head:
 
 # OpenTelemetry Integration
 
-Logly.zig provides comprehensive OpenTelemetry (OTEL) support for distributed tracing, metrics collection, and observability integration with external monitoring systems.
+Logly.zig provides OpenTelemetry (OTEL) support for distributed tracing, metrics collection, and observability integration with external monitoring systems.
 
 ## Overview
 
@@ -125,7 +125,7 @@ Set `sanitizeMetricNames = false` or call
 
 | Provider | Factory Function | Default Endpoint |
 |----------|------------------|------------------|
-| **Jaeger** | `TelemetryConfig.jaeger()` | `http://localhost:14268/api/traces` |
+| **Jaeger** | `TelemetryConfig.jaeger()` | `http://localhost:4318/v1/traces` |
 | **Zipkin** | `TelemetryConfig.zipkin()` | `http://localhost:9411/api/v2/spans` |
 | **Datadog** | `TelemetryConfig.datadog(apiKey)` | `http://localhost:8126/v0.3/traces` |
 | **Google Cloud** | `TelemetryConfig.googleCloud(project, key)` | `https://cloudtrace.googleapis.com/v1/traces` |
@@ -134,7 +134,6 @@ Set `sanitizeMetricNames = false` or call
 | **AWS X-Ray** | `TelemetryConfig.awsXray(region)` | `http://localhost:2000` |
 | **Azure** | `TelemetryConfig.azure(connectionString)` | Application Insights endpoint |
 | **OTEL Collector** | `TelemetryConfig.otelCollector(endpoint)` | Custom endpoint |
-| **Honeycomb** | `TelemetryConfig.honeycomb(apiKey)` | `https://api.honeycomb.io/1/batch/dataset` |
 | **File** | `TelemetryConfig.file(path)` | Local JSONL file |
 
 ### Custom Provider
@@ -145,7 +144,7 @@ Create your own exporter implementation:
 fn myCustomExporter() anyerror!void {
     // Custom export logic - send to your own backend
     std.debug.print("Custom export triggered\n", .{});
-    
+
     // Example: Send to custom HTTP endpoint
     // const client = try std.http.Client.init(allocator);
     // defer client.deinit();

@@ -1,6 +1,6 @@
 ---
 title: Source Location Display
-description: Enhance logs with source file paths and line numbers in Logly.zig. Learn how to use @src() and custom format strings for effortless debugging.
+description: Enhance logs with source file paths and line numbers in Logly.zig. Learn how to use @src() and custom format strings for debugging.
 head:
   - - meta
     - name: keywords

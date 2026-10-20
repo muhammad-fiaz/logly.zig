@@ -10,7 +10,7 @@ const CompressionConfig = Config.CompressionConfig;
 const RotationConfig = Config.RotationConfig;
 const Utils = @import("utils.zig");
 
-/// Handles log file rotation logic with comprehensive features for enterprise use.
+/// Log rotation with time- and size-based policies, retention, and optional compression.
 pub const Rotation = struct {
     /// Defines the time interval for rotation.
     pub const RotationInterval = enum {
@@ -247,7 +247,10 @@ pub const Rotation = struct {
         sizeLimit: ?u64,
         retention: ?usize,
     ) !Rotation {
-        const interval = if (intervalStr) |s| RotationInterval.fromString(s) else null;
+        const interval = if (intervalStr) |s|
+            RotationInterval.fromString(s) orelse return error.InvalidRotationInterval
+        else
+            null;
         var r = Rotation{
             .allocator = allocator,
             .io = io_handle,
@@ -380,22 +383,20 @@ pub const Rotation = struct {
     pub fn applyConfig(self: *Rotation, config: RotationConfig) !void {
         if (self.interval == null and config.interval != null) {
             const s = config.interval.?;
-            if (RotationInterval.fromString(s)) |inv| {
-                self.interval = inv;
-            } else if (Utils.parseDuration(s)) |durMs| {
-                self.maxAgeSeconds = @divTrunc(durMs, Constants.TimeConstants.msPerSecond);
-            }
+            self.interval = RotationInterval.fromString(s) orelse return error.InvalidRotationInterval;
         }
         if (self.sizeLimit == null) {
-            if (config.sizeLimit) |l| self.sizeLimit = l else if (config.sizeLimitStr) |s| {
-                self.sizeLimit = Utils.parseSize(s);
+            if (config.sizeLimit) |l| {
+                self.sizeLimit = l;
+            } else if (config.sizeLimitStr) |s| {
+                self.sizeLimit = Utils.parseSize(s) orelse return error.InvalidSizeLimit;
             }
         }
         if (self.maxTotalSize == null) {
             if (config.maxTotalSize) |l| {
                 self.maxTotalSize = l;
             } else if (config.maxTotalSizeStr) |s| {
-                self.maxTotalSize = Utils.parseSize(s);
+                self.maxTotalSize = Utils.parseSize(s) orelse return error.InvalidSizeLimit;
             }
         }
         if (self.onRotate == null) {
@@ -1199,7 +1200,7 @@ pub const RotationPresets = struct {
         return rot;
     }
 
-    /// Enterprise preset: daily rotation, 90 days, compressed archive.
+    /// Long-retention preset: daily rotation, 90 days, compressed archive.
     pub fn enterprise(allocator: std.mem.Allocator, path: []const u8) !Rotation {
         var rot = try Rotation.init(allocator, path, "daily", null, 90);
         rot.withNaming(.isoDatetime);
@@ -1399,7 +1400,7 @@ test "rotation presets production configs" {
     try std.testing.expectEqual(Rotation.NamingStrategy.date, prod.naming);
     try std.testing.expect(prod.compression != null);
 
-    // Enterprise preset
+    // Long-retention preset
     var ent = try RotationPresets.enterprise(allocator, "test.log");
     defer ent.deinit();
     try std.testing.expectEqual(@as(?usize, 90), ent.retention);

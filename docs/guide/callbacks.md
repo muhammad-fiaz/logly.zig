@@ -15,11 +15,11 @@ head:
 
 # Callbacks
 
-Callbacks allow you to hook into the logging process and execute custom code whenever a log event occurs. This powerful feature enables integration with external monitoring systems, alerting mechanisms, metrics collection, and custom workflows throughout the logging pipeline.
+Callbacks run custom code at defined points in the logging pipeline, such as before a record is written or after a sink flushes. They can forward events to monitoring systems, alerting, or metrics collection.
 
 ## Overview
 
-Logly provides comprehensive callback support across all major components:
+Callbacks are available across the main components:
 
 - **Logger Callbacks**: Record logging, filtering, sink errors
 - **Sink Callbacks**: Write operations, flushes, rotations, errors
@@ -45,7 +45,7 @@ Called when a record is successfully logged:
 ```zig
 fn onRecordLogged(level: logly.Level, message: []const u8, record: *const logly.Record) void {
     // Track metrics or send to external system
-    metrics.increment("logs.total", 1);
+    telemetry.recordCounter("logs.total", 1);
     if (level == .err) {
         alerting.notifyError(message);
     }
@@ -82,7 +82,7 @@ logger.setSinkErrorCallback(&onSinkError);
 
 ```zig
 fn onLoggerInitialized(stats: *const logly.Logger.LoggerStats) void {
-    std.debug.print("Logger initialized with {d} active sinks\\n", 
+    std.debug.print("Logger initialized with {d} active sinks\\n",
         .{stats.getActiveSinks()});
 }
 
@@ -103,7 +103,7 @@ Called after each successful write:
 
 ```zig
 fn onSinkWrite(recordCount: u64, bytesWritten: u64) void {
-    metrics.track("sink.bytes_written", bytesWritten);
+    telemetry.recordGauge("sink.bytes_written", @floatFromInt(bytesWritten));
 }
 
 sink.setWriteCallback(&onSinkWrite);
@@ -174,8 +174,8 @@ asyncLogger.overflowCallback = &onOverflow;
 
 ```zig
 fn onBatchProcessed(batchSize: usize, processing_time_us: u64) void {
-    metrics.histogram("async.batch_size", batchSize);
-    metrics.histogram("async.processing_time_us", processing_time_us);
+    telemetry.recordHistogram("async.batch_size", @floatFromInt(batchSize));
+    telemetry.recordHistogram("async.processing_time_us", @floatFromInt(processing_time_us));
 }
 
 asyncLogger.onBatchProcessed = &onBatchProcessed;
@@ -185,7 +185,7 @@ asyncLogger.onBatchProcessed = &onBatchProcessed;
 
 ```zig
 fn onLatencyExceeded(actual_latency_us: u64, threshold_us: u64) void {
-    std.debug.print("⚠️  Latency {d}μs exceeds threshold {d}μs\n", 
+    std.debug.print("Warning: Latency {d}us exceeds threshold {d}us\n",
         .{actual_latency_us, threshold_us});
 }
 
@@ -215,11 +215,11 @@ filter.setDeniedCallback(&onRecordDenied);
 
 ```zig
 fn onSampleAccept(sampleRate: f64) void {
-    metrics.increment("sampler.accepted", 1);
+    telemetry.recordCounter("sampler.accepted", 1);
 }
 
 fn onSampleReject(sampleRate: f64, reason: logly.Sampler.SampleRejectReason) void {
-    metrics.increment("sampler.rejected", 1);
+    telemetry.recordCounter("sampler.rejected", 1);
 }
 
 sampler.setAcceptCallback(&onSampleAccept);
@@ -240,7 +240,7 @@ sampler.setRateLimitCallback(&onRateExceeded);
 
 ```zig
 fn onRateAdjustment(oldRate: f64, new_rate: f64, reason: []const u8) void {
-    std.debug.print("Sample rate adjusted: {d:.2} -> {d:.2} ({s})\n", 
+    std.debug.print("Sample rate adjusted: {d:.2} -> {d:.2} ({s})\n",
         .{oldRate, new_rate, reason});
 }
 
@@ -253,7 +253,7 @@ sampler.setAdjustmentCallback(&onRateAdjustment);
 
 ```zig
 fn onRedactionApplied(original_len: u64, redacted_len: u64, redactionType: u32) void {
-    metrics.increment("redaction.applied", 1);
+    telemetry.recordCounter("redaction.applied", 1);
 }
 
 redactor.setRedactionAppliedCallback(&onRedactionApplied);
@@ -356,7 +356,7 @@ fn onMetricsSnapshot(snapshot: *const logly.Metrics.Snapshot) void {
 }
 
 fn onThresholdExceeded(metricType: logly.Metrics.MetricType, value: u64, threshold: u64) void {
-    std.debug.print("Threshold exceeded: {s} = {d} (limit: {d})\n", 
+    std.debug.print("Threshold exceeded: {s} = {d} (limit: {d})\n",
         .{@tagName(metricType), value, threshold});
 }
 
@@ -376,18 +376,18 @@ fn onThreadStop(threadId: usize, tasksProcessed: u64, uptimeMs: u64) void {
 }
 
 fn onTaskSubmitted(priority: u8, queueDepth: usize) void {
-    metrics.increment("threadpool.submitted", 1);
+    telemetry.recordCounter("threadpool.submitted", 1);
      _ = priority;
      _ = queueDepth;
 }
 
 fn onTaskDequeued(priority: u8, wait_time_us: u64) void {
-    metrics.histogram("threadpool.wait_time_us", wait_time_us);
+    telemetry.recordHistogram("threadpool.wait_time_us", @floatFromInt(wait_time_us));
      _ = priority;
 }
 
 fn onTaskExecuted(exec_time_us: u64, success: bool) void {
-    metrics.histogram("threadpool.execution_time_us", exec_time_us);
+    telemetry.recordHistogram("threadpool.execution_time_us", @floatFromInt(exec_time_us));
      _ = success;
 }
 
@@ -416,7 +416,7 @@ fn onTaskStarted(task_name: []const u8, runCount: u64) void {
 }
 
 fn onTaskCompleted(task_name: []const u8, durationMs: u64) void {
-    metrics.histogram("scheduler.task_duration_ms", durationMs);
+    telemetry.recordHistogram("scheduler.task_duration_ms", @floatFromInt(durationMs));
 }
 
 fn onTaskError(task_name: []const u8, errorMsg: []const u8) void {
@@ -508,12 +508,12 @@ logly.crash.setCrashCallback(&onCrash);
 Callbacks are invoked in the hot path. Keep them minimal:
 
 ```zig
-// ✅ Good: Fast counter increment
+// Good: fast counter increment
 fn fastCallback(level: logly.Level, msg: []const u8, record: *const logly.Record) void {
     stats.increment();
 }
 
-// ❌ Bad: Expensive I/O in callback
+// Bad: expensive I/O in callback
 fn slowCallback(level: logly.Level, msg: []const u8, record: *const logly.Record) void {
     sendHttpRequest(msg); // Don't do this!
 }
@@ -525,8 +525,8 @@ Callbacks may be invoked from multiple threads:
 
 ```zig
 fn threadSafeCallback(count: u64) void {
-    counter.fetchAdd(1, .monotonic); // ✅ Atomic operation
-    // non_atomic_counter += 1;      // ❌ Race condition!
+    counter.fetchAdd(1, .monotonic); // Atomic operation
+    // non_atomic_counter += 1;      // Race condition
 }
 ```
 
@@ -551,7 +551,7 @@ For expensive operations, use a queue:
 const CallbackQueue = struct {
     queue: std.ArrayList([]const u8),
     mutex: std.Thread.Mutex = .{},
-    
+
     fn enqueue(self: *CallbackQueue, msg: []const u8) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -578,10 +578,10 @@ fn monitoredCallback(record: *const logly.Record) void {
     defer {
         const elapsed = logly.Utils.currentNanos() - start;
         if (elapsed > 1_000_000) { // >1ms
-            std.debug.print("⚠️  Slow callback: {d}μs\n", .{elapsed / 1000});
+            std.debug.print("Warning: Slow callback: {d}us\n", .{elapsed / 1000});
         }
     }
-    
+
     // Callback logic here
 }
 ```
@@ -609,7 +609,7 @@ const logly = @import("logly");
 const MonitoringSystem = struct {
     errorCount: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
     drop_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
-    
+
     fn onError(self: *MonitoringSystem) fn([]const u8, []const u8) void {
         return struct {
             fn callback(sinkName: []const u8, errorMsg: []const u8) void {
@@ -622,7 +622,7 @@ const MonitoringSystem = struct {
             }
         }.callback;
     }
-    
+
     fn onDrop(self: *MonitoringSystem) fn(u64) void {
         return struct {
             fn callback(dropped: u64) void {
@@ -636,18 +636,18 @@ pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    
+
     var monitor = MonitoringSystem{};
-    
+
     const logger = try logly.Logger.init(allocator);
     defer logger.deinit();
-    
+
     // Register callbacks
     logger.setSinkErrorCallback(monitor.onError());
-    
+
     // Use logger normally
     try logger.info("Application started", @src());
-    
+
     // Get statistics
     const stats = logger.getStats();
     std.debug.print("Total errors: {d}\\n", .{monitor.errorCount.load(.monotonic)});

@@ -415,8 +415,8 @@ pub const Filter = struct {
     /// record. Only applies in `.all` mode to rules that need nothing more
     /// than level, module, and message. Any other mode or rule type
     /// abstains (returns false) and the full filter still runs later.
-    /// Lock-free like the rest of the data plane: configure rules before
-    /// logging, do not mutate them concurrently with logging.
+    /// Configure rules before logging; concurrent mutation takes the
+    /// filter mutex on the full evaluation path.
     pub fn preFilterRejects(
         self: *const Filter,
         level: Level,
@@ -606,7 +606,7 @@ pub const Filter = struct {
     ///
     /// Takes the filter lock: rules must not be mutated concurrently with
     /// evaluation. Frees both pattern and context-key allocations (deinit
-    /// parity — previously context keys leaked here).
+    /// parity - previously context keys leaked here).
     pub fn clear(self: *Filter) void {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);

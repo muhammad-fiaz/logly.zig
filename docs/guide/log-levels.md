@@ -19,24 +19,24 @@ Logly-Zig supports **10 built-in log levels**, each with a specific priority, co
 
 ## Level Overview
 
-| Level    | Priority | Color        | ANSI    | Method              | Alias    | Use Case                  |
-| -------- | -------- | ------------ | ------- | ------------------- | -------- | ------------------------- |
+| Level    | Priority | Color        | ANSI    | Method              | Short form | Use Case                  |
+| -------- | -------- | ------------ | ------- | ------------------- | ---------- | ------------------------- |
 | TRACE    | 5        | Cyan         | 36      | `logger.trace()`    | -        | Very detailed debugging   |
 | DEBUG    | 10       | Blue         | 34      | `logger.debug()`    | -        | Debugging information     |
 | INFO     | 20       | White        | 37      | `logger.info()`     | -        | General information       |
 | NOTICE   | 22       | Bright Cyan  | 96      | `logger.notice()`   | -        | Important notices         |
 | SUCCESS  | 25       | Green        | 32      | `logger.success()`  | -        | Successful operations     |
-| WARNING  | 30       | Yellow       | 33      | `logger.warning()`  | `warn()` | Warning messages          |
+| WARNING  | 30       | Yellow       | 33      | `logger.warning()`  | `warn()`   | Warning messages          |
 | ERROR    | 40       | Red          | 31      | `logger.err()`      | -        | Error conditions          |
 | FAIL     | 45       | Magenta      | 35      | `logger.fail()`     | -        | Operation failures        |
-| CRITICAL | 50       | Bright Red   | 91      | `logger.critical()` | `crit()` | Critical system errors    |
+| CRITICAL | 50       | Bright Red   | 91      | `logger.critical()` | `crit()`   | Critical system errors    |
 | FATAL    | 55       | White on Red | 97;41   | `logger.fatal()`    | -        | Fatal system errors       |
 
 > [!NOTE]
-> Level names are parsed case-insensitively. You can use `"TRACE"`, `"trace"`, or `"Trace"` — all are accepted. This applies to `Level.fromString()`, JSON config level parsing, and rotation interval parsing.
+> Level names are parsed case-insensitively. You can use `"TRACE"`, `"trace"`, or `"Trace"` - all are accepted. This applies to `Level.fromString()`, JSON config level parsing, and rotation interval parsing.
 
 > [!TIP]
-> Level names are case-insensitive throughout Logly. You can use `"TRACE"`, `"trace"`, or `"Trace"` — all are accepted. This applies to `Level.fromString()`, JSON config parsing, and rotation interval parsing.
+> Level names are case-insensitive throughout Logly. You can use `"TRACE"`, `"trace"`, or `"Trace"` - all are accepted. This applies to `Level.fromString()`, JSON config parsing, and rotation interval parsing.
 
 ## Whole-Line Coloring
 
@@ -77,8 +77,8 @@ Create your own log levels with custom priorities and colors:
 
 ```zig
 // Add custom levels
-try logger.addCustomLevel("AUDIT", 35, "35");      // Magenta (between WARNING and ERR)
-try logger.addCustomLevel("SECURITY", 48, "91;1"); // Bold bright red (between FAIL and CRITICAL)
+try logger.addCustomLevel("AUDIT", 35, logly.Color.parse("35").?);      // Magenta (between WARNING and ERR)
+try logger.addCustomLevel("SECURITY", 48, logly.Color.parse("91;1").?); // Bold bright red (between FAIL and CRITICAL)
 
 // Use custom levels
 try logger.custom("AUDIT", "Security event detected", @src());
@@ -95,24 +95,24 @@ config.level = .info; // Ignore TRACE and DEBUG
 logger.configure(config);
 ```
 
-### Level Masks (Fine-Grained Filtering)
+### Level Masks
 
-Instead of a simple minimum level, you can use a `LevelMask` to selectively include or exclude specific levels regardless of their priority:
+`LevelMask` is a compact bitset used by sampling configuration to exempt specific levels from sampling:
 
 ```zig
-// Create a mask that includes INFO, WARNING, and ERROR
-var mask = logly.LevelMask.initEmpty();
-mask.set(.info);
-mask.set(.warning);
-mask.set(.err);
+var bypass = logly.LevelMask.init();
+bypass.enable(.err);
+bypass.enable(.critical);
+bypass.enable(.fatal);
 
-// Or create a mask with all levels and remove some
-var prod_mask = logly.LevelMask.initAll();
-prod_mask.unset(.trace);
-prod_mask.unset(.debug);
-
-config.level_mask = mask;
+var sampling = logly.SamplingConfig{
+    .enabled = true,
+    .strategy = .{ .probability = 0.25 },
+    .bypassLevels = bypass,
+};
 ```
+
+Use `all()` to select every standard level, `errorsOnly()` for error-level entries, and `disable()` or `toggle()` to change individual bits. A `LevelMask` is not a logger-level filter; use `config.level` or filter rules for record filtering.
 
 ## Priority Order
 
@@ -129,8 +129,8 @@ When you set a minimum level, only messages at that level or higher will be logg
 Temporarily elevate or lower the log level across the entire application for a specific duration (useful for debugging live issues):
 
 ```zig
-// Elevate to DEBUG for the next 5 minutes (300 seconds)
-logger.setTemporaryLevel(.debug, 300);
+// Use DEBUG for the next five minutes (300000 ms)
+logger.setTemporaryLevel(.debug, 300_000);
 
 // After 5 minutes, it automatically reverts to the original level.
 // You can also clear it manually:

@@ -1,7 +1,7 @@
 ---
 layout: home
 title: "Logly.Zig - High-Performance Logging Library for Zig"
-description: "High-Performance Logging Library for Zig - Production-ready structured logging with a clean, simple API. Features async I/O, file rotation, JSON output, and more."
+description: "Structured logging library for Zig with async I/O, file rotation, JSON output, and OpenTelemetry support."
 keywords: "zig, logging, library, high-performance, structured logging, async, json, file rotation, cross-platform"
 head:
   - - link
@@ -21,7 +21,7 @@ head:
       content: index,follow
   - - meta
     - name: description
-      content: "High-Performance Logging Library for Zig - Production-ready structured logging with a clean, simple API. Features async I/O, file rotation, JSON output, and more."
+      content: "Structured logging library for Zig with async I/O, file rotation, JSON output, and OpenTelemetry support."
   - - meta
     - name: keywords
       content: "zig, logging, library, high-performance, structured logging, async, json, file rotation, cross-platform"
@@ -30,7 +30,7 @@ head:
       content: "Logly.Zig - High-Performance Logging Library for Zig"
   - - meta
     - property: og:description
-      content: "Production-ready structured logging with a clean, simple API. Features async I/O, file rotation, JSON output, and more."
+      content: "Structured logging for Zig with async I/O, file rotation, JSON output, and OpenTelemetry support."
   - - meta
     - property: og:image
       content: https://muhammad-fiaz.github.io/logly.zig/cover.png
@@ -48,7 +48,7 @@ head:
       content: "Logly.Zig - High-Performance Logging Library for Zig"
   - - meta
     - name: twitter:description
-      content: "Production-ready structured logging with a clean, simple API. Features async I/O, file rotation, JSON output, and more."
+      content: "Structured logging for Zig with async I/O, file rotation, JSON output, and OpenTelemetry support."
   - - meta
     - name: twitter:image
       content: https://muhammad-fiaz.github.io/logly.zig/cover.png
@@ -57,7 +57,7 @@ head:
 hero:
   name: Logly.Zig
   text: High-Performance Logging for Zig
-  tagline: Production-ready structured logging with a clean, simple API
+  tagline: Structured logging for Zig with async I/O, rotation, and OpenTelemetry
   image:
     src: /logo.png
     alt: Logly.Zig
@@ -103,12 +103,12 @@ pub fn main() !void {
 - **Zero Dependencies**: Pure Zig implementation with minimal external dependencies
 - **Memory Safe**: Compile-time safety guarantees from Zig
 - **Cross-Platform**: Works on Linux, Windows, macOS, and more
-- **Well Documented**: Comprehensive guides and API documentation
+- **Documentation**: Guides and a complete API reference
 
 > [!TIP]
 > Logly.zig aims to be production-ready. While this is a relatively new project and not yet widely adopted, it offers powerful features that can simplify your Zig project's logging. If you love Logly.zig, feel free to use it in your projects and give it a ⭐ on GitHub!
 
-  ## Installation
+## Installation
 
   The easiest way to add Logly to your project.
 

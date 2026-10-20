@@ -668,7 +668,9 @@ pub const AsyncLogger = struct {
 
         // Ensure all registered sinks flush their underlying OS and user buffers
         for (self.sinks.items) |sink| {
-            sink.flush() catch {};
+            sink.flush() catch |err| {
+                if (self.onError) |cb| cb(err);
+            };
         }
     }
 

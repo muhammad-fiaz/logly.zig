@@ -1,6 +1,6 @@
 ---
 title: Config API Reference
-description: API reference for Logly.zig Config struct. Configure log levels, output formats, thread pools, schedulers, compression, async logging, and all enterprise features.
+description: API reference for Logly.zig Config struct. Configure log levels, output formats, thread pools, schedulers, compression, async logging, and related subsystems.
 head:
   - - meta
     - name: keywords
@@ -12,7 +12,7 @@ head:
 
 # Config API
 
-The `Config` struct controls the behavior of the logger, including all enterprise features like thread pools, schedulers, compression, and async logging through centralized configuration.
+The `Config` struct controls the behavior of the logger, including thread pools, schedulers, compression, and async logging through centralized configuration.
 
 ## Fields
 
@@ -45,13 +45,13 @@ per-sink format inherits this logger-wide value. Default: `.text`.
 
 Supported values (`Config.Format`):
 
-* `.text` — human-readable text with optional color and custom templates.
-* `.json` — JSON document (array framing for file sinks).
-* `.ndjson` — JSON Lines, one object per line for streaming.
-* `.logfmt` — logfmt `key=value` pairs.
-* `.syslog` — RFC5424 syslog framing with UTC RFC3339 timestamps.
-* `.syslog3164` — RFC3164 (BSD) syslog framing.
-* `.msgpack` — binary MessagePack records (length-framed on streams).
+* `.text`: human-readable text with optional color and custom templates.
+* `.json`: JSON document (array framing for file sinks).
+* `.ndjson`: JSON Lines, one object per line for streaming.
+* `.logfmt`: logfmt `key=value` pairs.
+* `.syslog`: RFC5424 syslog framing with UTC RFC3339 timestamps.
+* `.syslog3164`: RFC3164 (BSD) syslog framing.
+* `.msgpack`: binary MessagePack records (length-framed on streams).
 
 Parse names with `Config.Format.fromString()` (case-insensitive); unknown
 names are rejected. `SinkConfig.format` is `?Format` (`null` inherits).
@@ -80,7 +80,7 @@ Automatically flush sinks after every log operation. Creates immediate output bu
 > `autoFlush` and `asyncConfig` are **independent settings** that control different aspects of the logging pipeline:
 > - **`autoFlush`** controls whether sinks are flushed after each log record (sync path) or after each batch (async path).
 > - **`asyncConfig`** enables asynchronous logging with ring buffers and background worker threads.
-> - **Thread pool dispatch does NOT flush when `autoFlush` is true** — the task is queued to the worker pool but not yet written to sinks, so no flush occurs at submission time.
+> - **Thread pool dispatch does NOT flush when `autoFlush` is true**; the task is queued to the worker pool but not yet written to sinks, so no flush occurs at submission time.
 >
 > If you need immediate output visibility, enable `autoFlush` without async. If you need high throughput without blocking, use `asyncConfig` without `autoFlush` (relying on batch/interval flushing instead).
 
@@ -113,7 +113,7 @@ OpenTelemetry integration configuration for trace and metric export. This sectio
 Key fields:
 *   `enabled: bool` -  Enable OpenTelemetry integration (default: `false`).
 *   `provider: Provider` - Provider enum (`.none`, `.jaeger`, `.zipkin`, `.datadog`, `.googleCloud`, `.googleAnalytics`, `.googleTagManager`, `.awsXray`, `.azure`, `.generic`, `.file`, `.custom`).
-*   `exporterEndpoint: ?[]const u8` -  Exporter endpoint URL for HTTP/gRPC exporters (e.g., `"http://localhost:4317"`).
+*   `exporterEndpoint: ?[]const u8` -  Exporter endpoint URL for HTTP(S)/TCP/UDP exporters (e.g., `"http://localhost:4318/v1/traces"`).
 *   `apiKey: ?[]const u8` -  API key for providers that require authentication.
 *   `connectionString: ?[]const u8` -  Connection string for Azure Application Insights.
 *   `exporterFilePath: ?[]const u8` -  File path for JSONL file exporter.
@@ -186,7 +186,7 @@ Include process ID in logs. Default: `false`.
 
 #### `captureStackTrace: bool`
 
-Capture stack traces for Error and Critical log levels. If false, stack traces will not be collected or displayed. Default: `false`.
+Capture stack traces for `err`, `fail`, `critical`, and `fatal` records. If false, stack traces are not collected or displayed. Default: `false`.
 
 #### `symbolizeStackTrace: bool`
 
@@ -315,7 +315,7 @@ Trace ID header name for distributed tracing. Default: `X-Trace-ID`.
 
 Enable metrics collection. Default: `false`.
 
-### Enterprise Features
+### Advanced Features
 
 #### `sampling: SamplingConfig`
 
@@ -545,7 +545,7 @@ Enables log-optimized compression (text strategy).
 
 ### `withProductionCompression() Config`
 
-Enables production-ready compression (balanced, checksums, background).
+Enables compression with balanced settings, checksums, and background execution.
 
 ### Zstd Compression Methods (v0.1.8+)
 
@@ -579,7 +579,7 @@ Merges another configuration into the current one. Non-default values from `othe
 
 ## JSON Configuration Loading
 
-Logly v0.2.0 supports parsing and loading configuration dynamically from JSON files and slices. Standard configurations can be easily loaded using these helpers:
+Logly v0.2.0 supports parsing and loading configuration dynamically from JSON files and slices. Standard configurations can be loaded with these helpers:
 
 ### `loadFromJson(allocator: std.mem.Allocator, json_slice: []const u8) !Config`
 
@@ -590,7 +590,7 @@ Parses a JSON configuration string and returns a complete `Config` object initia
 
 **Example:**
 ```zig
-const json_data = 
+const json_data =
     \\{
     \\  "level": "debug",
     \\  "format": "json",
@@ -697,13 +697,12 @@ pub const RedactionConfig = struct {
     defaultType: RedactionType = .full,
     enableRegex: bool = false,
     hashAlgorithm: HashAlgorithm = .sha256,
-    partialStartChars: u8 = 2,
-    partialEndChars: u8 = 2,
+    partialStartChars: u8 = 4,
+    partialEndChars: u8 = 4,
     maskChar: u8 = '*',
-    truncateLength: usize = 10,
+    truncateLength: usize = 8,
     truncateSuffix: []const u8 = "...",
     caseInsensitive: bool = true,
-    auditRedactions: bool = false,
     compliancePreset: ?CompliancePreset = null,
 
     pub const RedactionType = enum { full, partialStart, partialEnd, hash, maskMiddle, truncate };
@@ -893,7 +892,7 @@ pub const CompressionConfig = struct {
     pub fn archive() CompressionConfig;
     pub fn backgroundMode() CompressionConfig;
     pub fn streamingMode() CompressionConfig;
-    
+
     // Zstd presets
     pub fn zstd() CompressionConfig;
     pub fn zstdFast() CompressionConfig;
@@ -961,7 +960,7 @@ Centralized async logging configuration. When `asyncConfig.enabled` is `true`, t
 
 **Priority Order:**
 1. **AsyncLogger** (when `asyncConfig.enabled = true`) - Highest performance, buffered I/O
-2. **Thread Pool** (when `threadPool.enabled = true`) - Parallel processing for sync sinks  
+2. **Thread Pool** (when `threadPool.enabled = true`) - Parallel processing for sync sinks
 3. **Direct Sinks** - Synchronous logging to all sinks
 
 **Auto-flush Behavior:**

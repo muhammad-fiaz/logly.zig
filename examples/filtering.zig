@@ -10,7 +10,7 @@ pub fn main() !void {
     _ = logly.Terminal.enableAnsiColors();
 
     std.debug.print("\n", .{});
-    printSeparator("COMPREHENSIVE FILTERING EXAMPLE");
+    printSeparator("FILTERING EXAMPLE");
 
     // 1. BASIC LEVEL FILTERING
     printSection("1. Basic Level Filtering (Min Level: WARNING)");
@@ -387,7 +387,7 @@ pub fn main() !void {
         const logger = try logly.Logger.init(allocator);
         defer logger.deinit();
 
-        logger.enableMetrics();
+        try logger.enableMetrics();
 
         var filter = logly.Filter.init(allocator);
         defer filter.deinit();

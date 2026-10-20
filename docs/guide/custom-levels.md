@@ -1,6 +1,6 @@
 ---
 title: Custom Log Levels
-description: Define your own log levels with Logly.zig. Customize level names, priorities, and colors to fit your application's domain requirements perfectly.
+description: Define your own log levels with Logly.zig. Customize level names, priorities, and colors to fit your application's domain requirements.
 head:
   - - meta
     - name: keywords
@@ -31,7 +31,7 @@ Logly supports ANSI colors on all major platforms:
 
 ## Whole-Line Coloring
 
-Logly colors the **entire log line** (timestamp, level tag, and message), not just the level tag. This makes logs much more readable.
+Logly colors the **entire log line** (timestamp, level tag, and message), not just the level tag.
 
 ## Adding a Custom Level
 
@@ -40,13 +40,13 @@ You can add a custom level with a name, priority, and ANSI color code:
 ```zig
 // Add a NOTICE level with priority 35 (between WARNING and ERROR)
 // "36;1" is the ANSI color code for Cyan Bold
-try logger.addCustomLevel("NOTICE", 35, "36;1");
+try logger.addCustomLevel("NOTICE", 35, logly.Color.parse("36;1").?);
 
 // Add an ALERT level with Red Underline
-try logger.addCustomLevel("ALERT", 42, "31;4");
+try logger.addCustomLevel("ALERT", 42, logly.Color.parse("31;4").?);
 
 // Add a HIGHLIGHT level with Yellow Reverse
-try logger.addCustomLevel("HIGHLIGHT", 52, "33;7");
+try logger.addCustomLevel("HIGHLIGHT", 52, logly.Color.parse("33;7").?);
 ```
 
 ## ANSI Color Codes
@@ -110,9 +110,9 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Add custom levels
-    try logger.addCustomLevel("NOTICE", 35, "36;1");    // Cyan Bold
-    try logger.addCustomLevel("ALERT", 42, "31;4");     // Red Underline
-    try logger.addCustomLevel("AUDIT", 22, "35");       // Magenta
+    try logger.addCustomLevel("NOTICE", 35, logly.Color.parse("36;1").?);    // Cyan Bold
+    try logger.addCustomLevel("ALERT", 42, logly.Color.parse("31;4").?);     // Red Underline
+    try logger.addCustomLevel("AUDIT", 22, logly.Color.parse("35").?);       // Magenta
 
     // Use standard levels (entire line colored)
     // Note: warn/crit are short aliases for warning/critical
@@ -145,7 +145,7 @@ Choose a priority for your custom level that fits into the standard hierarchy:
 
 ## Custom Levels with JSON Output
 
-Custom levels work seamlessly with JSON output - the level name appears in the JSON:
+Custom levels work with JSON output; the level name appears in the JSON:
 
 ```zig
 var config = logly.Config.default();
@@ -153,7 +153,7 @@ config.format = .json;
 config.prettyJson = true;
 logger.configure(config);
 
-try logger.addCustomLevel("AUDIT", 25, "35");
+try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
 try logger.custom("AUDIT", "User action logged", @src());
 ```
 
@@ -192,8 +192,8 @@ logger.configure(config);
  _ = try logger.addSink(.{});
 
 // Register and use custom level
-try logger.addCustomLevel("AUDIT", 25, "35");
-try logger.custom("AUDIT", "This logs to all three sinks");
+try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
+try logger.custom("AUDIT", "This logs to all three sinks", @src());
 ```
 
 ## Custom Levels with Context
@@ -210,8 +210,8 @@ logger.configure(config);
 try logger.bind("service", .{ .string = "auth-service" });
 try logger.bind("user_id", .{ .string = "user-12345" });
 
-try logger.addCustomLevel("AUDIT", 25, "35");
-try logger.custom("AUDIT", "User authentication successful");
+try logger.addCustomLevel("AUDIT", 25, logly.Color.parse("35").?);
+try logger.custom("AUDIT", "User authentication successful", @src());
 ```
 
 Output:
@@ -231,11 +231,11 @@ Custom levels have **full feature parity** with standard levels:
 
 | Feature | Standard Levels | Custom Levels |
 |---------|-----------------|---------------|
-| Console output | ✅ | ✅ |
-| File output | ✅ | ✅ |
-| JSON output | ✅ | ✅ |
-| Colored output | ✅ | ✅ (custom colors) |
-| Context binding | ✅ | ✅ |
-| Formatted messages | ✅ | ✅ |
-| Level filtering | ✅ | ✅ (by priority) |
-| All sink types | ✅ | ✅ |
+| Console output | Yes | Yes |
+| File output | Yes | Yes |
+| JSON output | Yes | Yes |
+| Colored output | Yes | Yes (custom colors) |
+| Context binding | Yes | Yes |
+| Formatted messages | Yes | Yes |
+| Level filtering | Yes | Yes (by priority) |
+| All sink types | Yes | Yes |

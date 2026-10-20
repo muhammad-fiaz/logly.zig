@@ -14,57 +14,6 @@ head:
 
 The `Formatter` struct handles the conversion of log records into string output. It supports custom formats, JSON output, and color themes.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `getTotalFormatted()` | `totalFormatted()`, `count()` | Get total formatted records |
-| `getJsonFormats()` | `jsonCount()`, `jsonFormats()` | Get JSON format count |
-| `getCustomFormats()` | `customCount()`, `customFormats()` | Get custom format count |
-| `getFormatErrors()` | `errors()`, `errorCount()` | Get format error count |
-| `getTotalBytesFormatted()` | `bytes()`, `totalBytes()` | Get total bytes formatted |
-| `getPlainFormats()` | `plainCount()`, `plainFormats()` | Get plain format count |
-| `hasFormatted()` | `hasRecords()`, `isActive()` | Check if records have been formatted |
-| `hasJsonFormats()` | `hasJson()`, `usesJson()` | Check if JSON formats used |
-| `hasCustomFormats()` | `hasCustom()`, `usesCustom()` | Check if custom formats used |
-| `hasErrors()` | `hasFailed()`, `hasFailures()` | Check if there are errors |
-| `jsonUsageRate()` | `jsonRate()`, `jsonUsage()` | Get JSON usage rate |
-| `customUsageRate()` | `customRate()`, `customUsage()` | Get custom usage rate |
-| `avgFormatSize()` | `avgSize()`, `averageSize()` | Get average format size |
-| `errorRate()` | `failureRate()` | Get error rate |
-| `successRate()` | `success()` | Get success rate |
-| `throughputBytesPerSecond()` | `throughput()`, `bytesPerSecond()` | Get throughput |
-| `reset()` | `clear()`, `zero()` | Reset statistics |
-| `getColor()` | `colorFor()`, `getLevelColor()` | Get color for level |
-| `bright()` | `brightTheme()`, `vivid()` | Create bright theme |
-| `dim()` | `dimTheme()`, `subtle()` | Create dim theme |
-| `minimal()` | `minimalTheme()`, `basic()` | Create minimal theme |
-| `neon()` | `neonTheme()`, `vibrant()` | Create neon theme |
-| `pastel()` | `pastelTheme()`, `soft()` | Create pastel theme |
-| `dark()` | `darkTheme()`, `night()` | Create dark theme |
-| `light()` | `lightTheme()`, `day()` | Create light theme |
-| `fromRgb()` | `custom()`, `rgb()` | Create custom theme |
-| `init()` | `create()` | Initialize formatter |
-| `deinit()` | `destroy()` | Deinitialize formatter |
-| `format()` | `render()`, `output()` | Format record to string |
-| `formatToWriter()` | `renderToWriter()`, `writeFormatted()` | Format record to writer |
-| `formatJson()` | `json()`, `toJson()` | Format record to JSON |
-| `formatJsonToWriter()` | `jsonToWriter()`, `writeJson()` | Format record to JSON writer |
-| `formatTimestamp()` | `timestamp()`, `formatTime()` | Format timestamp only |
-| `formatTimestampWithAllocator()` | `timestampWithAllocator()`, `formatTimeWithAllocator()` | Format timestamp with custom allocator |
-| `getStats()` | `statistics()` | Get formatter statistics |
-| `setFormatCompleteCallback()` | `onFormatComplete()`, `setOnFormatComplete()` | Set format complete callback |
-| `setJsonFormatCallback()` | `onJsonFormat()`, `setOnJsonFormat()` | Set JSON format callback |
-| `setCustomFormatCallback()` | `onCustomFormat()`, `setOnCustomFormat()` | Set custom format callback |
-| `setErrorCallback()` | `onError()`, `setOnError()` | Set error callback |
-| `formatWithAllocator()` | `renderWithAllocator()`, `outputWithAllocator()` | Format with custom allocator |
-| `formatJsonWithAllocator()` | `jsonWithAllocator()`, `toJsonWithAllocator()` | Format JSON with custom allocator |
-| `hasTheme()` | `hasColorTheme()`, `isThemed()` | Check if theme is set |
-| `resetStats()` | `clearStats()`, `resetStatistics()` | Reset statistics |
-| `plain()` | `noColor()`, `monochrome()`, `colorless()` | Create plain formatter |
-| `dark()` | `darkMode()`, `nightMode()` | Create dark formatter |
-| `light()` | `lightMode()`, `dayMode()` | Create light formatter |
-
 ## Formatter
 
 The `Formatter` is typically managed internally by sinks, but can be customized via callbacks and themes.
@@ -105,10 +54,6 @@ Formats a log record as JSON using an optional scratch allocator.
 const json = try formatter.formatJsonWithAllocator(record, config, logger.scratchAllocator());
 ```
 
-#### `formatNdjson(record: *const Record, config: anytype) ![]u8`
-
-Formats a log record as Newline Delimited JSON (NDJSON). This guarantees one JSON object per line with a trailing newline, optimizing ingestion for streaming parsers.
-
 #### `formatLogfmt(record: *const Record, config: anytype) ![]u8`
 
 Formats a log record in `logfmt` style (`key=value` pairs). Ideal for ingestion into Grafana Loki and Splunk.
@@ -124,11 +69,6 @@ Formats a log record as RFC3164 (BSD) syslog. No ANSI colors are emitted.
 #### `formatMsgpackWithAllocator(record: *const Record, config: anytype, scratchAllocator: ?std.mem.Allocator) ![]u8`
 
 Formats a log record into MessagePack (`msgpack`) binary format. It packs all standard attributes (timestamp, level, message, module, context, etc.) into a highly compact binary array, suitable for high-volume network and storage sinks.
-
-#### `formatTemplate(record: *const Record, template: []const u8, config: anytype) ![]u8`
-
-Formats a log record based on a custom layout template.
-Example template: `"{time} [{level}] {message} {fields}"`
 
 #### `formatJsonToWriter(writer: anytype, record: *const Record, config: anytype) !void`
 
@@ -171,9 +111,9 @@ Why `ZZZ` and `ZZ` are needed:
 
 Sets a custom color theme for the formatter.
 
-#### `getSnapshot() Formatter.Snapshot`
+#### `getSnapshot(allocator: std.mem.Allocator) !Formatter.Snapshot`
 
-Returns a thread-safe snapshot of the current formatter configuration, enabling safe config introspection without locking.
+Takes a mutex-protected snapshot of formatter statistics and configuration. The snapshot owns a copy of the hostname and must be released with `freeSnapshot()` or `snapshot.deinit()`.
 
 #### `getStats() FormatterStats`
 
@@ -262,23 +202,23 @@ The `Theme` struct defines custom ANSI color codes for each log level.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `trace` | `[]const u8` | `"36"` (Cyan) | Color for TRACE level |
-| `debug` | `[]const u8` | `"34"` (Blue) | Color for DEBUG level |
-| `info` | `[]const u8` | `"37"` (White) | Color for INFO level |
-| `notice` | `[]const u8` | `"96"` (Bright Cyan) | Color for NOTICE level (v0.1.8) |
-| `success` | `[]const u8` | `"32"` (Green) | Color for SUCCESS level |
-| `warning` | `[]const u8` | `"33"` (Yellow) | Color for WARNING level |
-| `err` | `[]const u8` | `"31"` (Red) | Color for ERROR level |
-| `fail` | `[]const u8` | `"35"` (Magenta) | Color for FAIL level |
-| `critical` | `[]const u8` | `"91"` (Bright Red) | Color for CRITICAL level |
-| `fatal` | `[]const u8` | `"91;1"` (Bright Red Bold) | Color for FATAL level (v0.1.8) |
+| `trace` | `Color.Color` | ANSI cyan | Color for TRACE level |
+| `debug` | `Color.Color` | ANSI blue | Color for DEBUG level |
+| `info` | `Color.Color` | ANSI white | Color for INFO level |
+| `notice` | `Color.Color` | ANSI bright cyan | Color for NOTICE level |
+| `success` | `Color.Color` | ANSI green | Color for SUCCESS level |
+| `warning` | `Color.Color` | ANSI yellow | Color for WARNING level |
+| `err` | `Color.Color` | ANSI red | Color for ERROR level |
+| `fail` | `Color.Color` | ANSI magenta | Color for FAIL level |
+| `critical` | `Color.Color` | ANSI bright red | Color for CRITICAL level |
+| `fatal` | `Color.Color` | ANSI bright white | Color for FATAL level |
 
 ### Basic Usage
 
 ```zig
 var theme = logly.Formatter.Theme{};
-theme.info = "32"; // Change INFO to Green
-theme.err = "1;31"; // Change ERROR to Bold Red
+theme.info = logly.Color.parse("32").?; // Change INFO to Green
+theme.err = logly.Color.parse("1;31").?; // Change ERROR to Bold Red
 
 // Apply to a sink
 logger.sinks.items[0].formatter.setTheme(theme);
@@ -293,7 +233,6 @@ const Theme = logly.Formatter.Theme;
 const default_theme = Theme{};              // Standard colors
 const bright = Theme.bright();              // Bold/bright colors
 const dim = Theme.dim();                    // Dim colors
-const underlined = Theme.underlined();      // Underlined colors (v0.1.8)
 const minimal = Theme.minimal();            // Subtle grays
 const neon = Theme.neon();                  // Vivid 256-colors
 const pastel = Theme.pastel();              // Soft colors
@@ -305,32 +244,16 @@ var formatter = logly.Formatter.init(allocator);
 formatter.setTheme(Theme.neon());
 ```
 
-### Theme Preset Details
-
-| Preset | Trace | Debug | Info | Success | Warning | Error | Critical |
-|--------|-------|-------|------|---------|---------|-------|----------|
-| `default` | 36 | 34 | 37 | 32 | 33 | 31 | 91 |
-| `bright()` | 96;1 | 94;1 | 97;1 | 92;1 | 93;1 | 91;1 | 91;1;4 |
-| `dim()` | 36;2 | 34;2 | 37;2 | 32;2 | 33;2 | 31;2 | 91;2 |
-| `underlined()` | 36;4 | 34;4 | 37;4 | 32;4 | 33;4 | 31;4 | 91;4 |
-| `minimal()` | 90 | 90 | 37 | 32 | 33 | 31 | 91 |
-| `neon()` | 38;5;51 | 38;5;33 | 38;5;252 | 38;5;46 | 38;5;226 | 38;5;196 | 38;5;196;1 |
-| `pastel()` | 38;5;152 | 38;5;111 | 38;5;253 | 38;5;157 | 38;5;228 | 38;5;210 | 38;5;203 |
-| `dark()` | 38;5;37 | 38;5;33 | 38;5;245 | 38;5;34 | 38;5;214 | 38;5;160 | 38;5;196 |
-| `light()` | 38;5;30 | 38;5;27 | 38;5;238 | 38;5;28 | 38;5;172 | 38;5;124 | 38;5;160 |
-
 ### Custom RGB Theme (v0.1.8)
 
 ```zig
 // Create a theme from RGB values
 const custom = Theme.fromRgb(
-    .{ 0, 255, 255 },    // trace (cyan)
-    .{ 0, 128, 255 },    // debug (blue)
-    .{ 240, 240, 240 },  // info (white)
-    .{ 0, 255, 128 },    // success (green)
-    .{ 255, 200, 0 },    // warning (orange)
-    .{ 255, 64, 64 },    // error (red)
-    .{ 255, 0, 0 },      // critical (bright red)
+    .{ .r = 0, .g = 255, .b = 255 },    // trace (cyan)
+    .{ .r = 0, .g = 128, .b = 255 },    // debug (blue)
+    .{ .r = 240, .g = 240, .b = 240 },  // info (white)
+    .{ .r = 255, .g = 200, .b = 0 },    // warning (orange)
+    .{ .r = 255, .g = 64, .b = 64 },    // error (red)
 );
 ```
 
@@ -401,23 +324,6 @@ Statistics for the formatter.
 |--------|-------------|
 | `reset()` | Reset all statistics to initial state |
 
-## Aliases
-
-The Formatter module provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `render` | `format` |
-| `output` | `format` |
-| `renderToWriter` | `formatToWriter` |
-| `writeFormatted` | `formatToWriter` |
-| `json` | `formatJson` |
-| `toJson` | `formatJson` |
-| `jsonToWriter` | `formatJsonToWriter` |
-| `writeJson` | `formatJsonToWriter` |
-| `statistics` | `getStats` |
-| `colors` | `setTheme` |
-
 ## Additional Methods
 
 - `hasTheme() bool` - Returns true if a custom theme is set
@@ -433,7 +339,7 @@ pub const FormatterPresets = struct {
     pub fn plain() FormatterConfig {
         return .{ .color = false };
     }
-    
+
     /// Dark theme formatter.
     pub fn dark() FormatterConfig {
         return .{
@@ -441,7 +347,7 @@ pub const FormatterPresets = struct {
             .theme = .dark,
         };
     }
-    
+
     /// Light theme formatter.
     pub fn light() FormatterConfig {
         return .{
@@ -457,4 +363,3 @@ pub const FormatterPresets = struct {
 - [Formatting Guide](../guide/formatting.md) - Custom format strings
 - [Colors Guide](../guide/colors.md) - ANSI color configuration
 - [Config API](config.md) - Configuration options
-

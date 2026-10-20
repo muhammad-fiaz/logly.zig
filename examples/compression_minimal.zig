@@ -22,7 +22,7 @@ pub fn main() !void {
     // Part 1: Config Builder Methods (Logger Integration)
     std.debug.print("Part 1: Config Builder Methods\n", .{});
 
-    // Simplest one-liner - just enable compression
+    // Enable compression with defaults
     const config1 = Config.default().withCompressionEnabled();
     std.debug.print("[OK] withCompressionEnabled(): enabled={}\n", .{config1.compression.enabled});
 
@@ -50,7 +50,7 @@ pub fn main() !void {
     const config7 = Config.default().withLogCompression();
     std.debug.print("[OK] withLogCompression(): strategy={s}\n", .{@tagName(config7.compression.strategy)});
 
-    // Production-ready compression
+    // Production-oriented compression
     const config8 = Config.default().withProductionCompression();
     std.debug.print("[OK] withProductionCompression(): background={}, checksum={}\n", .{ config8.compression.background, config8.compression.checksum });
 
@@ -64,7 +64,7 @@ pub fn main() !void {
     std.debug.print("[OK] CompressionConfig.enable(): enabled={}\n", .{enableCfg.enabled});
 
     const basicCfg = CompressionConfig.basic();
-    std.debug.print("[OK] CompressionConfig.basic(): enabled={} (alias for enable)\n", .{basicCfg.enabled});
+    std.debug.print("[OK] CompressionConfig.basic(): enabled={}\n", .{basicCfg.enabled});
 
     const implicitCfg = CompressionConfig.implicit();
     std.debug.print("[OK] CompressionConfig.implicit(): mode={s}\n", .{@tagName(implicitCfg.mode)});
@@ -123,7 +123,7 @@ pub fn main() !void {
 
     var compBasic = Compression.basic(allocator);
     defer compBasic.deinit();
-    std.debug.print("[OK] Compression.basic(): enabled={} (alias for enable)\n", .{compBasic.config.enabled});
+    std.debug.print("[OK] Compression.basic(): enabled={}\n", .{compBasic.config.enabled});
 
     var compImplicit = Compression.implicit(allocator);
     defer compImplicit.deinit();

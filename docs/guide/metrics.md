@@ -29,9 +29,9 @@ Prometheus and StatsD exports can be namespaced and shaped from config:
 ```zig
 const metricsCfg = logly.Config.MetricsConfig.production()
     .prometheus()
-    .prefix("api.gateway")
-    .histogram(20)
-    .breakdowns(true, true);
+    .withPrefix("api.gateway")
+    .withLatencyHistogram(20)
+    .withBreakdowns(true, true);
 
 var metrics = logly.Metrics.initWithConfig(allocator, metricsCfg);
 ```
@@ -63,7 +63,7 @@ pub fn main() !void {
 
     // Get metrics snapshot
     const snapshot = metrics.getSnapshot();
-    
+
     std.debug.print("=== Logging Metrics ===\n", .{});
     std.debug.print("Total records: {d}\n", .{snapshot.totalRecords});
     std.debug.print("Total bytes: {d}\n", .{snapshot.totalBytes});
@@ -209,9 +209,9 @@ const Metrics = logly.Metrics;
 
 pub fn reportMetrics(m: *Metrics) void {
     const snapshot = m.getSnapshot();
-    
+
     const errorRate = if (snapshot.totalRecords > 0)
-        @as(f64, @floatFromInt(snapshot.errorCount)) / 
+        @as(f64, @floatFromInt(snapshot.errorCount)) /
         @as(f64, @floatFromInt(snapshot.totalRecords)) * 100.0
     else
         0.0;
@@ -297,7 +297,7 @@ const logger = try logly.Logger.initWithConfig(allocator, config);
 ### Configuration Presets
 
 ```zig
-// Production - comprehensive with alerts
+// Production with alerts
 config.metrics = logly.Config.MetricsConfig.production();
 
 // Minimal - basic counts only
@@ -328,15 +328,15 @@ const S = struct {
     fn onRecordLogged(level: logly.Level, bytes: u64) void {
         std.debug.print("Logged {s}: {d} bytes\n", .{level.asString(), bytes});
     }
-    
+
     fn onSnapshotTaken(snapshot: *const Metrics.Snapshot) void {
         std.debug.print("Snapshot: {d} records\n", .{snapshot.totalRecords});
     }
-    
+
     fn onThresholdExceeded(metricType: Metrics.MetricType, value: u64, threshold: u64) void {
         std.debug.print("Threshold exceeded: {any} = {d} > {d}\n", .{metricType, value, threshold});
     }
-    
+
     fn onErrorDetected(event: Metrics.ErrorEvent, count: u64) void {
         std.debug.print("Error event: {any}, count: {d}\n", .{event, count});
     }
@@ -498,25 +498,7 @@ if (metrics.hasRecords()) {
 
 // Reset all statistics
 metrics.reset();
-// Or use alias
-metrics.clear();
 ```
-
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `record` | `recordLog` |
-| `log` | `recordLog` |
-| `drop` | `recordDrop` |
-| `dropped` | `recordDrop` |
-| `recordErr` | `recordError` |
-| `metricsSnapshot` | `getSnapshot` |
-| `levels` | `formatLevelBreakdown` |
-| `breakdown` | `formatLevelBreakdown` |
-| `clear` | `reset` |
-| `uptimeSec` | `uptimeSeconds` |
-| `throughput` | `bytesPerSecond` |
 
 ## See Also
 
@@ -525,4 +507,3 @@ metrics.clear();
 - [Sampling](/guide/sampling) - Log volume control
 - [Tracing](/guide/tracing) - Distributed tracing
 - [Configuration](/guide/configuration) - Global configuration options
-

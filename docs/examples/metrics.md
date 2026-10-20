@@ -65,8 +65,13 @@ It demonstrates chainable 0.2.0 configuration across async logging, thread pools
 const config = logly.Config.default()
     .withHighThroughputPipeline()
     .withObservability("checkout.api")
-    .withAsync(logly.AsyncConfig.lowLatency().buffer(256).batch(8).backpressure(0.75))
-    .withThreadPool(logly.ThreadPoolConfig.ioBound().threads(4).queue(512).arena(true))
+    .withAsync(logly.AsyncConfig.lowLatency()
+        .withBufferSize(256)
+        .withBatchSize(8)
+        .withBackpressureThreshold(0.75))
+    .withThreadPool(logly.ThreadPoolConfig.ioBound()
+        .withThreadCount(4)
+        .withQueueSize(512))
     .withRotation(logly.Config.RotationConfig.daily(7).withCompression(.zstd));
 ```
 
@@ -156,7 +161,7 @@ std.debug.print("{s}\n", .{formatted});
 ```zig
 // Check for error rate threshold
 const snapshot = metrics.getSnapshot();
-const errorRate = @as(f64, @floatFromInt(snapshot.errorCount)) / 
+const errorRate = @as(f64, @floatFromInt(snapshot.errorCount)) /
                   @as(f64, @floatFromInt(snapshot.total_logs));
 
 if (errorRate > 0.01) { // More than 1% errors
@@ -189,18 +194,18 @@ pub fn prometheusMetrics(metrics: *Metrics) []const u8 {
 ```zig
 pub fn healthCheck(metrics: *Metrics) bool {
     const s = metrics.getSnapshot();
-    
+
     // Unhealthy if:
     // - Error rate > 5%
     // - No logs in last 60 seconds
     // - Critical errors present
-    
+
     if (s.critical_count > 0) return false;
     if (s.total_logs > 0) {
         const errorRate = @as(f64, s.errorCount) / @as(f64, s.total_logs);
         if (errorRate > 0.05) return false;
     }
-    
+
     return true;
 }
 ```
@@ -258,26 +263,9 @@ if (metrics.hasRecords()) {
 
 // Reset
 metrics.reset();
-// Or use alias: metrics.clear();
 ```
-
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `record` | `recordLog` |
-| `log` | `recordLog` |
-| `drop` | `recordDrop` |
-| `dropped` | `recordDrop` |
-| `recordErr` | `recordError` |
-| `metricsSnapshot` | `getSnapshot` |
-| `levels` | `formatLevelBreakdown` |
-| `breakdown` | `formatLevelBreakdown` |
-| `clear` | `reset` |
-| `uptimeSec` | `uptimeSeconds` |
 
 ## See Also
 
 - [Metrics Guide](/guide/metrics) - Detailed metrics documentation
 - [Metrics API](/api/metrics) - Full API reference
-

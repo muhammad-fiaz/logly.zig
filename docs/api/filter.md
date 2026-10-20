@@ -14,26 +14,9 @@ head:
 
 The `Filter` struct provides fine-grained control over which log records are processed.
 
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize filter |
-| `deinit()` | `destroy()` | Deinitialize filter |
-| `addRule()` | `add()` | Add filter rule |
-| `shouldLog()` | `check()`, `test_()`, `evaluate()` | Check if record should be logged |
-| `clear()` | `reset()`, `removeAll()` | Clear all rules |
-| `addMinLevel()` | `minLevel()`, `min()` | Add minimum level filter |
-| `addMaxLevel()` | `maxLevel()`, `max()` | Add maximum level filter |
-| `addModulePrefix()` | `moduleFilter()`, `addPrefix()` | Add module prefix filter |
-| `addMessageFilter()` | `messageFilter()` | Add message filter |
-| `allowModule()` | `allow()`, `keep()`, `include()` | Allow module |
-| `denyModule()` | `deny()`, `drop()`, `exclude()` | Deny module |
-| `count()` | `ruleCount()`, `length()` | Get rule count |
-
 ## Overview
 
-Filters evaluate log records against a set of rules with thread-safe operations. Rules can filter based on log level, module name, message content, or custom logic. Filters support callbacks for allowed/denied records and comprehensive statistics tracking.
+Filters evaluate log records against a set of rules with thread-safe operations. Rules can filter based on log level, module name, message content, or custom logic. Filters support callbacks for allowed/denied records and track statistics.
 
 ## Types
 
@@ -46,10 +29,10 @@ pub const Filter = struct {
     allocator: std.mem.Allocator,
     rules: std.ArrayList(FilterRule),
     stats: FilterStats,
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
     mode: Mode = .all,
     enabled: bool = true,
-    
+
     // Callbacks
     onRecordAllowed: ?*const fn (*const Record, u32) void,
     onRecordDenied: ?*const fn (*const Record, u32) void,
@@ -194,25 +177,17 @@ try filter.addRule(.{
 
 Adds a minimum level filter rule.
 
-**Alias**: `minLevel`, `min`
-
 #### `addMaxLevel(level: Level) !void`
 
 Adds a maximum level filter rule.
 
-**Alias**: `maxLevel`, `max`
-
-#### `addModulePrefix(prefix: []const u8, action: Action) !void`
+#### `addModulePrefix(prefix: []const u8) !void`
 
 Adds a module prefix filter rule.
-
-**Alias**: `moduleFilter`, `addPrefix`
 
 #### `addMessageFilter(pattern: []const u8, action: Action) !void`
 
 Adds a message content filter rule.
-
-**Alias**: `messageFilter`
 
 #### `addMinPriority(minPriority: u8) !void`
 
@@ -231,11 +206,11 @@ Explicitly allow a specific module.
 Explicitly deny a specific module.
 
 #### `allowRegex(regex: []const u8) !void`
- 
+
  Allow messages matching a regex-like pattern. Uses the improved regex engine (v0.1.8).
- 
+
  #### `denyRegex(regex: []const u8) !void`
- 
+
  Deny messages matching a regex-like pattern. Uses the improved regex engine (v0.1.8).
 
 #### `addContextMatch(key: []const u8, pattern: []const u8, action: Action) !void`
@@ -246,21 +221,18 @@ Filter based on context values matching a pattern.
 
 Filters log records using structured nested context keys (e.g. `user.id` or `network.ip`) using dot-notation syntax. Recursively traverses nested JSON maps to match the targeted property.
 
-#### `addTimeWindowRule(startHour: u8, endHour: u8, timezone_offset_hours: i8) !void`
+#### `addTimeWindowRule(startHour: u8, endHour: u8, action: Action) !void`
 
-Adds a time window rule that denies records outside the configured hour range. Useful for implementing "quiet hours".
+Adds a time-window rule. Records outside the configured hour range receive `action`.
 
-#### `addRateRule(max_msgs_per_sec: u32) !void`
+#### `addRateRule(ratePerSecond: u32, action: Action) !void`
 
-Adds a rate-based filter using a token bucket algorithm to automatically deny logs if a module exceeds `N` messages per second.
+Adds a token-bucket rate rule. Records that exceed the configured rate receive `action`.
 
 #### `addGlobModule(pattern: []const u8, action: Action) !void`
 
 Adds a module filter using glob pattern matching (`*`, `?`).
 
-#### `addCompositeFilter(other: *Filter, logic: Mode) !void`
-
-Chains another `Filter` instance to this filter using AND/OR semantics defined by the mode.
 
 #### `addErrorOnly() !void`
 
@@ -270,27 +242,23 @@ Only allow records that contain error information.
 
 Removes all filter rules.
 
-**Alias**: `reset`, `removeAll`
-
 ### Evaluation
 
 #### `shouldLog(record: *const Record) bool`
 
 Evaluates a record against all rules. Returns `true` if the record should be logged.
 
-**Alias**: `check`, `evaluate`
-
 #### `shouldLogBatch(records: []const *const Record, results: []bool) void`
 
 Fast batch filter evaluation for multiple records at once, writing boolean results into the provided slice.
 
-#### `filterBatch(allocator: Allocator, records: []const *const Record) ![]FilterResult`
+#### `filterBatch(records: []const *const Record, results: []FilterResult) void`
 
-Evaluates a batch of records and returns a slice of `FilterResult` structs containing both the boolean evaluation and the reason string for why the record was allowed/denied.
+Evaluates a batch of records and writes `FilterResult` values containing the boolean decision and reason into `results`.
 
-#### `allowsAll() bool`
+#### `isEmpty() bool`
 
-Fast path check - returns true if filter has no rules (allows all).
+Returns true when the filter has no rules, so every record is allowed.
 
 ### Statistics
 
@@ -301,8 +269,6 @@ Returns current filter statistics.
 #### `count() usize`
 
 Returns the number of filter rules.
-
-**Alias**: `ruleCount`, `length`
 
 #### `allowedCount() u64`
 
@@ -366,10 +332,10 @@ Creates a filter from logger configuration settings.
 pub const FilterPresets = struct {
     /// Errors only - minimum level: error
     pub fn errorsOnly(allocator: std.mem.Allocator) !Filter;
-    
+
     /// Production - minimum level: info
     pub fn production(allocator: std.mem.Allocator) !Filter;
-    
+
     /// Development - allow all logs
     pub fn development(allocator: std.mem.Allocator) !Filter;
 
@@ -399,7 +365,7 @@ defer filter.deinit();
 
 // Add rules
 try filter.addMinLevel(.warning);
-try filter.addModulePrefix("debug.", .deny);
+try filter.addModulePrefix("debug.");
 try filter.addMessageFilter("heartbeat", .deny);
 
 // Check if record should be logged
@@ -408,12 +374,15 @@ if (filter.shouldLog(&record)) {
 }
 
 // Fast path for empty filters
-if (filter.allowsAll()) {
+if (filter.isEmpty()) {
     // Skip evaluation, all records pass
 }
 
 // Batch processing
-var results: [100]bool = undefined;
+var record = Record.init(allocator, .warning, "Example");
+defer record.deinit();
+const records = [_]*const Record{&record};
+var results: [1]bool = undefined;
 filter.shouldLogBatch(&records, &results);
 
 // Check statistics

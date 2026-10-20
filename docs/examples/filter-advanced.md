@@ -19,10 +19,18 @@ var filter = logly.Filter.init(allocator);
 defer filter.deinit();
 
 try filter.addGlobModule("auth.*", .allow);
-try filter.addRateRule(100, .drop);
+try filter.addRateRule(100, .deny);
 
-// Batch evaluation with reasons
-const result = filter.evaluateBatch(&records);
+// Batch evaluation
+var first = logly.Record.init(allocator, .debug, "first");
+defer first.deinit();
+var second = logly.Record.init(allocator, .err, "second");
+defer second.deinit();
+var third = logly.Record.init(allocator, .info, "third");
+defer third.deinit();
+const records = [_]*const logly.Record{ &first, &second, &third };
+var results: [3]bool = undefined;
+filter.shouldLogBatch(&records, &results);
 ```
 
 Output:

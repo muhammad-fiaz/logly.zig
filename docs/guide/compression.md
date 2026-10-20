@@ -13,7 +13,7 @@ This guide covers log compression in Logly, including automatic and manual compr
 
 ## Overview
 
-Logly provides a comprehensive compression module with advanced features:
+Logly provides a compression module with the following features:
 
 - **Multiple Algorithms**: DEFLATE, GZIP, ZLIB, RAW DEFLATE, ZSTD, LZMA, LZMA2, XZ, TAR.GZ, ZIP, LZ4, Brotli
 - **Smart Strategies**: Text-optimized, binary, RLE, adaptive auto-detection
@@ -51,14 +51,14 @@ pub fn main() !void {
 
 ## Minimal Configuration (One-Liner Setup)
 
-Logly provides preset configurations for the simplest possible compression setup. Use these when you don't need custom settings.
+Logly provides preset configurations for common compression workloads. Use them when the defaults match your requirements.
 
 ### Config Builder Methods (Logger Integration)
 
 ```zig
 const logly = @import("logly");
 
-// Simplest - just enable compression
+// Enable compression with defaults
 var config = logly.Config.default().withCompressionEnabled();
 
 // Implicit (automatic) - compress on rotation
@@ -79,7 +79,7 @@ var config6 = logly.Config.default().withBackgroundCompression();
 // Log-optimized - text strategy for log files
 var config7 = logly.Config.default().withLogCompression();
 
-// Production-ready - balanced with checksums
+// Production settings: balanced with checksums
 var config8 = logly.Config.default().withProductionCompression();
 
 // Brotli - best ratio for text/JSON (v0.1.8+)
@@ -191,10 +191,10 @@ Brotli quality levels range from 0 to 11:
 
 | Level | Speed | Ratio | Use Case |
 |-------|-------|-------|----------|
-| 0–3 | Fastest | Lower | Real-time, interactive |
-| 4–6 | Balanced | Good | General production |
-| 7–9 | Moderate | High | Archival, production |
-| 10–11 | Slowest | Maximum | Long-term storage |
+| 0-3 | Fastest | Lower | Real-time, interactive |
+| 4-6 | Balanced | Good | General production |
+| 7-9 | Moderate | High | Archival, production |
+| 10-11 | Slowest | Maximum | Long-term storage |
 
 ### Custom Level
 
@@ -219,7 +219,7 @@ var config2 = logly.Config{}
 ```
 
 > [!TIP]
-> Brotli achieves the best compression ratios for JSON and text data, making it ideal for log archival. For high-throughput scenarios, prefer zstd. Use Brotli quality level 4–6 for a balanced trade-off in production log archival.
+> Brotli achieves the best compression ratios for JSON and text data, making it ideal for log archival. For high-throughput scenarios, prefer zstd. Use Brotli quality level 4-6 for a balanced trade-off in production log archival.
 
 ## Zstd Compression (v0.1.8+)
 
@@ -278,7 +278,7 @@ defer allocator.free(compressed);
 const decompressed = try compressor.decompress(compressed);
 defer allocator.free(decompressed);
 
-std.debug.print("Original: {d} bytes, Compressed: {d} bytes\n", 
+std.debug.print("Original: {d} bytes, Compressed: {d} bytes\n",
     .{data.len, compressed.len});
 ```
 
@@ -422,11 +422,11 @@ Customize compressed file names, locations, and archive structure:
 
 | Option | Description | Example |
 |--------|-------------|---------|
-| `filePrefix` | Prefix for file names | `"archive_"` â†’ `archive_app.log.gz` |
-| `fileSuffix` | Suffix before extension | `"_old"` â†’ `app_old.log.gz` |
+| `filePrefix` | Prefix for file names | `"archive_"` -> `archive_app.log.gz` |
+| `fileSuffix` | Suffix before extension | `"_old"` -> `app_old.log.gz` |
 | `archiveRootDir` | Centralized archive location | `"logs/archive"` |
 | `createDateSubdirs` | Create YYYY/MM/DD structure | `logs/archive/2026/01/09/` |
-| `preserveDirStructure` | Keep original folder structure | Original: `src/logs/` â†’ `archive/src/logs/` |
+| `preserveDirStructure` | Keep original folder structure | Original: `src/logs/` -> `archive/src/logs/` |
 | `namingPattern` | Custom naming with placeholders | `"{base}_{date}{ext}"` |
 
 ### Naming Pattern Placeholders
@@ -789,7 +789,7 @@ Offload compression to background threads using the `ThreadPool` so the main app
 ```zig
 var pool = try logly.ThreadPool.init(allocator);
 try pool.start();
-defer pool.stop();
+defer pool.shutdown();
 
 var compression = logly.Compression.initWithConfig(allocator, .{
     .algorithm = .zstd,
@@ -798,9 +798,6 @@ var compression = logly.Compression.initWithConfig(allocator, .{
 
 // Compression is dispatched asynchronously to the thread pool
 try compression.asyncCompress("large.log", "archive/large.log.zst");
-
-// Or using aliases
-try compression.asyncPack("large.log", "archive/large.log.zst");
 ```
 
 ## Presets
@@ -870,11 +867,11 @@ compression.setCompressionStartCallback(onCompressionStart);
 Called after successful compression:
 
 ```zig
-fn onComplete(orig: []const u8, comp: []const u8, 
+fn onComplete(orig: []const u8, comp: []const u8,
               orig_size: u64, comp_size: u64, elapsed: u64) void {
-    const ratio = @as(f64, @floatFromInt(orig_size)) / 
+    const ratio = @as(f64, @floatFromInt(orig_size)) /
                   @as(f64, @floatFromInt(comp_size));
-    std.debug.print("Compressed {s}: {d:.2}x in {d}ms\n", 
+    std.debug.print("Compressed {s}: {d:.2}x in {d}ms\n",
         .{orig, ratio, elapsed});
 }
 
@@ -887,7 +884,7 @@ Called when compression fails:
 
 ```zig
 fn onError(path: []const u8, err: anyerror) void {
-    std.log.err("Compression failed for {s}: {s}", 
+    std.log.err("Compression failed for {s}: {s}",
         .{path, @errorName(err)});
 }
 
@@ -898,7 +895,7 @@ compression.setCompressionErrorCallback(onError);
 
 ```zig
 fn onDecompress(comp_path: []const u8, decomp_path: []const u8) void {
-    std.debug.print("Decompressed: {s} -> {s}\n", 
+    std.debug.print("Decompressed: {s} -> {s}\n",
         .{comp_path, decomp_path});
 }
 
@@ -927,18 +924,18 @@ std.debug.print("Compression ratio: {d:.2}x\n", .{stats.compressionRatio()});
 std.debug.print("Space savings: {d:.1}%\n", .{stats.spaceSavingsPercent()});
 
 // Performance metrics
-std.debug.print("Compression speed: {d:.1} MB/s\n", 
+std.debug.print("Compression speed: {d:.1} MB/s\n",
     .{stats.avgCompressionSpeedMBps()});
-std.debug.print("Decompression speed: {d:.1} MB/s\n", 
+std.debug.print("Decompression speed: {d:.1} MB/s\n",
     .{stats.avgDecompressionSpeedMBps()});
 
 // Reliability
 std.debug.print("Error rate: {d:.4}%\n", .{stats.errorRate() * 100});
 
 // Operations
-std.debug.print("Files compressed: {d}\n", 
+std.debug.print("Files compressed: {d}\n",
     .{stats.getFilesCompressed()});
-std.debug.print("Files decompressed: {d}\n", 
+std.debug.print("Files decompressed: {d}\n",
     .{stats.getFilesDecompressed()});
 
 // Background tasks (if enabled)
@@ -953,12 +950,12 @@ Combine compression with log rotation:
 
 ```zig
 // Configure rotation to trigger compression
-var config = logly.Config.init(allocator);
+var config = logly.Config.default();
 config.rotation = .{
     .enabled = true,
-    .max_file_size = 10 * 1024 * 1024, // 10 MB
-    .maxFiles = 10,
-    .compress_rotated = true,
+    .sizeLimit = 10 * 1024 * 1024, // 10 MB
+    .retentionCount = 10,
+    .compressOnRetention = true,
 };
 
 // The compression module will automatically
@@ -974,8 +971,11 @@ var scheduler = try logly.Scheduler.init(allocator);
 defer scheduler.deinit();
 
 // Compress logs older than 1 day, every hour
- _ = try scheduler.addTask(
-    logly.SchedulerPresets.hourlyCompression("logs"),
+_ = try scheduler.addTask(
+    "compress_old_logs",
+    .compression,
+    logly.SchedulerPresets.hourlyCompression(),
+    .{ .path = "logs", .minAgeSeconds = 86_400 },
 );
 
 try scheduler.start();
@@ -1159,10 +1159,10 @@ fn onCompressionComplete(
      _ = comp;
     const saved = orig_size - comp_size;
      _ = compression_stats.total_saved.fetchAdd(saved, .monotonic);
-    
-    const ratio = @as(f64, @floatFromInt(orig_size)) / 
+
+    const ratio = @as(f64, @floatFromInt(orig_size)) /
                   @as(f64, @floatFromInt(comp_size));
-    std.log.info("Compressed: {d:.2}x ratio, saved {d} bytes in {d}ms", 
+    std.log.info("Compressed: {d:.2}x ratio, saved {d} bytes in {d}ms",
         .{ratio, saved, elapsed});
 }
 
@@ -1205,20 +1205,20 @@ pub fn main() !void {
     defer logger.deinit();
 
     // Application runs...
-    try logger.info("Application started", .{});
-    
+    try logger.info("Application started", @src());
+
     // Periodically check stats
     const stats = compression.getStats();
     std.log.info("Compression stats:", .{});
-    std.log.info("  Files compressed: {d}", 
+    std.log.info("  Files compressed: {d}",
         .{stats.getFilesCompressed()});
-    std.log.info("  Compression ratio: {d:.2}x", 
+    std.log.info("  Compression ratio: {d:.2}x",
         .{stats.compressionRatio()});
-    std.log.info("  Space savings: {d:.1}%", 
+    std.log.info("  Space savings: {d:.1}%",
         .{stats.spaceSavingsPercent()});
-    std.log.info("  Avg speed: {d:.1} MB/s", 
+    std.log.info("  Avg speed: {d:.1} MB/s",
         .{stats.avgCompressionSpeedMBps()});
-    std.log.info("  Error rate: {d:.4}%", 
+    std.log.info("  Error rate: {d:.4}%",
         .{stats.errorRate() * 100});
 }
 ```
@@ -1244,13 +1244,13 @@ for (strategies) |strategy| {
     const elapsed = logly.Utils.currentNanos() - start;
     defer allocator.free(compressed);
 
-    const ratio = @as(f64, @floatFromInt(testData.len)) / 
+    const ratio = @as(f64, @floatFromInt(testData.len)) /
                   @as(f64, @floatFromInt(compressed.len));
-    const speed_mbps = (@as(f64, @floatFromInt(testData.len)) / 
-                       (1024.0 * 1024.0)) / 
+    const speed_mbps = (@as(f64, @floatFromInt(testData.len)) /
+                       (1024.0 * 1024.0)) /
                        (@as(f64, @floatFromInt(elapsed)) / 1_000_000_000.0);
 
-    std.debug.print("{s:12}: {d:.2}x ratio, {d:.1} MB/s\n", 
+    std.debug.print("{s:12}: {d:.2}x ratio, {d:.1} MB/s\n",
         .{@tagName(strategy), ratio, speed_mbps});
 }
 ```

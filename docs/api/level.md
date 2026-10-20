@@ -1,6 +1,6 @@
 ---
 title: Level API Reference
-description: API reference for Logly.zig Level enum. All 10 built-in log levels (trace, debug, info, success, warning, error, fail, critical, fatal, panic) with priorities and colors.
+description: API reference for Logly.zig Level enum. All 10 built-in log levels (trace, debug, info, success, warning, error, fail, critical, fatal, notice) with priorities and colors.
 head:
   - - meta
     - name: keywords
@@ -32,36 +32,6 @@ pub const Level = enum(u8) {
     fatal = 55,     // Fatal system errors
 };
 ```
-
-## Quick Reference: Method Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `priority()` | `value()`, `severity()` | Get priority value |
-| `asString()` | `toString()`, `str()` | Convert to string |
-| `fromString()` | `parse()` | Parse from string |
-| `fromPriority()` | `fromValue()`, `fromSeverity()` | Create from priority |
-| `defaultColor()` | `color()` | Get default tint color |
-| `defaultStyle()` | — | Get default tint style (fatal includes background) |
-| `isAtLeast()` | `atLeast()`, `gte()` | Check if at least level |
-| `isMoreSevereThan()` | `moreSevereThan()`, `gt()` | Check if more severe than |
-| `isError()` | `isErr()`, `isFailure()` | Check if error level |
-| `isWarning()` | `isWarn()` | Check if warning level |
-| `isDebug()` | `isTraceOrDebug()`, `isVerbose()` | Check if debug/trace level |
-| `init()` | `create()`, `new()` | Initialize custom level (CustomLevel) |
-| `initRgb()` | `createRgb()`, `newRgb()` | Initialize RGB custom level (CustomLevel) |
-| `init256()` | `create256()`, `new256()` | Initialize 256-color custom level (CustomLevel) |
-| `initStyled()` | `createStyled()`, `newStyled()` | Initialize styled custom level (CustomLevel) |
-| `initWithBackground()` | `createWithBackground()`, `newWithBackground()` | Initialize with background (CustomLevel) |
-| `effectiveColor()` | `effective()`, `getColor()` | Get effective tint color (CustomLevel) |
-| `effectiveStyle()` | — | Get effective tint style (CustomLevel) |
-| `isAtLeast()` | `atLeast()`, `gte()` | Check if at least level (CustomLevel) |
-| `isError()` | `isErr()`, `isFailure()` | Check if error level (CustomLevel) |
-| `asString()` | `toString()`, `str()` | Convert to string (CustomLevel) |
-| `hasBackground()` | `hasBg()`, `hasBackgroundColor()` | Check if has background (CustomLevel) |
-| `hasStyle()` | `hasTextStyle()` | Check if has text style (CustomLevel) |
-
-> Colors are tint `Color` values. Render with `logly.Color.sequence(color, .trueColor)` and write `Sequence.slice()`.
 
 ## Level Table
 
@@ -204,7 +174,7 @@ For dynamic custom levels, use the CustomLevel struct:
 
 ## LevelMask
 
-The `LevelMask` struct enables fine-grained inclusion/exclusion of specific levels independent of priority.
+`LevelMask` is a bitset of standard levels, used by sampling configuration to exempt levels from sampling.
 
 ```zig
 pub const LevelMask = struct {
@@ -217,7 +187,7 @@ pub const LevelMask = struct {
     pub fn all() LevelMask;
 
     /// Creates a mask with only error/fatal levels enabled.
-    pub fn errorOnly() LevelMask;
+    pub fn errorsOnly() LevelMask;
 
     /// Enables a specific level.
     pub fn enable(self: *LevelMask, lvl: Level) void;
@@ -225,8 +195,11 @@ pub const LevelMask = struct {
     /// Disables a specific level.
     pub fn disable(self: *LevelMask, lvl: Level) void;
 
+    /// Toggles a specific level.
+    pub fn toggle(self: *LevelMask, lvl: Level) void;
+
     /// Checks if a level is enabled.
-    pub fn isEnabled(self: *const LevelMask, lvl: Level) bool;
+    pub fn isEnabled(self: LevelMask, lvl: Level) bool;
 };
 ```
 
@@ -290,19 +263,6 @@ pub fn main() !void {
 }
 ```
 
-## Aliases
-
-The Level module provides convenience aliases:
-
-| Alias | Method |
-|-------|--------|
-| `value` | `priority` |
-| `severity` | `priority` |
-| `toString` | `asString` |
-| `str` | `asString` |
-| `color` | `defaultColor` |
-| `parse` | `fromString` |
-
 ## Additional Methods
 
 - `isAtLeast(other: Level) bool` - Returns true if this level is at least as severe as other
@@ -324,4 +284,3 @@ The Level module provides convenience aliases:
 - [Logger API](logger.md) - Logger logging methods
 - [Record API](record.md) - Log record structure
 - [Configuration Guide](../guide/configuration.md) - Level configuration
-

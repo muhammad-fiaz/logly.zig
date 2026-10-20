@@ -1,10 +1,10 @@
 ---
 title: Production Configuration Example
-description: Enterprise-ready Logly.zig configurations for production. Includes presets for production, development, high-throughput, and secure environments with multi-sink architecture.
+description: Production-oriented Logly.zig configurations. Includes presets for production, development, high-throughput, and secure environments with multi-sink architecture.
 head:
   - - meta
     - name: keywords
-      content: production config, enterprise logging, config presets, multi-sink, environment config, best practices
+      content: production config, structured logging, config presets, multi-sink, environment config, best practices
   - - meta
     - property: og:title
       content: Production Configuration Example | Logly.zig
@@ -12,7 +12,7 @@ head:
 
 # Production Configuration Example
 
-Enterprise-ready logging configurations for production environments.
+Production-oriented logging configurations.
 
 ## Configuration Presets
 
@@ -155,10 +155,10 @@ logger.configure(config);
 
 ```zig
 fn getConfig() logly.Config {
-    const env = std.process.getEnvVarOwned(allocator, "ENVIRONMENT") 
+    const env = std.process.getEnvVarOwned(allocator, "ENVIRONMENT")
                 catch "development";
     defer if (env) |e| allocator.free(e);
-    
+
     if (std.mem.eql(u8, env, "production")) {
         return logly.ConfigPresets.production();
     } else if (std.mem.eql(u8, env, "staging")) {
@@ -198,14 +198,14 @@ metrics.recordLog(.err, 50);
 // Periodic health check
 pub fn checkHealth(m: *Metrics) bool {
     const snapshot = m.getSnapshot();
-    
+
     // Alert if error rate > 5%
     if (snapshot.totalRecords > 0) {
-        const errorRate = @as(f64, @floatFromInt(snapshot.errorCount)) / 
+        const errorRate = @as(f64, @floatFromInt(snapshot.errorCount)) /
                           @as(f64, @floatFromInt(snapshot.totalRecords));
         return errorRate < 0.05;
     }
-    
+
     return true;
 }
 

@@ -587,8 +587,8 @@ pub const Formatter = struct {
     /// `Color` docs). Returns null when coloring is disabled
     /// (`colorMode.none`, or `color`/`globalColorDisplay` off).
     ///
-    /// Precedence: record custom color → per-level config override →
-    /// non-default theme palette → sink/formatter theme → default level
+    /// Precedence: record custom color -> per-level config override ->
+    /// non-default theme palette -> sink/formatter theme -> default level
     /// palette. Custom log levels without an explicit color resolve
     /// through their mapped base level, deterministically.
     ///
@@ -1189,7 +1189,7 @@ pub const Formatter = struct {
 
     /// Formats a log record as JSON directly to a writer.
     ///
-    /// Use this for zero-allocation streaming (assuming buffered writer).
+    /// Streams JSON directly to the writer without an intermediate allocation.
     pub fn formatJsonToWriter(self: *Formatter, writer: anytype, record: *const Record, config: anytype) !void {
         const escapeJsonString = Utils.escapeJsonString;
         const pretty = if (@hasField(@TypeOf(config), "prettyJson")) config.prettyJson else false;

@@ -1,7 +1,7 @@
 //! Scheduler Example
 //!
-//! Demonstrates scheduled log maintenance tasks including cron expressions,
-//! one-shot tasks, task cancellation, and jitter for thundering herd prevention.
+//! Demonstrates scheduled log maintenance tasks including interval, daily,
+//! cron-style, and one-shot schedules, task cancellation, and task inspection.
 
 const std = @import("std");
 const logly = @import("logly");
@@ -84,7 +84,7 @@ pub fn main() !void {
 
     const oneshotIdx = try scheduler.addCustomTask(
         "oneshot_maintenance",
-        .{ .interval = 1 }, // run immediately in 1ms
+        .{ .once = 1 }, // run once after 1ms
         OneShotTask.execute,
     );
     std.debug.print("   Added one-shot custom task (index: {d})\n\n", .{oneshotIdx});
@@ -101,16 +101,8 @@ pub fn main() !void {
     scheduler.setTaskEnabled(cleanupIdx, true);
     std.debug.print("   Re-enabled task {d} (log_cleanup)\n\n", .{cleanupIdx});
 
-    // Example 5: Jitter configuration
-    std.debug.print("5. Jitter (Thundering Herd Prevention)\n", .{});
-    std.debug.print("\n", .{});
-
-    std.debug.print("   Jitter adds random delay +/-N ms to prevent thundering herd.\n", .{});
-    std.debug.print("   Configure via SchedulerConfig.jitterMs in the scheduler config.\n", .{});
-    std.debug.print("   Example: jitterMs = 5000 adds +/-5 second random delay.\n\n", .{});
-
-    // Example 6: Task management
-    std.debug.print("6. Task Management and History\n", .{});
+    // Example 5: Task management
+    std.debug.print("5. Task Management and History\n", .{});
     std.debug.print("\n", .{});
 
     const tasks = scheduler.getTasks();
@@ -125,8 +117,8 @@ pub fn main() !void {
         });
     }
 
-    // Example 7: Scheduler presets
-    std.debug.print("\n7. Scheduler Presets\n", .{});
+    // Example 6: Scheduler presets
+    std.debug.print("\n6. Scheduler Presets\n", .{});
     std.debug.print("\n", .{});
 
     const dailyCleanup = logly.SchedulerPresets.dailyCleanup("logs", 30);
@@ -135,8 +127,8 @@ pub fn main() !void {
     std.debug.print("     Max age: {d} days\n", .{dailyCleanup.maxAgeSeconds / (24 * 60 * 60)});
     std.debug.print("     Pattern: {s}\n\n", .{dailyCleanup.filePattern orelse "*"});
 
-    // Example 8: Statistics
-    std.debug.print("8. Scheduler Statistics\n", .{});
+    // Example 7: Statistics
+    std.debug.print("7. Scheduler Statistics\n", .{});
     std.debug.print("\n", .{});
 
     const stats = scheduler.getStats();

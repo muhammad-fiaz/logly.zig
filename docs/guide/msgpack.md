@@ -5,7 +5,7 @@ description: Learn how to utilize Logly's compact MessagePack binary formatter t
 
 # MessagePack Binary Formatter
 
-Structured loggers typically output logs in JSON format. While JSON is highly human-readable and universally supported, it is an extremely verbose text format. The duplication of field names (like `"timestamp"`, `"level"`, `"message"`, `"module"`) in every single log record consumes substantial disk space and network bandwidth in high-throughput enterprise systems.
+Structured loggers typically output logs in JSON format. While JSON is highly human-readable and universally supported, it is an extremely verbose text format. The duplication of field names (like `"timestamp"`, `"level"`, `"message"`, `"module"`) in every single log record consumes substantial disk space and network bandwidth in high-throughput systems.
 
 Logly addresses this by introducing a native **MessagePack (msgpack) Formatter**. MessagePack is a highly efficient, standard-compliant binary serialization format. It lets you serialize structured logs into compact binary payloads that retain the full key-value expressiveness of JSON while cutting storage footprint by **30% to 70%**.
 
@@ -87,7 +87,7 @@ std.debug.print("Binary length: {d} bytes\n", .{binary_data.len});
 ## Best Practices
 
 > [!NOTE]
-> MessagePack is a standard binary format. Sinks that stream MessagePack data can be consumed natively by enterprise log aggregators like **Vector**, **Fluentbit**, **Logstash**, and **Elasticsearch** without intermediate conversion.
+> MessagePack is a standard binary format. Sinks that stream MessagePack data can be consumed natively by log aggregators like **Vector**, **Fluentbit**, **Logstash**, and **Elasticsearch** without intermediate conversion.
 
 * **Use for Network Sinks**: MessagePack is ideal for TCP/UDP socket sinks, as it dramatically reduces packet sizes, reduces packet fragmentation, and increases throughput.
 * **Combine with Compression**: When combined with Logly's `Zstd` compression, MessagePack binary data yields extreme compression ratios, saving massive long-term archive costs.

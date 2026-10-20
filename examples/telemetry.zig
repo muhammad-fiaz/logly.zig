@@ -112,7 +112,7 @@ fn jaegerTelemetry(allocator: std.mem.Allocator) !void {
     config.serviceVersion = "2.1.0";
     // Demo runs offline; numeric host avoids DNS and fails fast when no
     // collector is listening.
-    config.exporterEndpoint = "http://127.0.0.1:14268/api/traces";
+    config.exporterEndpoint = "http://127.0.0.1:4318/v1/traces";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
@@ -567,7 +567,7 @@ fn customExporterCallback() anyerror!void {
     // In a real implementation, you would:
     // 1. Collect spans/metrics from a buffer
     // 2. Serialize them to your custom format
-    // 3. Send to your backend (HTTP, gRPC, etc.)
+    // 3. Send to your backend over HTTP(S), TCP, or UDP
 }
 
 /// Example 15: Custom provider implementation

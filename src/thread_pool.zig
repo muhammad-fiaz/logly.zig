@@ -8,8 +8,8 @@ const Utils = @import("utils.zig");
 
 /// Thread pool for parallel log processing with full callback support.
 ///
-/// Provides concurrent execution of logging tasks with configurable
-/// thread count, work stealing, load balancing, and comprehensive monitoring.
+/// Executes logging tasks concurrently with configurable thread count,
+/// work stealing, and load balancing.
 pub const ThreadPool = struct {
     /// Memory allocator for pool operations.
     allocator: std.mem.Allocator,
@@ -229,7 +229,7 @@ pub const ThreadPool = struct {
         /// Optional cleanup invoked with the task's callback context when
         /// an accepted item is discarded without executing (clear/cancel).
         /// It never fires for rejected submissions (pool stopped or queue
-        /// full) — the caller keeps ownership there. Submit functions
+        /// full) - the caller keeps ownership there. Submit functions
         /// default this to null; owners of heap contexts must provide it or
         /// accept the leak on explicit drops. Hooks run under the queue
         /// lock: they must only free memory and never call back into the

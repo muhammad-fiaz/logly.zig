@@ -181,14 +181,11 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
 
-    const builtin = @import("builtin");
-    // Only run tests if compatible with host
-    if (target.result.os.tag == builtin.os.tag and target.result.cpu.arch == builtin.cpu.arch) {
-        test_step.dependOn(&run_tests.step);
-    } else {
-        const install_tests = b.addInstallArtifact(tests, .{});
-        test_step.dependOn(&install_tests.step);
-    }
+    // Always execute the test binary. Native targets run directly; foreign
+    // targets require an executor (for example `-fqemu`). Silently installing
+    // the binary instead would let CI report success without running a single
+    // test.
+    test_step.dependOn(&run_tests.step);
 
     // Benchmark
     const bench_exe = b.addExecutable(.{

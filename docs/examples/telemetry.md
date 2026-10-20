@@ -1,6 +1,6 @@
 ---
 title: OpenTelemetry Example
-description: Comprehensive examples of OpenTelemetry integration with Logly.zig including spans, metrics, context propagation, and custom providers.
+description: OpenTelemetry integration examples covering spans, metrics, context propagation, and custom providers.
 head:
   - - meta
     - name: keywords
@@ -15,7 +15,7 @@ head:
 
 # OpenTelemetry Example
 
-This example demonstrates comprehensive OpenTelemetry support in Logly.zig, including span creation, metrics recording, context propagation, and multiple backend providers.
+This example demonstrates OpenTelemetry support in Logly.zig, including span creation, metrics recording, context propagation, and multiple backend providers.
 
 ## Basic Setup
 
@@ -40,10 +40,10 @@ pub fn main() !void {
     // Create and use spans
     var span = try telemetry.startSpan("http_request", .{ .kind = .server });
     defer span.deinit();
-    
+
     try span.setAttribute("http.method", .{ .string = "POST" });
     try span.setAttribute("http.status_code", .{ .integer = 200 });
-    
+
     span.end();
     try telemetry.endSpan(&span);
     try telemetry.exportSpans();
@@ -119,7 +119,7 @@ config.serviceName = "azure-app";
 ### Generic OTEL Collector
 
 ```zig
-var config = logly.TelemetryConfig.otelCollector("http://localhost:4317");
+var config = logly.TelemetryConfig.otelCollector("http://localhost:4318/v1/traces");
 config.serviceName = "otel-client";
 ```
 

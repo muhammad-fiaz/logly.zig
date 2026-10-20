@@ -42,7 +42,7 @@ pub fn main() !void {
     const message = "User login password=secret123 success";
     const redacted = try redactor.redact(message);
     defer allocator.free(redacted);
-    
+
     std.debug.print("Redacted: {s}\n", .{redacted});
     // Output: "User login [REDACTED] success"
 }
@@ -183,11 +183,11 @@ defer allocator.free(message);
 5. **Document patterns** - Maintain list of redaction rules for compliance
 
 ## New Features (v0.1.8)
- 
+
  ### Improved Regex Engine
- 
- Redaction now supports a production-ready regex-like engine for pattern matching (see [Redaction Guide](/guide/redaction) for details).
- 
+
+ Redaction supports a regex-like engine for pattern matching (see [Redaction Guide](/guide/redaction) for details).
+
 ## New Compliance Presets (v0.1.8)
 
 ```zig
@@ -206,19 +206,7 @@ var fin_redactor = try RedactionPresets.financial(allocator);
 defer fin_redactor.deinit();
 ```
 
-## Aliases
-
-| Alias | Method |
-|-------|--------|
-| `addRule` | `addPattern` |
-| `field` | `addField` |
-| `sensitiveField` | `addField` |
-| `mask` | `redact` |
-| `sanitize` | `redact` |
-| `statistics` | `getStats` |
-
 ## See Also
 
 - [Redaction Guide](/guide/redaction) - Detailed redaction documentation
 - [Redactor API](/api/redactor) - Full API reference
-

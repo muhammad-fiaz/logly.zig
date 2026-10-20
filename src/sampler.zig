@@ -7,7 +7,7 @@ const SinkConfig = @import("sink.zig").SinkConfig;
 const Constants = @import("constants.zig");
 const Utils = @import("utils.zig");
 
-/// Sampler for controlling log throughput with comprehensive monitoring.
+/// Sampler for controlling log throughput with statistics.
 pub const Sampler = struct {
     /// Sampling statistics for monitoring and diagnostics.
     pub const SamplerStats = struct {
@@ -201,7 +201,7 @@ pub const Sampler = struct {
     /// Safe to call multiple times (idempotent).
     pub fn deinit(self: *Sampler) void {
         _ = self;
-        // No resources to free - sampler is zero-copy after init
+        // No resources to free; the sampler allocates only during init
     }
 
     /// Sets the callback for when a record passes sampling.

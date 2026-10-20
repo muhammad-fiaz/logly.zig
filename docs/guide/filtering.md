@@ -9,7 +9,7 @@ head:
 
 # Filtering
 
-Logly.zig provides a powerful filtering system for rule-based log filtering. Filter logs by level, message patterns, modules, and more. Filters work with all sink types: console, file, and JSON.
+Logly.zig provides rule-based log filtering. Filter logs by level, message patterns, modules, and more. Filters work with all sink types: console, file, and JSON.
 
 ## Overview
 
@@ -51,12 +51,12 @@ pub fn main() !void {
     logger.setFilter(&filter);
 
     // These will be filtered out (below warning level)
-    try logger.debug(@src(), "Debug message - filtered", .{});
-    try logger.info(@src(), "Info message - filtered", .{});
+    try logger.debug("Debug message - filtered", @src());
+    try logger.info("Info message - filtered", @src());
 
     // These will pass through
-    try logger.warn(@src(), "Warning message - passes", .{});
-    try logger.err(@src(), "Error message - passes", .{});
+    try logger.warn("Warning message - passes", @src());
+    try logger.err("Error message - passes", @src());
 }
 ```
 
@@ -73,7 +73,8 @@ defer filter.deinit();
 // Only warning and above
 try filter.addMinLevel(.warning);
 
-// Also add maximum level (info through warning only)
+// Restrict the upper bound: info through warning only
+try filter.addMinLevel(.info);
 try filter.addMaxLevel(.warning);
 ```
 
@@ -101,7 +102,7 @@ var filter = Filter.init(allocator);
 defer filter.deinit();
 
 // Drop logs containing "heartbeat"
-try filter.addMessageFilter("heartbeat", .drop);
+try filter.addMessageFilter("heartbeat", .deny);
 
 // Allow logs containing "error"
 try filter.addMessageFilter("error", .allow);
@@ -109,7 +110,7 @@ try filter.addMessageFilter("error", .allow);
 
 ### Regex Filtering
 
-Filter messages or modules using the improved regex-like engine (v0.1.8):
+Filter messages or modules using regex-like patterns:
 
 ```zig
 var filter = Filter.init(allocator);
@@ -150,13 +151,18 @@ defer filter.deinit();
 
 try filter.addMinLevel(.info);
 
-// Check various levels
-const debug_passes = filter.shouldLog(.debug, null, "Debug message");    // false
-const info_passes = filter.shouldLog(.info, null, "Info message");       // true
-const warning_passes = filter.shouldLog(.warning, null, "Warning");      // true
+var debug_record = logly.Record.init(allocator, .debug, "Debug message");
+defer debug_record.deinit();
+const debug_passes = filter.shouldLog(&debug_record); // false
 
-// Check with module
-const db_log = filter.shouldLog(.info, "database", "Query executed");    // true
+var info_record = logly.Record.init(allocator, .info, "Info message");
+defer info_record.deinit();
+const info_passes = filter.shouldLog(&info_record); // true
+
+var db_record = logly.Record.init(allocator, .info, "Query executed");
+defer db_record.deinit();
+db_record.module = "database";
+const db_log = filter.shouldLog(&db_record); // true
 ```
 
 ## Per-Sink Filtering
@@ -200,16 +206,16 @@ pub fn main() !void {
     });
 
     // Logs from auth module - passes
-    try logger.info(@src(), "[auth] User logged in", .{});
+    try logger.info("[auth] User logged in", @src());
 
     // Logs from database module - passes
-    try logger.debug(@src(), "[database] Query executed", .{});
+    try logger.debug("[database] Query executed", @src());
 
     // Filtered out - wrong module
-    try logger.info(@src(), "[http] Request received", .{});
+    try logger.info("[http] Request received", @src());
 
     // Filtered out - contains excluded message
-    try logger.debug(@src(), "[auth] heartbeat check", .{});
+    try logger.debug("[auth] heartbeat check", @src());
 }
 ```
 
@@ -256,13 +262,13 @@ pub fn main() !void {
     });
 
     // Goes to audit.log only
-    try logger.info(@src(), "[auth] User login successful", .{});
+    try logger.info("[auth] User login successful", @src());
 
     // Goes to errors.log
-    try logger.err(@src(), "Database connection failed", .{});
+    try logger.err("Database connection failed", @src());
 
     // Goes to debug.log only (filtered from others)
-    try logger.debug(@src(), "Processing request", .{});
+    try logger.debug("Processing request", @src());
 }
 ```
 
@@ -302,13 +308,13 @@ pub fn main() !void {
     });
 
     // API logs - goes to app.json
-    try logger.info(@src(), "[api] Request processed", .{});
+    try logger.info("[api] Request processed", @src());
 
     // Critical error - goes to both files
-    try logger.crit(@src(), "CRITICAL: System failure", .{});
+    try logger.crit("CRITICAL: System failure", @src());
 
     // Regular error - only app.json
-    try logger.err(@src(), "[service] Connection timeout", .{});
+    try logger.err("[service] Connection timeout", @src());
 }
 ```
 
@@ -362,10 +368,10 @@ pub fn main() !void {
     });
 
     // Log some messages
-    try logger.debug(@src(), "[debug] Variable value: 42", .{});  // Console only
-    try logger.info(@src(), "[api] Request received", .{});       // Console, production.log, structured.json
-    try logger.warn(@src(), "[database] Slow query", .{});        // Console, production.log
-    try logger.err(@src(), "Critical database error", .{});       // All sinks
+    try logger.debug("[debug] Variable value: 42", @src());  // Console only
+    try logger.info("[api] Request received", @src());       // Console, production.log, structured.json
+    try logger.warn("[database] Slow query", @src());        // Console, production.log
+    try logger.err("Critical database error", @src());       // All sinks
 }
 ```
 
@@ -410,16 +416,16 @@ pub fn main() !void {
     });
 
     // Filtered by global filter (below info)
-    try logger.debug(@src(), "[app] Debug info", .{});
+    try logger.debug("[app] Debug info", @src());
 
     // Passes global, goes to console (matches include_modules)
-    try logger.info(@src(), "[app] Starting application", .{});
+    try logger.info("[app] Starting application", @src());
 
     // Passes global, goes to file (matches include_modules)
-    try logger.info(@src(), "[database] Connection established", .{});
+    try logger.info("[database] Connection established", @src());
 
     // Passes global but filtered by both sinks (wrong module)
-    try logger.info(@src(), "[http] Server started", .{});
+    try logger.info("[http] Server started", @src());
 }
 ```
 
@@ -434,7 +440,7 @@ pub fn main() !void {
 
 ### Improved Regex Engine
 
-The filtering engine now uses a centralized, production-ready regex-like engine with support for:
+The filtering engine uses a centralized regex-like matcher with support for:
 - Standard quantifiers: `*`, `+`, `?`
 - Character classes: `\d`, `\w`, `\s` (and negated `\D`, `\W`, `\S`)
 - Anchored matching with `matchRegexPattern`
@@ -449,7 +455,10 @@ defer filter.deinit();
 try filter.addMinLevel(.warning);
 
 // Evaluate multiple records at once (more efficient)
-var results: [100]bool = undefined;
+var record = Record.init(allocator, .warning, "Example");
+defer record.deinit();
+const records = [_]*const Record{&record};
+var results: [1]bool = undefined;
 filter.shouldLogBatch(&records, &results);
 ```
 
@@ -457,7 +466,7 @@ filter.shouldLogBatch(&records, &results);
 
 ```zig
 // Fast path - check if all logs are allowed
-if (filter.allowsAll()) {
+if (filter.isEmpty()) {
     // No rules, skip evaluation
 }
 
@@ -472,24 +481,6 @@ const count = filter.count();
 const has = filter.hasRules();
 const empty = filter.isEmpty();
 ```
-
-### Aliases
-
-| Alias | Method |
-|-------|--------|
-| `check` | `shouldLog` |
-| `evaluate` | `shouldLog` |
-| `minLevel` | `addMinLevel` |
-| `min` | `addMinLevel` |
-| `maxLevel` | `addMaxLevel` |
-| `max` | `addMaxLevel` |
-| `moduleFilter` | `addModulePrefix` |
-| `addPrefix` | `addModulePrefix` |
-| `messageFilter` | `addMessageFilter` |
-| `reset` | `clear` |
-| `removeAll` | `clear` |
-| `ruleCount` | `count` |
-| `length` | `count` |
 
 ## Dot-Notation Context Filtering (v0.2.0)
 
@@ -524,4 +515,3 @@ logger.setFilter(&filter);
 - [Sampling](/guide/sampling) - Rate limiting and probability-based filtering
 - [Redaction](/guide/redaction) - Sensitive data masking
 - [Configuration](/guide/configuration) - Global configuration options
-

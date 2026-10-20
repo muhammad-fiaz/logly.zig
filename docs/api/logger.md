@@ -15,72 +15,7 @@ head:
 
 # Logger API
 
-The `Logger` struct is the central component of the Logly library, orchestrating all logging operations, sink management, configuration, and enterprise features like filtering, sampling, redaction, metrics, and distributed tracing.
-
-## Quick Reference: Method Aliases
-
-### Sink Management Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `addSink()` | `add()` | Add a new sink |
-| `removeSink()` | `remove()` | Remove a sink by ID |
-| `removeAllSinks()` | `removeAll()`, `clear()` | Remove all sinks |
-| `getSinkCount()` | `count()`, `sinkCount()` | Get number of sinks |
-| `enableSink()` | `enable()` | Enable a sink by ID |
-| `disableSink()` | `disable()` | Disable a sink by ID |
-| `getSink()` | `sink()` | Get sink by ID |
-
-### Logging Level Aliases
-
-| Full Method | Alias(es) | Level | Description |
-|-------------|-----------|-------|-------------|
-| `trace()` | - | TRACE | Verbose debugging |
-| `debug()` | - | DEBUG | Debug information |
-| `info()` | - | INFO | General information |
-| `notice()` | `note()` | NOTICE | Important notices |
-| `success()` | - | SUCCESS | Success messages |
-| `warning()` | `warn()` | WARNING | Warning messages |
-| `err()` | `@"error"()` | ERROR | Error messages |
-| `fail()` | `failure()` | FAIL | Failure messages |
-| `critical()` | `crit()` | CRITICAL | Critical errors |
-| `fatal()` | `panic()` | FATAL | Fatal errors |
-
-### Formatted Logging Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `tracef()` | - | Formatted TRACE log |
-| `debugf()` | - | Formatted DEBUG log |
-| `infof()` | - | Formatted INFO log |
-| `noticef()` | `notef()` | Formatted NOTICE log |
-| `successf()` | - | Formatted SUCCESS log |
-| `warningf()` | `warnf()` | Formatted WARNING log |
-| `errf()` | `errorf()` | Formatted ERROR log |
-| `failf()` | `failuref()` | Formatted FAIL log |
-| `criticalf()` | `critf()` | Formatted CRITICAL log |
-| `fatalf()` | `panicf()` | Formatted FATAL log |
-| `customf()` | - | Formatted custom level log |
-
-### Lifecycle Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `init()` | `create()` | Initialize logger |
-| `deinit()` | `destroy()` | Deinitialize logger |
-
-### Other Aliases
-
-| Full Method | Alias(es) | Description |
-|-------------|-----------|-------------|
-| `getStats()` | `stats()` | Get logger statistics |
-| `getRecordCount()` | `recordCount()` | Get total record count |
-| `getUptime()` | `uptime()` | Get logger uptime in seconds |
-| `scoped()` | - | Create scoped logger |
-| `ctx()` | `context()` | Get context logger |
-| `with()` | - | Get persistent context logger |
-
-
+The `Logger` struct is the central component of the Logly library, orchestrating all logging operations, sink management, configuration, and subsystems for filtering, sampling, redaction, metrics, and distributed tracing.
 
 ## Lifecycle Methods
 
@@ -112,7 +47,7 @@ Initializes a new `Logger` instance with an explicit `std.Io` handle and configu
 
 `Logger.init(...)` and `Logger.initWithConfig(...)` accept any allocator implementing `std.mem.Allocator`.
 
-- Use `std.heap.DebugAllocator` for robust general-purpose ownership and leak detection.
+- Use `std.heap.DebugAllocator` for general-purpose ownership and leak detection.
 
 ```zig
 var gpa = std.heap.DebugAllocator(.{}){};
@@ -124,7 +59,7 @@ defer logger.deinit();
 
 ### `deinit() void`
 
-Deinitializes the logger, freeing all allocated resources including sinks, context maps, custom levels, and enterprise components.
+Deinitializes the logger, freeing all allocated resources including sinks, context maps, custom levels, and managed components.
 
 ### `configure(config: Config) void`
 
@@ -208,7 +143,7 @@ Invoked when the logger is destroyed.
 
 ### LoggerStats
 
-The `LoggerStats` struct provides comprehensive statistics for logging operations with cross-platform atomic counters:
+The `LoggerStats` struct provides logging statistics with cross-platform atomic counters:
 
 ```zig
 pub const LoggerStats = struct {
@@ -295,7 +230,6 @@ A generic callback invoked for every log record. Can be used for custom processi
 Adds a new output sink (e.g., console, file) with the specified configuration.
 
 - **Returns**: The unique ID of the added sink.
-- **Alias**: `add()`
 
 ```zig
 // Both are equivalent
@@ -307,13 +241,9 @@ Adds a new output sink (e.g., console, file) with the specified configuration.
 
 Removes a sink by its ID.
 
-- **Alias**: `remove()`
-
 ### `removeAllSinks() usize`
 
 Removes all sinks and returns the count of removed sinks.
-
-- **Aliases**: `removeAll()`, `clear()`
 
 ### `enableSink(id: usize) void`
 
@@ -327,11 +257,9 @@ Disables a specific sink by its ID, preventing it from processing log records.
 
 Returns the current number of sinks.
 
-- **Aliases**: `count()`, `sinkCount()`
+### `enableAsync() !void`
 
-### `enableAsync() void`
-
-Enables async logging if an async logger is configured. This allows log records to be processed asynchronously in the background.
+Enables async logging if an async logger is configured. This allows log records to be processed asynchronously in the background. Returns an error if the worker thread cannot be started.
 
 ### `disableAsync() void`
 
@@ -372,7 +300,7 @@ Removes a previously bound context variable.
 
 Removes all bound context variables.
 
-## Enterprise Features
+## Advanced Features
 
 ### Filtering
 
@@ -408,18 +336,18 @@ Sets a redactor for sensitive data masking in log messages.
 ```zig
 var redactor = logly.Redactor.init(allocator);
 defer redactor.deinit();
-try redactor.addPattern("password", .keyword, "password", "[REDACTED]");
+try redactor.addPattern("password", .contains, "password", "[REDACTED]");
 logger.setRedactor(&redactor);
 ```
 
 ### Metrics
 
-#### `enableMetrics() void`
+#### `enableMetrics() !void`
 
-Enables metrics collection for logging performance monitoring.
+Enables metrics collection for logging performance monitoring. Returns an error if the metrics state cannot be allocated.
 
 ```zig
-logger.enableMetrics();
+try logger.enableMetrics();
 ```
 
 #### `getMetrics() ?Metrics.Snapshot`
@@ -501,10 +429,10 @@ Creates a new span for tracing. The span automatically generates a span ID and t
 
 ```zig
 const span = try logger.startSpan("database_query");
-defer span.end(null) catch {};
+defer span.end(null, @src()) catch {};
 
 // Your operation here
-try logger.info("Executing query");
+try logger.info("Executing query", @src());
 ```
 
 ### `DistributedLogger.child(childSpanId: []const u8) DistributedLogger`
@@ -546,39 +474,39 @@ Returns a scoped logger for a specific module.
 
 ```zig
 const dbLogger = logger.scoped("database");
-try dbLogger.info("Connection established");
+try dbLogger.info("Connection established", @src());
 ```
 
 ## Custom Levels
 
-### `addCustomLevel(name: []const u8, priority: u8, color: []const u8) !void`
+### `addCustomLevel(name: []const u8, priority: u8, color: Color.Color) !void`
 
-Registers a custom log level with a name, priority, and ANSI color code.
+Registers a custom log level with a name, priority, and color.
 **Returns error.LevelAlreadyExists if level name already exists.**
 
 ```zig
 // Color code only (no \x1b[ prefix needed)
-try logger.addCustomLevel("audit", 35, "35");     // Magenta
-try logger.addCustomLevel("security", 55, "91");  // Bright red
-try logger.addCustomLevel("notice", 22, "36;1");  // Bold cyan
-try logger.addCustomLevel("alert", 42, "31;4");   // Underline red
+try logger.addCustomLevel("audit", 35, logly.Color.parse("35").?);     // Magenta
+try logger.addCustomLevel("security", 55, logly.Color.parse("91").?);  // Bright red
+try logger.addCustomLevel("notice", 22, logly.Color.parse("36;1").?);  // Bold cyan
+try logger.addCustomLevel("alert", 42, logly.Color.parse("31;4").?);   // Underline red
 
 // Handle duplicate error
-logger.addCustomLevel("audit", 40, "31") catch |err| {
+logger.addCustomLevel("audit", 40, logly.Color.parse("31").?) catch |err| {
     if (err == error.LevelAlreadyExists) {
         std.debug.print("Level already exists!\n", .{});
     }
 };
 ```
 
-### `updateCustomLevel(name: []const u8, priority: u8, color: []const u8) !void`
+### `updateCustomLevel(name: []const u8, priority: u8, color: Color.Color) !void`
 
 Updates an existing custom level, or creates it if it doesn't exist.
 Use this when you want to allow updates without errors.
 
 ```zig
 // This will update if exists, or create if not
-try logger.updateCustomLevel("audit", 40, "91;1");
+try logger.updateCustomLevel("audit", 40, logly.Color.parse("91;1").?);
 ```
 
 ### `hasCustomLevel(name: []const u8) bool`
@@ -622,7 +550,7 @@ Removes a previously registered custom level.
 Logs using a registered custom level. The entire line is colored:
 
 ```zig
-try logger.addCustomLevel("audit", 35, "35;1"); // Bold magenta
+try logger.addCustomLevel("audit", 35, logly.Color.parse("35;1").?); // Bold magenta
 try logger.custom("audit", "User login detected", @src());
 // Output: [2024-01-15 10:30:45] [AUDIT] myfile.zig:42:0: User login detected (bold magenta)
 ```
@@ -635,14 +563,13 @@ Formatted logging with custom levels:
 try logger.customf("audit", "User {s} logged in from {s}", .{ "alice", "10.0.0.1" }, @src());
 ```
 
-
 ## Callbacks
 
 ### `setLogCallback(callback: *const fn (*const Record) anyerror!void) void`
 
 Sets a callback function that is invoked for each log record. Useful for integration with external systems.
 
-### `setColorCallback(callback: *const fn (Level, []const u8) []const u8) void`
+### `setColorCallback(callback: *const fn (Level, Color.Color) Color.Color) void`
 
 Sets a custom color callback for overriding default level colors.
 
@@ -658,11 +585,11 @@ Temporarily disables all logging.
 
 > [!NOTE]
 > **Dispatch priority**: When multiple logging backends are enabled, records are dispatched in the following order:
-> 1. **AsyncLogger** (highest priority) — if `asyncConfig.enabled = true`, records are queued in the ring buffer for background processing.
-> 2. **Thread Pool** — if `threadPool.enabled = true`, records are submitted as tasks to the worker pool.
-> 3. **Direct Sinks** (lowest priority) — records are written synchronously to all configured sinks.
+> 1. **AsyncLogger** (highest priority): if `asyncConfig.enabled = true`, records are queued in the ring buffer for background processing.
+> 2. **Thread Pool**: if `threadPool.enabled = true`, records are submitted as tasks to the worker pool.
+> 3. **Direct Sinks** (lowest priority): records are written synchronously to all configured sinks.
 >
-> `autoFlush` only applies to the **sync** and **asyncLogger** paths. The thread pool path does **not** flush on `autoFlush` because the task is merely queued to a worker — no sink write has occurred yet at the point `dispatchRecord` returns.
+> `autoFlush` only applies to the **sync** and **asyncLogger** paths. The thread pool path does **not** flush on `autoFlush` because the task is merely queued to a worker; no sink write has occurred yet at the point `dispatchRecord` returns.
 
 ### `flush() !void`
 
@@ -735,13 +662,9 @@ Logs a message at the **SUCCESS** level (Priority 25).
 
 Logs a message at the **WARNING** level (Priority 30).
 
-- **Alias**: `warn()`
-
 ### `err(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **ERROR** level (Priority 40).
-
-- **Alias**: `@"error"()` (Zig keyword escape)
 
 ### `fail(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
@@ -750,8 +673,6 @@ Logs a message at the **FAIL** level (Priority 45).
 ### `critical(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message at the **CRITICAL** level (Priority 50).
-
-- **Alias**: `crit()`
 
 ### `fatal(message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
@@ -762,13 +683,12 @@ This is the highest severity level with white text on red background.
 try logger.fatal("System crash imminent!", @src());
 ```
 
-
 ### `custom(levelName: []const u8, message: []const u8, src: ?std.builtin.SourceLocation) !void`
 
 Logs a message using a user-defined custom level. The level must be registered first.
 
 ```zig
-try logger.addCustomLevel("audit", 35, "35;1");
+try logger.addCustomLevel("audit", 35, logly.Color.parse("35;1").?);
 try logger.custom("audit", "User login detected", @src());
 ```
 
@@ -802,17 +722,11 @@ try logger.infof("User {s} connected from {s}", .{ "alice", "10.0.0.1" }, @src()
 
 ### `warningf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
-- **Alias**: `warnf()`
-
 ### `errf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
-
-- **Alias**: `errorf()`
 
 ### `failf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 
 ### `criticalf(comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
-
-- **Alias**: `critf()`
 
 ### `customf(levelName: []const u8, comptime fmt: []const u8, args: anytype, src: ?std.builtin.SourceLocation) !void`
 

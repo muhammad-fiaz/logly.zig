@@ -51,7 +51,7 @@ pub fn main() !void {
     try dbLogger.infof("Connected to database '{s}'", .{ "production_db" }, @src());
 
     // 3. Custom Level Formatted Logging with Custom Colors
-    try logger.addCustomLevel("AUDIT", 22, "35"); // Magenta
+    try logger.addCustomLevel("AUDIT", 22, logly.Color.parse("35").?); // Magenta
     try logger.customf("AUDIT", "User {s} performed action: {s}", .{ "Bob", "DELETE" }, @src());
 
     // 4. Mixing styles
