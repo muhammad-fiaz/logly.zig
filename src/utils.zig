@@ -984,6 +984,37 @@ pub fn shouldSample(rate: f64) bool {
     return rng.float(f64) < rate;
 }
 
+/// Deterministic trace-id-ratio sampling decision.
+///
+/// Derives the decision from the trace ID itself (using the low 64 bits for
+/// standard 128-bit trace IDs) so that every span of the same trace shares
+/// one sampling decision, matching OpenTelemetry trace-id-ratio semantics.
+/// Non-hexadecimal or short trace IDs fall back to a hash of the full ID.
+pub fn shouldSampleTraceId(rate: f64, traceId: []const u8) bool {
+    if (rate >= 1.0) return true;
+    if (rate <= 0.0) return false;
+
+    const threshold: u64 = @intFromFloat(rate * @as(f64, @floatFromInt(std.math.maxInt(u64))));
+    const value: u64 = if (traceId.len >= 16)
+        (std.fmt.parseInt(u64, traceId[traceId.len - 16 ..], 16) catch std.hash.Wyhash.hash(0, traceId))
+    else
+        std.hash.Wyhash.hash(0, traceId);
+    return value <= threshold;
+}
+
+test "shouldSampleTraceId is deterministic and respects rate bounds" {
+    try std.testing.expect(shouldSampleTraceId(1.0, "4bf92f3577b34da6a3ce929d0e0e4736"));
+    try std.testing.expect(!shouldSampleTraceId(0.0, "4bf92f3577b34da6a3ce929d0e0e4736"));
+
+    const first = shouldSampleTraceId(0.5, "4bf92f3577b34da6a3ce929d0e0e4736");
+    const second = shouldSampleTraceId(0.5, "4bf92f3577b34da6a3ce929d0e0e4736");
+    try std.testing.expectEqual(first, second);
+
+    // Low 64 bits are 0x01 (< threshold) and 0xfffffffffffffffe (> threshold).
+    try std.testing.expect(shouldSampleTraceId(0.001, "00000000000000000000000000000001"));
+    try std.testing.expect(!shouldSampleTraceId(0.001, "fffffffffffffffffffffffffffffffe"));
+}
+
 test "generateTraceId" {
     const allocator = std.testing.allocator;
     const traceId = try generateTraceId(allocator);

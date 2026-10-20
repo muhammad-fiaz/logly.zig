@@ -12,7 +12,7 @@ Logly provides comprehensive OpenTelemetry (OTEL) support for distributed tracin
 - **Metrics Collection**: Counter, gauge, histogram, and summary metrics with configurable export formats
 - **Metrics Export Paths**: `metricsFilePath` overrides the default file exporter path for JSON/Prometheus metrics
 - **Metric Name Controls**: `metricPrefix`, `metricPrefixSeparator`, and `sanitizeMetricNames` normalize exported metric names for Prometheus-compatible output
-- **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span export; metrics are exported via file-based JSON/Prometheus writers (the default `.otlp` metric format is a placeholder that emits nothing)
+- **Network Export**: UDP/TCP/HTTP/gRPC transport protocols for span export; metrics are exported via file-based JSON/Prometheus writers or network OTLP/HTTP JSON export
 - **Export Modes**: Synchronous, async buffered, batch, and network export modes
 - **Span Processor Semantics**: `spanProcessorType` affects export behavior: `.simple` keeps completed spans pending until an explicit `exportSpans()` or `flush()` call, while `.batch` will automatically export spans when the batch size or timeout is reached.
 - **Note (v0.1.8)**: Fixed an OTLP exporter compile-time issue (removed an unnecessary discard in `writeOtlpSpan`) and clarified span-processor semantics; telemetry now builds cleanly across targets.
@@ -448,7 +448,13 @@ Flushes and exports all completed spans.
 
 ##### `exportMetrics() -> void`
 
-Flushes and exports all recorded metrics. With the default `metricFormat = .otlp` nothing is written (the OTLP metric path is a placeholder that reports success); set `metricFormat` to `.json` or `.prometheus` to emit metrics.
+Flushes and exports all recorded metrics according to `metricFormat`:
+
+- `.otlp` (default): serializes OTLP JSON and transmits it to `exporterEndpoint`/socket when configured, otherwise appends it to `metricsFilePath` or `exporterFilePath`.
+- `.json`: appends one JSON document per metric to `metricsFilePath` or `exporterFilePath`.
+- `.prometheus`: appends Prometheus text exposition records.
+
+Export failures are not silent: the error is returned and the serialized payload stays queued for a later flush. `getStats().pendingExports` reports how many payloads are awaiting transmission. `compressExports = true` gzips HTTP exports; combining it with a non-HTTP transport returns `error.CompressionRequiresHttpEndpoint`.
 
 ##### `setEnabled(enabled: bool) -> void`
 
@@ -582,7 +588,7 @@ pub const Span = struct {
     
     pub fn setAttribute(self: *Span, key: []const u8, value: SpanAttribute) !void
     pub fn setAttributes(self: *Span, attrs: []const AttributeEntry) !usize
-    pub fn addEvent(self: *Span, name: []const u8, attributes: ?std.StringHashMap(SpanAttribute)) !void
+    pub fn addEvent(self: *Span, name: []const u8, attributes: ?[]const AttributeEntry) !void
     pub fn setStatus(self: *Span, status: SpanStatus) void
     pub fn end(self: *Span) void
 };
@@ -643,8 +649,15 @@ Records an event within the span lifecycle.
 
 ```zig
 try span.addEvent("database_query_completed", null);
-try span.addEvent("cache_miss", null);
+
+const eventAttrs = [_]logly.Span.AttributeEntry{
+    .{ .key = "db.system", .value = .{ .string = "postgresql" } },
+    .{ .key = "db.rows", .value = .{ .integer = 42 } },
+};
+try span.addEvent("cache_miss", &eventAttrs);
 ```
+
+Event attributes are deep-copied and released with the span.
 
 ##### `setStatus(status) -> void`
 
@@ -1024,10 +1037,10 @@ Jaeger distributed tracing backend.
 
 **Default Settings:**
 
-- Endpoint: `http://localhost:6831` (Jaeger Agent UDP)
+- Endpoint: `http://localhost:14268/api/traces` (Jaeger Collector HTTP)
 - Batch Size: 256
 - Processor: Batch
-- Sampling: traceIdRatio at 10%
+- Sampling: deterministic traceIdRatio at 10%
 
 **Example:**
 
@@ -1175,7 +1188,7 @@ Pre-configured for high-throughput scenarios.
 **Settings:**
 
 - Provider: Jaeger
-- Endpoint: `http://localhost:6831`
+- Endpoint: `http://localhost:14268/api/traces`
 - Batch Size: 1024
 - Batch Timeout: 2000ms
 - Sampling: traceIdRatio at 1%

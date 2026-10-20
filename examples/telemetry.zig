@@ -73,7 +73,7 @@ pub fn main() !void {
 fn fileBasedTelemetry(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 1: File-Based Telemetry\n", .{});
 
-    var config = logly.TelemetryConfig.file("telemetry_spans.jsonl");
+    var config = logly.TelemetryConfig.file(".zig-cache/telemetry_example_spans.jsonl");
     config.serviceName = "example-app";
     config.serviceVersion = "1.0.0";
     config.environment = "development";
@@ -100,7 +100,7 @@ fn fileBasedTelemetry(allocator: std.mem.Allocator) !void {
     try telemetry.exportSpans();
 
     std.debug.print("[OK] File-based telemetry configured\n", .{});
-    std.debug.print("  Spans written to: telemetry_spans.jsonl\n", .{});
+    std.debug.print("  Spans written to: .zig-cache/telemetry_example_spans.jsonl\n", .{});
 }
 
 /// Example 2: Jaeger integration
@@ -110,6 +110,9 @@ fn jaegerTelemetry(allocator: std.mem.Allocator) !void {
     var config = logly.TelemetryConfig.jaeger();
     config.serviceName = "user-service";
     config.serviceVersion = "2.1.0";
+    // Demo runs offline; numeric host avoids DNS and fails fast when no
+    // collector is listening.
+    config.exporterEndpoint = "http://127.0.0.1:14268/api/traces";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
@@ -118,14 +121,12 @@ fn jaegerTelemetry(allocator: std.mem.Allocator) !void {
         .kind = .server,
     });
     defer rootSpan.deinit();
-    defer {
-        rootSpan.end();
-        _ = telemetry.endSpan(&rootSpan) catch {};
-    }
 
     try rootSpan.setAttribute("user.id", logly.SpanAttribute{ .string = "user-123" });
 
-    try telemetry.exportSpans();
+    rootSpan.end();
+    try telemetry.endSpan(&rootSpan);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Jaeger integration configured\n", .{});
     std.debug.print("  Endpoint: {s}\n", .{config.exporterEndpoint.?});
@@ -137,6 +138,7 @@ fn zipkinTelemetry(allocator: std.mem.Allocator) !void {
 
     var config = logly.TelemetryConfig.zipkin();
     config.serviceName = "order-service";
+    config.exporterEndpoint = "http://127.0.0.1:9411/api/v2/spans";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
@@ -145,15 +147,13 @@ fn zipkinTelemetry(allocator: std.mem.Allocator) !void {
         .kind = .server,
     });
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("order.id", logly.SpanAttribute{ .string = "order-456" });
     try span.setAttribute("order.amount", logly.SpanAttribute{ .float = 99.99 });
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Zipkin integration configured\n", .{});
     std.debug.print("  Endpoint: {s}\n", .{config.exporterEndpoint.?});
@@ -166,20 +166,21 @@ fn googleCloudTelemetry(allocator: std.mem.Allocator) !void {
     var config = logly.TelemetryConfig.googleCloud("my-project", "my-api-key");
     config.serviceName = "gcp-service";
     config.region = "us-central1";
+    // Demo runs offline: point at a local collector instead of the real
+    // Cloud Trace ingestion endpoint.
+    config.exporterEndpoint = "http://127.0.0.1:4318/v1/traces";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
 
     var span = try telemetry.startSpan("cloud_operation", .{});
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("gcp.resource.type", logly.SpanAttribute{ .string = "gae_app" });
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Google Cloud Trace configured\n", .{});
     std.debug.print("  Project: {s}\n", .{config.projectId.?});
@@ -192,6 +193,7 @@ fn datadogTelemetry(allocator: std.mem.Allocator) !void {
     var config = logly.TelemetryConfig.datadog("my-datadog-api-key");
     config.serviceName = "datadog-service";
     config.environment = "production";
+    config.exporterEndpoint = "http://127.0.0.1:8126/v0.3/traces";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
@@ -200,14 +202,12 @@ fn datadogTelemetry(allocator: std.mem.Allocator) !void {
         .kind = .server,
     });
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("dd.trace_id", logly.SpanAttribute{ .string = span.traceId });
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Datadog APM configured\n", .{});
     std.debug.print("  Endpoint: {s}\n", .{config.exporterEndpoint.?});
@@ -220,6 +220,7 @@ fn awsXRayTelemetry(allocator: std.mem.Allocator) !void {
     var config = logly.TelemetryConfig.awsXray("us-east-1");
     config.serviceName = "aws-lambda-function";
     config.environment = "production";
+    config.exporterEndpoint = "http://127.0.0.1:2000";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
@@ -228,15 +229,13 @@ fn awsXRayTelemetry(allocator: std.mem.Allocator) !void {
         .kind = .server,
     });
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("aws.lambda.function_name", logly.SpanAttribute{ .string = "my-function" });
     try span.setAttribute("aws.region", logly.SpanAttribute{ .string = "us-east-1" });
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] AWS X-Ray configured\n", .{});
     std.debug.print("  Region: {s}\n", .{config.region.?});
@@ -249,20 +248,21 @@ fn azureTelemetry(allocator: std.mem.Allocator) !void {
     var config = logly.TelemetryConfig.azure("InstrumentationKey=my-key;IngestionEndpoint=https://...");
     config.serviceName = "azure-app-service";
     config.region = "eastus";
+    // Demo runs offline: point at a local collector instead of the real
+    // Application Insights ingestion endpoint.
+    config.exporterEndpoint = "http://127.0.0.1:4318/v2.1/track";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
 
     var span = try telemetry.startSpan("azure_operation", .{});
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("azure.resource_group", logly.SpanAttribute{ .string = "my-rg" });
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Azure Application Insights configured\n", .{});
 }
@@ -271,24 +271,21 @@ fn azureTelemetry(allocator: std.mem.Allocator) !void {
 fn genericOTELTelemetry(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 8: Generic OTEL Collector\n", .{});
 
-    var config = logly.TelemetryConfig.otelCollector("http://localhost:4317");
+    var config = logly.TelemetryConfig.otelCollector("http://localhost:4318/v1/traces");
     config.serviceName = "otel-client";
-    config.samplingStrategy = .traceIdRatio;
-    config.samplingRate = 0.1;
+    config.samplingStrategy = .alwaysOn;
 
     var telemetry = try logly.Telemetry.init(allocator, config);
     defer telemetry.deinit();
 
     var span = try telemetry.startSpan("traced_operation", .{});
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("otel.provider", logly.SpanAttribute{ .string = "generic" });
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Generic OTEL Collector configured\n", .{});
     std.debug.print("  Endpoint: {s}\n", .{config.exporterEndpoint.?});
@@ -298,8 +295,7 @@ fn genericOTELTelemetry(allocator: std.mem.Allocator) !void {
 fn customCallbacksTelemetry(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 9: Custom Callbacks\n", .{});
 
-    var config = logly.TelemetryConfig.file("telemetry_callbacks.jsonl");
-
+    var config = logly.TelemetryConfig.file(".zig-cache/telemetry_example_callbacks.jsonl");
     config.onSpanStart = spanStartCallback;
     config.onSpanEnd = spanEndCallback;
     config.onMetricRecorded = metricRecordedCallback;
@@ -322,7 +318,7 @@ fn customCallbacksTelemetry(allocator: std.mem.Allocator) !void {
 fn metricsExample(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 10: Metrics Recording\n", .{});
 
-    var config = logly.TelemetryConfig.file("telemetry_metrics.jsonl");
+    var config = logly.TelemetryConfig.file(".zig-cache/telemetry_example_metrics.jsonl");
     config.metricFormat = .json;
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -371,12 +367,23 @@ fn metricRecordedCallback(name: []const u8, value: f64) void {
 fn errorCallback(errorMsg: []const u8) void {
     std.debug.print("  [CALLBACK] Error: {s}\n", .{errorMsg});
 }
+
+/// Exports spans without failing the example when no collector is running.
+/// Failed payloads stay queued for the next flush.
+fn exportSpansBestEffort(telemetry: *logly.Telemetry) void {
+    telemetry.exportSpans() catch |err| {
+        std.debug.print("  [INFO] No collector reachable; payload retained for retry ({s})\n", .{@errorName(err)});
+    };
+}
 /// Example 11: Google Analytics GA4
 fn googleAnalyticsTelemetry(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 11: Google Analytics GA4\n", .{});
 
     // Configure Google Analytics Measurement Protocol
     var config = logly.TelemetryConfig.googleAnalytics("G-XXXXXXXXXX", "api_secret_xxx");
+    // Demo runs offline: point at a local collector instead of the real
+    // Analytics Measurement Protocol endpoint.
+    config.exporterEndpoint = "http://127.0.0.1:4318/mp/collect";
     config.serviceName = "analytics-service";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -387,10 +394,6 @@ fn googleAnalyticsTelemetry(allocator: std.mem.Allocator) !void {
         .kind = .client,
     });
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("page.url", logly.SpanAttribute{ .string = "/products/item-123" });
     try span.setAttribute("page.title", logly.SpanAttribute{ .string = "Product Details" });
@@ -400,7 +403,9 @@ fn googleAnalyticsTelemetry(allocator: std.mem.Allocator) !void {
     try telemetry.recordCounter("page_views", 1.0);
     try telemetry.recordGauge("session_duration", 45.5);
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Google Analytics GA4 configured\n", .{});
     std.debug.print("  Measurement ID: {s}\n", .{config.projectId.?});
@@ -413,7 +418,7 @@ fn googleTagManagerTelemetry(allocator: std.mem.Allocator) !void {
 
     // Configure Google Tag Manager server-side endpoint
     var config = logly.TelemetryConfig.googleTagManager(
-        "https://gtm.example.com/collect",
+        "http://127.0.0.1:4318/collect",
         "gtm-api-key",
     );
     config.serviceName = "gtm-service";
@@ -426,16 +431,14 @@ fn googleTagManagerTelemetry(allocator: std.mem.Allocator) !void {
         .kind = .producer,
     });
     defer span.deinit();
-    defer {
-        span.end();
-        _ = telemetry.endSpan(&span) catch {};
-    }
 
     try span.setAttribute("transaction.id", logly.SpanAttribute{ .string = "T12345" });
     try span.setAttribute("transaction.revenue", logly.SpanAttribute{ .float = 199.99 });
     try span.setAttribute("currency", logly.SpanAttribute{ .string = "USD" });
 
-    try telemetry.exportSpans();
+    span.end();
+    try telemetry.endSpan(&span);
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("[OK] Google Tag Manager configured\n", .{});
     std.debug.print("  Endpoint: {s}\n", .{config.exporterEndpoint.?});
@@ -445,7 +448,7 @@ fn googleTagManagerTelemetry(allocator: std.mem.Allocator) !void {
 fn traceContextExample(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 13: W3C Trace Context & Baggage\n", .{});
 
-    var config = logly.TelemetryConfig.development();
+    var config = logly.TelemetryConfig.file(".zig-cache/telemetry_example_context.jsonl");
     config.serviceName = "context-service";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -500,7 +503,7 @@ fn traceContextExample(allocator: std.mem.Allocator) !void {
 fn parentChildSpansExample(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 14: Parent-Child Spans\n", .{});
 
-    var config = logly.TelemetryConfig.development();
+    var config = logly.TelemetryConfig.file(".zig-cache/telemetry_example_parent_child.jsonl");
     config.serviceName = "nested-service";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -605,7 +608,7 @@ fn customProviderTelemetry(allocator: std.mem.Allocator) !void {
 fn exporterStatsExample(allocator: std.mem.Allocator) !void {
     std.debug.print("\nExample 16: Exporter Statistics\n", .{});
 
-    var config = logly.TelemetryConfig.development();
+    var config = logly.TelemetryConfig.file(".zig-cache/telemetry_example_stats.jsonl");
     config.serviceName = "stats-service";
 
     var telemetry = try logly.Telemetry.init(allocator, config);
@@ -677,7 +680,7 @@ fn highThroughputExample(allocator: std.mem.Allocator) !void {
     const elapsedNs = std.Io.Clock.awake.now(io).toNanoseconds() - startTime;
     const elapsedMs = @as(f64, @floatFromInt(elapsedNs)) / 1_000_000.0;
 
-    try telemetry.exportSpans();
+    exportSpansBestEffort(&telemetry);
 
     std.debug.print("  Created {d} spans in {d:.2}ms\n", .{ created, elapsedMs });
     std.debug.print("  Throughput: {d:.0} spans/sec\n", .{@as(f64, @floatFromInt(created)) / (elapsedMs / 1000.0)});

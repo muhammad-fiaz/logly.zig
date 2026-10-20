@@ -291,8 +291,8 @@ pub fn fetchJsonWithIo(allocator: std.mem.Allocator, io_handle: std.Io, url: []c
     defer client.deinit();
 
     var req = try client.request(.GET, try std.Uri.parse(url), .{
-        .headers = .{ .userAgent = .{ .override = std.fmt.comptimePrint("logly.zig/{s}", .{builtin.zigVersionString}) } },
-        .extraHeaders = headers,
+        .headers = .{ .user_agent = .{ .override = std.fmt.comptimePrint("logly.zig/{s}", .{builtin.zig_version_string}) } },
+        .extra_headers = headers,
     });
     defer req.deinit();
 
@@ -304,10 +304,10 @@ pub fn fetchJsonWithIo(allocator: std.mem.Allocator, io_handle: std.Io, url: []c
     var response = try req.receiveHead(redirectBuffer);
     if (response.head.status != .ok) return NetworkError.RequestFailed;
 
-    const decompressBuffer: []u8 = switch (response.head.contentEncoding) {
+    const decompressBuffer: []u8 = switch (response.head.content_encoding) {
         .identity => &.{},
-        .zstd => try allocator.alloc(u8, std.compress.zstd.defaultWindowLen),
-        .deflate, .gzip => try allocator.alloc(u8, std.compress.flate.maxWindowLen),
+        .zstd => try allocator.alloc(u8, std.compress.zstd.default_window_len),
+        .deflate, .gzip => try allocator.alloc(u8, std.compress.flate.max_window_len),
         .compress => return NetworkError.UnsupportedEncoding,
     };
     defer if (decompressBuffer.len != 0) allocator.free(decompressBuffer);

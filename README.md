@@ -147,7 +147,7 @@ A production-grade, high-performance structured logging library for Zig, designe
 | **Invoke System** | Attach extra messages to logs when conditions match | [Docs](https://muhammad-fiaz.github.io/logly.zig/guide/invoke) |
 | **OpenTelemetry** | Full OTEL support with Jaeger, Zipkin, Datadog, GCP, AWS, Azure, and generic collectors | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Distributed Tracing** | W3C Trace Context propagation with span and trace management | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
-| **Metrics Export** | Export metrics in Prometheus and JSON formats (the default `.otlp` metric path is a placeholder that does not emit) | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
+| **Metrics Export** | Export metrics in Prometheus, JSON, and OTLP/HTTP JSON formats | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Sampling Strategies** | Multiple sampling strategies for performance optimization | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 | **Baggage Propagation** | W3C Baggage support for correlation context | [Docs](https://muhammad-fiaz.github.io/logly.zig/api/telemetry) |
 

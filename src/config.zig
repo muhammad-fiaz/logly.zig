@@ -3635,7 +3635,7 @@ pub const TelemetryConfig = struct {
         return .{
             .enabled = true,
             .provider = .jaeger,
-            .exporterEndpoint = "http://localhost:6831",
+            .exporterEndpoint = "http://localhost:14268/api/traces",
             .spanProcessorType = .batch,
             .batchSize = Constants.TelemetryDefaults.batchSize,
             .samplingStrategy = .traceIdRatio,
@@ -3672,7 +3672,7 @@ pub const TelemetryConfig = struct {
             .provider = .googleCloud,
             .projectId = projectId,
             .apiKey = apiKey,
-            .exporterEndpoint = "https://cloudtrace.googleapis.com/v2",
+            .exporterEndpoint = "https://cloudtrace.googleapis.com/v1/traces",
             .spanProcessorType = .batch,
         };
     }
@@ -3763,7 +3763,7 @@ pub const TelemetryConfig = struct {
         return .{
             .enabled = true,
             .provider = .jaeger,
-            .exporterEndpoint = "http://localhost:6831",
+            .exporterEndpoint = "http://localhost:14268/api/traces",
             .spanProcessorType = .batch,
             .batchSize = Constants.TelemetryDefaults.highThroughputBatchSize,
             .batchTimeoutMs = Constants.TelemetryDefaults.highThroughputBatchTimeoutMs,

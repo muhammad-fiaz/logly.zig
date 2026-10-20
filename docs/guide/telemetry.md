@@ -125,10 +125,10 @@ Set `sanitizeMetricNames = false` or call
 
 | Provider | Factory Function | Default Endpoint |
 |----------|------------------|------------------|
-| **Jaeger** | `TelemetryConfig.jaeger()` | `http://localhost:6831` |
+| **Jaeger** | `TelemetryConfig.jaeger()` | `http://localhost:14268/api/traces` |
 | **Zipkin** | `TelemetryConfig.zipkin()` | `http://localhost:9411/api/v2/spans` |
 | **Datadog** | `TelemetryConfig.datadog(apiKey)` | `http://localhost:8126/v0.3/traces` |
-| **Google Cloud** | `TelemetryConfig.googleCloud(project, key)` | `https://cloudtrace.googleapis.com/v2` |
+| **Google Cloud** | `TelemetryConfig.googleCloud(project, key)` | `https://cloudtrace.googleapis.com/v1/traces` |
 | **Google Analytics 4** | `TelemetryConfig.googleAnalytics(id, secret)` | `https://www.google-analytics.com/mp/collect` |
 | **Google Tag Manager** | `TelemetryConfig.googleTagManager(url, key)` | Custom GTM endpoint |
 | **AWS X-Ray** | `TelemetryConfig.awsXray(region)` | `http://localhost:2000` |
