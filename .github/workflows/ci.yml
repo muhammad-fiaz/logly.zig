@@ -30,7 +30,6 @@ jobs:
       - name: Examples
         run: zig build run-all-examples
 
-
   test-linux:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
