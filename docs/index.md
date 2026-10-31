@@ -5,9 +5,6 @@ description: "Structured logging library for Zig with async I/O, file rotation, 
 keywords: "zig, logging, library, high-performance, structured logging, async, json, file rotation, cross-platform"
 head:
   - - link
-    - rel: canonical
-      href: https://muhammad-fiaz.github.io/logly.zig/
-  - - link
     - rel: manifest
       href: site.webmanifest
   - - meta
